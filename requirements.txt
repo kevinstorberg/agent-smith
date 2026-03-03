@@ -1,1 +1,2 @@
 PyYAML>=6.0
+tomli_w>=1.0
