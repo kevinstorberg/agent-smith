@@ -2,75 +2,91 @@
 """
 sync.py
 
-Copy harness/main.md into:
-  - ~/.claude/CLAUDE.md
-  - ~/.codex/AGENTS.md
-  - ~/.gemini/GEMINI.md   (Gemini CLI global context)
+Thin orchestrator: reads harness.yaml, discovers scripts/<agent>/<type>.py,
+and calls each script's main(harness_root, type_config, dry_run).
 
-Nothing more.
+Adding a new agent or sync type (skills, tools) requires no changes here —
+just add the script and the corresponding section in harness.yaml.
 """
 
 from __future__ import annotations
 
 import argparse
-import os
-import tempfile
+import importlib.util
+import sys
 from pathlib import Path
-from typing import Tuple
+
+import yaml
 
 
-def find_harness_dir(explicit: str | None) -> Path:
+def find_repo_root(explicit: str | None) -> Path:
     if explicit:
         p = Path(explicit).expanduser().resolve()
-        if not (p / "main.md").is_file():
-            raise FileNotFoundError(f"harness dir missing main.md: {p}")
+        if not (p / "harness.yaml").is_file():
+            raise FileNotFoundError(f"harness.yaml not found at {p}")
         return p
 
-    # Search upward from this script for harness/main.md
     here = Path(__file__).resolve().parent
-    for base in [here, *here.parents]:
-        candidate = base / "harness"
-        if (candidate / "main.md").is_file():
+    for candidate in [here, *here.parents]:
+        if (candidate / "harness.yaml").is_file():
             return candidate
 
     raise FileNotFoundError(
-        "Could not locate harness/main.md. Run from your repo or pass --harness-dir."
+        "Could not locate harness.yaml. Run from your repo or pass --harness-dir."
     )
 
 
-def atomic_write(path: Path, content: str) -> Tuple[bool, str]:
-    """Write file atomically only if content changed."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+def load_harness(repo_root: Path) -> dict:
+    return yaml.safe_load((repo_root / "harness.yaml").read_text(encoding="utf-8"))
 
-    if path.exists():
-        existing = path.read_text(encoding="utf-8")
-        if existing == content:
-            return False, f"unchanged: {path}"
 
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        delete=False,
-        dir=str(path.parent),
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-    ) as tmp:
-        tmp.write(content)
-        tmp_path = Path(tmp.name)
+def discover_scripts(repo_root: Path, agent_names: list[str]) -> list[tuple[str, str, Path]]:
+    """Return (agent, type, path) for every scripts/<agent>/<type>.py that exists."""
+    scripts_dir = repo_root / "scripts"
+    found = []
+    for agent in agent_names:
+        agent_dir = scripts_dir / agent
+        if not agent_dir.is_dir():
+            continue
+        for script_path in sorted(agent_dir.glob("*.py")):
+            if not script_path.stem.startswith("_"):
+                found.append((agent, script_path.stem, script_path))
+    return found
 
-    os.replace(str(tmp_path), str(path))
-    return True, f"updated:   {path}"
+
+def call_script(
+    repo_root: Path,
+    agent: str,
+    type_name: str,
+    script_path: Path,
+    type_config: dict,
+    dry_run: bool,
+) -> None:
+    # Ensure repo root is on sys.path so scripts can import scripts.shared.*
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
+    spec = importlib.util.spec_from_file_location(
+        f"scripts.{agent}.{type_name}", script_path
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    if hasattr(module, "main"):
+        module.main(repo_root, type_config, dry_run)
+    else:
+        print(f"  warning: {script_path} has no main() — skipped")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="sync.py",
-        description="Copy harness/main.md to Claude, Codex, and Gemini CLI home instruction files",
+        description="Sync harness content to agent config files via per-agent scripts",
     )
     parser.add_argument(
         "--harness-dir",
         default=None,
-        help="Path to harness/ (defaults to searching upward for harness/main.md)",
+        help="Repo root (defaults to searching upward for harness.yaml)",
     )
     parser.add_argument(
         "--dry-run",
@@ -79,26 +95,26 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    harness_dir = find_harness_dir(args.harness_dir)
-    src = harness_dir / "main.md"
-    content = src.read_text(encoding="utf-8").rstrip() + "\n"
+    repo_root = find_repo_root(args.harness_dir)
+    harness = load_harness(repo_root)
+    agents: dict = harness.get("agents", {})
 
-    claude_target = Path.home() / ".claude" / "CLAUDE.md"
-    codex_target = Path.home() / ".codex" / "AGENTS.md"
-    gemini_target = Path.home() / ".gemini" / "GEMINI.md"
-
-    if args.dry_run:
-        print(f"source:    {src}")
-        print(f"would write {len(content.encode('utf-8'))} bytes to:")
-        print(f"  {claude_target}")
-        print(f"  {codex_target}")
-        print(f"  {gemini_target}")
+    scripts = discover_scripts(repo_root, list(agents))
+    if not scripts:
+        print("No scripts found under scripts/<agent>/*.py")
         return 0
 
-    print(f"source:    {src}")
-    print(atomic_write(claude_target, content)[1])
-    print(atomic_write(codex_target, content)[1])
-    print(atomic_write(gemini_target, content)[1])
+    for agent, type_name, script_path in scripts:
+        type_config = agents[agent].get(type_name)
+        if type_config is None:
+            print(
+                f"warning: {script_path.relative_to(repo_root)} found but "
+                f"harness.yaml has no [{agent}][{type_name}] section — skipped"
+            )
+            continue
+        print(f"[{agent}/{type_name}]")
+        call_script(repo_root, agent, type_name, script_path, type_config, args.dry_run)
+
     return 0
 
 

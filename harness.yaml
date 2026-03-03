@@ -1,33 +1,34 @@
 agents:
   claude:
-    target: ~/.claude/CLAUDE.md
-    compose:
-      - harness/rules/shared/
-      - harness/rules/claude/
-      - harness/skills/shared/
-      - harness/skills/claude/
-      - harness/tools/shared/
-      - harness/tools/claude/
+    rules:
+      targets:
+        - path: ~/.claude/CLAUDE.md
+          compose:
+            - harness/main.md
+            - harness/rules/shared/
+            - harness/rules/claude/
+        - path: ~/.claude/rules/
+          copy:
+            - harness/rules/shared/
+            - harness/rules/claude/
 
   codex:
-    target: ~/.codex/AGENTS.md
-    compose:
-      - harness/rules/shared/
-      - harness/rules/codex/
-      - harness/skills/shared/
-      - harness/skills/codex/
-      - harness/tools/shared/
-      - harness/tools/codex/
+    rules:
+      targets:
+        - path: ~/.codex/AGENTS.md
+          compose:
+            - harness/main.md
+            - harness/rules/shared/
+            - harness/rules/codex/
 
   gemini:
-    target: ~/.gemini/GEMINI.md
-    compose:
-      - harness/rules/shared/
-      - harness/rules/gemini/
-      - harness/skills/shared/
-      - harness/skills/gemini/
-      - harness/tools/shared/
-      - harness/tools/gemini/
+    rules:
+      targets:
+        - path: ~/.gemini/GEMINI.md
+          compose:
+            - harness/main.md
+            - harness/rules/shared/
+            - harness/rules/gemini/
 
 # Files within each directory are concatenated in lexicographic order.
-# Use numeric prefixes (01-principles.md, 02-constraints.md) to control ordering.
+# Use underscore-separated names without numeric prefixes (e.g. dry.md, tracer_bullets.md).
