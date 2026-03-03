@@ -1,29 +1,40 @@
 # agent-smith
 
-A single harness for managing rules, skills, and tools across multiple AI coding agents. One source of truth, synced everywhere.
+A single harness for managing rules, skills, and MCP servers across multiple AI coding agents.
+One source of truth, synced everywhere.
 
 ## Structure
 
-```
+```text
 harness/
-  rules/       # behavioral directives and principles
-  skills/      # slash commands and capabilities
-  tools/       # MCP server configurations
+  main.md            # preamble prepended to every agent's rules file
+  rules/             # behavioral directives (markdown, composed in order)
+  skills/            # slash commands (one subdirectory per skill, each with SKILL.md)
+  mcp/               # MCP server definitions (one JSON file per server)
 ```
 
-Each category has a `shared/` subfolder (applied to all agents) and per-agent subfolders (`claude/`, `codex/`, `gemini/`, etc). Files within each folder are composed in lexicographic order — use numeric prefixes (`01-`, `02-`) to control ordering.
+Each category has a `shared/` subfolder (applied to all agents) and per-agent subfolders
+(`claude/`, `codex/`, `gemini/`). Files within `rules/` and `mcp/` are processed in
+lexicographic order.
 
 ## Manifest
 
-`harness.yaml` declares, for each agent, the target config file and which folders compose into it. This is the contract between the harness content and the sync process.
+`harness.yaml` declares, for each agent and category, the target file/directory and which
+source folders to pull from.
 
 ## Sync
 
-```
-python sync.py
+```sh
+./sync.py
 ```
 
-Reads `harness.yaml`, assembles each agent's config from the declared folders, and writes the result to the agent's target file. Only writes when content has changed.
+Reads `harness.yaml` and applies three operations:
+
+- **compose** — concatenates markdown files into a single rules file
+- **copy** — syncs skill subdirectories to the agent's skills directory
+- **merge** — merges MCP server JSON into the agent's config file
+
+Only writes when content has changed.
 
 ## Environment
 
