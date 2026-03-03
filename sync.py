@@ -5,6 +5,7 @@ sync.py
 Copy harness/main.md into:
   - ~/.claude/CLAUDE.md
   - ~/.codex/AGENTS.md
+  - ~/.gemini/GEMINI.md   (Gemini CLI global context)
 
 Nothing more.
 """
@@ -64,7 +65,7 @@ def atomic_write(path: Path, content: str) -> Tuple[bool, str]:
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="sync.py",
-        description="Copy harness/main.md to ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md",
+        description="Copy harness/main.md to Claude, Codex, and Gemini CLI home instruction files",
     )
     parser.add_argument(
         "--harness-dir",
@@ -84,17 +85,20 @@ def main() -> int:
 
     claude_target = Path.home() / ".claude" / "CLAUDE.md"
     codex_target = Path.home() / ".codex" / "AGENTS.md"
+    gemini_target = Path.home() / ".gemini" / "GEMINI.md"
 
     if args.dry_run:
         print(f"source:    {src}")
         print(f"would write {len(content.encode('utf-8'))} bytes to:")
         print(f"  {claude_target}")
         print(f"  {codex_target}")
+        print(f"  {gemini_target}")
         return 0
 
     print(f"source:    {src}")
     print(atomic_write(claude_target, content)[1])
     print(atomic_write(codex_target, content)[1])
+    print(atomic_write(gemini_target, content)[1])
     return 0
 
 
