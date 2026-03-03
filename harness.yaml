@@ -1,0 +1,33 @@
+agents:
+  claude:
+    target: ~/.claude/CLAUDE.md
+    compose:
+      - harness/rules/shared/
+      - harness/rules/claude/
+      - harness/skills/shared/
+      - harness/skills/claude/
+      - harness/tools/shared/
+      - harness/tools/claude/
+
+  codex:
+    target: ~/.codex/AGENTS.md
+    compose:
+      - harness/rules/shared/
+      - harness/rules/codex/
+      - harness/skills/shared/
+      - harness/skills/codex/
+      - harness/tools/shared/
+      - harness/tools/codex/
+
+  gemini:
+    target: ~/.gemini/GEMINI.md
+    compose:
+      - harness/rules/shared/
+      - harness/rules/gemini/
+      - harness/skills/shared/
+      - harness/skills/gemini/
+      - harness/tools/shared/
+      - harness/tools/gemini/
+
+# Files within each directory are concatenated in lexicographic order.
+# Use numeric prefixes (01-principles.md, 02-constraints.md) to control ordering.
