@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scripts.shared.fs import atomic_write, collect_md_files, extract_brief
+from scripts.shared.fs import atomic_write, collect_md_files, compose_parts, extract_brief
 
 
 def main(harness_root: Path, config: dict, dry_run: bool) -> None:
@@ -34,13 +34,10 @@ def _compose(
     dry_run: bool,
 ) -> None:
     files = collect_md_files(sources, harness_root)
-    parts = [
-        extract_brief(f.read_text(encoding="utf-8").rstrip(), rules_dir / f.name)
-        if rules_dir
-        else f.read_text(encoding="utf-8").rstrip()
-        for f in files
-    ]
-    content = "\n\n".join(parts) + "\n"
+    content = compose_parts(
+        files,
+        transform=lambda text, f: extract_brief(text, rules_dir / f.name) if rules_dir else text,
+    )
     if dry_run:
         print(f"  would compose {len(files)} file(s) → {dest}")
         return

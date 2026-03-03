@@ -1,5 +1,6 @@
 # PRAGMATIC PRINCIPLES & DIRECTIVES
 
+<!-- footer -->
 ## Execution Constraints
 
 * **Think Before You Act:** Turn off autopilot. Before writing a large block of code, briefly outline your structural approach and identify potential architectural risks.

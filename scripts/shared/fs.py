@@ -6,6 +6,8 @@ import os
 import tempfile
 from pathlib import Path
 
+FOOTER_MARKER = "<!-- footer -->"
+
 
 def collect_md_files(sources: list[str], harness_root: Path) -> list[Path]:
     """
@@ -23,6 +25,30 @@ def collect_md_files(sources: list[str], harness_root: Path) -> list[Path]:
                 sorted(f for f in path.glob("*.md") if not f.name.startswith("."))
             )
     return files
+
+
+def compose_parts(files: list[Path], transform=None) -> str:
+    """
+    Compose files into a single string.
+    Content after FOOTER_MARKER in any file is collected and appended last,
+    so sections like 'Execution Constraints' always appear at the bottom.
+    transform(text, path) -> str is applied per file if provided.
+    """
+    parts: list[str] = []
+    footer_parts: list[str] = []
+    for f in files:
+        raw = f.read_text(encoding="utf-8").rstrip()
+        if FOOTER_MARKER in raw:
+            head, tail = raw.split(FOOTER_MARKER, 1)
+            if head.strip():
+                text = transform(head.rstrip(), f) if transform else head.rstrip()
+                parts.append(text)
+            if tail.strip():
+                footer_parts.append(tail.strip())
+        else:
+            text = transform(raw, f) if transform else raw
+            parts.append(text)
+    return "\n\n".join(parts + footer_parts) + "\n"
 
 
 def extract_brief(content: str, rules_path: Path) -> str:
