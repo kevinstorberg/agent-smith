@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -85,3 +86,45 @@ def atomic_write(path: Path | str, content: str) -> tuple[bool, str]:
 
     os.replace(str(tmp_path), str(path))
     return True, f"updated:   {path}"
+
+
+def collect_skill_dirs(sources: list[str], harness_root: Path) -> dict[str, Path]:
+    """
+    Gather skill directories (dirs containing SKILL.md) from source paths.
+    Returns {skill_name: dir_path}; later sources override earlier ones.
+    """
+    skills: dict[str, Path] = {}
+    for source in sources:
+        path = (harness_root / source).expanduser().resolve()
+        if path.is_dir():
+            for candidate in sorted(path.iterdir()):
+                if candidate.is_dir() and (candidate / "SKILL.md").is_file():
+                    skills[candidate.name] = candidate
+    return skills
+
+
+def sync_skill_dirs(skills: dict[str, Path], dest_dir: Path, dry_run: bool) -> None:
+    """
+    Mirror skill directories into dest_dir; prune stale skills and files.
+    """
+    if dry_run:
+        print(f"  would sync {len(skills)} skill(s) → {dest_dir}")
+        return
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for name, src_dir in skills.items():
+        dest_skill = dest_dir / name
+        dest_skill.mkdir(parents=True, exist_ok=True)
+        src_files = {f.relative_to(src_dir) for f in src_dir.rglob("*") if f.is_file()}
+        for rel in sorted(src_files):
+            dest_file = dest_skill / rel
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+            _, msg = atomic_write(dest_file, (src_dir / rel).read_text(encoding="utf-8"))
+            print(f"  {msg}")
+        for dest_file in list(dest_skill.rglob("*")):
+            if dest_file.is_file() and dest_file.relative_to(dest_skill) not in src_files:
+                dest_file.unlink()
+                print(f"  removed:   {dest_file}")
+    for stale in dest_dir.iterdir():
+        if stale.is_dir() and stale.name not in skills:
+            shutil.rmtree(stale)
+            print(f"  removed:   {stale}")

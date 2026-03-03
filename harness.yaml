@@ -11,6 +11,12 @@ agents:
           copy:
             - harness/rules/shared/
             - harness/rules/claude/
+    skills:
+      targets:
+        - path: ~/.claude/skills/
+          copy:
+            - harness/skills/shared/
+            - harness/skills/claude/
 
   codex:
     rules:
@@ -20,6 +26,12 @@ agents:
             - harness/main.md
             - harness/rules/shared/
             - harness/rules/codex/
+    skills:
+      targets:
+        - path: ~/.codex/skills/
+          copy:
+            - harness/skills/shared/
+            - harness/skills/codex/
 
   gemini:
     rules:
@@ -29,6 +41,12 @@ agents:
             - harness/main.md
             - harness/rules/shared/
             - harness/rules/gemini/
+    skills:
+      targets:
+        - path: ~/.gemini/skills/
+          copy:
+            - harness/skills/shared/
+            - harness/skills/gemini/
 
 # Files within each directory are concatenated in lexicographic order.
 # Use underscore-separated names without numeric prefixes (e.g. dry.md, tracer_bullets.md).
