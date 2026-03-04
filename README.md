@@ -8,16 +8,19 @@ One source of truth, synced everywhere.
 ## Structure
 
 ```text
+assets/              # static assets (images, etc.)
 harness/
   main.md            # preamble prepended to every agent's rules file
   rules/             # behavioral directives (markdown, composed in order)
   skills/            # slash commands (one subdirectory per skill, each with SKILL.md)
   mcp/               # MCP server definitions (one JSON file per server)
+services/
+  memory/            # local vector memory MCP server (LanceDB + sentence-transformers)
 ```
 
-Each category has a `shared/` subfolder (applied to all agents) and per-agent subfolders
-(`claude/`, `codex/`, `gemini/`). Files within `rules/` and `mcp/` are processed in
-lexicographic order.
+Each harness category has a `shared/` subfolder (applied to all agents), per-agent subfolders
+(`claude/`, `codex/`, `gemini/`), and a `local/` subfolder (gitignored, machine-specific).
+Files within `rules/` and `mcp/` are processed in lexicographic order.
 
 ## Manifest
 
