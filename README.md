@@ -71,3 +71,9 @@ Data is stored in `memory_store/` (gitignored). The server runs on `localhost:73
 ## Environment
 
 Copy `.env.local` to `.env` for API keys and other secrets. `.env` is gitignored.
+
+## Planned Features
+- Remotely configurable memory storage for sharing across teams and devices
+- Additional agent model support (e.g. Mistral Code)
+- Repo/project scoped rules, skills, and tooling
+- Conversion into an open source library
