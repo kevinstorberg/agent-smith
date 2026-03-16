@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from scripts.shared.env import expand_env
@@ -23,4 +24,7 @@ def collect_mcp_servers(sources: list[str], harness_root: Path) -> dict[str, dic
                 name = data["name"]
                 fields = {k: v for k, v in data.items() if k != "name"}
                 servers[name] = expand_env(fields)
-    return servers
+    return {
+        name: srv for name, srv in servers.items()
+        if os.environ.get(f"{name}_ENABLED", "").lower() != "false"
+    }

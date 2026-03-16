@@ -37,3 +37,10 @@ def test_collect_later_source_overrides(tmp_path: Path):
 def test_collect_skips_missing_dirs(tmp_path: Path):
     servers = collect_mcp_servers(["nonexistent/"], tmp_path)
     assert servers == {}
+
+
+def test_collect_excludes_disabled_server(harness_dir: Path, monkeypatch: object):
+    monkeypatch.setenv("Alpha_ENABLED", "false")
+    servers = collect_mcp_servers(["mcp/shared/"], harness_dir)
+    assert "Alpha" not in servers
+    assert "Beta" in servers

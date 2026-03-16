@@ -76,7 +76,13 @@ Data is stored in `memory_store/` (gitignored). The server runs on `localhost:73
 
 ## Environment
 
-Copy `.env.local` to `.env` for API keys and other secrets. `.env` is gitignored.
+Copy `.env.example` to `.env` for API keys and other secrets. `.env` is gitignored.
+
+Disable individual MCP servers by setting `{Name}_ENABLED=false` in `.env`:
+
+```sh
+Slack_ENABLED=false
+```
 
 ## Planned Features
 - Remotely configurable memory storage for sharing across teams and devices
