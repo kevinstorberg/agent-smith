@@ -5,6 +5,14 @@
 A single harness for managing rules, skills, and MCP servers across multiple AI coding agents.
 One source of truth, synced everywhere.
 
+## Setup
+
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
 ## Structure
 
 ```text
