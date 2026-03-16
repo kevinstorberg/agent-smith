@@ -68,6 +68,12 @@ A local vector memory system that agents can read and write across sessions.
 
 Data is stored in `memory_store/` (gitignored). The server runs on `localhost:7367`.
 
+## Tests
+
+```sh
+.venv/bin/pytest tests/ -v
+```
+
 ## Environment
 
 Copy `.env.local` to `.env` for API keys and other secrets. `.env` is gitignored.

@@ -3,3 +3,4 @@ tomli_w>=1.0
 mcp[cli]>=1.0
 lancedb>=0.17.0
 sentence-transformers>=3.0.0
+pytest>=8.0

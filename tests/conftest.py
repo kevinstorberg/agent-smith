@@ -1,0 +1,49 @@
+"""Shared fixtures for the agent-smith test suite."""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+REPO_ROOT = Path(__file__).parent.parent
+
+# Ensure repo root is importable.
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+
+@pytest.fixture
+def harness_dir(tmp_path: Path) -> Path:
+    """A minimal harness directory with sample files for testing."""
+    # .env
+    (tmp_path / ".env").write_text("FOO=bar\nSECRET=hunter2\n# comment\n")
+
+    # MCP server JSONs
+    mcp = tmp_path / "mcp" / "shared"
+    mcp.mkdir(parents=True)
+    (mcp / "Alpha.json").write_text(json.dumps({"name": "Alpha", "url": "https://a.com/mcp"}))
+    (mcp / "Beta.json").write_text(
+        json.dumps({"name": "Beta", "url": "https://b.com/mcp", "headers": {"Authorization": "Bearer ${SECRET}"}})
+    )
+
+    # Markdown rules
+    rules = tmp_path / "rules" / "shared"
+    rules.mkdir(parents=True)
+    (rules / "aaa.md").write_text("# Rule A\nContent A.\n")
+    (rules / "bbb.md").write_text("# Rule B\nContent B.\n")
+    (rules / ".hidden.md").write_text("should be skipped")
+
+    # Skills
+    skills = tmp_path / "skills" / "shared"
+    skills.mkdir(parents=True)
+    skill_a = skills / "commit"
+    skill_a.mkdir()
+    (skill_a / "SKILL.md").write_text("---\nname: commit\n---\nCommit skill.\n")
+    skill_b = skills / "pr"
+    skill_b.mkdir()
+    (skill_b / "SKILL.md").write_text("---\nname: pr\n---\nPR skill.\n")
+
+    return tmp_path
