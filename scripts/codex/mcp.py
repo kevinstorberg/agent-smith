@@ -21,6 +21,11 @@ def main(harness_root: Path, config: dict, dry_run: bool) -> None:
             print(f"  would sync {len(servers)} server(s) → {dest}")
             continue
         data = tomllib.loads(dest.read_text(encoding="utf-8")) if dest.exists() else {}
-        data["mcp_servers"] = {name: {"url": srv["url"]} for name, srv in servers.items()}
+        data["mcp_servers"] = {}
+        for name, srv in servers.items():
+            entry = {"url": srv["url"]}
+            if "headers" in srv:
+                entry["headers"] = srv["headers"]
+            data["mcp_servers"][name] = entry
         _, msg = atomic_write(dest, tomli_w.dumps(data))
         print(f"  {msg}")

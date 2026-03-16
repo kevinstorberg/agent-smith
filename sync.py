@@ -96,6 +96,14 @@ def main() -> int:
     args = parser.parse_args()
 
     repo_root = find_repo_root(args.harness_dir)
+
+    # Ensure repo root is on sys.path early so shared modules are importable.
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
+    from scripts.shared.env import load_dotenv
+    load_dotenv(repo_root)
+
     harness = load_harness(repo_root)
     agents: dict = harness.get("agents", {})
 

@@ -17,8 +17,11 @@ def main(harness_root: Path, config: dict, dry_run: bool) -> None:
             print(f"  would sync {len(servers)} server(s) → {dest}")
             continue
         data = json.loads(dest.read_text(encoding="utf-8")) if dest.exists() else {}
-        data["mcpServers"] = {
-            name: {"type": "http", "url": srv["url"]} for name, srv in servers.items()
-        }
+        data["mcpServers"] = {}
+        for name, srv in servers.items():
+            entry = {"type": "http", "url": srv["url"]}
+            if "headers" in srv:
+                entry["headers"] = srv["headers"]
+            data["mcpServers"][name] = entry
         _, msg = atomic_write(dest, json.dumps(data, indent=2) + "\n")
         print(f"  {msg}")
