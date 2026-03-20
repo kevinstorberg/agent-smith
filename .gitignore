@@ -6,3 +6,5 @@ memory.pid
 harness/mcp/local/
 harness/rules/local/
 harness/skills/local/
+tmp/*
+!tmp/.gitkeep

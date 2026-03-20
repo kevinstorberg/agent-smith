@@ -27,8 +27,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parent.resolve()
 PID_FILE = REPO_ROOT / "memory.pid"
 MCP_LOCAL_DIR = REPO_ROOT / "harness" / "mcp" / "local"
-RULES_LOCAL_DIR = REPO_ROOT / "harness" / "rules" / "local"
-SKILLS_LOCAL_DIR = REPO_ROOT / "harness" / "skills" / "local" / "memory"
 
 DEFAULT_PORT = 7367
 
@@ -70,7 +68,7 @@ def _running_pid() -> int | None:
 
 
 def _write_harness_files(port: int) -> None:
-    """Create the local harness files that grant agents access to the memory server."""
+    """Create the local MCP config that grants agents access to the memory server."""
     url = f"http://localhost:{port}/mcp/"
 
     MCP_LOCAL_DIR.mkdir(parents=True, exist_ok=True)
@@ -78,65 +76,10 @@ def _write_harness_files(port: int) -> None:
         json.dumps({"name": "memory", "url": url}, indent=2) + "\n"
     )
 
-    RULES_LOCAL_DIR.mkdir(parents=True, exist_ok=True)
-    (RULES_LOCAL_DIR / "memory.md").write_text(
-        """\
-## Long-Term Memory
-
-You have access to a persistent memory system via MCP tools. Use it to preserve and recall
-context across sessions.
-
-**When to search:** At the start of work on any project, call `memory_search` with relevant
-keywords and the repo name to surface prior decisions, patterns, and learnings.
-
-**When to store:** After solving a non-obvious problem, discovering a project-specific pattern,
-or making an architectural decision, call `memory_add` with the content scoped to the repo.
-
-**Tagging:** Use concise tags (e.g. `["architecture", "auth", "bug"]`) to make memories easier
-to filter later.
-
-**Example workflow:**
-```
-memory_search(query="auth flow", repo="my-app")
-# ... do work ...
-memory_add(content="JWT tokens expire after 1h; refresh tokens stored in httpOnly cookies",
-           repo="my-app", tags=["auth", "security"])
-```
-"""
-    )
-
-    SKILLS_LOCAL_DIR.mkdir(parents=True, exist_ok=True)
-    (SKILLS_LOCAL_DIR / "SKILL.md").write_text(
-        """\
----
-name: memory
-description: >
-  Search long-term memory for context relevant to the current task, then store key learnings
-  after completing work. Use when starting on a project or before making significant decisions.
----
-
-1. **Recall**: `memory_search(query="<relevant topic>", repo="<current-repo>")` to surface
-   prior decisions and patterns. Briefly summarize what was found before proceeding.
-
-2. **Work**: Complete the task using recalled context where relevant.
-
-3. **Store**: After completing significant work, call `memory_add` to preserve key learnings:
-   - Architectural decisions and their rationale
-   - Non-obvious patterns discovered in the codebase
-   - Solutions to hard problems that recur
-   - Anything a future agent session should know about this project
-"""
-    )
-
 
 def _delete_harness_files() -> None:
-    """Remove the local harness files to revoke agent access."""
-    for path in [
-        MCP_LOCAL_DIR / "memory.json",
-        RULES_LOCAL_DIR / "memory.md",
-        SKILLS_LOCAL_DIR / "SKILL.md",
-    ]:
-        path.unlink(missing_ok=True)
+    """Remove the local MCP config to revoke agent access."""
+    (MCP_LOCAL_DIR / "memory.json").unlink(missing_ok=True)
 
 
 def _run_sync() -> None:

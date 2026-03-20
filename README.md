@@ -16,6 +16,7 @@ harness/
   mcp/               # MCP server definitions (one JSON file per server)
 services/
   memory/            # local vector memory MCP server (LanceDB + sentence-transformers)
+tmp/                 # scratch files and draft plans (gitignored contents)
 ```
 
 Each harness category has a `shared/` subfolder (applied to all agents), per-agent subfolders
