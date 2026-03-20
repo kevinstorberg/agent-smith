@@ -12,10 +12,12 @@ import services.memory.db as db
 
 @pytest.fixture(autouse=True)
 def isolated_store(tmp_path: Path):
-    """Point the memory store at a temp directory for every test."""
+    """Point the memory store at a temp directory and reset caches for every test."""
     with patch.object(db, "STORE_PATH", tmp_path / "store"):
-        db._model = None  # allow lazy load to cache across tests in this module
+        db._embeddings = None
+        db._retriever = None
         yield
+        db._retriever = None
 
 
 def test_init_creates_store():

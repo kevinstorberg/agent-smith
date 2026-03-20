@@ -52,7 +52,9 @@ Only writes when content has changed.
 
 ## Memory
 
-A local vector memory system that agents can read and write across sessions.
+A local vector memory system with time-weighted retrieval. Recent and frequently
+accessed memories are gently preferred over old ones via LangChain's
+`TimeWeightedVectorStoreRetriever`.
 
 **One-time setup:**
 
@@ -61,8 +63,8 @@ A local vector memory system that agents can read and write across sessions.
 ./memory.py start   # start the MCP server and grant all agents access
 ```
 
-`start` writes the MCP config, rules, and `/memory` skill to all agents via `./sync.py`.
-`stop` removes them. The database persists across start/stop cycles.
+`start` writes the MCP config to all agents via `./sync.py`. `stop` removes it.
+The database persists across start/stop cycles.
 
 **Human interface:**
 
@@ -85,7 +87,8 @@ Data is stored in `memory_store/` (gitignored). The server runs on `localhost:73
 
 ## Environment
 
-Copy `.env.example` to `.env` for API keys and other secrets. `.env` is gitignored.
+`.env.default` contains defaults and is committed. `.env` contains local overrides and is
+gitignored. Both are loaded automatically (`.env` first, then `.env.default` fills gaps).
 
 Disable individual MCP servers by setting `{Name}_ENABLED=false` in `.env`:
 

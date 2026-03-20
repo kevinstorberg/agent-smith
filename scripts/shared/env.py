@@ -7,12 +7,11 @@ import re
 from pathlib import Path
 
 
-def load_dotenv(harness_root: Path) -> None:
-    """Load .env into os.environ if it exists. Does not override existing vars."""
-    env_file = harness_root / ".env"
-    if not env_file.is_file():
+def _load_env_file(path: Path) -> None:
+    """Parse a single env file into os.environ. Does not override existing vars."""
+    if not path.is_file():
         return
-    for line in env_file.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
@@ -21,6 +20,12 @@ def load_dotenv(harness_root: Path) -> None:
         val = val.strip().strip("'\"")
         if key and key not in os.environ:
             os.environ[key] = val
+
+
+def load_dotenv(harness_root: Path) -> None:
+    """Load .env first (user overrides), then .env.default (fills in defaults)."""
+    _load_env_file(harness_root / ".env")
+    _load_env_file(harness_root / ".env.default")
 
 
 def expand_env(value):
