@@ -37,7 +37,7 @@ DEFAULT_PORT = 7367
 
 
 def _db():
-    """Lazy import so the CLI is usable even before chromadb is installed."""
+    """Lazy import so the CLI is usable before heavy deps are loaded."""
     sys.path.insert(0, str(REPO_ROOT))
     from services.memory import db
     return db
@@ -115,13 +115,15 @@ def cmd_start(args: argparse.Namespace) -> None:
     cmd = [sys.executable, str(server_script), "--port", str(args.port)]
 
     if args.daemon:
-        proc = subprocess.Popen(
-            cmd,
-            cwd=str(REPO_ROOT),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        log_path = REPO_ROOT / "memory.log" if os.environ.get("MEMORY_LOG", "").lower() == "true" else os.devnull
+        with open(log_path, "w") as out:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(REPO_ROOT),
+                stdout=out,
+                stderr=out,
+                start_new_session=True,
+            )
         PID_FILE.write_text(str(proc.pid))
         print(f"[memory] server started (PID {proc.pid}) on port {args.port}")
     else:

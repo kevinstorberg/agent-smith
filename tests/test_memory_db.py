@@ -8,12 +8,14 @@ from unittest.mock import patch
 import pytest
 
 import services.memory.db as db
+import services.memory.backends.lancedb_backend as lancedb_backend
 
 
 @pytest.fixture(autouse=True)
 def isolated_store(tmp_path: Path):
     """Point the memory store at a temp directory and reset caches for every test."""
-    with patch.object(db, "STORE_PATH", tmp_path / "store"):
+    store = tmp_path / "store"
+    with patch.object(lancedb_backend, "STORE_PATH", store):
         db._embeddings = None
         db._retriever = None
         yield
@@ -22,7 +24,7 @@ def isolated_store(tmp_path: Path):
 
 def test_init_creates_store():
     db.init()
-    assert db.STORE_PATH.exists()
+    assert lancedb_backend.STORE_PATH.exists()
 
 
 def test_add_returns_uuid():
@@ -88,3 +90,44 @@ def test_list_empty():
 def test_search_empty():
     db.init()
     assert db.search("anything") == []
+
+
+def test_time_weighting_prefers_recent():
+    """Recent memories should rank higher than old ones when content is identical."""
+    from datetime import datetime, timedelta
+    from langchain_core.documents import Document
+
+    retriever = db._get_retriever()
+
+    old_time = datetime.now() - timedelta(days=30)
+    old_doc = Document(
+        page_content="database optimization techniques",
+        metadata={
+            "id": "00000000-0000-0000-0000-000000000001",
+            "repo": "",
+            "tags": "[]",
+            "created_at": old_time.isoformat(),
+            "updated_at": old_time.isoformat(),
+            "last_accessed_at": old_time,
+        },
+    )
+    retriever.add_documents([old_doc], ids=["00000000-0000-0000-0000-000000000001"], current_time=old_time)
+
+    new_time = datetime.now()
+    new_doc = Document(
+        page_content="database optimization techniques",
+        metadata={
+            "id": "00000000-0000-0000-0000-000000000002",
+            "repo": "",
+            "tags": "[]",
+            "created_at": new_time.isoformat(),
+            "updated_at": new_time.isoformat(),
+            "last_accessed_at": new_time,
+        },
+    )
+    retriever.add_documents([new_doc], ids=["00000000-0000-0000-0000-000000000002"], current_time=new_time)
+
+    results = db.search("database optimization")
+    assert len(results) >= 2
+    ids = [r["id"] for r in results]
+    assert ids[0] == "00000000-0000-0000-0000-000000000002"

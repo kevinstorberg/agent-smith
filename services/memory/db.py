@@ -1,4 +1,4 @@
-"""LanceDB + LangChain interface for agent long-term memory with time-weighted retrieval."""
+"""Agent long-term memory with time-weighted retrieval and pluggable backends."""
 
 from __future__ import annotations
 
@@ -6,19 +6,16 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
-import lancedb
-from langchain_community.vectorstores import LanceDB as LanceDBVectorStore
 from langchain_core.documents import Document
 from langchain_classic.retrievers.time_weighted_retriever import (
     TimeWeightedVectorStoreRetriever,
 )
 from langchain_huggingface import HuggingFaceEmbeddings
 
-STORE_PATH = Path(__file__).parent.parent.parent / "memory_store"
+from services.memory.backends import get_backend
+
 MODEL_NAME = "all-MiniLM-L6-v2"
-TABLE_NAME = "memories"
 DECAY_RATE = float(os.environ.get("MEMORY_DECAY_RATE", "0.01"))
 
 _embeddings: HuggingFaceEmbeddings | None = None
@@ -30,20 +27,6 @@ def _get_embeddings() -> HuggingFaceEmbeddings:
     if _embeddings is None:
         _embeddings = HuggingFaceEmbeddings(model_name=MODEL_NAME)
     return _embeddings
-
-
-def _db() -> lancedb.DBConnection:
-    STORE_PATH.mkdir(parents=True, exist_ok=True)
-    return lancedb.connect(str(STORE_PATH))
-
-
-def _get_vectorstore() -> LanceDBVectorStore:
-    return LanceDBVectorStore(
-        connection=_db(),
-        embedding=_get_embeddings(),
-        table_name=TABLE_NAME,
-        mode="append",
-    )
 
 
 def _now() -> str:
@@ -69,7 +52,8 @@ def _get_retriever() -> TimeWeightedVectorStoreRetriever:
     if _retriever is not None:
         return _retriever
 
-    vectorstore = _get_vectorstore()
+    backend = get_backend()
+    vectorstore = backend.get_vectorstore(_get_embeddings())
 
     _retriever = TimeWeightedVectorStoreRetriever(
         vectorstore=vectorstore,
@@ -78,49 +62,40 @@ def _get_retriever() -> TimeWeightedVectorStoreRetriever:
         search_kwargs={"k": 50},
     )
 
-    # Load existing memories into memory_stream for time-weighting
-    db = _db()
-    if TABLE_NAME in db.table_names():
-        tbl = db.open_table(TABLE_NAME)
-        if tbl.count_rows() > 0:
-            rows = tbl.search().limit(10000).to_list()
-            for i, row in enumerate(rows):
-                meta = row.get("metadata", {})
-                doc = Document(
-                    page_content=row.get("text", ""),
-                    metadata={
-                        **meta,
-                        "last_accessed_at": _parse_datetime(meta.get("last_accessed_at")),
-                        "buffer_idx": i,
-                    },
-                )
-                _retriever.memory_stream.append(doc)
+    rows = backend.load_all()
+    for i, row in enumerate(rows):
+        meta = row.get("metadata", {})
+        doc = Document(
+            page_content=row.get("text", ""),
+            metadata={
+                **meta,
+                "last_accessed_at": _parse_datetime(meta.get("last_accessed_at")),
+                "buffer_idx": i,
+            },
+        )
+        _retriever.memory_stream.append(doc)
 
     return _retriever
 
 
-def _meta_to_row(doc: Document) -> dict:
-    meta = doc.metadata
+def _to_row(*, content: str, id: str, meta: dict) -> dict:
     return {
-        "id": meta.get("id", ""),
-        "content": doc.page_content,
+        "id": id,
+        "content": content,
         "repo": meta.get("repo") or None,
         "tags": json.loads(meta.get("tags") or "[]"),
         "created_at": meta.get("created_at"),
         "updated_at": meta.get("updated_at"),
     }
+
+
+def _doc_to_row(doc: Document) -> dict:
+    return _to_row(content=doc.page_content, id=doc.metadata.get("id", ""), meta=doc.metadata)
 
 
 def _raw_to_row(record: dict) -> dict:
     meta = record.get("metadata", {})
-    return {
-        "id": record.get("id", meta.get("id", "")),
-        "content": record.get("text", ""),
-        "repo": meta.get("repo") or None,
-        "tags": json.loads(meta.get("tags") or "[]"),
-        "created_at": meta.get("created_at"),
-        "updated_at": meta.get("updated_at"),
-    }
+    return _to_row(content=record.get("text", ""), id=record.get("id", meta.get("id", "")), meta=meta)
 
 
 # ---------------------------------------------------------------------------
@@ -129,9 +104,8 @@ def _raw_to_row(record: dict) -> dict:
 
 
 def init() -> None:
-    """Create the LanceDB store if it doesn't exist yet."""
-    STORE_PATH.mkdir(parents=True, exist_ok=True)
-    _db()
+    """Initialize the memory store."""
+    get_backend().init()
 
 
 def add(content: str, repo: str | None = None, tags: list[str] | None = None) -> str:
@@ -173,24 +147,16 @@ def search(query: str, repo: str | None = None, limit: int = 10) -> list[dict]:
     for doc in docs:
         if repo and doc.metadata.get("repo") != repo:
             continue
-        rows.append(_meta_to_row(doc))
+        rows.append(_doc_to_row(doc))
 
     return rows[:limit]
 
 
 def list_memories(repo: str | None = None, limit: int = 20) -> list[dict]:
     """Return recent memories, newest first, optionally filtered by repo."""
-    db = _db()
-    if TABLE_NAME not in db.table_names():
-        return []
-    tbl = db.open_table(TABLE_NAME)
-    if tbl.count_rows() == 0:
-        return []
-
-    rows = tbl.search().limit(limit).to_list()
+    backend = get_backend()
+    rows = backend.list_rows(repo=repo, limit=limit)
     result = [_raw_to_row(r) for r in rows]
-    if repo:
-        result = [r for r in result if r.get("repo") == repo]
     result.sort(key=lambda r: r["created_at"] or "", reverse=True)
     return result[:limit]
 
@@ -198,24 +164,14 @@ def list_memories(repo: str | None = None, limit: int = 20) -> list[dict]:
 def get(id: str) -> dict | None:
     """Fetch a single memory by ID. Returns None if not found."""
     assert id and id.strip(), "ID must not be empty."
-    db = _db()
-    if TABLE_NAME not in db.table_names():
-        return None
-    tbl = db.open_table(TABLE_NAME)
-    results = tbl.search().where(f"id = '{id}'", prefilter=True).limit(1).to_list()
-    return _raw_to_row(results[0]) if results else None
+    row = get_backend().get_row(id)
+    return _raw_to_row(row) if row else None
 
 
 def delete(id: str) -> None:
     """Delete a memory by ID. Raises if not found."""
     assert id and id.strip(), "ID must not be empty."
-    db = _db()
-    if TABLE_NAME not in db.table_names():
-        raise KeyError(f"Memory not found: {id}")
-    tbl = db.open_table(TABLE_NAME)
-    if not tbl.search().where(f"id = '{id}'", prefilter=True).limit(1).to_list():
-        raise KeyError(f"Memory not found: {id}")
-    tbl.delete(f"id = '{id}'")
+    get_backend().delete_row(id)
 
     global _retriever
     if _retriever:

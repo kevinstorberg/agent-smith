@@ -6,4 +6,7 @@ langchain>=0.3.0
 langchain-classic>=0.3.0
 langchain-community>=0.3.0
 langchain-huggingface>=0.1.0
+langchain-pinecone>=0.2.0
+pinecone>=7.0.0
+sentence-transformers>=3.0.0
 pytest>=8.0

@@ -3,6 +3,7 @@
 __pycache__/
 memory_store/
 memory.pid
+memory.log
 harness/mcp/local/
 harness/rules/local/
 harness/skills/local/

@@ -77,7 +77,9 @@ The database persists across start/stop cycles.
 ./memory.py status                     # check if server is running
 ```
 
-Data is stored in `memory_store/` (gitignored). The server runs on `localhost:7367`.
+Default backend is LanceDB (local, stored in `memory_store/`). Set `MEMORY_BACKEND=pinecone`
+in `.env` with a `PINECONE_API_KEY` to use Pinecone cloud instead. The server runs on
+`localhost:7367`.
 
 ## Tests
 
@@ -97,7 +99,6 @@ Slack_ENABLED=false
 ```
 
 ## Planned Features
-- Remotely configurable memory storage for sharing across teams and devices
 - Additional agent model support (e.g. Mistral Code)
 - Repo/project scoped rules, skills, and tooling
 - Conversion into an open source library
