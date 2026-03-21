@@ -62,9 +62,8 @@ def call_script(
     type_config: dict,
     dry_run: bool,
 ) -> None:
-    # Ensure repo root is on sys.path so scripts can import scripts.shared.*
-    if str(repo_root) not in sys.path:
-        sys.path.insert(0, str(repo_root))
+    from scripts.shared.paths import ensure_importable
+    ensure_importable()
 
     spec = importlib.util.spec_from_file_location(
         f"scripts.{agent}.{type_name}", script_path
@@ -97,9 +96,8 @@ def main() -> int:
 
     repo_root = find_repo_root(args.harness_dir)
 
-    # Ensure repo root is on sys.path early so shared modules are importable.
-    if str(repo_root) not in sys.path:
-        sys.path.insert(0, str(repo_root))
+    from scripts.shared.paths import ensure_importable
+    ensure_importable()
 
     from scripts.shared.env import load_dotenv
     load_dotenv(repo_root)

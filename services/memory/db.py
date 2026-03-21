@@ -17,6 +17,7 @@ from services.memory.backends import get_backend
 
 MODEL_NAME = "all-MiniLM-L6-v2"
 DECAY_RATE = float(os.environ.get("MEMORY_DECAY_RATE", "0.01"))
+DEFAULT_LIMIT = int(os.environ.get("MEMORY_DEFAULT_LIMIT", "20"))
 
 _embeddings: HuggingFaceEmbeddings | None = None
 _retriever: TimeWeightedVectorStoreRetriever | None = None
@@ -98,13 +99,8 @@ def _raw_to_row(record: dict) -> dict:
     return _to_row(content=record.get("text", ""), id=record.get("id", meta.get("id", "")), meta=meta)
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
 
 def init() -> None:
-    """Initialize the memory store."""
     get_backend().init()
 
 
@@ -132,7 +128,7 @@ def add(content: str, repo: str | None = None, tags: list[str] | None = None) ->
     return id
 
 
-def search(query: str, repo: str | None = None, limit: int = 10) -> list[dict]:
+def search(query: str, repo: str | None = None, limit: int = DEFAULT_LIMIT) -> list[dict]:
     """Time-weighted semantic search. Returns ranked list of memories."""
     assert query and query.strip(), "Search query must not be empty."
     retriever = _get_retriever()
@@ -152,7 +148,7 @@ def search(query: str, repo: str | None = None, limit: int = 10) -> list[dict]:
     return rows[:limit]
 
 
-def list_memories(repo: str | None = None, limit: int = 20) -> list[dict]:
+def list_memories(repo: str | None = None, limit: int = DEFAULT_LIMIT) -> list[dict]:
     """Return recent memories, newest first, optionally filtered by repo."""
     backend = get_backend()
     rows = backend.list_rows(repo=repo, limit=limit)

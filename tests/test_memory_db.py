@@ -1,5 +1,3 @@
-"""Integration tests for services/memory/db.py."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -29,7 +27,7 @@ def test_init_creates_store():
 
 def test_add_returns_uuid():
     id = db.add("test memory", repo="myrepo", tags=["test"])
-    assert len(id) == 36  # UUID format
+    assert len(id) == 36
 
 
 def test_list_memories_returns_added():

@@ -1,12 +1,14 @@
-"""Shared MCP server collection utility."""
+"""Shared MCP server collection and sync utilities."""
 
 from __future__ import annotations
 
 import json
 import os
 from pathlib import Path
+from typing import Callable
 
 from scripts.shared.env import expand_env
+from scripts.shared.fs import atomic_write
 
 
 def collect_mcp_servers(sources: list[str], harness_root: Path) -> dict[str, dict]:
@@ -28,3 +30,25 @@ def collect_mcp_servers(sources: list[str], harness_root: Path) -> dict[str, dic
         name: srv for name, srv in servers.items()
         if os.environ.get(f"{name}_ENABLED", "").lower() != "false"
     }
+
+
+def sync_mcp_to_file(
+    harness_root: Path,
+    config: dict,
+    dry_run: bool,
+    read_file: Callable[[Path], dict],
+    write_file: Callable[[Path, dict], tuple[bool, str]],
+    transform_entry: Callable[[dict], dict],
+    dest_key: str,
+) -> None:
+    """Shared MCP sync logic. Each agent provides its own transform and serializer."""
+    for target in config.get("targets", []):
+        dest = Path(target["path"]).expanduser()
+        servers = collect_mcp_servers(target.get("merge", []), harness_root)
+        if dry_run:
+            print(f"  would sync {len(servers)} server(s) -> {dest}")
+            continue
+        data = read_file(dest) if dest.exists() else {}
+        data[dest_key] = {name: transform_entry(srv) for name, srv in servers.items()}
+        _, msg = write_file(dest, data)
+        print(f"  {msg}")

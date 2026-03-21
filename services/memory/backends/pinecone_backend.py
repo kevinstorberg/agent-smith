@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import os
-import re
 import time
 
 from langchain_core.vectorstores import VectorStore
 from langchain_pinecone import PineconeVectorStore
 from pinecone import Pinecone, ServerlessSpec
 
+from scripts.shared.validation import validate_memory_id
+
 INDEX_NAME = os.environ.get("PINECONE_INDEX", "agent-smith-memories")
 CLOUD = os.environ.get("PINECONE_CLOUD", "aws")
 REGION = os.environ.get("PINECONE_REGION", "us-east-1")
 DIMENSION = 384  # all-MiniLM-L6-v2
-_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
 
 _pc: Pinecone | None = None
 _index = None
@@ -84,13 +84,8 @@ def list_rows(repo: str | None = None, limit: int = 20) -> list[dict]:
     return rows[:limit]
 
 
-def _validate_id(id: str) -> None:
-    if not _UUID_RE.match(id):
-        raise ValueError(f"Invalid memory ID format: {id}")
-
-
 def get_row(id: str) -> dict | None:
-    _validate_id(id)
+    validate_memory_id(id)
     result = _get_index().fetch(ids=[id])
     vectors = result.get("vectors", {})
     if id not in vectors:
@@ -102,7 +97,7 @@ def get_row(id: str) -> dict | None:
 
 
 def delete_row(id: str) -> None:
-    _validate_id(id)
+    validate_memory_id(id)
     result = _get_index().fetch(ids=[id])
     if id not in result.get("vectors", {}):
         raise KeyError(f"Memory not found: {id}")

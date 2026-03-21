@@ -1,18 +1,4 @@
 #!/usr/bin/env -S .venv/bin/python3
-"""
-memory.py — CLI for managing agent long-term memory.
-
-Usage:
-  ./memory.py init                                # one-time: create the memory store
-  ./memory.py start [--daemon] [--port N]         # start MCP server + grant agents access
-  ./memory.py stop                                # stop server + revoke agent access
-  ./memory.py status                              # print server running/stopped
-  ./memory.py list [--repo REPO] [--limit N]
-  ./memory.py search QUERY [--repo REPO] [--limit N]
-  ./memory.py add CONTENT [--repo REPO] [--tags t1 t2 ...]
-  ./memory.py delete ID
-  ./memory.py show ID
-"""
 
 from __future__ import annotations
 
@@ -31,9 +17,6 @@ MCP_LOCAL_DIR = REPO_ROOT / "harness" / "mcp" / "local"
 DEFAULT_PORT = 7367
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _db():
@@ -90,9 +73,6 @@ def _run_sync() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Commands
-# ---------------------------------------------------------------------------
 
 
 def cmd_init(args: argparse.Namespace) -> None:
@@ -206,9 +186,6 @@ def cmd_show(args: argparse.Namespace) -> None:
     _print_memory(mem, verbose=True)
 
 
-# ---------------------------------------------------------------------------
-# Argument parser
-# ---------------------------------------------------------------------------
 
 
 def build_parser() -> argparse.ArgumentParser:

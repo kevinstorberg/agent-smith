@@ -1,12 +1,9 @@
-"""Pluggable vector store backends for agent memory."""
-
 from __future__ import annotations
 
 import os
 
 
 def get_backend():
-    """Return the backend module selected by MEMORY_BACKEND env var."""
     name = os.environ.get("MEMORY_BACKEND", "lancedb")
 
     if name == "lancedb":
