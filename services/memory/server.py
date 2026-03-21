@@ -6,7 +6,6 @@ import argparse
 import sys
 from pathlib import Path
 
-# Ensure repo root is on sys.path so services.memory.db imports cleanly.
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from mcp.server.fastmcp import FastMCP

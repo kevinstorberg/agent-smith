@@ -3,23 +3,18 @@
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
 
 import lancedb
 from langchain_community.vectorstores import LanceDB as LanceDBVectorStore
+
+from scripts.shared.validation import validate_memory_id
 
 STORE_PATH = Path(os.environ.get(
     "MEMORY_STORE_PATH",
     str(Path(__file__).parent.parent.parent.parent / "memory_store"),
 ))
 TABLE_NAME = "memories"
-_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
-
-
-def _validate_id(id: str) -> None:
-    if not _UUID_RE.match(id):
-        raise ValueError(f"Invalid memory ID format: {id}")
 
 
 def _db() -> lancedb.DBConnection:
@@ -60,14 +55,14 @@ def list_rows(repo: str | None = None, limit: int = 20) -> list[dict]:
     tbl = _get_table()
     if not tbl or tbl.count_rows() == 0:
         return []
-    rows = tbl.search().limit(limit).to_list()
+    rows = tbl.search().limit(limit * 5).to_list()
     if repo:
         rows = [r for r in rows if r.get("metadata", {}).get("repo") == repo]
-    return rows
+    return rows[:limit]
 
 
 def get_row(id: str) -> dict | None:
-    _validate_id(id)
+    validate_memory_id(id)
     tbl = _get_table()
     if not tbl:
         return None
@@ -76,7 +71,7 @@ def get_row(id: str) -> dict | None:
 
 
 def delete_row(id: str) -> None:
-    _validate_id(id)
+    validate_memory_id(id)
     tbl = _get_table()
     if not tbl:
         raise KeyError(f"Memory not found: {id}")

@@ -128,3 +128,25 @@ def sync_skill_dirs(skills: dict[str, Path], dest_dir: Path, dry_run: bool) -> N
         if stale.is_dir() and stale.name not in skills:
             shutil.rmtree(stale)
             print(f"  removed:   {stale}")
+
+
+def sync_skills_from_config(harness_root: Path, config: dict, dry_run: bool) -> None:
+    """Shared skill sync logic used by all agent scripts."""
+    for target in config.get("targets", []):
+        dest_dir = Path(target["path"]).expanduser()
+        skills = collect_skill_dirs(target.get("copy", []), harness_root)
+        sync_skill_dirs(skills, dest_dir, dry_run)
+
+
+def compose_rules_to_file(harness_root: Path, config: dict, dry_run: bool) -> None:
+    """Shared rules compose logic used by Codex and Gemini (Claude has custom behavior)."""
+    for target in config.get("targets", []):
+        path = Path(target["path"]).expanduser()
+        if "compose" in target:
+            files = collect_md_files(target["compose"], harness_root)
+            content = compose_parts(files)
+            if dry_run:
+                print(f"  would compose {len(files)} file(s) -> {path}")
+            else:
+                _, msg = atomic_write(path, content)
+                print(f"  {msg}")
