@@ -131,7 +131,6 @@ def sync_skill_dirs(skills: dict[str, Path], dest_dir: Path, dry_run: bool) -> N
 
 
 def sync_skills_from_config(harness_root: Path, config: dict, dry_run: bool) -> None:
-    """Shared skill sync logic used by all agent scripts."""
     for target in config.get("targets", []):
         dest_dir = Path(target["path"]).expanduser()
         skills = collect_skill_dirs(target.get("copy", []), harness_root)

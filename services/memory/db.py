@@ -100,7 +100,6 @@ def _raw_to_row(record: dict) -> dict:
 
 
 def init() -> None:
-    """Initialize the memory store."""
     get_backend().init()
 
 
