@@ -35,7 +35,7 @@ def memory_add(content: str, repo: str = "", tags: list[str] | None = None) -> s
 
 
 @mcp.tool()
-def memory_search(query: str, repo: str = "", limit: int = 10) -> list[dict]:
+def memory_search(query: str, repo: str = "", limit: int = db.DEFAULT_LIMIT) -> list[dict]:
     """
     Semantically search memories using vector similarity.
 
@@ -52,7 +52,7 @@ def memory_search(query: str, repo: str = "", limit: int = 10) -> list[dict]:
 
 
 @mcp.tool()
-def memory_list(repo: str = "", limit: int = 20) -> list[dict]:
+def memory_list(repo: str = "", limit: int = db.DEFAULT_LIMIT) -> list[dict]:
     """
     List recent memories, newest first.
 
