@@ -98,10 +98,6 @@ def _raw_to_row(record: dict) -> dict:
     return _to_row(content=record.get("text", ""), id=record.get("id", meta.get("id", "")), meta=meta)
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
 
 def init() -> None:
     """Initialize the memory store."""

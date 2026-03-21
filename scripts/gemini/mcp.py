@@ -1,5 +1,3 @@
-"""Sync MCP servers to Gemini: merge mcpServers key into ~/.gemini/settings.json."""
-
 from __future__ import annotations
 
 import json

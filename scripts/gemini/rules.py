@@ -1,5 +1,3 @@
-"""Sync rules to Gemini: compose into ~/.gemini/GEMINI.md."""
-
 from __future__ import annotations
 from pathlib import Path
 from scripts.shared.fs import compose_rules_to_file

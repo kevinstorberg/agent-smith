@@ -1,5 +1,3 @@
-"""Sync MCP servers to Codex: merge mcp_servers table into ~/.codex/config.toml."""
-
 from __future__ import annotations
 
 import tomllib

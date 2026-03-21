@@ -1,5 +1,3 @@
-"""Sync skills to Gemini: copy skill directories -> ~/.gemini/skills/."""
-
 from __future__ import annotations
 from pathlib import Path
 from scripts.shared.fs import sync_skills_from_config

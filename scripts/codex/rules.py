@@ -1,5 +1,3 @@
-"""Sync rules to Codex: compose into ~/.codex/AGENTS.md."""
-
 from __future__ import annotations
 from pathlib import Path
 from scripts.shared.fs import compose_rules_to_file

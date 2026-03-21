@@ -1,5 +1,3 @@
-"""Sync skills to Codex: copy skill directories -> ~/.codex/skills/."""
-
 from __future__ import annotations
 from pathlib import Path
 from scripts.shared.fs import sync_skills_from_config

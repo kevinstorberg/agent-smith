@@ -1,5 +1,3 @@
-"""Tests for scripts/shared/fs.py."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -85,7 +83,6 @@ def test_sync_skill_dirs_copies_and_prunes(harness_dir: Path, tmp_path: Path):
     assert (dest / "commit" / "SKILL.md").exists()
     assert (dest / "pr" / "SKILL.md").exists()
 
-    # Remove "pr" from source and re-sync — should prune
     skills_without_pr = {k: v for k, v in skills.items() if k != "pr"}
     sync_skill_dirs(skills_without_pr, dest, dry_run=False)
 

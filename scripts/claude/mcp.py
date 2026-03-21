@@ -1,5 +1,3 @@
-"""Sync MCP servers to Claude: merge mcpServers key into ~/.claude.json."""
-
 from __future__ import annotations
 
 import json
