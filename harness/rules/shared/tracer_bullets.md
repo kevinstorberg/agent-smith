@@ -7,9 +7,9 @@
         * **Assumption being tested:** What are we trying to prove?
         * **Simplest "message"/observable output:** What confirms or refutes it?
         * **User-run verification steps:** Exact commands and expected results.
-    2. **Implement:** Write code *only up to the next bullet* using the real structure you plan to keep. Stub/fake anything missing so the slice still runs end-to-end (input → code → data → output).
-    3. **Stop & Verify:** Halt execution. Ask the user to run the agreed verification steps and report the results back to you.
-    4. **Adjust:** Based on the user's feedback, adjust your aim, refine the code, and proceed to the next bullet.
+    2. **Implement incrementally:** For each bullet, implement *only up to that bullet* using the real structure you plan to keep. Stub or fake anything beyond the current bullet so the slice runs end-to-end (input → code → data → output). When planning, describe the specific scope, files, and stubs each bullet will produce.
+    3. **Stop & Verify:** After each bullet, stop and ask the user to run the agreed verification steps before proceeding. Do not begin the next bullet until the user confirms results. When planning, specify the exact verification checkpoint and what must pass before the next bullet begins.
+    4. **Adjust:** After verification, adjust your approach based on what you learned before proceeding to the next bullet. When planning, describe what signals would trigger a change in direction and what alternatives exist.
 * **Example (plan excerpt for a real-time webhook integration with Stripe):**
     > No architecture or module design happens until the bullets below are proposed and the
     > user agrees to proceed.

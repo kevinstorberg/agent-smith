@@ -3,7 +3,7 @@
 * **The Rule:** Every piece of knowledge must have a single, unambiguous, authoritative representation within a system.
 * **Your Action:** Never duplicate logic; abstract repeated patterns into reusable modules.
 * **Your Process:**
-    1. Before writing new code, search the existing codebase (if one exists) and well-maintained open source solutions for an implementation that solves the same problem.
+    1. Before writing new code, search the existing codebase (if one exists) and well-maintained open source projects for an existing implementation of the same functionality that could be reused, extended, or adapted. This means searching for solutions to the *problem*, not just libraries to build with.
     2. If one exists, extend or reuse it — never duplicate it.
     3. When similar logic appears in two or more places, abstract it before adding a third instance.
     4. Do not generate boilerplate when a clean abstraction already exists or can be made.
@@ -39,3 +39,16 @@
     > prevention. The search method delegates to it — no hand-rolled SQL string
     > concatenation, no duplicate parameter binding logic. The migration for the GIN index
     > on the `tsvector` column uses Alembic's `op.create_index` rather than raw DDL.
+* **Example (greenfield — searching before building from scratch):**
+    > **Step 1 — Search for existing implementations:**
+    > No existing codebase. Before building a CLI todo app from scratch, searched PyPI and
+    > GitHub for existing Python todo CLI implementations: `todocli` (last updated 2019,
+    > abandoned), `todo.txt-cli` (shell-based, not a Python library), `tasklib` (requires
+    > Taskwarrior install, heavy dependency for a simple app). None are suitable to reuse
+    > or extend. Decision: build from stdlib, but adopt the `todo.txt` line format as a
+    > storage convention since it is a well-documented community standard.
+    > **Step 2:** N/A — no existing implementation to extend.
+    > **Step 3:** `complete` and `delete` both need find-by-id + fail-if-missing. Extract
+    > `_find_todo(todos, id)` helper before the second call site exists.
+    > **Step 4:** `argparse` handles subcommand routing and type coercion. `json` module
+    > handles serialization. No hand-rolled parsing or formatting boilerplate.

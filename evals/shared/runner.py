@@ -37,7 +37,7 @@ def run_agent(model: str, prompt: str) -> str:
             model=model,
             system=system,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=4096,
+            max_tokens=16384,
         ) as stream:
             return _collect_stream(stream.text_stream)
 
@@ -50,7 +50,7 @@ def run_agent(model: str, prompt: str) -> str:
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=4096,
+            max_tokens=16384,
             stream=True,
         )
         return _collect_stream(
