@@ -1,5 +1,3 @@
-"""Shared filesystem utilities for sync scripts."""
-
 from __future__ import annotations
 
 import os
@@ -11,11 +9,6 @@ FOOTER_MARKER = "<!-- footer -->"
 
 
 def collect_md_files(sources: list[str], harness_root: Path) -> list[Path]:
-    """
-    Gather *.md files from a list of source paths (files or directories).
-    Files are included directly; directories yield their *.md children, sorted lexicographically.
-    Skips hidden files (dot-prefixed).
-    """
     files: list[Path] = []
     for source in sources:
         path = (harness_root / source).expanduser().resolve()
@@ -89,10 +82,6 @@ def atomic_write(path: Path | str, content: str) -> tuple[bool, str]:
 
 
 def collect_skill_dirs(sources: list[str], harness_root: Path) -> dict[str, Path]:
-    """
-    Gather skill directories (dirs containing SKILL.md) from source paths.
-    Returns {skill_name: dir_path}; later sources override earlier ones.
-    """
     skills: dict[str, Path] = {}
     for source in sources:
         path = (harness_root / source).expanduser().resolve()
@@ -104,9 +93,6 @@ def collect_skill_dirs(sources: list[str], harness_root: Path) -> dict[str, Path
 
 
 def sync_skill_dirs(skills: dict[str, Path], dest_dir: Path, dry_run: bool) -> None:
-    """
-    Mirror skill directories into dest_dir; prune stale skills and files.
-    """
     if dry_run:
         print(f"  would sync {len(skills)} skill(s) → {dest_dir}")
         return

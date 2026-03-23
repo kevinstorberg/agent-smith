@@ -15,30 +15,34 @@ def _load_rules_context() -> str:
     return "\n\n---\n\n".join(rules)
 
 
+def _collect_stream(chunks) -> str:
+    full = []
+    for text in chunks:
+        if text:
+            sys.stdout.write(text)
+            sys.stdout.flush()
+            full.append(text)
+    print()
+    return "".join(full)
+
+
 def run_agent(model: str, prompt: str) -> str:
     system = _load_rules_context()
 
     if "claude" in model:
         import anthropic
         client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-        full = []
         with client.messages.stream(
             model=model,
             system=system,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=4096,
         ) as stream:
-            for text in stream.text_stream:
-                sys.stdout.write(text)
-                sys.stdout.flush()
-                full.append(text)
-        print()
-        return "".join(full)
+            return _collect_stream(stream.text_stream)
 
     if "gpt" in model or "o4" in model or "o3" in model:
         import openai
         client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-        full = []
         stream = client.chat.completions.create(
             model=model,
             messages=[
@@ -48,27 +52,16 @@ def run_agent(model: str, prompt: str) -> str:
             max_tokens=4096,
             stream=True,
         )
-        for chunk in stream:
-            delta = chunk.choices[0].delta.content
-            if delta:
-                sys.stdout.write(delta)
-                sys.stdout.flush()
-                full.append(delta)
-        print()
-        return "".join(full)
+        return _collect_stream(
+            chunk.choices[0].delta.content for chunk in stream
+        )
 
     if "gemini" in model:
         import google.generativeai as genai
         genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
         gmodel = genai.GenerativeModel(model, system_instruction=system)
-        full = []
-        for chunk in gmodel.generate_content(prompt, stream=True):
-            text = chunk.text
-            if text:
-                sys.stdout.write(text)
-                sys.stdout.flush()
-                full.append(text)
-        print()
-        return "".join(full)
+        return _collect_stream(
+            chunk.text for chunk in gmodel.generate_content(prompt, stream=True)
+        )
 
     raise ValueError(f"Unknown model: {model}")

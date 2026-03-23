@@ -1,13 +1,4 @@
 #!/usr/bin/env -S .venv/bin/python3
-"""
-sync.py
-
-Thin orchestrator: reads harness.yaml, discovers scripts/<agent>/<type>.py,
-and calls each script's main(harness_root, type_config, dry_run).
-
-Adding a new agent or sync type (skills, tools) requires no changes here —
-just add the script and the corresponding section in harness.yaml.
-"""
 
 from __future__ import annotations
 
@@ -41,7 +32,6 @@ def load_harness(repo_root: Path) -> dict:
 
 
 def discover_scripts(repo_root: Path, agent_names: list[str]) -> list[tuple[str, str, Path]]:
-    """Return (agent, type, path) for every scripts/<agent>/<type>.py that exists."""
     scripts_dir = repo_root / "scripts"
     found = []
     for agent in agent_names:

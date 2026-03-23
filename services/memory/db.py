@@ -105,7 +105,6 @@ def init() -> None:
 
 
 def add(content: str, repo: str | None = None, tags: list[str] | None = None) -> str:
-    """Embed and store a memory. Returns the new memory ID."""
     assert content and content.strip(), "Memory content must not be empty."
     id = str(uuid.uuid4())
     now_str = _now()
@@ -129,7 +128,6 @@ def add(content: str, repo: str | None = None, tags: list[str] | None = None) ->
 
 
 def search(query: str, repo: str | None = None, limit: int = DEFAULT_LIMIT) -> list[dict]:
-    """Time-weighted semantic search. Returns ranked list of memories."""
     assert query and query.strip(), "Search query must not be empty."
     retriever = _get_retriever()
 
@@ -149,7 +147,6 @@ def search(query: str, repo: str | None = None, limit: int = DEFAULT_LIMIT) -> l
 
 
 def list_memories(repo: str | None = None, limit: int = DEFAULT_LIMIT) -> list[dict]:
-    """Return recent memories, newest first, optionally filtered by repo."""
     backend = get_backend()
     rows = backend.list_rows(repo=repo, limit=limit)
     result = [_raw_to_row(r) for r in rows]
@@ -158,14 +155,12 @@ def list_memories(repo: str | None = None, limit: int = DEFAULT_LIMIT) -> list[d
 
 
 def get(id: str) -> dict | None:
-    """Fetch a single memory by ID. Returns None if not found."""
     assert id and id.strip(), "ID must not be empty."
     row = get_backend().get_row(id)
     return _raw_to_row(row) if row else None
 
 
 def delete(id: str) -> None:
-    """Delete a memory by ID. Raises if not found."""
     assert id and id.strip(), "ID must not be empty."
     get_backend().delete_row(id)
 
@@ -185,7 +180,6 @@ def update(
     repo: str | None = None,
     tags: list[str] | None = None,
 ) -> None:
-    """Patch an existing memory. Re-embeds if content changes."""
     assert id and id.strip(), "ID must not be empty."
     assert any(v is not None for v in (content, repo, tags)), (
         "Provide at least one of: content, repo, tags."

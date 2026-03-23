@@ -51,7 +51,6 @@ def _running_pid() -> int | None:
 
 
 def _write_harness_files(port: int) -> None:
-    """Create the local MCP config that grants agents access to the memory server."""
     url = f"http://localhost:{port}/mcp/"
 
     MCP_LOCAL_DIR.mkdir(parents=True, exist_ok=True)
@@ -61,7 +60,6 @@ def _write_harness_files(port: int) -> None:
 
 
 def _delete_harness_files() -> None:
-    """Remove the local MCP config to revoke agent access."""
     (MCP_LOCAL_DIR / "memory.json").unlink(missing_ok=True)
 
 
