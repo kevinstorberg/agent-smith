@@ -11,7 +11,7 @@ from evals.shared.judge import evaluate
 from evals.shared.results import save_eval_result
 
 REPO_ROOT = Path(__file__).parent.parent
-SCENARIOS_PATH = Path(__file__).parent / "config" / "scenarios.yaml"
+SCENARIOS_PATH = Path(__file__).parent / "config" / "rules" / "scenarios.yaml"
 RULES_DIR = REPO_ROOT / "harness" / "rules" / "shared"
 EXCLUDE_RULES = {"memory"}
 
@@ -42,7 +42,7 @@ def test_rules_compliance(scenario, eval_config, results_dir):
         all_results.append(result)
 
     save_eval_result(
-        results_dir, scenario["name"], model,
+        results_dir, "rules", scenario["name"], model,
         eval_config["judge_model"], eval_config["threshold"],
         output, all_results,
     )

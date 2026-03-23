@@ -1,0 +1,9 @@
+prompt: |
+  Evaluate compliance with this rule.
+  The output is a plan, not code. Evaluate intent and specificity, not execution.
+  For steps conditional on context (e.g., "if a codebase exists"), score based on
+  whether the plan accounts for the condition, not whether the condition was met.
+
+  Score 9-10: Explicitly addresses every process step with specific, concrete details.
+  Score 5-7: Addresses most steps but some are vague or described in general terms.
+  Score 0-4: Ignores or barely mentions the rule's requirements.

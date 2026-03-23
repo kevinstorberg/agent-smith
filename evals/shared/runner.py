@@ -4,15 +4,16 @@ import os
 import sys
 from pathlib import Path
 
+from scripts.shared.fs import collect_md_files, compose_parts
+
 REPO_ROOT = Path(__file__).parent.parent.parent
-RULES_DIR = REPO_ROOT / "harness" / "rules" / "shared"
+HARNESS_ROOT = REPO_ROOT / "harness"
+RULES_SOURCES = ["harness/main.md", "harness/rules/shared/"]
 
 
 def _load_rules_context() -> str:
-    rules = []
-    for f in sorted(RULES_DIR.glob("*.md")):
-        rules.append(f.read_text(encoding="utf-8").strip())
-    return "\n\n---\n\n".join(rules)
+    files = collect_md_files(RULES_SOURCES, REPO_ROOT)
+    return compose_parts(files)
 
 
 def _collect_stream(chunks) -> str:
