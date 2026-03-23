@@ -17,7 +17,8 @@ RULES_DIR = REPO_ROOT / "harness" / "rules" / "shared"
 
 
 def load_scenarios() -> list[dict]:
-    return yaml.safe_load(SCENARIOS_PATH.read_text(encoding="utf-8"))["scenarios"]
+    all_scenarios = yaml.safe_load(SCENARIOS_PATH.read_text(encoding="utf-8"))["scenarios"]
+    return [s for s in all_scenarios if s.get("enabled", True)]
 
 
 def scenario_ids(scenarios):
