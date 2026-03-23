@@ -71,10 +71,9 @@ def test_rule_files_have_examples():
 
 def test_save_result_inserts_into_db():
     from datetime import datetime, timezone
-    from evals.shared.db import init_eval_tables
-    from services.db import get_connection
+    from services.db import get_connection, init_db
 
-    init_eval_tables()
+    init_db()
 
     ts = datetime(2099, 1, 1, tzinfo=timezone.utc)
     test_results = [{"rule": "test_rule", "score": 0.95, "reason": "test"}]

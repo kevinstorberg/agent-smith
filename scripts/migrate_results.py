@@ -13,8 +13,8 @@ if str(REPO_ROOT) not in sys.path:
 from scripts.shared.env import load_dotenv
 load_dotenv(REPO_ROOT)
 
-from evals.shared.db import init_eval_tables, save_result
-from services.db import get_connection
+from evals.shared.db import save_result
+from services.db import get_connection, init_db
 
 RESULTS_DIR = REPO_ROOT / "evals" / "results"
 
@@ -34,7 +34,7 @@ def _parse_filename_keys(filename: str) -> tuple:
 
 
 def migrate():
-    init_eval_tables()
+    init_db()
 
     json_files = sorted(RESULTS_DIR.rglob("*.json"))
     if not json_files:

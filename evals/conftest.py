@@ -24,6 +24,6 @@ def eval_config():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _init_eval_db():
-    from evals.shared.db import init_eval_tables
-    init_eval_tables()
+def _init_db():
+    from services.db import init_db
+    init_db()
