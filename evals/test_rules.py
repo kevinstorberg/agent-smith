@@ -26,7 +26,7 @@ def scenario_ids(scenarios):
 
 
 @pytest.mark.parametrize("scenario", load_scenarios(), ids=scenario_ids(load_scenarios()))
-def test_rules_compliance(scenario, eval_config, results_dir):
+def test_rules_compliance(scenario, eval_config):
     model = eval_config["model"]
     output = run_agent(model, scenario["prompt"])
 
@@ -42,7 +42,7 @@ def test_rules_compliance(scenario, eval_config, results_dir):
         all_results.append(result)
 
     save_eval_result(
-        results_dir, "rules", scenario["name"], model,
+        "rules", scenario["name"], model,
         eval_config["judge_model"], eval_config["threshold"],
         output, all_results,
     )

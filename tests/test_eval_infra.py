@@ -67,3 +67,36 @@ def test_rule_files_have_examples():
             continue
         content = f.read_text(encoding="utf-8")
         assert "* **Example" in content, f"{f.stem} should have an example section"
+
+
+def test_save_result_inserts_into_db():
+    from datetime import datetime, timezone
+    from evals.shared.db import init_eval_tables
+    from services.db import get_connection
+
+    init_eval_tables()
+
+    ts = datetime(2099, 1, 1, tzinfo=timezone.utc)
+    test_results = [{"rule": "test_rule", "score": 0.95, "reason": "test"}]
+
+    from evals.shared.db import save_result
+    run_id = save_result(
+        timestamp=ts,
+        eval_type="test",
+        scenario="test_scenario",
+        test_model="test-model",
+        judge_model="test-judge",
+        threshold=0.8,
+        output="test output",
+        results=test_results,
+    )
+    assert run_id > 0
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT scenario, test_model FROM eval_results WHERE id = %s", (run_id,))
+            row = cur.fetchone()
+            assert row == ("test_scenario", "test-model")
+
+            cur.execute("DELETE FROM eval_results WHERE id = %s", (run_id,))
+

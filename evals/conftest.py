@@ -23,8 +23,7 @@ def eval_config():
     }
 
 
-@pytest.fixture(scope="session")
-def results_dir():
-    d = REPO_ROOT / "evals" / "results"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+@pytest.fixture(scope="session", autouse=True)
+def _init_eval_db():
+    from evals.shared.db import init_eval_tables
+    init_eval_tables()
