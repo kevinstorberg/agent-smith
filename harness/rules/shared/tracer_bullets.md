@@ -63,5 +63,3 @@
     > `stripe trigger payment_intent.succeeded` twice in a row — expect: first call logs
     > `"Handled"`, second call logs `"Duplicate event ... skipped"`. Database shows exactly
     > one row for that event ID.
-    >
-    > Shall I proceed with the first bullet?

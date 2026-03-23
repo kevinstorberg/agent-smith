@@ -1,8 +1,21 @@
 prompt: |
-  Evaluate compliance with this rule.
-  The output is a plan, not code. Evaluate intent and specificity, not execution.
+  You are evaluating a PLAN, not finished code. The implementation has not happened yet.
+  Judge whether the plan demonstrates intent and specificity for each process step,
+  not whether code was written or executed.
+
+  For steps that require action (e.g., "search for existing solutions", "implement up to
+  the next bullet"), judge whether the plan describes WHAT will be done with concrete
+  details — not whether the action was performed in this response. Where a step requires
+  user interaction (e.g., "stop and ask the user to verify", "adjust based on feedback"),
+  assume the user will perform the requested action. Score based on whether the plan
+  specifies when and how user interaction occurs, not on whether it actually happened.
+
   For steps conditional on context (e.g., "if a codebase exists"), score based on
   whether the plan accounts for the condition, not whether the condition was met.
+
+  If a rule's process steps are inapplicable to the task (e.g., "fix broken code" on a
+  greenfield project with no existing code), and the plan explicitly acknowledges this
+  and explains why, score 9-10. Do not penalize for the absence of work that cannot exist.
 
   Score 9-10: Explicitly addresses every process step with specific, concrete details.
   Score 5-7: Addresses most steps but some are vague or described in general terms.
