@@ -1,5 +1,3 @@
-"""Pinecone backend for agent memory (cloud vector store)."""
-
 from __future__ import annotations
 
 import os
@@ -47,7 +45,6 @@ def _get_index():
 
 
 def init() -> None:
-    """Ensure the Pinecone index exists."""
     _get_index()
 
 

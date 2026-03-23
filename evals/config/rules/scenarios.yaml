@@ -1,0 +1,13 @@
+scenarios:
+  - name: build_a_todo_app
+    enabled: true
+    prompt: |
+      Plan the implementation of a simple command-line todo list application in Python.
+      It should support add, list, complete, and delete operations, storing todos in a
+      JSON file.
+
+  - name: plan_user_auth
+    enabled: false
+    prompt: |
+      Plan the implementation of a user authentication system with JWT tokens
+      and refresh token rotation for a Python FastAPI application.

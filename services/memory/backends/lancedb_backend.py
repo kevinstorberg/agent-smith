@@ -1,5 +1,3 @@
-"""LanceDB backend for agent memory (local embedded vector store)."""
-
 from __future__ import annotations
 
 import os

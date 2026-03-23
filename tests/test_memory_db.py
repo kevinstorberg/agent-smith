@@ -91,7 +91,6 @@ def test_search_empty():
 
 
 def test_time_weighting_prefers_recent():
-    """Recent memories should rank higher than old ones when content is identical."""
     from datetime import datetime, timedelta
     from langchain_core.documents import Document
 

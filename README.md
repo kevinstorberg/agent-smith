@@ -8,7 +8,7 @@ One source of truth, synced everywhere.
 ## Setup
 
 ```sh
-python3 -m venv .venv
+python3.13 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
@@ -22,6 +22,7 @@ harness/
   rules/             # behavioral directives (markdown, composed in order)
   skills/            # slash commands (one subdirectory per skill, each with SKILL.md)
   mcp/               # MCP server definitions (one JSON file per server)
+evals/               # LLM-as-judge evaluation framework (DeepEval + G-Eval)
 services/
   memory/            # local vector memory MCP server (LanceDB + sentence-transformers)
 tmp/                 # scratch files and draft plans (gitignored contents)
@@ -86,6 +87,18 @@ in `.env` with a `PINECONE_API_KEY` to use Pinecone cloud instead. The server ru
 ```sh
 .venv/bin/pytest tests/ -v
 ```
+
+## Evals
+
+LLM-as-judge evaluation of rule compliance using DeepEval. Invokes a real CLI agent,
+then scores its output against every rule in `harness/rules/shared/`.
+
+```sh
+.venv/bin/pytest evals/ -v
+```
+
+Configure via `EVAL_MODEL`, `EVAL_JUDGE_MODEL`, and `EVAL_THRESHOLD` in `.env`.
+Results are saved to `evals/results/` (gitignored).
 
 ## Environment
 
