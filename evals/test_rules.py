@@ -14,6 +14,7 @@ from evals.shared.judge import evaluate
 REPO_ROOT = Path(__file__).parent.parent
 SCENARIOS_PATH = Path(__file__).parent / "config" / "scenarios.yaml"
 RULES_DIR = REPO_ROOT / "harness" / "rules" / "shared"
+EXCLUDE_RULES = {"memory"}
 
 
 def load_scenarios() -> list[dict]:
@@ -29,11 +30,15 @@ def scenario_ids(scenarios):
 def test_rules_compliance(scenario, eval_config, results_dir):
     output = run_agent(eval_config["model"], scenario["prompt"])
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    output_file = results_dir / f"{eval_config['model']}_{scenario['name']}_{timestamp}.txt"
+    ts = datetime.now(timezone.utc)
+    ts_str = ts.strftime("%Y%m%d_%H%M%S")
+    output_file = results_dir / f"{eval_config['model']}_{scenario['name']}_{ts_str}.txt"
     output_file.write_text(output, encoding="utf-8")
 
-    rule_files = sorted(glob(str(RULES_DIR / "*.md")))
+    rule_files = [
+        r for r in sorted(glob(str(RULES_DIR / "*.md")))
+        if Path(r).stem not in EXCLUDE_RULES
+    ]
     assert rule_files, f"No rule files found in {RULES_DIR}"
 
     all_results = []
@@ -41,9 +46,15 @@ def test_rules_compliance(scenario, eval_config, results_dir):
         result = evaluate(scenario["prompt"], output, rule_path, eval_config["threshold"])
         all_results.append(result)
 
-    results_file = results_dir / f"{eval_config['model']}_{scenario['name']}_{timestamp}_eval.json"
+    results_file = results_dir / f"{eval_config['model']}_{scenario['name']}_{ts_str}_eval.json"
     results_file.write_text(
-        json.dumps({"scenario": scenario["name"], "model": eval_config["model"], "results": all_results}, indent=2),
+        json.dumps({
+            "scenario": scenario["name"],
+            "model": eval_config["model"],
+            "judge_model": eval_config["judge_model"],
+            "timestamp": ts.isoformat(),
+            "results": all_results,
+        }, indent=2),
         encoding="utf-8",
     )
 

@@ -8,3 +8,4 @@
     3. Assert postconditions where correctness is non-obvious — what must be true on exit.
     4. Fail fast with descriptive, actionable error messages. Never swallow exceptions or allow errors to cascade silently.
     5. Prefer crashing loudly over continuing in a corrupted or undefined state.
+    6. Be specific. Name each boundary and its check; do not describe validation in general terms.

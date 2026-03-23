@@ -8,3 +8,4 @@
     3. Treat test code with the same quality standards as production code — no duplication, no magic values, no unclear assertions.
     4. Use Tracer Bullet tests to verify assumptions early: write the minimal test that confirms an assumption before building on it.
     5. Every bug fixed must have a regression test added so it cannot silently reappear.
+    6. Name each test and what it asserts. "We will add tests" is not a test plan.

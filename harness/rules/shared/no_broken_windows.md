@@ -7,3 +7,4 @@
     2. If a full fix is out of scope for the current task, surface the issue explicitly to the user with a concrete description of the problem.
     3. Never add new code on top of code you know to be wrong without at minimum leaving a comment explaining why it is wrong and what the correct fix would be.
     4. Leave every file you touch in better shape than you found it.
+    5. After completing new work, review it for rough edges and clean them up before finishing.
