@@ -10,3 +10,4 @@ langchain-pinecone>=0.2.0
 pinecone>=7.0.0
 sentence-transformers>=3.0.0
 pytest>=8.0
+deepeval>=2.0.0

@@ -1,0 +1,16 @@
+scenarios:
+  - name: build_a_todo_app
+    prompt: |
+      Plan the implementation of a simple command-line todo list application in Python.
+      It should support add, list, complete, and delete operations, storing todos in a
+      JSON file.
+
+  - name: add_search_to_todo_app
+    prompt: |
+      The todo app from the previous task needs a search feature. Plan how to add
+      fuzzy text search across todo titles and descriptions.
+
+  - name: add_categories_to_todo_app
+    prompt: |
+      Plan how to add category/tag support to the todo app so users can organize
+      and filter todos by category.
