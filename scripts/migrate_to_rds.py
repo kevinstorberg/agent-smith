@@ -70,7 +70,6 @@ def _run(cmd: list[str], description: str) -> None:
 
 
 def main() -> None:
-    # --- Preconditions ---
     assert LOCAL_URL.startswith(("postgresql://", "postgres://")), (
         f"LOCAL_DATABASE_URL must be a postgresql:// URL, got: {LOCAL_URL[:30]}..."
     )
@@ -92,14 +91,12 @@ def main() -> None:
     remote_conn = _connect(REMOTE_URL, "remote")
     remote_conn.close()
 
-    # Run Alembic on remote to ensure schema exists
     print("[3/6] Running Alembic migrations on remote...")
     env = {**os.environ, "DATABASE_URL": REMOTE_URL}
     _run(
         [sys.executable, "-m", "alembic", "upgrade", "head"],
         "alembic upgrade head",
     )
-    # Re-run with the remote URL set
     subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head"],
         cwd=str(REPO_ROOT),
@@ -115,7 +112,6 @@ def main() -> None:
             "If this is intentional, truncate the remote table first."
         )
 
-    # --- Dump & Restore ---
     with tempfile.NamedTemporaryFile(suffix=".pgdump", delete=False) as tmp:
         dump_path = tmp.name
 
@@ -144,10 +140,9 @@ def main() -> None:
         "pg_restore --data-only",
     )
 
-    # Clean up dump file
     Path(dump_path).unlink(missing_ok=True)
 
-    # Reset serial sequence
+    # pg_restore doesn't advance the serial sequence — fix it manually
     remote_conn = _connect(REMOTE_URL, "remote")
     try:
         with remote_conn.cursor() as cur:
@@ -156,7 +151,6 @@ def main() -> None:
     finally:
         remote_conn.close()
 
-    # --- Postconditions ---
     print("[6/6] Verifying migration...")
     migrated_count = _row_count(REMOTE_URL)
     if migrated_count != local_count:
@@ -165,7 +159,6 @@ def main() -> None:
             "Migration may be incomplete — investigate before proceeding."
         )
 
-    # Sample comparison
     local_conn = _connect(LOCAL_URL, "local")
     try:
         with local_conn.cursor() as cur:

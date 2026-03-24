@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def _load_env_file(path: Path) -> None:
-    """Parse a single env file into os.environ. Does not override existing vars."""
+    """Does not override existing vars."""
     if not path.is_file():
         return
     for line in path.read_text(encoding="utf-8").splitlines():

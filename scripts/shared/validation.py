@@ -26,7 +26,6 @@ def require_env(name: str, hint: str = "") -> str:
 
 
 def extract_memory_metadata(row: dict) -> dict:
-    """Extract the standard metadata fields from a LanceDB row for migration."""
     meta = row.get("metadata", {})
     return {
         "repo": meta.get("repo", ""),

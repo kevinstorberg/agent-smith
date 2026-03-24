@@ -7,7 +7,6 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _reset_module():
-    """Re-import connection module with a fresh DATABASE_URL each test."""
     import importlib
     import services.db.connection as mod
     yield
