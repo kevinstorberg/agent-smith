@@ -22,6 +22,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from scripts.shared.paths import bootstrap, REPO_ROOT  # noqa: E402
 bootstrap()
 
+from scripts.shared.validation import require_env  # noqa: E402
+
 LOCAL_URL = os.environ.get("LOCAL_DATABASE_URL", "postgresql://localhost/agent_smith")
 REMOTE_URL = os.environ.get("REMOTE_DATABASE_URL", "")
 
@@ -73,10 +75,7 @@ def main() -> None:
         f"LOCAL_DATABASE_URL must be a postgresql:// URL, got: {LOCAL_URL[:30]}..."
     )
     if not REMOTE_URL:
-        raise SystemExit(
-            "REMOTE_DATABASE_URL is required. Set it in your environment.\n"
-            "Example: REMOTE_DATABASE_URL='postgresql://user:pass@host:5432/agent_smith?sslmode=verify-full&sslrootcert=~/.aws/rds-global-bundle.pem'"
-        )
+        require_env("REMOTE_DATABASE_URL", "Example: REMOTE_DATABASE_URL='postgresql://user:pass@host:5432/agent_smith?sslmode=verify-full&sslrootcert=~/.aws/rds-global-bundle.pem'")
     assert REMOTE_URL.startswith(("postgresql://", "postgres://")), (
         f"REMOTE_DATABASE_URL must be a postgresql:// URL, got: {REMOTE_URL[:30]}..."
     )

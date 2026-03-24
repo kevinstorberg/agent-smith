@@ -10,7 +10,8 @@ import services.memory.backends.lancedb_backend as lancedb_backend
 
 
 @pytest.fixture(autouse=True)
-def isolated_store(tmp_path: Path):
+def isolated_store(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("MEMORY_BACKEND", "lancedb")
     store = tmp_path / "store"
     with patch.object(lancedb_backend, "STORE_PATH", store):
         db._embeddings = None
