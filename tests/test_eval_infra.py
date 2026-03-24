@@ -9,6 +9,16 @@ from evals.shared.runner import run_agent
 from evals.shared.judge import _rule_to_steps, _load_judge_config
 
 
+def _postgres_available() -> bool:
+    try:
+        import psycopg2
+        conn = psycopg2.connect("postgresql://localhost/agent_smith")
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+
 def test_load_scenarios_filters_disabled():
     scenarios = load_scenarios()
     for s in scenarios:
@@ -69,6 +79,10 @@ def test_rule_files_have_examples():
         assert "* **Example" in content, f"{f.stem} should have an example section"
 
 
+@pytest.mark.skipif(
+    not _postgres_available(),
+    reason="Postgres not available",
+)
 def test_save_result_inserts_into_db():
     from datetime import datetime, timezone
     from services.db import get_connection, init_db
