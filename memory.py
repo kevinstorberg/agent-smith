@@ -10,7 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.resolve()
+from scripts.shared.paths import REPO_ROOT
+
 PID_FILE = REPO_ROOT / "memory.pid"
 MCP_LOCAL_DIR = REPO_ROOT / "harness" / "mcp" / "local"
 

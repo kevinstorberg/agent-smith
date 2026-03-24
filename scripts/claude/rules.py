@@ -1,9 +1,3 @@
-"""
-Sync rules to Claude:
-  - compose targets: generate brief (Rule + Action + pointer) for each rule file
-  - copy targets: mirror full rule files → destination directory; prune stale files
-"""
-
 from __future__ import annotations
 
 from pathlib import Path

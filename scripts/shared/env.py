@@ -1,5 +1,3 @@
-"""Load .env file into os.environ and expand ${VAR} references."""
-
 from __future__ import annotations
 
 import os

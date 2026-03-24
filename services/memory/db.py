@@ -48,7 +48,6 @@ def _parse_datetime(val) -> datetime:
 
 
 def _get_retriever() -> TimeWeightedVectorStoreRetriever:
-    """Build or return the cached time-weighted retriever."""
     global _retriever
     if _retriever is not None:
         return _retriever

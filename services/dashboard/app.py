@@ -4,12 +4,9 @@ import os
 import sys
 from pathlib import Path
 
-repo_root = str(Path(__file__).parent.parent.parent)
-if repo_root not in sys.path:
-    sys.path.insert(0, repo_root)
-
-from scripts.shared.env import load_dotenv
-load_dotenv(Path(repo_root))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from scripts.shared.paths import bootstrap  # noqa: E402
+bootstrap()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

@@ -11,7 +11,6 @@ import services.memory.backends.lancedb_backend as lancedb_backend
 
 @pytest.fixture(autouse=True)
 def isolated_store(tmp_path: Path):
-    """Point the memory store at a temp directory and reset caches for every test."""
     store = tmp_path / "store"
     with patch.object(lancedb_backend, "STORE_PATH", store):
         db._embeddings = None

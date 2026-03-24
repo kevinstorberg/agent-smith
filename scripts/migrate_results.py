@@ -1,4 +1,3 @@
-"""Migrate eval result JSON files to Postgres."""
 from __future__ import annotations
 
 import json
@@ -6,31 +5,14 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from scripts.shared.env import load_dotenv
-load_dotenv(REPO_ROOT)
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from scripts.shared.paths import bootstrap, REPO_ROOT  # noqa: E402
+bootstrap()
 
 from evals.shared.db import save_result
 from services.db import get_connection, init_db
 
 RESULTS_DIR = REPO_ROOT / "evals" / "results"
-
-
-def _already_migrated(conn, filename: str) -> bool:
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT 1 FROM eval_results WHERE timestamp = %s AND scenario = %s AND test_model = %s LIMIT 1",
-            _parse_filename_keys(filename),
-        )
-        return cur.fetchone() is not None
-
-
-def _parse_filename_keys(filename: str) -> tuple:
-    """Extract dedup keys from the JSON content instead of filename parsing."""
-    return None
 
 
 def migrate():

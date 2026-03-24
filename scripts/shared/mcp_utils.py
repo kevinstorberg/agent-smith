@@ -1,5 +1,3 @@
-"""Shared MCP server collection and sync utilities."""
-
 from __future__ import annotations
 
 import json
