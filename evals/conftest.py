@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import os
-import sys
-from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from scripts.shared.paths import bootstrap  # noqa: E402
-bootstrap()
+from scripts.shared.paths import bootstrap
+bootstrap(__file__)
 
 
 @pytest.fixture(scope="session")

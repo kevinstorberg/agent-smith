@@ -3,8 +3,6 @@
 
 Usage:
     PINECONE_API_KEY='...' ./scripts/migrate_lancedb_to_pinecone.py
-
-Preserves existing vector embeddings (no re-embedding needed).
 """
 from __future__ import annotations
 
@@ -13,11 +11,13 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from scripts.shared.paths import bootstrap, REPO_ROOT  # noqa: E402
+from scripts.shared.paths import bootstrap  # noqa: E402
 bootstrap()
 
 from scripts.shared.validation import require_env, extract_memory_metadata  # noqa: E402
-from services.memory.backends import lancedb_backend  # noqa: E402
+from scripts.shared.migration import (  # noqa: E402
+    load_source_rows, check_target_empty, verify_count, verify_sample, print_complete,
+)
 from services.memory.backends import pinecone_backend as pb  # noqa: E402
 
 BATCH_SIZE = 100
@@ -27,21 +27,12 @@ def main() -> None:
     require_env("PINECONE_API_KEY", "Sign up at https://pinecone.io for a free API key.")
 
     print("[1/4] Reading from LanceDB...")
-    lancedb_backend.init()
-    rows = lancedb_backend.load_all()
-    if not rows:
-        raise SystemExit("LanceDB has no memories. Nothing to migrate.")
+    rows = load_source_rows()
     print(f"  Found {len(rows)} memories")
 
     print("[2/4] Connecting to Pinecone...")
     pb.init()
-    existing = pb.count()
-    if existing > 0:
-        raise SystemExit(
-            f"Pinecone index already has {existing} vectors. "
-            "Aborting to prevent duplicates. "
-            "Delete the index first if this is intentional."
-        )
+    check_target_empty(pb.count, "index")
 
     print("[3/4] Migrating vectors...")
     index = pb._get_index()
@@ -66,27 +57,16 @@ def main() -> None:
     print("[4/4] Verifying migration...")
     time.sleep(2)
 
-    target_count = pb.count()
-    source_count = len(rows)
+    verify_count(len(rows), pb.count())
 
-    if target_count != source_count:
-        raise SystemExit(
-            f"COUNT MISMATCH: source={source_count}, target={target_count}. "
-            "Pinecone indexing may still be in progress — wait and check again."
-        )
+    def fetch_text(sid: str) -> str | None:
+        vectors = (index.fetch(ids=[sid]).vectors or {})
+        if sid not in vectors:
+            return None
+        return (vectors[sid].metadata or {}).get("text")
 
-    sample_ids = [r["id"] for r in rows[:3]]
-    for sid in sample_ids:
-        result = index.fetch(ids=[sid])
-        vectors = result.vectors
-        assert sid in vectors, f"Sample row {sid} not found in Pinecone."
-        meta = vectors[sid].metadata or {}
-        source = next(r for r in rows if r["id"] == sid)
-        assert meta.get("text") == source.get("text", ""), f"Text mismatch for {sid}"
-
-    print(f"  Sample verification passed ({len(sample_ids)} rows compared)")
-    print(f"\nMigration complete: {target_count} memories transferred successfully.")
-    print("LanceDB store has NOT been deleted — verify before removing it.")
+    verify_sample(rows, fetch_text)
+    print_complete(len(rows))
 
 
 if __name__ == "__main__":

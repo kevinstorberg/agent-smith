@@ -5,9 +5,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import services.memory.backends.documentdb_backend as db
-
-VALID_ID = "00000000-0000-0000-0000-000000000001"
-MISSING_ID = "00000000-0000-0000-0000-000000000099"
+from tests.shared_backend_contract import (
+    VALID_ID, MISSING_ID,
+    assert_get_row_found, assert_get_row_not_found,
+    assert_delete_raises_if_missing, assert_invalid_id_rejected,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -73,7 +75,7 @@ def test_get_row_found(mock_client, mock_collection):
 
 
 def test_get_row_not_found(mock_client, mock_collection):
-    assert db.get_row(MISSING_ID) is None
+    assert_get_row_not_found(db)
 
 
 def test_delete_row_success(mock_client, mock_collection):
@@ -88,13 +90,11 @@ def test_delete_row_raises_if_missing(mock_client, mock_collection):
     mock_result = MagicMock()
     mock_result.deleted_count = 0
     mock_collection.delete_one.return_value = mock_result
-    with pytest.raises(KeyError):
-        db.delete_row(MISSING_ID)
+    assert_delete_raises_if_missing(db)
 
 
 def test_invalid_id_rejected(mock_client):
-    with pytest.raises(ValueError):
-        db.get_row("not-a-uuid")
+    assert_invalid_id_rejected(db)
 
 
 def test_load_all_empty(mock_client, mock_collection):
