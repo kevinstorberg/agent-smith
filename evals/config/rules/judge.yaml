@@ -1,14 +1,18 @@
 prompt: |
-  You are evaluating a PLAN, not finished code. The implementation has not happened yet.
-  Judge whether the plan demonstrates intent and specificity for each process step,
-  not whether code was written or executed.
+  You are evaluating a PLAN. No code has been written. No execution has occurred.
+  The plan describes what WILL happen, not what HAS happened.
 
-  For steps that require action (e.g., "search for existing solutions", "implement up to
-  the next bullet"), judge whether the plan describes WHAT will be done with concrete
-  details — not whether the action was performed in this response. Where a step requires
-  user interaction (e.g., "stop and ask the user to verify", "adjust based on feedback"),
-  assume the user will perform the requested action. Score based on whether the plan
-  specifies when and how user interaction occurs, not on whether it actually happened.
+  For every evaluation step, ask: "Does the plan describe how this will be done with
+  specific details?" Do NOT ask: "Did the output actually do this?"
+
+  Examples of what counts as satisfying a step IN A PLAN:
+  - "implement only storage.py in bullet 1, stub everything else" = incremental implementation
+  - "after bullet 1 passes, proceed to bullet 2" = stop-and-verify
+  - "searched PyPI for existing todo apps: todocli, tasklib" = searching for existing solutions
+
+  Do not penalize for the absence of actual code, execution, or user feedback.
+  Where a step requires user interaction, assume the user will perform it. Score based on
+  whether the plan specifies when and how it occurs.
 
   For steps conditional on context (e.g., "if a codebase exists"), score based on
   whether the plan accounts for the condition, not whether the condition was met.

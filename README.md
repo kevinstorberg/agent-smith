@@ -24,7 +24,9 @@ harness/
   mcp/               # MCP server definitions (one JSON file per server)
 evals/               # LLM-as-judge evaluation framework (DeepEval + G-Eval)
 services/
+  db/                # shared Postgres connection + Alembic migrations
   memory/            # local vector memory MCP server (LanceDB + sentence-transformers)
+  dashboard/         # web UI (FastAPI + React) for evals, harness config, and memory
 tmp/                 # scratch files and draft plans (gitignored contents)
 ```
 
@@ -98,7 +100,43 @@ then scores its output against every rule in `harness/rules/shared/`.
 ```
 
 Configure via `EVAL_MODEL`, `EVAL_JUDGE_MODEL`, and `EVAL_THRESHOLD` in `.env`.
-Results are saved to `evals/results/` (gitignored).
+Results are stored in Postgres (see Database section below).
+
+## Database
+
+Postgres is used for eval results and will be extended for future features.
+
+```sh
+brew install postgresql@17
+brew services start postgresql@17
+createdb agent_smith
+```
+
+Schema is managed by Alembic. Migrations run automatically on app startup, or manually:
+
+```sh
+.venv/bin/alembic upgrade head
+```
+
+Set `EVAL_DATABASE_URL` in `.env` to override the default (`postgresql://localhost/agent_smith`).
+
+## Dashboard
+
+A local web UI for browsing harness config, searching memories, and visualizing eval scores.
+
+```sh
+.venv/bin/uvicorn services.dashboard.app:app --port 7654
+open http://localhost:7654
+```
+
+Three tabs: **Harness** (rules, skills, MCP servers), **Memory** (semantic search + browse),
+**Evals** (score chart over time + run details).
+
+For frontend development with hot reload:
+
+```sh
+cd services/dashboard/ui && npm install && npm run dev
+```
 
 ## Environment
 

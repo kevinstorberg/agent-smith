@@ -9,10 +9,14 @@ from scripts.shared.fs import collect_md_files, compose_parts
 REPO_ROOT = Path(__file__).parent.parent.parent
 HARNESS_ROOT = REPO_ROOT / "harness"
 RULES_SOURCES = ["harness/main.md", "harness/rules/shared/"]
+EXCLUDE_RULES = {"memory"}
 
 
 def _load_rules_context() -> str:
-    files = collect_md_files(RULES_SOURCES, REPO_ROOT)
+    files = [
+        f for f in collect_md_files(RULES_SOURCES, REPO_ROOT)
+        if f.stem not in EXCLUDE_RULES
+    ]
     return compose_parts(files)
 
 
@@ -37,7 +41,7 @@ def run_agent(model: str, prompt: str) -> str:
             model=model,
             system=system,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=4096,
+            max_tokens=16384,
         ) as stream:
             return _collect_stream(stream.text_stream)
 
@@ -50,7 +54,7 @@ def run_agent(model: str, prompt: str) -> str:
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=4096,
+            max_tokens=16384,
             stream=True,
         )
         return _collect_stream(
