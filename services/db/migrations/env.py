@@ -17,7 +17,7 @@ if config.config_file_name is not None:
 
 target_metadata = None
 
-database_url = os.environ.get("EVAL_DATABASE_URL", "postgresql://localhost/agent_smith")
+database_url = os.environ.get("DATABASE_URL", "postgresql://localhost/agent_smith")
 config.set_main_option("sqlalchemy.url", database_url)
 
 

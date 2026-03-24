@@ -118,7 +118,7 @@ Schema is managed by Alembic. Migrations run automatically on app startup, or ma
 .venv/bin/alembic upgrade head
 ```
 
-Set `EVAL_DATABASE_URL` in `.env` to override the default (`postgresql://localhost/agent_smith`).
+Set `DATABASE_URL` in `.env` to override the default (`postgresql://localhost/agent_smith`).
 
 ## Dashboard
 
