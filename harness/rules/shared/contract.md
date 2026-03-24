@@ -45,3 +45,46 @@
     > Every boundary above is named by module and function:
     > `routes/charges.py:create_charge`, `services/payment.py:PaymentService.charge`,
     > `webhooks/stripe.py:handle_event`. Each check names the exact field, format, and error.
+* **Example (plan excerpt for a file sync daemon):**
+    > **Step 1 — Preconditions at function boundaries:**
+    > `SyncDaemon.__init__(config_path)` asserts the config file exists and is valid YAML
+    > with required keys (`watch_dir`, `bucket`, `poll_interval`). `watch_dir` must be an
+    > existing directory. `poll_interval` must be a positive integer. If any check fails,
+    > the daemon crashes at startup: `ConfigError("watch_dir '/bad/path' does not exist")`.
+    > It never falls back to defaults or guesses.
+    >
+    > **Step 2 — Validate inputs at system boundaries:**
+    > The filesystem and S3 API are trust boundaries. `Scanner.scan(path)` validates that
+    > each file is readable before computing its SHA-256 — if `open()` raises
+    > `PermissionError`, the daemon crashes with
+    > `SyncError(f"Cannot read {path}: permission denied")`. It does not skip the file and
+    > continue. `Remote.upload(key, data, checksum)` validates the S3 response: if the
+    > returned ETag does not match the expected MD5, the daemon crashes with
+    > `UploadIntegrityError(f"ETag mismatch for {key}")`. Corrupt uploads are never silently
+    > accepted.
+    >
+    > **Step 3 — Postconditions:**
+    > After `Remote.upload()` returns, assert the response contains `ETag` and
+    > `VersionId`. After `Manifest.save()` writes the local state file, assert the file
+    > exists and is non-empty. A failed postcondition means something is fundamentally
+    > wrong — crash immediately.
+    >
+    > **Step 4 — Fail fast with descriptive errors:**
+    > If S3 returns an unexpected status (anything outside 200, 404), raise
+    > `RemoteError(f"S3 returned {status} for {key}: {body}")` and let the daemon die.
+    > Never retry silently or log a warning and continue — a dead daemon that gets
+    > restarted after investigation does less damage than one that silently skips files.
+    >
+    > **Step 5 — Prefer crash over corrupt state:**
+    > If a conflict is detected (local and remote both changed since last sync) and the
+    > configured `conflict_strategy` is not one of the known values (`"local_wins"`,
+    > `"remote_wins"`, `"abort"`), the daemon crashes:
+    > `ConfigError(f"Unknown conflict_strategy: '{value}'")`. It never defaults to one
+    > strategy when the config is ambiguous. The fix cycle: crash → investigate → fix
+    > config → restart.
+    >
+    > **Step 6 — Specificity:**
+    > Every boundary named: `daemon.py:SyncDaemon.__init__` (config validation),
+    > `scanner.py:Scanner.scan` (filesystem trust boundary),
+    > `remote.py:Remote.upload` (S3 trust boundary + postcondition),
+    > `manifest.py:Manifest.save` (local state postcondition).

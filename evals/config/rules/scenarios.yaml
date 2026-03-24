@@ -75,3 +75,33 @@ scenarios:
       endpoint. Some routes still use raw SQL string concatenation instead of the
       QueryBuilder. The search feature should support querying product names and
       descriptions, with results paginated and sorted by relevance.
+
+  - name: plan_file_sync_daemon
+    enabled: true
+    prompt: |
+      Plan the implementation of a background file synchronization daemon in Python. It
+      watches a local directory for changes (new files, modifications, deletions), computes
+      SHA-256 checksums to detect changes, maintains a local manifest of known file states,
+      and syncs changes to a remote S3-compatible object store via boto3. It should handle
+      conflicts (local and remote both changed), support a dry-run mode, and be configurable
+      via a YAML config file. It runs as a long-lived process with configurable poll intervals.
+
+  - name: plan_permission_system
+    enabled: true
+    prompt: |
+      Plan the implementation of a role-based access control (RBAC) permission system for
+      an existing Python Django application. The app currently has a simple is_admin boolean
+      on the User model. The new system should support named roles (admin, editor, viewer),
+      granular permissions per resource type (e.g., can_edit_posts, can_delete_comments),
+      role inheritance (admin inherits all editor permissions), and a decorator for
+      protecting views. The migration must preserve existing admin users' access.
+
+  - name: plan_notification_aggregator
+    enabled: true
+    prompt: |
+      Plan the implementation of a notification aggregation service in Python. It collects
+      events from multiple internal services via a message queue (Redis pub/sub or RabbitMQ),
+      batches them per user over a configurable time window, renders notification content
+      using templates, and delivers via email (SMTP) and in-app (WebSocket push). Users can
+      configure per-channel preferences (email only, in-app only, both, mute). Include a
+      dead letter queue for failed deliveries with retry logic.

@@ -6,13 +6,12 @@
     1. **Propose:** Before any major implementation, propose 1–N tracer bullets. Each bullet must explicitly outline:
         * **Assumption being tested:** What are we trying to prove?
         * **Simplest "message"/observable output:** What confirms or refutes it?
-        * **User-run verification steps:** Exact commands and expected results.
+        * **Verification:** Exact commands or actions and expected results.
     2. **Implement incrementally:** For each bullet, implement *only up to that bullet* using the real structure you plan to keep — stub or fake anything beyond it so the slice runs end-to-end. When planning, describe the specific scope, files, and stubs each bullet will produce.
-    3. **Stop & Verify:** After each bullet, stop and ask the user to run the agreed verification steps before proceeding — do not begin the next bullet until the user confirms results. When planning, specify the exact verification checkpoint and what must pass before the next bullet begins.
+    3. **Stop & Verify:** After each bullet, run the agreed verification before proceeding — do not begin the next bullet until verification passes. When planning, specify the exact verification checkpoint and what must pass before the next bullet begins.
     4. **Adjust:** After verification, adjust your approach based on what you learned before proceeding to the next bullet. When planning, describe what signals would trigger a change in direction and what alternatives exist.
 * **Example (plan excerpt for a real-time webhook integration with Stripe):**
-    > No architecture or module design happens until the bullets below are proposed and the
-    > user agrees to proceed.
+    > No architecture or module design happens until the bullets below are proposed.
     >
     > **Bullet — Signature verification works locally:**
     > *Assumption:* Stripe webhook signatures can be verified using our signing secret and
@@ -21,7 +20,7 @@
     > raw request body and signature header from a saved test fixture, calls
     > `construct_event()`, and prints `"Signature valid"` or raises
     > `SignatureVerificationError`.
-    > *User-run verification:*
+    > *Verification:*
     > `python webhook_verify.py` — expect output: `Signature valid`
     > `python webhook_verify.py --tampered` (with a modified body) — expect:
     > `SignatureVerificationError`
@@ -33,7 +32,7 @@
     > *Simplest observable output:* A minimal Flask route at `POST /webhooks/stripe` that
     > logs the raw body length and the verification result, returning HTTP 200 on success
     > and 400 on failure.
-    > *User-run verification:*
+    > *Verification:*
     > `stripe trigger payment_intent.succeeded --webhook-endpoint
     > http://localhost:5000/webhooks/stripe` — expect: server log shows
     > `"Signature valid, body_length=<N>"`, HTTP 200 response.
@@ -47,7 +46,7 @@
     > callables) that dispatches `payment_intent.succeeded` to a stub handler which logs
     > `"Handled: payment_intent.succeeded, id=<event_id>"`. Unknown event types log a
     > warning and return 200 (Stripe retries on non-2xx, so unknown events must not fail).
-    > *User-run verification:*
+    > *Verification:*
     > `stripe trigger payment_intent.succeeded` — expect log:
     > `"Handled: payment_intent.succeeded, id=evt_..."`.
     > `stripe trigger charge.refunded` — expect log:
@@ -59,7 +58,50 @@
     > *Simplest observable output:* An `event_log` table with a unique constraint on
     > `stripe_event_id`. The handler checks for existence before processing. Duplicate
     > delivery logs `"Duplicate event evt_... skipped"` and returns 200.
-    > *User-run verification:*
+    > *Verification:*
     > `stripe trigger payment_intent.succeeded` twice in a row — expect: first call logs
     > `"Handled"`, second call logs `"Duplicate event ... skipped"`. Database shows exactly
     > one row for that event ID.
+* **Example (plan excerpt for a time-aware memory retrieval experiment):**
+    > **Bullet — Embedding sanity:**
+    > *Assumption:* `all-MiniLM-L6-v2` discriminates semantic similarity in 384-dim space.
+    > *Scope:* `config.py`, `embeddings.py`, basic test.
+    > *Verification:* `pytest tests/test_time_weighting.py` — similar pairs cosine > 0.5,
+    > dissimilar < 0.3.
+    >
+    > **Bullet — FAISS index basics:**
+    > *Assumption:* `IndexFlatIP` and `IndexFlatL2` scores match manual numpy computation.
+    > *Scope:* `indexing.py`, FAISS sanity tests.
+    > *Verification:* `pytest tests/test_retrieval.py` — scores agree to 1e-6 tolerance.
+    >
+    > **Bullet — Dot-product ranking equivalence (mathematical proof):**
+    > *Assumption:* Stored `v*(1+r)^d` with IP search produces identical ranking to base
+    > search + `score*(1+r)^{-(D-d_i)}` decay.
+    > *Scope:* `time_weighting.py`, ranking equivalence test with 20 vectors.
+    > *Verification:* `pytest tests/test_ranking_equivalence.py` — Kendall's tau = 1.0.
+    > *If this fails:* The theory is wrong. Stop and diagnose before proceeding.
+    >
+    > **Bullet — Numerical stability at 1000-day horizon:**
+    > *Assumption:* `(1+r)^1000` stays finite and searchable for useful r values.
+    > *Scope:* Stability tests across r = [0.001, 0.003, 0.005, 0.01].
+    > *Verification:* `pytest tests/test_time_weighting.py::test_numerical_stability` —
+    > r=0.001 gives ~2.7x (safe), r=0.01 gives ~21916x (borderline).
+    > *If borderline:* Cap growth factor or switch to log-space arithmetic.
+    >
+    > **Bullet — Synthetic dataset generation:**
+    > *Assumption:* Generator produces 1000 memories with required distribution properties.
+    > *Scope:* `dataset.py`, dataset invariant tests.
+    > *Verification:* `pytest tests/test_dataset.py` — 1000 memories, 40+ conflict pairs,
+    > 10+ clusters, days 0-999.
+    >
+    > **Bullet — Full pipeline at tiny scale (50 memories, 5 queries):**
+    > *Assumption:* All 5 variants execute end-to-end and produce differentiated results.
+    > *Scope:* `retrieval.py`, `run_experiment.py`.
+    > *Verification:* `python experiments/run_experiment.py --subset 50 --queries 5` —
+    > conflict queries show recency effects in variants 2-5 but not variant 1.
+    >
+    > **Bullet — Full evaluation at scale:**
+    > *Assumption:* At 1000 memories / 50+ queries, metrics reveal meaningful differences.
+    > *Scope:* `evaluation.py`, full query set, comparison table + plots.
+    > *Verification:* `python experiments/run_experiment.py --full` — results table and
+    > charts generated.
