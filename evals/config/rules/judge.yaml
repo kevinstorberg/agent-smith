@@ -8,7 +8,7 @@ prompt: |
   Examples of what counts as satisfying a step IN A PLAN:
   - "implement only storage.py in bullet 1, stub everything else" = incremental implementation
   - "after bullet 1 passes, proceed to bullet 2" = stop-and-verify
-  - "searched PyPI for existing todo apps: todocli, tasklib" = searching for existing solutions
+  - "searched PyPI for existing URL shorteners: pyshorteners, shlink" = searching for existing solutions
 
   Do not penalize for the absence of actual code, execution, or user feedback.
   Where a step requires user interaction, assume the user will perform it. Score based on

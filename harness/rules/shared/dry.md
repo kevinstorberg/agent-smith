@@ -41,15 +41,17 @@
     > on the `tsvector` column uses Alembic's `op.create_index` rather than raw DDL.
 * **Example (greenfield — searching before building from scratch):**
     > **Step 1 — Search for existing implementations:**
-    > No existing codebase. Before building a CLI todo app from scratch, searched PyPI and
-    > GitHub for existing Python todo CLI implementations: `todocli` (last updated 2019,
-    > abandoned), `todo.txt-cli` (shell-based, not a Python library), `tasklib` (requires
-    > Taskwarrior install, heavy dependency for a simple app). None are suitable to reuse
-    > or extend. Decision: build from stdlib, but adopt the `todo.txt` line format as a
-    > storage convention since it is a well-documented community standard.
-    > **Step 2:** N/A — no existing implementation to extend.
-    > **Step 3:** `complete` and `delete` both need find-by-id + fail-if-missing — that's
-    > two call sites already, so extract `_find_todo(todos, id)` now to prevent a third
-    > copy when future commands (e.g., `edit`) need the same lookup.
-    > **Step 4:** `argparse` handles subcommand routing and type coercion. `json` module
-    > handles serialization. No hand-rolled parsing or formatting boilerplate.
+    > No existing codebase. Before building a CLI URL shortener from scratch, searched PyPI
+    > and GitHub for existing Python URL shortener implementations (not general web
+    > frameworks): `pyshorteners` (wrapper around third-party services like bit.ly — requires
+    > external API keys, not self-hosted), `polr` (PHP, not Python), `yourls` (PHP), `shlink`
+    > (PHP with a Python SDK, but the SDK is a thin API client, not a standalone shortener).
+    > None provide a self-contained Python CLI shortener with local storage. Decision: build
+    > from stdlib using `hashlib` for slug generation and SQLite for persistence, adopting the
+    > base62 encoding convention used by bit.ly since it is compact and URL-safe.
+    > **Step 2:** N/A — no existing Python implementation to extend.
+    > **Step 3:** `create` and `lookup` both need slug-to-URL resolution + fail-if-missing —
+    > that's two call sites already, so extract `_resolve_slug(db, slug)` now to prevent a
+    > third copy when future commands (e.g., `stats`, `delete`) need the same lookup.
+    > **Step 4:** `argparse` handles subcommand routing and type coercion. `sqlite3` module
+    > handles persistence. No hand-rolled SQL string concatenation or custom serialization.

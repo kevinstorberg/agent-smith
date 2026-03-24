@@ -11,8 +11,9 @@ from evals.shared.judge import _rule_to_steps, _load_judge_config
 
 def _postgres_available() -> bool:
     try:
+        from services.db.connection import DATABASE_URL
         import psycopg2
-        conn = psycopg2.connect("postgresql://localhost/agent_smith")
+        conn = psycopg2.connect(DATABASE_URL)
         conn.close()
         return True
     except Exception:
