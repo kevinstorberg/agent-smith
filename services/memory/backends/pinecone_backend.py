@@ -81,21 +81,26 @@ def list_rows(repo: str | None = None, limit: int = 20) -> list[dict]:
     return rows[:limit]
 
 
+def _fetch_vectors(result) -> dict:
+    if hasattr(result, "vectors"):
+        return result.vectors or {}
+    return result.get("vectors", {})
+
+
 def get_row(id: str) -> dict | None:
     validate_memory_id(id)
-    result = _get_index().fetch(ids=[id])
-    vectors = result.get("vectors", {})
+    vectors = _fetch_vectors(_get_index().fetch(ids=[id]))
     if id not in vectors:
         return None
     vec_data = vectors[id]
-    meta = dict(vec_data.get("metadata", {}))
+    meta = dict(getattr(vec_data, "metadata", None) or vec_data.get("metadata", {}))
     text = meta.pop("text", "")
     return {"id": id, "text": text, "metadata": meta}
 
 
 def delete_row(id: str) -> None:
     validate_memory_id(id)
-    result = _get_index().fetch(ids=[id])
-    if id not in result.get("vectors", {}):
+    vectors = _fetch_vectors(_get_index().fetch(ids=[id]))
+    if id not in vectors:
         raise KeyError(f"Memory not found: {id}")
     _get_index().delete(ids=[id])

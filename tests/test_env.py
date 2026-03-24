@@ -35,7 +35,7 @@ def test_load_dotenv_strips_quotes(tmp_path: Path, monkeypatch: object):
 
 
 def test_load_dotenv_missing_file(tmp_path: Path):
-    load_dotenv(tmp_path)  # should not raise
+    load_dotenv(tmp_path)
 
 
 def test_expand_env_string(monkeypatch: object):

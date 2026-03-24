@@ -5,9 +5,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import services.memory.backends.pinecone_backend as pb
-
-VALID_ID = "00000000-0000-0000-0000-000000000001"
-MISSING_ID = "00000000-0000-0000-0000-000000000099"
+from tests.shared_backend_contract import (
+    VALID_ID, MISSING_ID,
+    assert_get_row_not_found, assert_delete_raises_if_missing, assert_invalid_id_rejected,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -52,12 +53,11 @@ def test_get_row_found(mock_pc, mock_index):
 
 
 def test_get_row_not_found(mock_pc, mock_index):
-    assert pb.get_row(MISSING_ID) is None
+    assert_get_row_not_found(pb)
 
 
 def test_delete_row_raises_if_missing(mock_pc, mock_index):
-    with pytest.raises(KeyError):
-        pb.delete_row(MISSING_ID)
+    assert_delete_raises_if_missing(pb)
 
 
 def test_delete_row_calls_delete(mock_pc, mock_index):
@@ -69,5 +69,4 @@ def test_delete_row_calls_delete(mock_pc, mock_index):
 
 
 def test_invalid_id_rejected(mock_pc):
-    with pytest.raises(ValueError):
-        pb.get_row("not-a-uuid")
+    assert_invalid_id_rejected(pb)

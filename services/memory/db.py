@@ -15,7 +15,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 
 from services.memory.backends import get_backend
 
-MODEL_NAME = "all-MiniLM-L6-v2"
+MODEL_NAME = os.environ.get("MEMORY_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 DECAY_RATE = float(os.environ.get("MEMORY_DECAY_RATE", "0.01"))
 DEFAULT_LIMIT = int(os.environ.get("MEMORY_DEFAULT_LIMIT", "20"))
 

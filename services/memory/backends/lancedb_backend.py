@@ -21,7 +21,6 @@ def _db() -> lancedb.DBConnection:
 
 
 def _get_table():
-    """Return the memories table, or None if it doesn't exist or is empty."""
     db = _db()
     if TABLE_NAME not in db.table_names():
         return None
