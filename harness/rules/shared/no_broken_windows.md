@@ -3,10 +3,10 @@
 * **The Rule:** Don't live with broken windows. Fix bad designs, wrong decisions, and poor code when you see them.
 * **Your Action:** Fix broken code and poor patterns when encountered; leave code cleaner than you found it.
 * **Your Process:**
-    1. When you encounter broken code, poor naming, or deprecated patterns, fix it before moving on — don't build on top of a known bad foundation.
-    2. If a full fix is out of scope for the current task, surface the issue explicitly to the user with a concrete description of the problem.
-    3. Never add new code on top of code you know to be wrong without at minimum leaving a comment explaining why it is wrong and what the correct fix would be.
-    4. Leave every file you touch in better shape than you found it.
+    1. When you encounter broken code, poor naming, or deprecated patterns, fix it before moving on — don't build on top of a known bad foundation. In greenfield projects, establish clean foundations from the start by defining naming conventions, error-handling patterns, and code-quality standards upfront.
+    2. If a full fix is out of scope for the current task, surface the issue explicitly to the user with a concrete description of the problem. In greenfield projects, surface known limitations or design trade-offs (e.g., no concurrency safety, no file locking) rather than letting them become hidden debt.
+    3. Never add new code on top of code you know to be wrong without at minimum leaving a comment explaining why it is wrong and what the correct fix would be. In greenfield projects, never accept a known-flawed design pattern without documenting the flaw and the intended fix.
+    4. Leave every file you touch in better shape than you found it. In greenfield projects, apply this as a quality gate: every file must meet project standards (type annotations, consistent naming, no unused imports) before marking work complete.
     5. After completing new work, review it for rough edges and clean them up before finishing.
 * **Example (plan excerpt for adding CSV export to an existing Flask app with tech debt):**
     > **Step 1 — Fix broken code before building on it:**
