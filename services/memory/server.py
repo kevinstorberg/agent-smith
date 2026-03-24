@@ -110,6 +110,10 @@ def memory_update(
     return f"Updated: {id}"
 
 
+from services.memory.web import register as _register_web
+_register_web(mcp)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
