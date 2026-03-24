@@ -9,30 +9,23 @@ export function MemoryPage() {
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<'search' | 'list'>('list');
 
-  const doSearch = async () => {
-    if (!query.trim()) return;
+  const runQuery = async (fn: () => Promise<MemoryItem[]>, queryMode: 'search' | 'list') => {
     setLoading(true);
     try {
-      const data = await api.memory.search(query, repo);
-      setResults(data);
-      setMode('search');
+      setResults(await fn());
+      setMode(queryMode);
     } catch {
       setResults([]);
     }
     setLoading(false);
   };
 
-  const doList = async () => {
-    setLoading(true);
-    try {
-      const data = await api.memory.list(repo);
-      setResults(data);
-      setMode('list');
-    } catch {
-      setResults([]);
-    }
-    setLoading(false);
+  const doSearch = () => {
+    if (!query.trim()) return;
+    runQuery(() => api.memory.search(query, repo), 'search');
   };
+
+  const doList = () => runQuery(() => api.memory.list(repo), 'list');
 
   return (
     <div>

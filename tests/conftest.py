@@ -6,10 +6,9 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).parent.parent
-
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from scripts.shared.paths import ensure_importable  # noqa: E402
+ensure_importable()
 
 
 @pytest.fixture
