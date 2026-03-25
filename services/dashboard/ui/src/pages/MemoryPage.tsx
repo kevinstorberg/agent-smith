@@ -1,77 +1,226 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api';
 import type { MemoryItem } from '../api';
+import { Pagination } from '../components/Pagination';
+
+type Mode = 'list' | 'search';
 
 export function MemoryPage() {
   const [query, setQuery] = useState('');
-  const [repo, setRepo] = useState('');
-  const [results, setResults] = useState<MemoryItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<'search' | 'list'>('list');
+  const [items, setItems] = useState<MemoryItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [mode, setMode] = useState<Mode>('list');
+  const [limit, setLimit] = useState(10);
+  const [offset, setOffset] = useState(0);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState('');
+  const [editRepo, setEditRepo] = useState('');
+  const [editTags, setEditTags] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  const runQuery = async (fn: () => Promise<MemoryItem[]>, queryMode: 'search' | 'list') => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      setResults(await fn());
-      setMode(queryMode);
+      const res = mode === 'search' && query.trim()
+        ? await api.memory.search(query, { limit, offset })
+        : await api.memory.list({ limit, offset });
+      setItems(res.items);
+      setTotal(res.total);
     } catch {
-      setResults([]);
+      setItems([]);
+      setTotal(0);
     }
     setLoading(false);
-  };
+  }, [mode, query, limit, offset]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const doSearch = () => {
     if (!query.trim()) return;
-    runQuery(() => api.memory.search(query, repo), 'search');
+    setMode('search');
+    setOffset(0);
   };
 
-  const doList = () => runQuery(() => api.memory.list(repo), 'list');
+  const clearSearch = () => {
+    setQuery('');
+    setMode('list');
+    setOffset(0);
+  };
+
+  const startEdit = (item: MemoryItem) => {
+    setEditingId(item.id);
+    setEditContent(item.content);
+    setEditRepo(item.repo || '');
+    setEditTags(item.tags?.join(', ') || '');
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+  };
+
+  const saveEdit = async (id: string) => {
+    setSaving(true);
+    try {
+      const tags = editTags.split(',').map(t => t.trim()).filter(Boolean);
+      await api.memory.update(id, {
+        content: editContent,
+        repo: editRepo || undefined,
+        tags: tags.length ? tags : undefined,
+      });
+      setEditingId(null);
+      await fetchData();
+    } catch (err) {
+      alert(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    setSaving(false);
+  };
+
+  const deleteMemory = async (id: string) => {
+    setSaving(true);
+    try {
+      await api.memory.remove(id);
+      setConfirmDeleteId(null);
+      setExpandedId(null);
+      await fetchData();
+    } catch (err) {
+      alert(`Delete failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    setSaving(false);
+  };
+
+  const preview = (content: string) =>
+    content.length > 100 ? content.slice(0, 100) + '...' : content;
 
   return (
     <div>
+      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Memory</h2>
+
       <div className="search-bar">
         <input
           placeholder="Semantic search..."
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && doSearch()}
+          onChange={e => setQuery(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && doSearch()}
         />
-        <input
-          placeholder="Repo filter"
-          value={repo}
-          onChange={(e) => setRepo(e.target.value)}
-          style={{ width: 150 }}
-        />
-        <button className="sub-tabs" onClick={doSearch} style={{ padding: '8px 16px', cursor: 'pointer', background: 'var(--accent)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
-          Search
-        </button>
-        <button onClick={doList} style={{ padding: '8px 16px', cursor: 'pointer', background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
-          List All
-        </button>
+        <button className="btn btn-primary" onClick={doSearch}>Search</button>
+        {mode === 'search' && (
+          <button className="btn" onClick={clearSearch}>Clear</button>
+        )}
       </div>
 
       {loading && <div className="loading">Loading...</div>}
 
-      {!loading && results.length === 0 && (
+      {!loading && items.length === 0 && (
         <div className="loading">
-          {mode === 'search' ? 'No results' : 'Click "List All" to browse memories'}
+          {mode === 'search' ? 'No results found' : 'No memories yet'}
         </div>
       )}
 
-      {results.map((m) => (
-        <div key={m.id} className="card">
-          <div style={{ marginBottom: 8 }}>{m.content}</div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            {m.repo && <span className="tag">{m.repo}</span>}
-            {m.tags?.map((t) => <span key={t} className="tag">{t}</span>)}
-            {m.created_at && (
-              <span style={{ color: 'var(--text-muted)', fontSize: 12, marginLeft: 'auto' }}>
-                {new Date(m.created_at).toLocaleString()}
-              </span>
+      {!loading && items.map(item => {
+        const isExpanded = expandedId === item.id;
+        const isEditing = editingId === item.id;
+
+        return (
+          <div key={item.id} className="card" style={{ cursor: isExpanded ? 'default' : 'pointer' }}>
+            <div onClick={() => { if (!isEditing) setExpandedId(isExpanded ? null : item.id); }}>
+              {isEditing ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase' as const }}>Content</label>
+                  <textarea
+                    style={{
+                      background: 'var(--bg)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius)',
+                      color: 'var(--text)',
+                      padding: 10,
+                      fontFamily: 'var(--font)',
+                      fontSize: 13,
+                      width: '100%',
+                      minHeight: 120,
+                      resize: 'vertical',
+                    }}
+                    value={editContent}
+                    onChange={e => setEditContent(e.target.value)}
+                    onClick={e => e.stopPropagation()}
+                  />
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase' as const, display: 'block', marginBottom: 4 }}>Repo</label>
+                      <input
+                        className="input"
+                        value={editRepo}
+                        onChange={e => setEditRepo(e.target.value)}
+                        placeholder="e.g. agent-smith"
+                        onClick={e => e.stopPropagation()}
+                      />
+                    </div>
+                    <div style={{ flex: 2 }}>
+                      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase' as const, display: 'block', marginBottom: 4 }}>Tags (comma-separated)</label>
+                      <input
+                        className="input"
+                        value={editTags}
+                        onChange={e => setEditTags(e.target.value)}
+                        placeholder="e.g. architecture, convention"
+                        onClick={e => e.stopPropagation()}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                    <button className="btn btn-success" onClick={e => { e.stopPropagation(); saveEdit(item.id); }} disabled={saving}>
+                      {saving ? 'Saving...' : 'Save'}
+                    </button>
+                    <button className="btn" onClick={e => { e.stopPropagation(); cancelEdit(); }}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ marginBottom: 8, fontSize: 13, lineHeight: 1.6 }}>
+                  {isExpanded ? item.content : preview(item.content)}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: editingId === item.id ? 12 : 0 }}>
+              {item.repo && <span className="tag" style={{ background: 'rgba(91,141,239,0.15)', color: 'var(--info)', borderColor: 'rgba(91,141,239,0.3)' }}>{item.repo}</span>}
+              {item.tags?.map(t => <span key={t} className="tag">{t}</span>)}
+              {item.created_at && (
+                <span style={{ color: 'var(--text-muted)', fontSize: 12, marginLeft: 'auto' }}>
+                  {new Date(item.created_at).toLocaleString()}
+                </span>
+              )}
+            </div>
+
+            {isExpanded && !isEditing && (
+              <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+                <button className="btn" onClick={e => { e.stopPropagation(); startEdit(item); }}>Edit</button>
+                {confirmDeleteId === item.id ? (
+                  <>
+                    <span style={{ color: 'var(--warning)', fontSize: 13, alignSelf: 'center' }}>Delete this memory?</span>
+                    <button className="btn btn-danger" onClick={e => { e.stopPropagation(); deleteMemory(item.id); }} disabled={saving}>
+                      {saving ? 'Deleting...' : 'Confirm'}
+                    </button>
+                    <button className="btn" onClick={e => { e.stopPropagation(); setConfirmDeleteId(null); }}>Cancel</button>
+                  </>
+                ) : (
+                  <button className="btn btn-danger" onClick={e => { e.stopPropagation(); setConfirmDeleteId(item.id); }}>Delete</button>
+                )}
+              </div>
             )}
           </div>
-        </div>
-      ))}
+        );
+      })}
+
+      {!loading && (
+        <Pagination
+          total={total}
+          limit={limit}
+          offset={offset}
+          onPageChange={setOffset}
+          onLimitChange={newLimit => { setLimit(newLimit); setOffset(0); }}
+        />
+      )}
     </div>
   );
 }

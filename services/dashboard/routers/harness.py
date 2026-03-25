@@ -51,9 +51,18 @@ def get_hooks(project: str = Query(""), agent: str = Query("")):
 # --- Generic CRUD endpoints ---
 
 @router.get("/items/{item_type}")
-def list_harness(item_type: str, project: str = Query(""), agent: str = Query("")):
+def list_harness(
+    item_type: str,
+    project: str = Query(""),
+    agent: str = Query(""),
+    limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
     _validate_type(item_type)
-    return list_items_full(item_type, project=project or None, agent=agent or None)
+    all_items = list_items_full(item_type, project=project or None, agent=agent or None)
+    total = len(all_items)
+    items = all_items[offset:offset + limit]
+    return {"items": items, "total": total}
 
 
 @router.get("/items/{item_type}/{item_id}")
@@ -107,6 +116,7 @@ class MetadataUpdate(BaseModel):
     agents: list[str] | None = None
     name: str | None = None
     sort_key: str | None = None
+    project: str | None = None
 
 
 @router.patch("/items/{item_type}/{item_id}")
@@ -119,6 +129,7 @@ def patch_harness_metadata(item_type: str, item_id: int, body: MetadataUpdate):
         item_type, item_id,
         enabled=body.enabled, agents=body.agents,
         name=body.name, sort_key=body.sort_key,
+        project=body.project if body.project is not None else "UNSET",
     )
     return get_item_by_id(item_type, item_id)
 
