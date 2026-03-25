@@ -22,12 +22,6 @@ def collect_md_files(sources: list[str], harness_root: Path) -> list[Path]:
 
 
 def compose_parts(files: list[Path], transform=None) -> str:
-    """
-    Compose files into a single string.
-    Content after FOOTER_MARKER in any file is collected and appended last,
-    so sections like 'Execution Constraints' always appear at the bottom.
-    transform(text, path) -> str is applied per file if provided.
-    """
     parts: list[str] = []
     footer_parts: list[str] = []
     for f in files:
@@ -41,6 +35,25 @@ def compose_parts(files: list[Path], transform=None) -> str:
                 footer_parts.append(tail.strip())
         else:
             text = transform(raw, f) if transform else raw
+            parts.append(text)
+    return "\n\n".join(parts + footer_parts) + "\n"
+
+
+def compose_strings(items: list[tuple[str, str]], transform=None) -> str:
+    """Like compose_parts but accepts (name, content) tuples instead of file paths."""
+    parts: list[str] = []
+    footer_parts: list[str] = []
+    for name, raw in items:
+        raw = raw.rstrip()
+        if FOOTER_MARKER in raw:
+            head, tail = raw.split(FOOTER_MARKER, 1)
+            if head.strip():
+                text = transform(head.rstrip(), name) if transform else head.rstrip()
+                parts.append(text)
+            if tail.strip():
+                footer_parts.append(tail.strip())
+        else:
+            text = transform(raw, name) if transform else raw
             parts.append(text)
     return "\n\n".join(parts + footer_parts) + "\n"
 
@@ -124,7 +137,6 @@ def sync_skills_from_config(harness_root: Path, config: dict, dry_run: bool) -> 
 
 
 def compose_rules_to_file(harness_root: Path, config: dict, dry_run: bool) -> None:
-    """Shared rules compose logic used by Codex and Gemini (Claude has custom behavior)."""
     for target in config.get("targets", []):
         path = Path(target["path"]).expanduser()
         if "compose" in target:
@@ -135,3 +147,28 @@ def compose_rules_to_file(harness_root: Path, config: dict, dry_run: bool) -> No
             else:
                 _, msg = atomic_write(path, content)
                 print(f"  {msg}")
+
+
+def sync_skills_from_db(agent: str, config: dict, dry_run: bool, project: str | None = None) -> None:
+    from services.db.harness import collect_skills_from_db
+    skills = collect_skills_from_db(agent, project=project)
+    for target in config.get("targets", []):
+        dest_dir = Path(target["path"]).expanduser()
+        if dry_run:
+            print(f"  would sync {len(skills)} skill(s) → {dest_dir}")
+            continue
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        for name, data in sorted(skills.items()):
+            dest_skill = dest_dir / name
+            dest_skill.mkdir(parents=True, exist_ok=True)
+            _, msg = atomic_write(dest_skill / "SKILL.md", data["skill_md"])
+            print(f"  {msg}")
+            for rel_path, file_content in sorted(data.get("files", {}).items()):
+                dest_file = dest_skill / rel_path
+                dest_file.parent.mkdir(parents=True, exist_ok=True)
+                _, msg = atomic_write(dest_file, file_content)
+                print(f"  {msg}")
+        for stale in dest_dir.iterdir():
+            if stale.is_dir() and stale.name not in skills:
+                shutil.rmtree(stale)
+                print(f"  removed:   {stale}")

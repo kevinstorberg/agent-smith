@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import tomli
+import tomllib
 import tomli_w
 from pathlib import Path
 
 from scripts.shared.fs import atomic_write
-from scripts.shared.mcp_utils import sync_mcp_to_file
+from scripts.shared.mcp_utils import sync_mcp_to_file, sync_mcp_from_db
 
 
 def _transform(srv: dict) -> dict:
@@ -15,11 +15,14 @@ def _transform(srv: dict) -> dict:
     return entry
 
 
-def main(harness_root: Path, config: dict, dry_run: bool) -> None:
-    sync_mcp_to_file(
-        harness_root, config, dry_run,
-        read_file=lambda p: tomli.loads(p.read_text(encoding="utf-8")),
+def main(harness_root: Path, config: dict, dry_run: bool, source: str = "filesystem", agent: str = "codex", **_) -> None:
+    kwargs = dict(
+        read_file=lambda p: tomllib.loads(p.read_text(encoding="utf-8")),
         write_file=lambda p, d: atomic_write(p, tomli_w.dumps(d)),
         transform_entry=_transform,
         dest_key="mcp_servers",
     )
+    if source == "db":
+        sync_mcp_from_db(agent, config, dry_run, **kwargs)
+    else:
+        sync_mcp_to_file(harness_root, config, dry_run, **kwargs)

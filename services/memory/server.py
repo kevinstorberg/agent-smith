@@ -112,6 +112,114 @@ def memory_update(
     return f"Updated: {id}"
 
 
+# --- Harness editing tools (gated by HARNESS_EDIT_ENABLED) ---
+
+import os
+
+if os.environ.get("HARNESS_EDIT_ENABLED", "").lower() == "true":
+    from services.db.harness import list_items, get_item, upsert_item
+
+    VALID_TYPES = ("rule", "skill", "tool", "hook")
+
+    @mcp.tool()
+    def harness_list(
+        item_type: str,
+        project: str = "",
+        agent: str = "",
+    ) -> list[dict]:
+        """
+        List harness items (rules, skills, tools, or hooks).
+
+        Args:
+            item_type: One of "rule", "skill", "tool", "hook".
+            project:   Filter to a specific project (empty = shared only).
+            agent:     Filter to items assigned to this agent (empty = all).
+
+        Returns:
+            List of items with name, content, agents, enabled, version.
+        """
+        assert item_type in VALID_TYPES, f"item_type must be one of {VALID_TYPES}"
+        return list_items(item_type, project=project or None, agent=agent or None)
+
+    @mcp.tool()
+    def harness_get(
+        name: str,
+        item_type: str,
+        project: str = "",
+    ) -> dict | None:
+        """
+        Get a single harness item by name and type.
+
+        Args:
+            name:      The item name (e.g. "dry", "commit", "Slack").
+            item_type: One of "rule", "skill", "tool", "hook".
+            project:   Project scope (empty = shared).
+
+        Returns:
+            The item dict, or None if not found.
+        """
+        assert item_type in VALID_TYPES, f"item_type must be one of {VALID_TYPES}"
+        return get_item(item_type, name, project=project or None)
+
+    @mcp.tool()
+    def harness_upsert(
+        name: str,
+        item_type: str,
+        content: dict,
+        project: str = "",
+        agents: list[str] | None = None,
+    ) -> str:
+        """
+        Create or update a harness item. Bumps version on update.
+
+        Args:
+            name:      The item name.
+            item_type: One of "rule", "skill", "tool", "hook".
+            content:   Dict with "body" (str) and "metadata" (dict) keys.
+            project:   Project scope (empty = shared).
+            agents:    List of agents to assign (e.g. ["claude", "codex"]).
+
+        Returns:
+            Confirmation with the item ID.
+        """
+        assert item_type in VALID_TYPES, f"item_type must be one of {VALID_TYPES}"
+        item_id = upsert_item(
+            item_type, name, content,
+            project=project or None,
+            agents=agents,
+        )
+        return f"Upserted {item_type} '{name}' (id={item_id})"
+
+    @mcp.tool()
+    def harness_disable(
+        name: str,
+        item_type: str,
+        project: str = "",
+    ) -> str:
+        """
+        Disable a harness item (it will be excluded from sync).
+
+        Args:
+            name:      The item name.
+            item_type: One of "rule", "skill", "tool", "hook".
+            project:   Project scope (empty = shared).
+
+        Returns:
+            Confirmation message.
+        """
+        assert item_type in VALID_TYPES, f"item_type must be one of {VALID_TYPES}"
+        existing = get_item(item_type, name, project=project or None)
+        if not existing:
+            return f"Not found: {item_type} '{name}'"
+        upsert_item(
+            item_type, name, existing["content"],
+            project=project or None,
+            agents=existing["agents"],
+            enabled=False,
+        )
+        return f"Disabled {item_type} '{name}'"
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)

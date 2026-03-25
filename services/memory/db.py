@@ -117,7 +117,6 @@ def add(content: str, repo: str | None = None, tags: list[str] | None = None) ->
             "tags": json.dumps(tags or []),
             "created_at": now_str,
             "updated_at": now_str,
-            "last_accessed_at": now_dt,
         },
     )
 
@@ -203,7 +202,6 @@ def update(
             "tags": json.dumps(new_tags),
             "created_at": existing.get("created_at", now_str),
             "updated_at": now_str,
-            "last_accessed_at": now_dt,
         },
     )
 
