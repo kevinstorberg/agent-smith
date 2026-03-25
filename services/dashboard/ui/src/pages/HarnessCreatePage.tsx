@@ -49,7 +49,7 @@ const styles = {
     textDecoration: 'underline',
   } as React.CSSProperties,
   field: {
-    marginBottom: 16,
+    marginBottom: 20,
   } as React.CSSProperties,
   label: {
     display: 'block',
@@ -106,6 +106,7 @@ export function HarnessCreatePage() {
   const navigate = useNavigate();
 
   const [name, setName] = useState('');
+  const [project, setProject] = useState('');
   const [agents, setAgents] = useState<string[]>([...ALL_AGENTS]);
   const [enabled, setEnabled] = useState(true);
   const [body, setBody] = useState('');
@@ -147,6 +148,7 @@ export function HarnessCreatePage() {
     try {
       const created = await api.harness.items.create(type, {
         name: name.trim(),
+        project: project.trim() || null,
         content,
         agents,
         enabled,
@@ -194,6 +196,16 @@ export function HarnessCreatePage() {
           value={name}
           onChange={e => setName(e.target.value)}
           placeholder={`e.g. ${type === 'tool' ? 'MyAPI' : type === 'hook' ? 'lint_on_save' : 'my_new_' + type}`}
+        />
+      </div>
+
+      <div style={styles.field}>
+        <label style={styles.label}>Project</label>
+        <input
+          style={styles.input}
+          value={project}
+          onChange={e => setProject(e.target.value)}
+          placeholder="Empty = shared/global"
         />
       </div>
 

@@ -43,9 +43,21 @@ async function patch<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
-async function del(path: string): Promise<void> {
+async function del<T = void>(path: string): Promise<T> {
   const res = await fetch(BASE + path, { method: 'DELETE' });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  const text = await res.text();
+  return text ? JSON.parse(text) : (undefined as T);
+}
+
+export interface Paginated<T> {
+  items: T[];
+  total: number;
+}
+
+export interface PaginationParams {
+  limit?: number;
+  offset?: number;
 }
 
 export interface HarnessItem {
@@ -104,13 +116,27 @@ export interface ChartPoint {
   scores: Record<string, number>;
 }
 
+export interface AverageChartPoint {
+  id: number;
+  timestamp: string;
+  score: number;
+}
+
+function paginationToParams(p?: PaginationParams): Record<string, string> {
+  const params: Record<string, string> = {};
+  if (p?.limit !== undefined) params.limit = String(p.limit);
+  if (p?.offset !== undefined) params.offset = String(p.offset);
+  return params;
+}
+
 export const api = {
   harness: {
     rules: () => get<Rule[]>('/harness/rules'),
     skills: () => get<Skill[]>('/harness/skills'),
     mcp: () => get<McpServer[]>('/harness/mcp'),
     items: {
-      list: (type: string) => get<HarnessItem[]>(`/harness/items/${type}`),
+      list: (type: string, pagination?: PaginationParams) =>
+        get<Paginated<HarnessItem>>(`/harness/items/${type}`, paginationToParams(pagination)),
       get: (type: string, id: number) => get<HarnessItem>(`/harness/items/${type}/${id}`),
       create: (type: string, body: unknown) => post<HarnessItem>(`/harness/items/${type}`, body),
       updateContent: (type: string, id: number, content: unknown) =>
@@ -122,16 +148,30 @@ export const api = {
     },
   },
   memory: {
-    search: (q: string, repo = '', limit = '20') =>
-      get<MemoryItem[]>('/memory/search', { q, repo, limit }),
-    list: (repo = '', limit = '20') =>
-      get<MemoryItem[]>('/memory/list', { repo, limit }),
+    search: (q: string, pagination?: PaginationParams & { repo?: string }) =>
+      get<Paginated<MemoryItem>>('/memory/search', {
+        q,
+        ...(pagination?.repo ? { repo: pagination.repo } : {}),
+        ...paginationToParams(pagination),
+      }),
+    list: (pagination?: PaginationParams & { repo?: string }) =>
+      get<Paginated<MemoryItem>>('/memory/list', {
+        ...(pagination?.repo ? { repo: pagination.repo } : {}),
+        ...paginationToParams(pagination),
+      }),
+    get: (id: string) => get<MemoryItem>(`/memory/${id}`),
+    update: (id: string, body: { content?: string; repo?: string; tags?: string[] }) =>
+      put<MemoryItem>(`/memory/${id}`, body),
+    remove: (id: string) => del<{ deleted: boolean }>(`/memory/${id}`),
   },
   evals: {
     list: (params?: Record<string, string>) =>
-      get<EvalRun[]>('/evals', params),
+      get<Paginated<EvalRun>>('/evals', params),
     chart: (params?: Record<string, string>) =>
       get<ChartPoint[]>('/evals/chart', params),
+    chartAverage: (params?: Record<string, string>) =>
+      get<AverageChartPoint[]>('/evals/chart/average', params),
+    categories: () => get<string[]>('/evals/categories'),
     get: (id: number) => get<EvalRun>(`/evals/${id}`),
   },
 };

@@ -202,6 +202,7 @@ def update_metadata(
     agents: list[str] | None = None,
     name: str | None = None,
     sort_key: str | None = None,
+    project: str | None = "UNSET",
 ) -> None:
     assert item_id > 0, "item_id must be positive."
     table = _table(item_type)
@@ -221,6 +222,9 @@ def update_metadata(
     if sort_key is not None:
         sets.append("sort_key = %s")
         params.append(sort_key)
+    if project != "UNSET":
+        sets.append("project = %s")
+        params.append(project or None)
 
     assert sets, "At least one field must be provided."
     sets.append("updated_at = now()")

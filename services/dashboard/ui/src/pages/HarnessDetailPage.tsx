@@ -102,7 +102,7 @@ const styles = {
     display: 'flex',
     gap: 16,
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   } as React.CSSProperties,
   checkboxLabel: {
     display: 'flex',
@@ -136,6 +136,7 @@ export function HarnessDetailPage() {
   const [saving, setSaving] = useState(false);
 
   const [editName, setEditName] = useState('');
+  const [editProject, setEditProject] = useState('');
   const [editAgents, setEditAgents] = useState<string[]>([]);
   const [editEnabled, setEditEnabled] = useState(true);
   const [editBody, setEditBody] = useState('');
@@ -149,6 +150,7 @@ export function HarnessDetailPage() {
       const data = await api.harness.items.get(type, numericId);
       setItem(data);
       setEditName(data.name);
+      setEditProject(data.project || '');
       setEditAgents([...data.agents]);
       setEditEnabled(data.enabled);
       setEditBody(formatBody(data, type));
@@ -174,6 +176,7 @@ export function HarnessDetailPage() {
   const startEditing = () => {
     if (!item) return;
     setEditName(item.name);
+    setEditProject(item.project || '');
     setEditAgents([...item.agents]);
     setEditEnabled(item.enabled);
     setEditBody(formatBody(item, type));
@@ -194,6 +197,7 @@ export function HarnessDetailPage() {
       const metadataChanged =
         editName !== item.name ||
         editEnabled !== item.enabled ||
+        (editProject || null) !== item.project ||
         JSON.stringify(editAgents.sort()) !== JSON.stringify([...item.agents].sort());
 
       let currentId = item.id;
@@ -209,6 +213,7 @@ export function HarnessDetailPage() {
       if (metadataChanged) {
         await api.harness.items.updateMetadata(type, currentId, {
           name: editName,
+          project: editProject || null,
           agents: editAgents,
           enabled: editEnabled,
         });
@@ -278,7 +283,7 @@ export function HarnessDetailPage() {
 
       {editing ? (
         <input
-          style={styles.input}
+          style={{ ...styles.input, marginBottom: 12 }}
           value={editName}
           onChange={e => setEditName(e.target.value)}
         />
@@ -298,35 +303,53 @@ export function HarnessDetailPage() {
         <span className="tag" style={{ background: displayItem.enabled ? 'var(--success)' : 'var(--text-muted)', color: '#1a1a2e' }}>
           {displayItem.enabled ? 'Enabled' : 'Disabled'}
         </span>
+        {displayItem.project && (
+          <span className="tag" style={{ background: 'rgba(91,141,239,0.15)', color: 'var(--info)', borderColor: 'rgba(91,141,239,0.3)' }}>
+            {displayItem.project}
+          </span>
+        )}
         {displayItem.agents.map(a => (
           <span key={a} className="tag">{a}</span>
         ))}
       </div>
 
       {editing && (
-        <div style={styles.checkboxRow}>
-          <label style={styles.checkboxLabel}>
+        <>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 6 }}>
+              Project
+            </label>
             <input
-              type="checkbox"
-              checked={editEnabled}
-              onChange={() => setEditEnabled(!editEnabled)}
-              style={{ accentColor: 'var(--success)', width: 16, height: 16 }}
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', padding: '6px 10px', fontSize: 13, fontFamily: 'var(--font)', width: 220 }}
+              value={editProject}
+              onChange={e => setEditProject(e.target.value)}
+              placeholder="Empty = shared/global"
             />
-            Enabled
-          </label>
-          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>|</span>
-          {ALL_AGENTS.map(agent => (
-            <label key={agent} style={styles.checkboxLabel}>
+          </div>
+          <div style={styles.checkboxRow}>
+            <label style={styles.checkboxLabel}>
               <input
                 type="checkbox"
-                checked={editAgents.includes(agent)}
-                onChange={() => toggleAgent(agent)}
-                style={{ accentColor: 'var(--highlight)', width: 16, height: 16 }}
+                checked={editEnabled}
+                onChange={() => setEditEnabled(!editEnabled)}
+                style={{ accentColor: 'var(--success)', width: 16, height: 16 }}
               />
-              {agent}
+              Enabled
             </label>
-          ))}
-        </div>
+            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>|</span>
+            {ALL_AGENTS.map(agent => (
+              <label key={agent} style={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={editAgents.includes(agent)}
+                  onChange={() => toggleAgent(agent)}
+                  style={{ accentColor: 'var(--highlight)', width: 16, height: 16 }}
+                />
+                {agent}
+              </label>
+            ))}
+          </div>
+        </>
       )}
 
       <div className="card" style={{ marginBottom: 24 }}>
