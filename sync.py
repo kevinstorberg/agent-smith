@@ -51,6 +51,7 @@ def call_script(
     script_path: Path,
     type_config: dict,
     dry_run: bool,
+    source: str = "filesystem",
 ) -> None:
     from scripts.shared.paths import ensure_importable
     ensure_importable()
@@ -62,7 +63,7 @@ def call_script(
     spec.loader.exec_module(module)
 
     if hasattr(module, "main"):
-        module.main(repo_root, type_config, dry_run)
+        module.main(repo_root, type_config, dry_run, source=source, agent=agent)
     else:
         print(f"  warning: {script_path} has no main() — skipped")
 
@@ -94,6 +95,11 @@ def main() -> int:
 
     harness = load_harness(repo_root)
     agents: dict = harness.get("agents", {})
+    source = harness.get("source", "filesystem")
+
+    if source == "db":
+        from services.db import init_db
+        init_db()
 
     scripts = discover_scripts(repo_root, list(agents))
     if not scripts:
@@ -109,7 +115,7 @@ def main() -> int:
             )
             continue
         print(f"[{agent}/{type_name}]")
-        call_script(repo_root, agent, type_name, script_path, type_config, args.dry_run)
+        call_script(repo_root, agent, type_name, script_path, type_config, args.dry_run, source=source)
 
     return 0
 

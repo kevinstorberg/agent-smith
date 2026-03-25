@@ -50,3 +50,30 @@ def sync_mcp_to_file(
         data[dest_key] = {name: transform_entry(srv) for name, srv in servers.items()}
         _, msg = write_file(dest, data)
         print(f"  {msg}")
+
+
+def sync_mcp_from_db(
+    agent: str,
+    config: dict,
+    dry_run: bool,
+    read_file: Callable[[Path], dict],
+    write_file: Callable[[Path, dict], tuple[bool, str]],
+    transform_entry: Callable[[dict], dict],
+    dest_key: str,
+    project: str | None = None,
+) -> None:
+    from services.db.harness import collect_tools_from_db
+    servers = collect_tools_from_db(agent, project=project)
+    servers = {
+        name: expand_env(srv) for name, srv in servers.items()
+        if os.environ.get(f"{name}_ENABLED", "").lower() != "false"
+    }
+    for target in config.get("targets", []):
+        dest = Path(target["path"]).expanduser()
+        if dry_run:
+            print(f"  would sync {len(servers)} server(s) -> {dest}")
+            continue
+        data = read_file(dest) if dest.exists() else {}
+        data[dest_key] = {name: transform_entry(srv) for name, srv in servers.items()}
+        _, msg = write_file(dest, data)
+        print(f"  {msg}")

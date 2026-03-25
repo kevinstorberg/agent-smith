@@ -1,51 +1,36 @@
 from __future__ import annotations
 
-from pathlib import Path
+from fastapi import APIRouter, Query
 
-from fastapi import APIRouter
-
-from scripts.shared.fs import collect_md_files, collect_skill_dirs
-from scripts.shared.mcp_utils import collect_mcp_servers
+from services.db.harness import list_rules, list_skills, list_tools, list_hooks
 
 router = APIRouter()
 
-REPO_ROOT = Path(__file__).parent.parent.parent.parent
-HARNESS_ROOT = REPO_ROOT / "harness"
-RULES_SOURCES = ["harness/rules/shared/"]
-SKILLS_SOURCES = ["harness/skills/shared/"]
-MCP_SOURCES = ["harness/mcp/shared/"]
-
 
 @router.get("/rules")
-def list_rules():
-    files = collect_md_files(RULES_SOURCES, REPO_ROOT)
-    return [
-        {
-            "name": f.stem,
-            "content": f.read_text(encoding="utf-8"),
-        }
-        for f in files
-    ]
+def get_rules(project: str = Query(""), agent: str = Query("")):
+    rows = list_rules(project=project or None, agent=agent or None)
+    return [{"name": r["name"], "content": r["content"]["body"]} for r in rows]
 
 
 @router.get("/skills")
-def list_skills():
-    skills = collect_skill_dirs(SKILLS_SOURCES, REPO_ROOT)
+def get_skills(project: str = Query(""), agent: str = Query("")):
+    rows = list_skills(project=project or None, agent=agent or None)
     result = []
-    for name, path in sorted(skills.items()):
-        skill_md = path / "SKILL.md"
-        result.append({
-            "name": name,
-            "content": skill_md.read_text(encoding="utf-8") if skill_md.exists() else "",
-            "files": sorted(str(f.relative_to(path)) for f in path.rglob("*") if f.is_file()),
-        })
+    for r in rows:
+        meta = r["content"].get("metadata", {})
+        files = sorted(meta.get("files", {}).keys())
+        result.append({"name": r["name"], "content": r["content"]["body"], "files": files})
     return result
 
 
 @router.get("/mcp")
-def list_mcp():
-    servers = collect_mcp_servers(MCP_SOURCES, REPO_ROOT)
-    return [
-        {"name": name, "config": config}
-        for name, config in sorted(servers.items())
-    ]
+def get_mcp(project: str = Query(""), agent: str = Query("")):
+    rows = list_tools(project=project or None, agent=agent or None)
+    return [{"name": r["name"], "config": r["content"].get("metadata", {})} for r in rows]
+
+
+@router.get("/hooks")
+def get_hooks(project: str = Query(""), agent: str = Query("")):
+    rows = list_hooks(project=project or None, agent=agent or None)
+    return [{"name": r["name"], "config": r["content"].get("metadata", {})} for r in rows]

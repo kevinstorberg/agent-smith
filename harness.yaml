@@ -1,3 +1,5 @@
+source: db
+
 agents:
   claude:
     rules:
