@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import os
 import time
+from datetime import datetime
+from typing import Any
 
+from langchain_core.documents import Document
 from langchain_core.vectorstores import VectorStore
 from langchain_pinecone import PineconeVectorStore
 from pinecone import Pinecone, ServerlessSpec
@@ -48,8 +51,20 @@ def init() -> None:
     _get_index()
 
 
+class _SafePineconeVectorStore(PineconeVectorStore):
+    """Wraps PineconeVectorStore to serialize datetime values in metadata."""
+
+    def add_documents(self, documents: list[Document], **kwargs: Any) -> list[str]:
+        for doc in documents:
+            for key, val in list(doc.metadata.items()):
+                if isinstance(val, datetime):
+                    doc.metadata[key] = val.isoformat()
+        kwargs.pop("current_time", None)
+        return super().add_documents(documents, **kwargs)
+
+
 def get_vectorstore(embeddings) -> VectorStore:
-    return PineconeVectorStore(index=_get_index(), embedding=embeddings)
+    return _SafePineconeVectorStore(index=_get_index(), embedding=embeddings)
 
 
 def count() -> int:

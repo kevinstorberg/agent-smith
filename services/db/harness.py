@@ -29,6 +29,15 @@ HOOK_EVENT_MAP = {
     },
 }
 
+# Subquery to get only the latest version per (name, project)
+_LATEST_VERSION_CLAUSE = """
+    version = (
+        SELECT MAX(v.version) FROM {table} v
+        WHERE v.name = {table}.name
+          AND v.project IS NOT DISTINCT FROM {table}.project
+    )
+"""
+
 
 def _table(item_type: str) -> str:
     assert item_type in VALID_TABLES, f"Invalid type: {item_type}. Must be one of {set(VALID_TABLES)}."
@@ -42,12 +51,16 @@ def _row_to_dict(row: dict) -> dict:
     return result
 
 
+# --- Sync-oriented queries (latest version, enabled only) ---
+
 def list_items(item_type: str, project: str | None = None, agent: str | None = None) -> list[dict]:
     table = _table(item_type)
+    latest = _LATEST_VERSION_CLAUSE.format(table=table)
 
     query = f"""
         SELECT * FROM {table}
         WHERE enabled = true
+          AND {latest}
           AND (project IS NULL OR project = %s)
     """
     params: list = [project]
@@ -66,7 +79,6 @@ def list_items(item_type: str, project: str | None = None, agent: str | None = N
     if project is None:
         return rows
 
-    # Project-scoped items override shared items by name
     seen = {}
     for row in rows:
         name = row["name"]
@@ -78,20 +90,191 @@ def list_items(item_type: str, project: str | None = None, agent: str | None = N
     return sorted(seen.values(), key=lambda r: r["sort_key"])
 
 
-def get_item(item_type: str, name: str, project: str | None = None) -> dict | None:
+# --- Dashboard CRUD queries ---
+
+def list_items_full(item_type: str, project: str | None = None, agent: str | None = None) -> list[dict]:
+    table = _table(item_type)
+    latest = _LATEST_VERSION_CLAUSE.format(table=table)
+
+    query = f"""
+        SELECT * FROM {table}
+        WHERE {latest}
+          AND (project IS NULL OR project = %s)
+    """
+    params: list = [project]
+
+    if agent:
+        query += " AND %s = ANY(agents)"
+        params.append(agent)
+
+    query += " ORDER BY sort_key"
+
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, params)
+            rows = [_row_to_dict(r) for r in cur.fetchall()]
+
+    if project is None:
+        return rows
+
+    seen = {}
+    for row in rows:
+        name = row["name"]
+        if row["project"] is not None:
+            seen[name] = row
+        elif name not in seen:
+            seen[name] = row
+
+    return sorted(seen.values(), key=lambda r: r["sort_key"])
+
+
+def get_item_by_id(item_type: str, item_id: int) -> dict | None:
+    assert item_id > 0, "item_id must be positive."
+    table = _table(item_type)
+
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(f"SELECT * FROM {table} WHERE id = %s", (item_id,))
+            row = cur.fetchone()
+            return _row_to_dict(row) if row else None
+
+
+def create_item(
+    item_type: str,
+    name: str,
+    content: dict,
+    project: str | None = None,
+    agents: list[str] | None = None,
+    sort_key: str | None = None,
+    enabled: bool = True,
+) -> int:
+    assert name, "name must not be empty."
+    assert isinstance(content, dict) and "body" in content, "content must be a dict with a 'body' key."
+    table = _table(item_type)
+
+    if agents is not None:
+        agents = sorted(agents)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                INSERT INTO {table} (name, project, agents, content, sort_key, enabled, version)
+                VALUES (%s, %s, %s, %s, %s, %s, 1)
+                RETURNING id
+                """,
+                (name, project, agents or [], Json(content), sort_key or name, enabled),
+            )
+            return cur.fetchone()[0]
+
+
+def update_content(item_type: str, item_id: int, content: dict) -> int:
+    assert item_id > 0, "item_id must be positive."
+    assert isinstance(content, dict) and "body" in content, "content must be a dict with a 'body' key."
+    table = _table(item_type)
+
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(f"SELECT * FROM {table} WHERE id = %s", (item_id,))
+            source = cur.fetchone()
+            assert source, f"Item not found: {item_id}"
+
+            new_version = source["version"] + 1
+            cur.execute(
+                f"""
+                INSERT INTO {table} (name, project, agents, content, sort_key, enabled, version)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    source["name"], source["project"], source["agents"],
+                    Json(content), source["sort_key"], source["enabled"],
+                    new_version,
+                ),
+            )
+            return cur.fetchone()["id"]
+
+
+def update_metadata(
+    item_type: str,
+    item_id: int,
+    enabled: bool | None = None,
+    agents: list[str] | None = None,
+    name: str | None = None,
+    sort_key: str | None = None,
+) -> None:
+    assert item_id > 0, "item_id must be positive."
+    table = _table(item_type)
+
+    sets = []
+    params: list = []
+
+    if enabled is not None:
+        sets.append("enabled = %s")
+        params.append(enabled)
+    if agents is not None:
+        sets.append("agents = %s")
+        params.append(sorted(agents))
+    if name is not None:
+        sets.append("name = %s")
+        params.append(name)
+    if sort_key is not None:
+        sets.append("sort_key = %s")
+        params.append(sort_key)
+
+    assert sets, "At least one field must be provided."
+    sets.append("updated_at = now()")
+    params.append(item_id)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE {table} SET {', '.join(sets)} WHERE id = %s",
+                params,
+            )
+
+
+def get_version_history(item_type: str, name: str, project: str | None = None) -> list[dict]:
     assert name, "name must not be empty."
     table = _table(item_type)
 
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            # Prefer project-scoped, fall back to shared
+            if project is None:
+                cur.execute(
+                    f"SELECT * FROM {table} WHERE name = %s AND project IS NULL ORDER BY version DESC",
+                    (name,),
+                )
+            else:
+                cur.execute(
+                    f"SELECT * FROM {table} WHERE name = %s AND project = %s ORDER BY version DESC",
+                    (name, project),
+                )
+            return [_row_to_dict(r) for r in cur.fetchall()]
+
+
+# --- Legacy queries (used by sync migration script) ---
+
+def get_item(item_type: str, name: str, project: str | None = None) -> dict | None:
+    assert name, "name must not be empty."
+    table = _table(item_type)
+    latest = _LATEST_VERSION_CLAUSE.format(table=table)
+
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             if project:
-                cur.execute(f"SELECT * FROM {table} WHERE name = %s AND project = %s", (name, project))
+                cur.execute(
+                    f"SELECT * FROM {table} WHERE name = %s AND project = %s AND {latest}",
+                    (name, project),
+                )
                 row = cur.fetchone()
                 if row:
                     return _row_to_dict(row)
 
-            cur.execute(f"SELECT * FROM {table} WHERE name = %s AND project IS NULL", (name,))
+            cur.execute(
+                f"SELECT * FROM {table} WHERE name = %s AND project IS NULL AND {latest}",
+                (name,),
+            )
             row = cur.fetchone()
             return _row_to_dict(row) if row else None
 
@@ -112,22 +295,21 @@ def upsert_item(
     if agents is not None:
         agents = sorted(agents)
 
+    existing = get_item(item_type, name, project=project)
+    if existing:
+        new_version = existing["version"] + 1
+    else:
+        new_version = 1
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 f"""
-                INSERT INTO {table} (name, project, agents, content, sort_key, enabled)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (name, project) DO UPDATE SET
-                    content = EXCLUDED.content,
-                    agents = EXCLUDED.agents,
-                    sort_key = EXCLUDED.sort_key,
-                    enabled = EXCLUDED.enabled,
-                    version = {table}.version + 1,
-                    updated_at = now()
+                INSERT INTO {table} (name, project, agents, content, sort_key, enabled, version)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
-                (name, project, agents, Json(content), sort_key or name, enabled),
+                (name, project, agents or [], Json(content), sort_key or name, enabled, new_version),
             )
             return cur.fetchone()[0]
 
@@ -139,7 +321,7 @@ def map_hook_event(canonical_name: str, agent: str) -> str | None:
     return agent_map.get(canonical_name)
 
 
-# Convenience wrappers — one per table type
+# Convenience wrappers
 
 def list_rules(**kwargs) -> list[dict]:
     return list_items("rule", **kwargs)
@@ -179,22 +361,13 @@ def upsert_hook(name: str, **kwargs) -> int:
 
 
 # --- Sync-oriented collect functions ---
-# These return data in the shapes the sync pipeline expects.
 
-def collect_rules_from_db(
-    agent: str,
-    project: str | None = None,
-) -> list[tuple[str, str]]:
-    """Returns [(name, markdown_body), ...] ordered by sort_key."""
+def collect_rules_from_db(agent: str, project: str | None = None) -> list[tuple[str, str]]:
     rows = list_items("rule", project=project, agent=agent)
     return [(r["name"], r["content"]["body"]) for r in rows]
 
 
-def collect_skills_from_db(
-    agent: str,
-    project: str | None = None,
-) -> dict[str, dict]:
-    """Returns {skill_name: {"skill_md": str, "files": {path: content}}}."""
+def collect_skills_from_db(agent: str, project: str | None = None) -> dict[str, dict]:
     rows = list_items("skill", project=project, agent=agent)
     result = {}
     for r in rows:
@@ -206,20 +379,12 @@ def collect_skills_from_db(
     return result
 
 
-def collect_tools_from_db(
-    agent: str,
-    project: str | None = None,
-) -> dict[str, dict]:
-    """Returns {tool_name: config_dict} with env vars NOT expanded (raw)."""
+def collect_tools_from_db(agent: str, project: str | None = None) -> dict[str, dict]:
     rows = list_items("tool", project=project, agent=agent)
     return {r["name"]: r["content"].get("metadata", {}) for r in rows}
 
 
-def collect_hooks_from_db(
-    agent: str,
-    project: str | None = None,
-) -> dict[str, list[dict]]:
-    """Returns {agent_event_name: [hook_handlers]} grouped by mapped event."""
+def collect_hooks_from_db(agent: str, project: str | None = None) -> dict[str, list[dict]]:
     rows = list_items("hook", project=project, agent=agent)
     events: dict[str, list[dict]] = {}
     for r in rows:
@@ -228,10 +393,8 @@ def collect_hooks_from_db(
         mapped = map_hook_event(canonical, agent)
         if not mapped:
             continue
-        matcher = meta.get("matcher", "")
-        handlers = meta.get("hooks", [])
         events.setdefault(mapped, []).append({
-            "matcher": matcher,
-            "hooks": handlers,
+            "matcher": meta.get("matcher", ""),
+            "hooks": meta.get("hooks", []),
         })
     return events
