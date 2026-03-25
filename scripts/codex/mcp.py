@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import tomllib
+import tomli
 import tomli_w
 from pathlib import Path
 
@@ -18,7 +18,7 @@ def _transform(srv: dict) -> dict:
 def main(harness_root: Path, config: dict, dry_run: bool) -> None:
     sync_mcp_to_file(
         harness_root, config, dry_run,
-        read_file=lambda p: tomllib.loads(p.read_text(encoding="utf-8")),
+        read_file=lambda p: tomli.loads(p.read_text(encoding="utf-8")),
         write_file=lambda p, d: atomic_write(p, tomli_w.dumps(d)),
         transform_entry=_transform,
         dest_key="mcp_servers",
