@@ -1,7 +1,0 @@
-{
-  "name": "Slack",
-  "url": "https://mcp.slack.com/mcp",
-  "headers": {
-    "Authorization": "Bearer ${SLACK_ACCESS_TOKEN}"
-  }
-}
