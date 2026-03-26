@@ -5,27 +5,6 @@ import shutil
 import tempfile
 from pathlib import Path
 
-def collect_md_files(sources: list[str], harness_root: Path) -> list[Path]:
-    files: list[Path] = []
-    for source in sources:
-        path = (harness_root / source).expanduser().resolve()
-        if path.is_file() and path.suffix == ".md":
-            files.append(path)
-        elif path.is_dir():
-            files.extend(
-                sorted(f for f in path.glob("*.md") if not f.name.startswith("."))
-            )
-    return files
-
-
-def compose_parts(files: list[Path], transform=None) -> str:
-    parts: list[str] = []
-    for f in files:
-        raw = f.read_text(encoding="utf-8").rstrip()
-        text = transform(raw, f) if transform else raw
-        parts.append(text)
-    return "\n\n".join(parts) + "\n"
-
 
 def compose_strings(items: list[tuple[str, str]], transform=None) -> str:
     parts: list[str] = []
@@ -45,7 +24,6 @@ def extract_brief(content: str, rules_path: Path) -> str:
 
 
 def atomic_write(path: Path | str, content: str) -> tuple[bool, str]:
-    """Write file atomically; skips write if content is unchanged."""
     path = Path(path).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -67,101 +45,74 @@ def atomic_write(path: Path | str, content: str) -> tuple[bool, str]:
     return True, f"updated:   {path}"
 
 
-def collect_skill_dirs(sources: list[str], harness_root: Path) -> dict[str, Path]:
-    skills: dict[str, Path] = {}
-    for source in sources:
-        path = (harness_root / source).expanduser().resolve()
-        if path.is_dir():
-            for candidate in sorted(path.iterdir()):
-                if candidate.is_dir() and (candidate / "SKILL.md").is_file():
-                    skills[candidate.name] = candidate
-    return skills
+def sync_rules(agent: str, dry_run: bool) -> None:
+    from scripts.shared.agents import AGENT_TARGETS
+    from services.db.harness import collect_rules_from_db
 
+    cfg = AGENT_TARGETS[agent]
+    items = collect_rules_from_db(agent)
+    rules_file = Path(cfg["rules_file"]).expanduser()
+    rules_dir = Path(cfg["rules_dir"]).expanduser() if "rules_dir" in cfg else None
 
-def sync_skill_dirs(skills: dict[str, Path], dest_dir: Path, dry_run: bool) -> None:
+    if rules_dir:
+        transform = lambda text, name: extract_brief(text, rules_dir / f"{name}.md")
+    else:
+        transform = None
+
+    content = compose_strings(items, transform=transform)
+
     if dry_run:
-        print(f"  would sync {len(skills)} skill(s) → {dest_dir}")
+        print(f"  would compose {len(items)} file(s) -> {rules_file}")
+    else:
+        _, msg = atomic_write(rules_file, content)
+        print(f"  {msg}")
+
+    if rules_dir:
+        _sync_rules_dir(items, rules_dir, dry_run)
+
+
+def _sync_rules_dir(items: list[tuple[str, str]], dest_dir: Path, dry_run: bool) -> None:
+    if dry_run:
+        print(f"  would copy {len(items)} file(s) -> {dest_dir}")
         return
+
     dest_dir.mkdir(parents=True, exist_ok=True)
-    for name, src_dir in skills.items():
+    source_names = {f"{name}.md" for name, _ in items}
+
+    for name, body in items:
+        _, msg = atomic_write(dest_dir / f"{name}.md", body)
+        print(f"  {msg}")
+
+    for stale in dest_dir.glob("*.md"):
+        if stale.name not in source_names:
+            stale.unlink()
+            print(f"  removed:   {stale}")
+
+
+def sync_skills(agent: str, dry_run: bool) -> None:
+    from scripts.shared.agents import AGENT_TARGETS
+    from services.db.harness import collect_skills_from_db
+
+    skills = collect_skills_from_db(agent)
+    dest_dir = Path(AGENT_TARGETS[agent]["skills_dir"]).expanduser()
+
+    if dry_run:
+        print(f"  would sync {len(skills)} skill(s) -> {dest_dir}")
+        return
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for name, data in sorted(skills.items()):
         dest_skill = dest_dir / name
         dest_skill.mkdir(parents=True, exist_ok=True)
-        src_files = {f.relative_to(src_dir) for f in src_dir.rglob("*") if f.is_file()}
-        for rel in sorted(src_files):
-            dest_file = dest_skill / rel
+        _, msg = atomic_write(dest_skill / "SKILL.md", data["skill_md"])
+        print(f"  {msg}")
+        for rel_path, file_content in sorted(data.get("files", {}).items()):
+            dest_file = dest_skill / rel_path
             dest_file.parent.mkdir(parents=True, exist_ok=True)
-            _, msg = atomic_write(dest_file, (src_dir / rel).read_text(encoding="utf-8"))
+            _, msg = atomic_write(dest_file, file_content)
             print(f"  {msg}")
-        for dest_file in list(dest_skill.rglob("*")):
-            if dest_file.is_file() and dest_file.relative_to(dest_skill) not in src_files:
-                dest_file.unlink()
-                print(f"  removed:   {dest_file}")
+
     for stale in dest_dir.iterdir():
         if stale.is_dir() and stale.name not in skills:
             shutil.rmtree(stale)
             print(f"  removed:   {stale}")
-
-
-def sync_skills_from_config(harness_root: Path, config: dict, dry_run: bool) -> None:
-    for target in config.get("targets", []):
-        dest_dir = Path(target["path"]).expanduser()
-        skills = collect_skill_dirs(target.get("copy", []), harness_root)
-        sync_skill_dirs(skills, dest_dir, dry_run)
-
-
-def compose_rules_to_file(harness_root: Path, config: dict, dry_run: bool) -> None:
-    for target in config.get("targets", []):
-        path = Path(target["path"]).expanduser()
-        if "compose" in target:
-            files = collect_md_files(target["compose"], harness_root)
-            content = compose_parts(files)
-            if dry_run:
-                print(f"  would compose {len(files)} file(s) -> {path}")
-            else:
-                _, msg = atomic_write(path, content)
-                print(f"  {msg}")
-
-
-def sync_skills(harness_root: Path, config: dict, dry_run: bool, source: str, agent: str) -> None:
-    if source == "db":
-        sync_skills_from_db(agent, config, dry_run)
-    else:
-        sync_skills_from_config(harness_root, config, dry_run)
-
-
-def compose_rules_from_db(agent: str, config: dict, dry_run: bool) -> None:
-    from services.db.harness import collect_rules_from_db
-    items = collect_rules_from_db(agent)
-    content = compose_strings(items)
-    for target in config.get("targets", []):
-        path = Path(target["path"]).expanduser()
-        if dry_run:
-            print(f"  would compose {len(items)} file(s) -> {path}")
-        else:
-            _, msg = atomic_write(path, content)
-            print(f"  {msg}")
-
-
-def sync_skills_from_db(agent: str, config: dict, dry_run: bool, project: str | None = None) -> None:
-    from services.db.harness import collect_skills_from_db
-    skills = collect_skills_from_db(agent, project=project)
-    for target in config.get("targets", []):
-        dest_dir = Path(target["path"]).expanduser()
-        if dry_run:
-            print(f"  would sync {len(skills)} skill(s) → {dest_dir}")
-            continue
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        for name, data in sorted(skills.items()):
-            dest_skill = dest_dir / name
-            dest_skill.mkdir(parents=True, exist_ok=True)
-            _, msg = atomic_write(dest_skill / "SKILL.md", data["skill_md"])
-            print(f"  {msg}")
-            for rel_path, file_content in sorted(data.get("files", {}).items()):
-                dest_file = dest_skill / rel_path
-                dest_file.parent.mkdir(parents=True, exist_ok=True)
-                _, msg = atomic_write(dest_file, file_content)
-                print(f"  {msg}")
-        for stale in dest_dir.iterdir():
-            if stale.is_dir() and stale.name not in skills:
-                shutil.rmtree(stale)
-                print(f"  removed:   {stale}")

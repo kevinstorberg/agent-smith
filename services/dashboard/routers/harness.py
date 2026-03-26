@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import subprocess
+import sys
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -11,6 +15,8 @@ from services.db.harness import (
 )
 
 router = APIRouter()
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 
 def _validate_type(item_type: str) -> None:
@@ -159,3 +165,26 @@ def delete_harness(item_type: str, item_id: int):
         raise HTTPException(404, f"{item_type} not found: {item_id}")
     update_metadata(item_type, item_id, enabled=False)
     return {"deleted": True, "id": item_id}
+
+
+@router.post("/sync")
+def run_sync():
+    sync_script = _REPO_ROOT / "sync.py"
+    if not sync_script.exists():
+        raise HTTPException(500, f"sync.py not found at {sync_script}")
+    result = subprocess.run(
+        [sys.executable, str(sync_script)],
+        capture_output=True, text=True, cwd=str(_REPO_ROOT), timeout=60,
+    )
+    return {
+        "success": result.returncode == 0,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+    }
+
+
+@router.post("/unsync")
+def run_unsync():
+    from scripts.shared.agents import unsync_all
+    removed = unsync_all()
+    return {"success": True, "removed": removed}

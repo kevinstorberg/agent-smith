@@ -2,22 +2,19 @@ from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path
 
-from scripts.shared.fs import collect_md_files, compose_parts
+from scripts.shared.fs import compose_strings
 
-REPO_ROOT = Path(__file__).parent.parent.parent
-HARNESS_ROOT = REPO_ROOT / "harness"
-RULES_SOURCES = ["harness/main.md", "harness/rules/shared/"]
 EXCLUDE_RULES = {"memory"}
 
 
 def _load_rules_context() -> str:
-    files = [
-        f for f in collect_md_files(RULES_SOURCES, REPO_ROOT)
-        if f.stem not in EXCLUDE_RULES
+    from services.db.harness import collect_rules_from_db
+    items = [
+        (name, body) for name, body in collect_rules_from_db("claude")
+        if name not in EXCLUDE_RULES
     ]
-    return compose_parts(files)
+    return compose_strings(items)
 
 
 def _collect_stream(chunks) -> str:

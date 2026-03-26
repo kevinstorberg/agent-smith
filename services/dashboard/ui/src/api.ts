@@ -134,6 +134,8 @@ export const api = {
     rules: () => get<Rule[]>('/harness/rules'),
     skills: () => get<Skill[]>('/harness/skills'),
     mcp: () => get<McpServer[]>('/harness/mcp'),
+    sync: () => post<{ success: boolean; stdout: string; stderr: string }>('/harness/sync', {}),
+    unsync: () => post<{ success: boolean; removed: string[] }>('/harness/unsync', {}),
     items: {
       list: (type: string, pagination?: PaginationParams) =>
         get<Paginated<HarnessItem>>(`/harness/items/${type}`, paginationToParams(pagination)),

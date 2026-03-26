@@ -26,13 +26,10 @@ def test_run_agent_rejects_unknown_model():
 
 
 def test_exclude_rules_filters_memory():
-    from glob import glob
-    rule_files = [
-        Path(r).stem for r in sorted(glob(str(RULES_DIR / "*.md")))
-        if Path(r).stem not in EXCLUDE_RULES
-    ]
-    assert "memory" not in rule_files
-    assert len(rule_files) > 0
+    from services.db.harness import collect_rules_from_db
+    rule_names = [name for name, _ in collect_rules_from_db("claude") if name not in EXCLUDE_RULES]
+    assert "memory" not in rule_names
+    assert len(rule_names) > 0
 
 
 def test_rule_to_steps_extracts_numbered_items():
