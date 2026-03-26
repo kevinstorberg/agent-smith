@@ -16,16 +16,24 @@ function navClass({ isActive }: { isActive: boolean }): string {
 export function Sidebar() {
   const [syncing, setSyncing] = useState(false);
   const [unsyncing, setUnsyncing] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  function showToast(message: string, type: 'success' | 'error') {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  }
 
   async function handleSync() {
     setSyncing(true);
     try {
       const res = await api.harness.sync();
-      if (!res.success) {
-        alert(`Sync failed:\n${res.stderr || res.stdout}`);
+      if (res.success) {
+        showToast('Sync complete', 'success');
+      } else {
+        showToast(`Sync failed: ${res.stderr || res.stdout}`, 'error');
       }
     } catch (err) {
-      alert(`Sync error: ${err instanceof Error ? err.message : String(err)}`);
+      showToast(`Sync error: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setSyncing(false);
     }
@@ -36,11 +44,14 @@ export function Sidebar() {
     setUnsyncing(true);
     try {
       const res = await api.harness.unsync();
-      if (!res.success) {
-        alert('Unsync failed');
+      if (res.success) {
+        const count = res.removed?.length || 0;
+        showToast(`Unsynced — ${count} item${count !== 1 ? 's' : ''} removed`, 'success');
+      } else {
+        showToast('Unsync failed', 'error');
       }
     } catch (err) {
-      alert(`Unsync error: ${err instanceof Error ? err.message : String(err)}`);
+      showToast(`Unsync error: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setUnsyncing(false);
     }
@@ -73,6 +84,12 @@ export function Sidebar() {
           </button>
         </div>
       </div>
+
+      {toast && (
+        <div className={`toast toast-${toast.type}`}>
+          {toast.message}
+        </div>
+      )}
     </nav>
   );
 }
