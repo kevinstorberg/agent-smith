@@ -1,5 +1,3 @@
-"""FastMCP HTTP server exposing long-term memory tools to agents."""
-
 from __future__ import annotations
 
 import argparse
@@ -111,8 +109,6 @@ def memory_update(
     )
     return f"Updated: {id}"
 
-
-# --- Harness editing tools (gated by HARNESS_EDIT_ENABLED) ---
 
 import os
 

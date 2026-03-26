@@ -1,6 +1,5 @@
 # PRAGMATIC PRINCIPLES & DIRECTIVES
 
-<!-- footer -->
 ## Plan Conformance
 
 * **The Rule:** Every implementation plan must use the following structure.

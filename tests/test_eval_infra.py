@@ -7,17 +7,7 @@ import pytest
 from evals.test_rules import load_scenarios, EXCLUDE_RULES, RULES_DIR
 from evals.shared.runner import run_agent
 from evals.shared.judge import _rule_to_steps, _load_judge_config
-
-
-def _postgres_available() -> bool:
-    try:
-        from services.db.connection import DATABASE_URL
-        import psycopg2
-        conn = psycopg2.connect(DATABASE_URL)
-        conn.close()
-        return True
-    except Exception:
-        return False
+from tests.conftest import postgres_available
 
 
 def test_load_scenarios_filters_disabled():
@@ -81,7 +71,7 @@ def test_rule_files_have_examples():
 
 
 @pytest.mark.skipif(
-    not _postgres_available(),
+    not postgres_available(),
     reason="Postgres not available",
 )
 def test_save_result_inserts_into_db():

@@ -29,7 +29,6 @@ HOOK_EVENT_MAP = {
     },
 }
 
-# Subquery to get only the latest version per (name, project)
 _LATEST_VERSION_CLAUSE = """
     version = (
         SELECT MAX(v.version) FROM {table} v
@@ -51,81 +50,52 @@ def _row_to_dict(row: dict) -> dict:
     return result
 
 
-# --- Sync-oriented queries (latest version, enabled only) ---
+def _list_items_internal(
+    item_type: str,
+    project: str | None = None,
+    agent: str | None = None,
+    enabled_only: bool = True,
+) -> list[dict]:
+    table = _table(item_type)
+    latest = _LATEST_VERSION_CLAUSE.format(table=table)
+
+    query = f"SELECT * FROM {table}\n        WHERE {latest}\n          AND (project IS NULL OR project = %s)"
+    params: list = [project]
+
+    if enabled_only:
+        query += "\n          AND enabled = true"
+
+    if agent:
+        query += "\n          AND %s = ANY(agents)"
+        params.append(agent)
+
+    query += "\n        ORDER BY sort_key"
+
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, params)
+            rows = [_row_to_dict(r) for r in cur.fetchall()]
+
+    if project is None:
+        return rows
+
+    seen = {}
+    for row in rows:
+        name = row["name"]
+        if row["project"] is not None:
+            seen[name] = row
+        elif name not in seen:
+            seen[name] = row
+
+    return sorted(seen.values(), key=lambda r: r["sort_key"])
+
 
 def list_items(item_type: str, project: str | None = None, agent: str | None = None) -> list[dict]:
-    table = _table(item_type)
-    latest = _LATEST_VERSION_CLAUSE.format(table=table)
+    return _list_items_internal(item_type, project, agent, enabled_only=True)
 
-    query = f"""
-        SELECT * FROM {table}
-        WHERE enabled = true
-          AND {latest}
-          AND (project IS NULL OR project = %s)
-    """
-    params: list = [project]
-
-    if agent:
-        query += " AND %s = ANY(agents)"
-        params.append(agent)
-
-    query += " ORDER BY sort_key"
-
-    with get_connection() as conn:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(query, params)
-            rows = [_row_to_dict(r) for r in cur.fetchall()]
-
-    if project is None:
-        return rows
-
-    seen = {}
-    for row in rows:
-        name = row["name"]
-        if row["project"] is not None:
-            seen[name] = row
-        elif name not in seen:
-            seen[name] = row
-
-    return sorted(seen.values(), key=lambda r: r["sort_key"])
-
-
-# --- Dashboard CRUD queries ---
 
 def list_items_full(item_type: str, project: str | None = None, agent: str | None = None) -> list[dict]:
-    table = _table(item_type)
-    latest = _LATEST_VERSION_CLAUSE.format(table=table)
-
-    query = f"""
-        SELECT * FROM {table}
-        WHERE {latest}
-          AND (project IS NULL OR project = %s)
-    """
-    params: list = [project]
-
-    if agent:
-        query += " AND %s = ANY(agents)"
-        params.append(agent)
-
-    query += " ORDER BY sort_key"
-
-    with get_connection() as conn:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(query, params)
-            rows = [_row_to_dict(r) for r in cur.fetchall()]
-
-    if project is None:
-        return rows
-
-    seen = {}
-    for row in rows:
-        name = row["name"]
-        if row["project"] is not None:
-            seen[name] = row
-        elif name not in seen:
-            seen[name] = row
-
-    return sorted(seen.values(), key=lambda r: r["sort_key"])
+    return _list_items_internal(item_type, project, agent, enabled_only=False)
 
 
 def get_item_by_id(item_type: str, item_id: int) -> dict | None:
@@ -238,6 +208,19 @@ def update_metadata(
             )
 
 
+def reorder_items(item_type: str, ids: list[int]) -> None:
+    assert ids, "ids must not be empty."
+    table = _table(item_type)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            for i, item_id in enumerate(ids):
+                cur.execute(
+                    f"UPDATE {table} SET sort_key = %s, updated_at = now() WHERE id = %s",
+                    (str(i).zfill(3), item_id),
+                )
+
+
 def get_version_history(item_type: str, name: str, project: str | None = None) -> list[dict]:
     assert name, "name must not be empty."
     table = _table(item_type)
@@ -256,8 +239,6 @@ def get_version_history(item_type: str, name: str, project: str | None = None) -
                 )
             return [_row_to_dict(r) for r in cur.fetchall()]
 
-
-# --- Legacy queries (used by sync migration script) ---
 
 def get_item(item_type: str, name: str, project: str | None = None) -> dict | None:
     assert name, "name must not be empty."
@@ -325,8 +306,6 @@ def map_hook_event(canonical_name: str, agent: str) -> str | None:
     return agent_map.get(canonical_name)
 
 
-# Convenience wrappers
-
 def list_rules(**kwargs) -> list[dict]:
     return list_items("rule", **kwargs)
 
@@ -363,8 +342,6 @@ def get_hook(name: str, **kwargs) -> dict | None:
 def upsert_hook(name: str, **kwargs) -> int:
     return upsert_item("hook", name, **kwargs)
 
-
-# --- Sync-oriented collect functions ---
 
 def collect_rules_from_db(agent: str, project: str | None = None) -> list[tuple[str, str]]:
     rows = list_items("rule", project=project, agent=agent)

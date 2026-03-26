@@ -7,9 +7,6 @@ _UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I
 )
 
-MEMORY_METADATA_FIELDS = ("repo", "tags", "created_at", "updated_at", "last_accessed_at")
-
-
 def validate_memory_id(id: str) -> None:
     if not _UUID_RE.match(id):
         raise ValueError(f"Invalid memory ID format: {id}")
@@ -23,6 +20,11 @@ def require_env(name: str, hint: str = "") -> str:
             msg += f"\n{hint}"
         raise SystemExit(msg)
     return value
+
+
+def validate_postgres_url(url: str, label: str = "DATABASE_URL") -> None:
+    if not url.startswith(("postgresql://", "postgres://")):
+        raise ValueError(f"{label} must be a postgresql:// URL, got: {url[:20]}...")
 
 
 def extract_memory_metadata(row: dict) -> dict:

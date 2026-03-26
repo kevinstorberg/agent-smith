@@ -1,5 +1,3 @@
-"""Agent long-term memory with time-weighted retrieval and pluggable backends."""
-
 from __future__ import annotations
 
 import json

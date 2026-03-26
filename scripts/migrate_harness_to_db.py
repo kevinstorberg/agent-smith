@@ -1,9 +1,4 @@
 #!/usr/bin/env -S .venv/bin/python3
-"""Migrate harness config from filesystem to PostgreSQL.
-
-Imports rules, skills, and MCP tools from harness/ into the DB.
-Filesystem files are NOT deleted.
-"""
 from __future__ import annotations
 
 import json
@@ -36,13 +31,13 @@ def _parse_skill_frontmatter(text: str) -> tuple[str, str]:
 def _migrate_rules() -> int:
     count = 0
 
+    # main.md lives at the harness root, not in rules/shared/
     main_path = HARNESS_ROOT / "main.md"
     if main_path.exists():
         upsert_rule(
-            "_main",
+            "main",
             content={"body": main_path.read_text(encoding="utf-8"), "metadata": {}},
             agents=ALL_AGENTS,
-            sort_key="_main",
         )
         count += 1
 

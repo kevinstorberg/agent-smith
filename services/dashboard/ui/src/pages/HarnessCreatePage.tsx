@@ -107,6 +107,7 @@ export function HarnessCreatePage() {
 
   const [name, setName] = useState('');
   const [project, setProject] = useState('');
+  const [sortKey, setSortKey] = useState('');
   const [agents, setAgents] = useState<string[]>([...ALL_AGENTS]);
   const [enabled, setEnabled] = useState(true);
   const [body, setBody] = useState('');
@@ -149,6 +150,7 @@ export function HarnessCreatePage() {
       const created = await api.harness.items.create(type, {
         name: name.trim(),
         project: project.trim() || null,
+        sort_key: sortKey.trim() || undefined,
         content,
         agents,
         enabled,
@@ -199,14 +201,25 @@ export function HarnessCreatePage() {
         />
       </div>
 
-      <div style={styles.field}>
-        <label style={styles.label}>Project</label>
-        <input
-          style={styles.input}
-          value={project}
-          onChange={e => setProject(e.target.value)}
-          placeholder="Empty = shared/global"
-        />
+      <div style={{ ...styles.field, display: 'flex', gap: 16 }}>
+        <div style={{ flex: 1 }}>
+          <label style={styles.label}>Project</label>
+          <input
+            style={styles.input}
+            value={project}
+            onChange={e => setProject(e.target.value)}
+            placeholder="Empty = shared/global"
+          />
+        </div>
+        <div style={{ width: 140 }}>
+          <label style={styles.label}>Sort Order</label>
+          <input
+            style={{ ...styles.input, fontFamily: 'var(--mono)' }}
+            value={sortKey}
+            onChange={e => setSortKey(e.target.value)}
+            placeholder="e.g. 005"
+          />
+        </div>
       </div>
 
       <div style={styles.field}>

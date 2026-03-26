@@ -7,6 +7,7 @@ from services.db.harness import (
     VALID_TABLES,
     list_items, list_items_full, get_item_by_id,
     create_item, update_content, update_metadata, get_version_history,
+    reorder_items,
 )
 
 router = APIRouter()
@@ -16,8 +17,6 @@ def _validate_type(item_type: str) -> None:
     if item_type not in VALID_TABLES:
         raise HTTPException(400, f"Invalid type: {item_type}. Must be one of {set(VALID_TABLES)}.")
 
-
-# --- Legacy read-only endpoints (backward compat for sync pipeline) ---
 
 @router.get("/rules")
 def get_rules(project: str = Query(""), agent: str = Query("")):
@@ -48,8 +47,6 @@ def get_hooks(project: str = Query(""), agent: str = Query("")):
     return [{"name": r["name"], "config": r["content"].get("metadata", {})} for r in rows]
 
 
-# --- Generic CRUD endpoints ---
-
 @router.get("/items/{item_type}")
 def list_harness(
     item_type: str,
@@ -63,6 +60,17 @@ def list_harness(
     total = len(all_items)
     items = all_items[offset:offset + limit]
     return {"items": items, "total": total}
+
+
+class ReorderRequest(BaseModel):
+    ids: list[int]
+
+
+@router.put("/items/{item_type}/reorder")
+def reorder_harness(item_type: str, body: ReorderRequest):
+    _validate_type(item_type)
+    reorder_items(item_type, body.ids)
+    return {"reordered": True, "count": len(body.ids)}
 
 
 @router.get("/items/{item_type}/{item_id}")
