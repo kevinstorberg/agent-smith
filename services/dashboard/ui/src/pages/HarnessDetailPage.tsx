@@ -137,6 +137,7 @@ export function HarnessDetailPage() {
 
   const [editName, setEditName] = useState('');
   const [editProject, setEditProject] = useState('');
+  const [editSortKey, setEditSortKey] = useState('');
   const [editAgents, setEditAgents] = useState<string[]>([]);
   const [editEnabled, setEditEnabled] = useState(true);
   const [editBody, setEditBody] = useState('');
@@ -151,6 +152,7 @@ export function HarnessDetailPage() {
       setItem(data);
       setEditName(data.name);
       setEditProject(data.project || '');
+      setEditSortKey(data.sort_key || '');
       setEditAgents([...data.agents]);
       setEditEnabled(data.enabled);
       setEditBody(formatBody(data, type));
@@ -177,6 +179,7 @@ export function HarnessDetailPage() {
     if (!item) return;
     setEditName(item.name);
     setEditProject(item.project || '');
+    setEditSortKey(item.sort_key || '');
     setEditAgents([...item.agents]);
     setEditEnabled(item.enabled);
     setEditBody(formatBody(item, type));
@@ -197,6 +200,7 @@ export function HarnessDetailPage() {
       const metadataChanged =
         editName !== item.name ||
         editEnabled !== item.enabled ||
+        editSortKey !== (item.sort_key || '') ||
         (editProject || null) !== item.project ||
         JSON.stringify(editAgents.sort()) !== JSON.stringify([...item.agents].sort());
 
@@ -214,6 +218,7 @@ export function HarnessDetailPage() {
         await api.harness.items.updateMetadata(type, currentId, {
           name: editName,
           project: editProject || null,
+          sort_key: editSortKey || undefined,
           agents: editAgents,
           enabled: editEnabled,
         });
@@ -300,6 +305,7 @@ export function HarnessDetailPage() {
 
       <div style={styles.badges}>
         <span className="tag" style={{ fontFamily: 'var(--mono)' }}>v{displayItem.version}</span>
+        <span className="tag" style={{ fontFamily: 'var(--mono)' }}>#{displayItem.sort_key}</span>
         <span className="tag" style={{ background: displayItem.enabled ? 'var(--success)' : 'var(--text-muted)', color: '#1a1a2e' }}>
           {displayItem.enabled ? 'Enabled' : 'Disabled'}
         </span>
@@ -315,16 +321,29 @@ export function HarnessDetailPage() {
 
       {editing && (
         <>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 6 }}>
-              Project
-            </label>
-            <input
-              style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', padding: '6px 10px', fontSize: 13, fontFamily: 'var(--font)', width: 220 }}
-              value={editProject}
-              onChange={e => setEditProject(e.target.value)}
-              placeholder="Empty = shared/global"
-            />
+          <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 6 }}>
+                Project
+              </label>
+              <input
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', padding: '6px 10px', fontSize: 13, fontFamily: 'var(--font)', width: 220 }}
+                value={editProject}
+                onChange={e => setEditProject(e.target.value)}
+                placeholder="Empty = shared/global"
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 6 }}>
+                Sort Order
+              </label>
+              <input
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', padding: '6px 10px', fontSize: 13, fontFamily: 'var(--mono)', width: 120 }}
+                value={editSortKey}
+                onChange={e => setEditSortKey(e.target.value)}
+                placeholder="e.g. 005"
+              />
+            </div>
           </div>
           <div style={styles.checkboxRow}>
             <label style={styles.checkboxLabel}>

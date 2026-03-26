@@ -72,14 +72,8 @@ def list_categories():
             return [row[0] for row in cur.fetchall()]
 
 
-@router.get("/chart")
-def chart_data(
-    scenario: str = Query(""),
-    model: str = Query(""),
-    eval_type: str = Query(""),
-):
+def _fetch_chart_rows(scenario: str, model: str, eval_type: str) -> list[dict]:
     where, params = _build_filters(scenario, model, eval_type)
-
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
@@ -88,15 +82,22 @@ def chart_data(
                 f"ORDER BY timestamp ASC",
                 params,
             )
-            rows = cur.fetchall()
+            return cur.fetchall()
 
+
+@router.get("/chart")
+def chart_data(
+    scenario: str = Query(""),
+    model: str = Query(""),
+    eval_type: str = Query(""),
+):
     return [
         {
             "id": row["id"],
             "timestamp": row["timestamp"].isoformat(),
             "scores": {r["rule"]: r["score"] for r in row["results"]},
         }
-        for row in rows
+        for row in _fetch_chart_rows(scenario, model, eval_type)
     ]
 
 
@@ -106,25 +107,13 @@ def chart_average(
     model: str = Query(""),
     eval_type: str = Query(""),
 ):
-    where, params = _build_filters(scenario, model, eval_type)
-
-    with get_connection() as conn:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                f"SELECT id, timestamp, results "
-                f"FROM eval_results {where} "
-                f"ORDER BY timestamp ASC",
-                params,
-            )
-            rows = cur.fetchall()
-
     return [
         {
             "id": row["id"],
             "timestamp": row["timestamp"].isoformat(),
             "score": sum(r["score"] for r in row["results"]) / max(len(row["results"]), 1),
         }
-        for row in rows
+        for row in _fetch_chart_rows(scenario, model, eval_type)
     ]
 
 

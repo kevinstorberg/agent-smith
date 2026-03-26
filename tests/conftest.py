@@ -6,6 +6,17 @@ from pathlib import Path
 import pytest
 
 
+def postgres_available() -> bool:
+    try:
+        from services.db.connection import DATABASE_URL
+        import psycopg2
+        conn = psycopg2.connect(DATABASE_URL)
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+
 @pytest.fixture
 def harness_dir(tmp_path: Path) -> Path:
     (tmp_path / ".env").write_text("FOO=bar\nSECRET=hunter2\n# comment\n")

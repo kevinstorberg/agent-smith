@@ -1,9 +1,4 @@
 #!/usr/bin/env -S .venv/bin/python3
-"""Migrate memories from LanceDB to Pinecone.
-
-Usage:
-    PINECONE_API_KEY='...' ./scripts/migrate_lancedb_to_pinecone.py
-"""
 from __future__ import annotations
 
 import sys

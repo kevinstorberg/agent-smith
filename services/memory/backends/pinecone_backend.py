@@ -11,6 +11,7 @@ from langchain_pinecone import PineconeVectorStore
 from pinecone import Pinecone, ServerlessSpec
 
 from scripts.shared.validation import validate_memory_id
+from services.memory.backends import build_row
 
 INDEX_NAME = os.environ.get("PINECONE_INDEX", "agent-smith-memories")
 CLOUD = os.environ.get("PINECONE_CLOUD", "aws")
@@ -52,7 +53,6 @@ def init() -> None:
 
 
 class _SafePineconeVectorStore(PineconeVectorStore):
-    """Wraps PineconeVectorStore to serialize datetime values in metadata."""
 
     def add_documents(self, documents: list[Document], **kwargs: Any) -> list[str]:
         for doc in documents:
@@ -73,7 +73,6 @@ def count() -> int:
 
 
 def load_all() -> list[dict]:
-    """Fetch all vectors for populating the retriever memory_stream."""
     index = _get_index()
     total = count()
     if total == 0:
@@ -85,7 +84,7 @@ def load_all() -> list[dict]:
     for match in results.get("matches", []):
         meta = dict(match.get("metadata", {}))
         text = meta.pop("text", "")
-        rows.append({"id": match["id"], "text": text, "metadata": meta})
+        rows.append(build_row(match["id"], text, meta))
     return rows
 
 
@@ -110,7 +109,7 @@ def get_row(id: str) -> dict | None:
     vec_data = vectors[id]
     meta = dict(getattr(vec_data, "metadata", None) or vec_data.get("metadata", {}))
     text = meta.pop("text", "")
-    return {"id": id, "text": text, "metadata": meta}
+    return build_row(id, text, meta)
 
 
 def delete_row(id: str) -> None:

@@ -5,21 +5,11 @@ import pytest
 from services.db.harness import (
     upsert_item, list_items, get_item, map_hook_event,
 )
-
-
-def _postgres_available() -> bool:
-    try:
-        from services.db.connection import DATABASE_URL
-        import psycopg2
-        conn = psycopg2.connect(DATABASE_URL)
-        conn.close()
-        return True
-    except Exception:
-        return False
+from tests.conftest import postgres_available
 
 
 pytestmark = pytest.mark.skipif(
-    not _postgres_available(), reason="Postgres not available"
+    not postgres_available(), reason="Postgres not available"
 )
 
 ALL_AGENTS = ["claude", "codex", "gemini"]

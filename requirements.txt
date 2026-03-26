@@ -8,7 +8,6 @@ langchain-community>=0.3.0
 langchain-huggingface>=0.1.0
 langchain-pinecone>=0.2.0
 pinecone>=7.0.0
-pymongo>=4.6.0
 sentence-transformers>=3.0.0
 psycopg2-binary>=2.9.0
 alembic>=1.18.0

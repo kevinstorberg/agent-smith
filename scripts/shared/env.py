@@ -6,7 +6,6 @@ from pathlib import Path
 
 
 def _load_env_file(path: Path) -> None:
-    """Does not override existing vars."""
     if not path.is_file():
         return
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -21,13 +20,11 @@ def _load_env_file(path: Path) -> None:
 
 
 def load_dotenv(harness_root: Path) -> None:
-    """Load .env first (user overrides), then .env.default (fills in defaults)."""
     _load_env_file(harness_root / ".env")
     _load_env_file(harness_root / ".env.default")
 
 
 def expand_env(value):
-    """Recursively expand ${VAR} references in strings, dicts, and lists."""
     if isinstance(value, str):
         return re.sub(
             r"\$\{(\w+)\}",

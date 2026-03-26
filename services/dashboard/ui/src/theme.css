@@ -115,56 +115,6 @@ body {
   overflow-y: auto;
 }
 
-.tab-nav {
-  display: flex;
-  gap: 2px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 24px;
-  padding-bottom: 0;
-}
-
-.tab-nav button {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  padding: 10px 20px;
-  cursor: pointer;
-  font-size: 14px;
-  font-family: var(--font);
-  border-bottom: 2px solid transparent;
-  transition: all 0.15s;
-}
-
-.tab-nav button:hover {
-  color: var(--text);
-}
-
-.tab-nav button.active {
-  color: var(--highlight);
-  border-bottom-color: var(--highlight);
-}
-
-.tab-nav a {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  padding: 10px 20px;
-  cursor: pointer;
-  font-size: 14px;
-  font-family: var(--font);
-  border-bottom: 2px solid transparent;
-  transition: all 0.15s;
-  text-decoration: none;
-}
-
-.tab-nav a:hover {
-  color: var(--text);
-}
-
-.tab-nav a.active {
-  color: var(--highlight);
-  border-bottom-color: var(--highlight);
-}
 
 .card {
   background: linear-gradient(135deg, var(--surface) 0%, var(--surface-elevated) 100%);

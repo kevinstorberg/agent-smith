@@ -145,6 +145,7 @@ export const api = {
         patch<HarnessItem>(`/harness/items/${type}/${id}`, body),
       history: (type: string, id: number) => get<HarnessItem[]>(`/harness/items/${type}/${id}/history`),
       remove: (type: string, id: number) => del(`/harness/items/${type}/${id}`),
+      reorder: (type: string, ids: number[]) => put<{ reordered: boolean }>(`/harness/items/${type}/reorder`, { ids }),
     },
   },
   memory: {

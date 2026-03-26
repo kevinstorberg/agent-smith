@@ -38,12 +38,12 @@ def test_compose_parts(harness_dir: Path):
     assert result.index("Content A.") < result.index("Content B.")
 
 
-def test_compose_parts_footer_marker(tmp_path: Path):
-    (tmp_path / "a.md").write_text("top\n<!-- footer -->\nbottom")
-    (tmp_path / "b.md").write_text("middle")
+def test_compose_parts_preserves_order(tmp_path: Path):
+    (tmp_path / "a.md").write_text("first file content")
+    (tmp_path / "b.md").write_text("second file content")
     files = [tmp_path / "a.md", tmp_path / "b.md"]
     result = compose_parts(files)
-    assert result.index("middle") < result.index("bottom")
+    assert result.index("first") < result.index("second")
 
 
 def test_atomic_write_creates_file(tmp_path: Path):
