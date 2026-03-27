@@ -259,7 +259,6 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     args = parser.parse_args()
 
-    # host/port are set on the FastMCP instance, not passed to run()
     mcp.settings.host = "127.0.0.1"
     mcp.settings.port = args.port
 

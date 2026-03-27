@@ -1,6 +1,11 @@
 import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useNavigate, useLocation } from 'react-router';
 import MDEditor from '@uiw/react-md-editor';
+
+function typeFromPath(pathname: string): string {
+  const match = pathname.match(/\/harness\/(\w+)\/new/);
+  return match ? match[1] : 'rule';
+}
 import { api } from '../api';
 
 const ALL_AGENTS = ['claude', 'codex', 'gemini'];
@@ -102,7 +107,8 @@ const styles = {
 };
 
 export function HarnessCreatePage() {
-  const { type = 'rule' } = useParams<{ type: string }>();
+  const location = useLocation();
+  const type = typeFromPath(location.pathname);
   const navigate = useNavigate();
 
   const [name, setName] = useState('');
