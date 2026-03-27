@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { api } from '../api';
 import type { EvalRunDetail } from '../api';
 
@@ -126,7 +127,7 @@ export function EvalDetailPage() {
 
       {tab === 'output' && (
         <div className="card markdown-content" style={{ fontSize: 13, lineHeight: 1.7 }}>
-          <ReactMarkdown>{run.output}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{run.output}</ReactMarkdown>
         </div>
       )}
 
