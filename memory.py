@@ -44,7 +44,7 @@ def _running_pid() -> int | None:
         return None
     try:
         pid = int(PID_FILE.read_text().strip())
-        os.kill(pid, 0)  # signal 0 = existence check
+        os.kill(pid, 0)
         return pid
     except (ProcessLookupError, ValueError):
         PID_FILE.unlink(missing_ok=True)

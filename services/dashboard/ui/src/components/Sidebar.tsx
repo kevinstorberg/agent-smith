@@ -3,10 +3,10 @@ import { NavLink } from 'react-router';
 import { api } from '../api';
 
 const HARNESS_LINKS = [
+  { path: '/harness/hooks', label: 'Hooks' },
   { path: '/harness/rules', label: 'Rules' },
   { path: '/harness/skills', label: 'Skills' },
   { path: '/harness/tools', label: 'Tools' },
-  { path: '/harness/hooks', label: 'Hooks' },
 ];
 
 function navClass({ isActive }: { isActive: boolean }): string {
@@ -70,8 +70,9 @@ export function Sidebar() {
       </div>
 
       <div className="sidebar-section">
-        <NavLink to="/memory" className={navClass}>Memory</NavLink>
         <NavLink to="/evals" className={navClass}>Evals</NavLink>
+        <NavLink to="/memory" className={navClass}>Memory</NavLink>
+        <NavLink to="/plans" className={navClass}>Plans</NavLink>
       </div>
 
       <div className="sidebar-section">
