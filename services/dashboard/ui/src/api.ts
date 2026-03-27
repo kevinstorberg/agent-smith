@@ -102,12 +102,17 @@ export interface EvalRun {
   id: number;
   timestamp: string;
   eval_type: string;
+  subcategory: string | null;
   scenario: string;
   test_model: string;
   judge_model: string;
   threshold: number;
   results: { rule: string; score: number; reason: string }[];
   created_at: string;
+}
+
+export interface EvalRunDetail extends EvalRun {
+  output: string;
 }
 
 export interface Plan {
@@ -184,7 +189,9 @@ export const api = {
     chartAverage: (params?: Record<string, string>) =>
       get<AverageChartPoint[]>('/evals/chart/average', params),
     categories: () => get<string[]>('/evals/categories'),
-    get: (id: number) => get<EvalRun>(`/evals/${id}`),
+    subcategories: (params?: Record<string, string>) =>
+      get<string[]>('/evals/subcategories', params),
+    get: (id: number) => get<EvalRunDetail>(`/evals/${id}`),
   },
   plans: {
     list: (pagination?: PaginationParams & { project?: string }) =>

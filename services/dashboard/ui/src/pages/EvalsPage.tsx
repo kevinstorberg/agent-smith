@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router';
 import { api } from '../api';
 import type { EvalRun, ChartPoint, AverageChartPoint } from '../api';
 import { ScoreChart } from '../components/ScoreChart';
@@ -7,8 +8,11 @@ import { Pagination } from '../components/Pagination';
 type ChartMode = 'average' | 'by-rule';
 
 export function EvalsPage() {
+  const navigate = useNavigate();
   const [categories, setCategories] = useState<string[]>([]);
   const [category, setCategory] = useState('');
+  const [subcategories, setSubcategories] = useState<string[]>([]);
+  const [subcategory, setSubcategory] = useState('');
   const [scenario, setScenario] = useState('');
   const [model, setModel] = useState('');
 
@@ -20,20 +24,26 @@ export function EvalsPage() {
   const [total, setTotal] = useState(0);
   const [limit, setLimit] = useState(10);
   const [offset, setOffset] = useState(0);
-  const [expanded, setExpanded] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     api.evals.categories().then(setCategories).catch(() => setCategories([]));
   }, []);
 
+  useEffect(() => {
+    const params: Record<string, string> = {};
+    if (category) params.eval_type = category;
+    api.evals.subcategories(params).then(setSubcategories).catch(() => setSubcategories([]));
+  }, [category]);
+
   const buildParams = useCallback((): Record<string, string> => {
     const params: Record<string, string> = {};
     if (category) params.eval_type = category;
+    if (subcategory) params.subcategory = subcategory;
     if (scenario) params.scenario = scenario;
     if (model) params.model = model;
     return params;
-  }, [category, scenario, model]);
+  }, [category, subcategory, scenario, model]);
 
   const loadData = useCallback(() => {
     setLoading(true);
@@ -55,6 +65,7 @@ export function EvalsPage() {
   useEffect(() => { loadData(); }, [loadData]);
 
   useEffect(() => {
+    setSubcategory('');
     setScenario('');
     setModel('');
     setOffset(0);
@@ -75,6 +86,10 @@ export function EvalsPage() {
         <select value={category} onChange={e => setCategory(e.target.value)}>
           <option value="">All categories</option>
           {categories.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={subcategory} onChange={e => setSubcategory(e.target.value)}>
+          <option value="">All subcategories</option>
+          {subcategories.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <select value={scenario} onChange={e => setScenario(e.target.value)}>
           <option value="">All scenarios</option>
@@ -124,9 +139,9 @@ export function EvalsPage() {
             </thead>
             <tbody>
               {runs.map(run => (
-                <tr key={run.id} style={{ cursor: 'pointer' }} onClick={() => setExpanded(expanded === run.id ? null : run.id)}>
+                <tr key={run.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/evals/${run.id}`)}>
                   <td>{new Date(run.timestamp).toLocaleString()}</td>
-                  <td><span className="tag">{run.eval_type}</span></td>
+                  <td><span className="tag">{run.eval_type}{run.subcategory ? ` / ${run.subcategory}` : ''}</span></td>
                   <td>{run.scenario}</td>
                   <td>{run.test_model}</td>
                   <td>{run.threshold}</td>
@@ -149,22 +164,6 @@ export function EvalsPage() {
               )}
             </tbody>
           </table>
-
-          {runs.map(run => expanded === run.id && (
-            <div key={`${run.id}-detail`} style={{ padding: 16 }}>
-              {run.results.map(r => (
-                <div key={r.rule} className="card" style={{ marginBottom: 8 }}>
-                  <h3>
-                    <span className={`score-badge ${r.score >= run.threshold ? 'pass' : 'fail'}`}>
-                      {r.score.toFixed(2)}
-                    </span>{' '}
-                    {r.rule}
-                  </h3>
-                  <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>{r.reason}</p>
-                </div>
-              ))}
-            </div>
-          ))}
 
           <Pagination
             total={total}

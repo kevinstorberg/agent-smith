@@ -28,8 +28,10 @@ def _collect_stream(chunks) -> str:
     return "".join(full)
 
 
-def run_agent(model: str, prompt: str) -> str:
+def run_agent(model: str, prompt: str, extra_context: str | None = None) -> str:
     system = _load_rules_context()
+    if extra_context:
+        system = f"{system}\n\n{extra_context}"
 
     if "claude" in model:
         import anthropic

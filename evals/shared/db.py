@@ -8,9 +8,9 @@ from services.db import get_connection
 
 INSERT_SQL = """
 INSERT INTO eval_results
-    (timestamp, eval_type, scenario, test_model, judge_model, threshold, output, results)
+    (timestamp, eval_type, subcategory, scenario, test_model, judge_model, threshold, output, results)
 VALUES
-    (%s, %s, %s, %s, %s, %s, %s, %s)
+    (%s, %s, %s, %s, %s, %s, %s, %s, %s)
 RETURNING id
 """
 
@@ -24,12 +24,14 @@ def save_result(
     threshold: float,
     output: str,
     results: list[dict],
+    subcategory: str | None = None,
 ) -> int:
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(INSERT_SQL, (
                 timestamp,
                 eval_type,
+                subcategory,
                 scenario,
                 test_model,
                 judge_model,

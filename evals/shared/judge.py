@@ -11,14 +11,14 @@ from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 JUDGE_MODEL = os.environ.get("EVAL_JUDGE_MODEL", "gpt-5.4")
 JUDGE_CONFIG_PATH = Path(__file__).parent.parent / "config" / "rules" / "judge.yaml"
 
-_judge_config = None
+_judge_configs: dict[str, dict] = {}
 
 
-def _load_judge_config() -> dict:
-    global _judge_config
-    if _judge_config is None:
-        _judge_config = yaml.safe_load(JUDGE_CONFIG_PATH.read_text(encoding="utf-8"))
-    return _judge_config
+def _load_judge_config(config_path: str | None = None) -> dict:
+    path = config_path or str(JUDGE_CONFIG_PATH)
+    if path not in _judge_configs:
+        _judge_configs[path] = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    return _judge_configs[path]
 
 
 def _rule_to_steps(rule_content: str) -> list[str]:
@@ -29,10 +29,16 @@ def _rule_to_steps(rule_content: str) -> list[str]:
     return steps
 
 
-def evaluate(input: str, output: str, rule_path: str, threshold: float) -> dict:
+def evaluate(
+    input: str,
+    output: str,
+    rule_path: str,
+    threshold: float,
+    judge_config_path: str | None = None,
+) -> dict:
     rule_name = Path(rule_path).stem
     rule_content = Path(rule_path).read_text(encoding="utf-8")
-    config = _load_judge_config()
+    config = _load_judge_config(judge_config_path)
 
     steps = _rule_to_steps(rule_content)
     criteria = f"{config['prompt']}\n\nRule:\n{rule_content}"

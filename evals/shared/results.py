@@ -13,6 +13,7 @@ def save_eval_result(
     threshold: float,
     output: str,
     results: list[dict],
+    subcategory: str | None = None,
 ) -> int:
     return save_result(
         timestamp=datetime.now(timezone.utc),
@@ -23,4 +24,5 @@ def save_eval_result(
         threshold=threshold,
         output=output,
         results=results,
+        subcategory=subcategory,
     )

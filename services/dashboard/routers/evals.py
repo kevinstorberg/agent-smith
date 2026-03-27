@@ -8,7 +8,7 @@ from services.db import get_connection
 router = APIRouter()
 
 
-def _build_filters(scenario="", model="", eval_type="", date_from="", date_to=""):
+def _build_filters(scenario="", model="", eval_type="", subcategory="", date_from="", date_to=""):
     conditions, params = [], []
     if scenario:
         conditions.append("scenario = %s")
@@ -19,6 +19,9 @@ def _build_filters(scenario="", model="", eval_type="", date_from="", date_to=""
     if eval_type:
         conditions.append("eval_type = %s")
         params.append(eval_type)
+    if subcategory:
+        conditions.append("subcategory = %s")
+        params.append(subcategory)
     if date_from:
         conditions.append("timestamp >= %s")
         params.append(date_from)
@@ -40,12 +43,13 @@ def list_evals(
     scenario: str = Query(""),
     model: str = Query(""),
     eval_type: str = Query(""),
+    subcategory: str = Query(""),
     date_from: str = Query(""),
     date_to: str = Query(""),
     limit: int = Query(10, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
-    where, params = _build_filters(scenario, model, eval_type, date_from, date_to)
+    where, params = _build_filters(scenario, model, eval_type, subcategory, date_from, date_to)
 
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -53,7 +57,7 @@ def list_evals(
             total = cur.fetchone()["cnt"]
 
             cur.execute(
-                f"SELECT id, timestamp, eval_type, scenario, test_model, judge_model, "
+                f"SELECT id, timestamp, eval_type, subcategory, scenario, test_model, judge_model, "
                 f"threshold, results, created_at "
                 f"FROM eval_results {where} "
                 f"ORDER BY timestamp DESC LIMIT %s OFFSET %s",
@@ -72,8 +76,28 @@ def list_categories():
             return [row[0] for row in cur.fetchall()]
 
 
-def _fetch_chart_rows(scenario: str, model: str, eval_type: str) -> list[dict]:
-    where, params = _build_filters(scenario, model, eval_type)
+@router.get("/subcategories")
+def list_subcategories(eval_type: str = Query("")):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            if eval_type:
+                cur.execute(
+                    "SELECT DISTINCT subcategory FROM eval_results "
+                    "WHERE eval_type = %s AND subcategory IS NOT NULL "
+                    "ORDER BY subcategory",
+                    (eval_type,),
+                )
+            else:
+                cur.execute(
+                    "SELECT DISTINCT subcategory FROM eval_results "
+                    "WHERE subcategory IS NOT NULL "
+                    "ORDER BY subcategory"
+                )
+            return [row[0] for row in cur.fetchall()]
+
+
+def _fetch_chart_rows(scenario: str, model: str, eval_type: str, subcategory: str = "") -> list[dict]:
+    where, params = _build_filters(scenario, model, eval_type, subcategory)
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
@@ -90,6 +114,7 @@ def chart_data(
     scenario: str = Query(""),
     model: str = Query(""),
     eval_type: str = Query(""),
+    subcategory: str = Query(""),
 ):
     return [
         {
@@ -97,7 +122,7 @@ def chart_data(
             "timestamp": row["timestamp"].isoformat(),
             "scores": {r["rule"]: r["score"] for r in row["results"]},
         }
-        for row in _fetch_chart_rows(scenario, model, eval_type)
+        for row in _fetch_chart_rows(scenario, model, eval_type, subcategory)
     ]
 
 
@@ -106,6 +131,7 @@ def chart_average(
     scenario: str = Query(""),
     model: str = Query(""),
     eval_type: str = Query(""),
+    subcategory: str = Query(""),
 ):
     return [
         {
@@ -113,7 +139,7 @@ def chart_average(
             "timestamp": row["timestamp"].isoformat(),
             "score": sum(r["score"] for r in row["results"]) / max(len(row["results"]), 1),
         }
-        for row in _fetch_chart_rows(scenario, model, eval_type)
+        for row in _fetch_chart_rows(scenario, model, eval_type, subcategory)
     ]
 
 

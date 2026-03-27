@@ -45,6 +45,7 @@ def test_rules_compliance(scenario, eval_config):
         "rules", scenario["name"], model,
         eval_config["judge_model"], eval_config["threshold"],
         output, all_results,
+        subcategory="plans",
     )
 
     for r in all_results:
