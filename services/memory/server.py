@@ -110,6 +110,44 @@ def memory_update(
     return f"Updated: {id}"
 
 
+@mcp.tool()
+def plan_save(title: str, body: str, project: str = "") -> str:
+    """Save a finalized plan to the database.
+    Always set project to the current repo/project name.
+
+    Args:
+        title: Short descriptive title for the plan.
+        body: Full plan content (markdown).
+        project: The current project/repo name. Always provide this.
+
+    Returns:
+        Confirmation with the plan ID.
+    """
+    from services.db.plans import create_plan
+    plan_id = create_plan(title, body, project=project or None)
+    return f"Plan saved (id={plan_id})"
+
+
+@mcp.tool()
+def plan_get(plan_id: int = 0, query: str = "") -> dict | list[dict]:
+    """Retrieve a plan by ID or fuzzy search on title.
+    Only call when the user explicitly asks to retrieve a plan.
+
+    Args:
+        plan_id: Exact plan ID (takes priority over query if > 0).
+        query: Fuzzy search term for title (returns up to 5 matches).
+
+    Returns:
+        Single plan dict (if plan_id given) or list of matching plans (if query given).
+    """
+    from services.db.plans import get_plan, search_plans
+    if plan_id > 0:
+        return get_plan(plan_id)
+    if query:
+        return search_plans(query, limit=5)
+    return []
+
+
 import os
 
 if os.environ.get("HARNESS_EDIT_ENABLED", "").lower() == "true":

@@ -110,6 +110,15 @@ export interface EvalRun {
   created_at: string;
 }
 
+export interface Plan {
+  id: number;
+  title: string;
+  body: string;
+  project: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ChartPoint {
   id: number;
   timestamp: string;
@@ -176,5 +185,19 @@ export const api = {
       get<AverageChartPoint[]>('/evals/chart/average', params),
     categories: () => get<string[]>('/evals/categories'),
     get: (id: number) => get<EvalRun>(`/evals/${id}`),
+  },
+  plans: {
+    list: (pagination?: PaginationParams & { project?: string }) =>
+      get<Paginated<Plan>>('/plans', {
+        ...(pagination?.project ? { project: pagination.project } : {}),
+        ...paginationToParams(pagination),
+      }),
+    search: (q: string) => get<Plan[]>('/plans/search', { q }),
+    get: (id: number) => get<Plan>(`/plans/${id}`),
+    create: (body: { title: string; body: string; project?: string | null }) =>
+      post<Plan>('/plans', body),
+    update: (id: number, body: { title?: string; body?: string; project?: string | null }) =>
+      put<Plan>(`/plans/${id}`, body),
+    remove: (id: number) => del(`/plans/${id}`),
   },
 };
