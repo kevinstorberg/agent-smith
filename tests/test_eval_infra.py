@@ -20,11 +20,13 @@ def test_load_scenarios_returns_nonempty():
     assert len(load_scenarios()) > 0
 
 
+@pytest.mark.skipif(not postgres_available(), reason="Postgres not available")
 def test_run_agent_rejects_unknown_model():
     with pytest.raises(ValueError):
         run_agent("unknown-model-xyz", "hello")
 
 
+@pytest.mark.skipif(not postgres_available(), reason="Postgres not available")
 def test_exclude_rules_filters_memory():
     from services.db.harness import collect_rules_from_db
     rule_names = [name for name, _ in collect_rules_from_db("claude") if name not in EXCLUDE_RULES]
