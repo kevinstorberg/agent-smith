@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { api } from '../api';
 import type { EvalRun, ChartPoint, AverageChartPoint } from '../api';
 import { ScoreChart } from '../components/ScoreChart';
@@ -9,12 +9,24 @@ type ChartMode = 'average' | 'by-rule';
 
 export function EvalsPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const category = searchParams.get('category') || 'rules';
+  const subcategory = searchParams.get('subcategory') || '';
+  const scenario = searchParams.get('scenario') || '';
+  const model = searchParams.get('model') || '';
+
+  const setFilter = useCallback((key: string, value: string, clearKeys?: string[]) => {
+    setSearchParams(prev => {
+      if (value) prev.set(key, value);
+      else prev.delete(key);
+      for (const k of clearKeys || []) prev.delete(k);
+      return prev;
+    });
+  }, [setSearchParams]);
+
   const [categories, setCategories] = useState<string[]>([]);
-  const [category, setCategory] = useState('');
   const [subcategories, setSubcategories] = useState<string[]>([]);
-  const [subcategory, setSubcategory] = useState('');
-  const [scenario, setScenario] = useState('');
-  const [model, setModel] = useState('');
 
   const [chartMode, setChartMode] = useState<ChartMode>('average');
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
@@ -65,13 +77,6 @@ export function EvalsPage() {
   useEffect(() => { loadData(); }, [loadData]);
 
   useEffect(() => {
-    setSubcategory('');
-    setScenario('');
-    setModel('');
-    setOffset(0);
-  }, [category]);
-
-  useEffect(() => {
     setOffset(0);
   }, [scenario, model]);
 
@@ -83,19 +88,21 @@ export function EvalsPage() {
       <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Evals</h2>
 
       <div className="filters">
-        <select value={category} onChange={e => setCategory(e.target.value)}>
-          <option value="">All categories</option>
+        <select
+          value={category}
+          onChange={e => setFilter('category', e.target.value, ['subcategory', 'scenario', 'model'])}
+        >
           {categories.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select value={subcategory} onChange={e => setSubcategory(e.target.value)}>
+        <select value={subcategory} onChange={e => setFilter('subcategory', e.target.value)}>
           <option value="">All subcategories</option>
           {subcategories.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={scenario} onChange={e => setScenario(e.target.value)}>
+        <select value={scenario} onChange={e => setFilter('scenario', e.target.value)}>
           <option value="">All scenarios</option>
           {scenarios.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={model} onChange={e => setModel(e.target.value)}>
+        <select value={model} onChange={e => setFilter('model', e.target.value)}>
           <option value="">All models</option>
           {models.map(m => <option key={m} value={m}>{m}</option>)}
         </select>

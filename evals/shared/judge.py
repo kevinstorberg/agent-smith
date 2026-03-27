@@ -21,9 +21,16 @@ def _load_judge_config(config_path: str | None = None) -> dict:
     return _judge_configs[path]
 
 
+def _strip_code_blocks(text: str) -> str:
+    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+    text = re.sub(r"```.*", "", text, flags=re.DOTALL)
+    return text
+
+
 def _rule_to_steps(rule_content: str) -> list[str]:
+    stripped = _strip_code_blocks(rule_content)
     steps = []
-    for match in re.finditer(r"^\s*\d+\.\s+(.+)", rule_content, re.MULTILINE):
+    for match in re.finditer(r"^\s*\d+\.\s+(.+)", stripped, re.MULTILINE):
         statement = match.group(1).rstrip(".")
         steps.append(f"Does the output demonstrate: {statement}?")
     return steps
@@ -32,12 +39,17 @@ def _rule_to_steps(rule_content: str) -> list[str]:
 def evaluate(
     input: str,
     output: str,
-    rule_path: str,
-    threshold: float,
+    rule_path: str = "",
+    threshold: float = 0.0,
     judge_config_path: str | None = None,
+    rule_name: str | None = None,
+    rule_content: str | None = None,
 ) -> dict:
-    rule_name = Path(rule_path).stem
-    rule_content = Path(rule_path).read_text(encoding="utf-8")
+    if rule_content is None:
+        assert rule_path, "Either rule_path or rule_content must be provided."
+        rule_content = Path(rule_path).read_text(encoding="utf-8")
+    if rule_name is None:
+        rule_name = Path(rule_path).stem if rule_path else "unnamed"
     config = _load_judge_config(judge_config_path)
 
     steps = _rule_to_steps(rule_content)

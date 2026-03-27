@@ -112,6 +112,7 @@ export interface EvalRun {
 }
 
 export interface EvalRunDetail extends EvalRun {
+  prompt: string | null;
   output: string;
 }
 
@@ -192,6 +193,7 @@ export const api = {
     subcategories: (params?: Record<string, string>) =>
       get<string[]>('/evals/subcategories', params),
     get: (id: number) => get<EvalRunDetail>(`/evals/${id}`),
+    remove: (id: number) => del<{ deleted: number }>(`/evals/${id}`),
   },
   plans: {
     list: (pagination?: PaginationParams & { project?: string }) =>

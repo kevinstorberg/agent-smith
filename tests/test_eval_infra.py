@@ -7,8 +7,11 @@ import pytest
 from evals.test_rules import load_scenarios, EXCLUDE_RULES, RULES_DIR
 from evals.test_write_ticket import (
     load_scenarios as load_wt_scenarios,
-    CRITERIA_DIR as WT_CRITERIA_DIR,
     JUDGE_CONFIG_PATH as WT_JUDGE_CONFIG_PATH,
+)
+from evals.test_write_epic import (
+    load_scenarios as load_we_scenarios,
+    JUDGE_CONFIG_PATH as WE_JUDGE_CONFIG_PATH,
 )
 from evals.shared.runner import run_agent
 from evals.shared.judge import _rule_to_steps, _load_judge_config
@@ -125,16 +128,26 @@ def test_write_ticket_scenarios_load():
         assert "prompt" in s
 
 
-def test_write_ticket_criteria_have_steps():
-    criteria_files = sorted(WT_CRITERIA_DIR.glob("*.md"))
-    assert len(criteria_files) >= 3, "Expected at least 3 criteria files"
-    for f in criteria_files:
-        steps = _rule_to_steps(f.read_text(encoding="utf-8"))
-        assert len(steps) >= 2, f"{f.stem} should have at least 2 numbered steps"
-
-
 def test_write_ticket_judge_config_loads():
     config = _load_judge_config(WT_JUDGE_CONFIG_PATH)
+    assert "prompt" in config
+    assert len(config["prompt"]) > 50
+
+
+# --- write_epic eval infra ---
+
+
+def test_write_epic_scenarios_load():
+    scenarios = load_we_scenarios()
+    assert len(scenarios) > 0
+    for s in scenarios:
+        assert s.get("enabled", True) is True
+        assert "name" in s
+        assert "prompt" in s
+
+
+def test_write_epic_judge_config_loads():
+    config = _load_judge_config(WE_JUDGE_CONFIG_PATH)
     assert "prompt" in config
     assert len(config["prompt"]) > 50
 

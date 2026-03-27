@@ -370,6 +370,7 @@ pre {
 .markdown-content h2 { font-size: 16px; margin: 16px 0 8px; }
 .markdown-content h3 { font-size: 14px; margin: 12px 0 6px; }
 .markdown-content ul { margin-left: 20px; }
+.markdown-content ol { margin-left: 20px; }
 .markdown-content li { margin-bottom: 4px; }
 .markdown-content p { margin-bottom: 8px; }
 .markdown-content code {
@@ -378,6 +379,36 @@ pre {
   border-radius: 3px;
   font-family: var(--mono);
   font-size: 13px;
+}
+.markdown-content pre {
+  background: var(--bg);
+  padding: 12px;
+  border-radius: var(--radius);
+  overflow-x: auto;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.markdown-content pre code { background: none; padding: 0; }
+.markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+.markdown-content th { background: var(--surface); font-weight: 600; }
+.markdown-content tr:hover { background: var(--surface-hover); }
+.markdown-content hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+.markdown-content blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 12px;
+  color: var(--text-muted);
+  margin: 8px 0;
 }
 
 .filters {

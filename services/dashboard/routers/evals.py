@@ -154,3 +154,16 @@ def get_eval(eval_id: int):
         raise HTTPException(status_code=404, detail="Eval not found")
 
     return _serialize_timestamps(row)
+
+
+@router.delete("/{eval_id}")
+def delete_eval(eval_id: int):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM eval_results WHERE id = %s RETURNING id", (eval_id,))
+            row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Eval not found")
+
+    return {"deleted": eval_id}

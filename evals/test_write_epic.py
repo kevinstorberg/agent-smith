@@ -9,14 +9,14 @@ from evals.shared.runner import run_agent
 from evals.shared.judge import evaluate
 from evals.shared.results import save_eval_result
 
-SCENARIOS_PATH = Path(__file__).parent / "config" / "write_ticket" / "scenarios.yaml"
-JUDGE_CONFIG_PATH = str(Path(__file__).parent / "config" / "write_ticket" / "judge.yaml")
+SCENARIOS_PATH = Path(__file__).parent / "config" / "write_epic" / "scenarios.yaml"
+JUDGE_CONFIG_PATH = str(Path(__file__).parent / "config" / "write_epic" / "judge.yaml")
 
 
 def _load_skill_content() -> str:
     from services.db.harness import get_skill
-    skill = get_skill("write_ticket")
-    assert skill, "write_ticket skill not found in harness DB"
+    skill = get_skill("write_epic")
+    assert skill, "write_epic skill not found in harness DB"
     return skill["content"]["body"]
 
 
@@ -30,7 +30,7 @@ def scenario_ids(scenarios):
 
 
 @pytest.mark.parametrize("scenario", load_scenarios(), ids=scenario_ids(load_scenarios()))
-def test_write_ticket_compliance(scenario, eval_config):
+def test_write_epic_compliance(scenario, eval_config):
     model = eval_config["model"]
     skill_content = _load_skill_content()
     output = run_agent(model, scenario["prompt"], extra_context=skill_content)
@@ -39,7 +39,7 @@ def test_write_ticket_compliance(scenario, eval_config):
         scenario["prompt"], output,
         threshold=eval_config["threshold"],
         judge_config_path=JUDGE_CONFIG_PATH,
-        rule_name="write_ticket",
+        rule_name="write_epic",
         rule_content=skill_content,
     )
 
@@ -49,7 +49,7 @@ def test_write_ticket_compliance(scenario, eval_config):
         "skills", scenario["name"], model,
         eval_config["judge_model"], eval_config["threshold"],
         output, all_results,
-        subcategory="write_ticket",
+        subcategory="write_epic",
         prompt=scenario["prompt"],
     )
 

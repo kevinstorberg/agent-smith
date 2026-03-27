@@ -14,6 +14,7 @@ def save_eval_result(
     output: str,
     results: list[dict],
     subcategory: str | None = None,
+    prompt: str | None = None,
 ) -> int:
     return save_result(
         timestamp=datetime.now(timezone.utc),
@@ -25,4 +26,5 @@ def save_eval_result(
         output=output,
         results=results,
         subcategory=subcategory,
+        prompt=prompt,
     )

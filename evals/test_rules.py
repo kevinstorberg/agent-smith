@@ -46,6 +46,7 @@ def test_rules_compliance(scenario, eval_config):
         eval_config["judge_model"], eval_config["threshold"],
         output, all_results,
         subcategory="plans",
+        prompt=scenario["prompt"],
     )
 
     for r in all_results:

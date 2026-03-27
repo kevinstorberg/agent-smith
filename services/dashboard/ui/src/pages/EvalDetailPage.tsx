@@ -4,11 +4,14 @@ import ReactMarkdown from 'react-markdown';
 import { api } from '../api';
 import type { EvalRunDetail } from '../api';
 
+type Tab = 'overview' | 'output' | 'raw';
+
 export function EvalDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [run, setRun] = useState<EvalRunDetail | null>(null);
-  const [outputOpen, setOutputOpen] = useState(true);
+  const [tab, setTab] = useState<Tab>('overview');
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -27,13 +30,31 @@ export function EvalDetailPage() {
 
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <a
           onClick={() => navigate('/evals')}
           style={{ color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}
         >
           &larr; Back to Evals
         </a>
+        <button
+          onClick={() => {
+            if (confirm(`Delete eval run #${run.id}?`)) {
+              api.evals.remove(run.id).then(() => navigate('/evals'));
+            }
+          }}
+          style={{
+            padding: '4px 12px',
+            fontSize: 12,
+            background: 'transparent',
+            color: 'var(--highlight)',
+            border: '1px solid var(--highlight)',
+            borderRadius: 'var(--radius)',
+            cursor: 'pointer',
+          }}
+        >
+          Delete
+        </button>
       </div>
 
       <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>
@@ -52,55 +73,98 @@ export function EvalDetailPage() {
         <span className="tag">threshold: {run.threshold}</span>
       </div>
 
-      <div className="card" style={{ marginBottom: 24, display: 'flex', gap: 32, alignItems: 'center' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 32, fontWeight: 700, color: avgScore >= run.threshold ? 'var(--success)' : 'var(--highlight)' }}>
-            {avgScore.toFixed(2)}
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Average Score</div>
-        </div>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--success)' }}>{passCount}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Passed</div>
-        </div>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 32, fontWeight: 700, color: failCount > 0 ? 'var(--highlight)' : 'var(--text-muted)' }}>{failCount}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Failed</div>
-        </div>
+      <div className="sub-tabs" style={{ marginBottom: 24 }}>
+        <button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>
+          Overview
+        </button>
+        <button className={tab === 'output' ? 'active' : ''} onClick={() => setTab('output')}>
+          Agent Output
+        </button>
+        <button className={tab === 'raw' ? 'active' : ''} onClick={() => setTab('raw')}>
+          Raw JSON
+        </button>
       </div>
 
-      <h3 className="section-title" style={{ marginBottom: 12 }}>Results</h3>
-      {run.results.map(r => (
-        <div key={r.rule} className="card" style={{ marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-            <span
-              className={`score-badge ${r.score >= run.threshold ? 'pass' : 'fail'}`}
-              style={{ fontSize: 16, fontWeight: 600 }}
-            >
-              {r.score.toFixed(2)}
-            </span>
-            <span style={{ fontSize: 15, fontWeight: 500 }}>{r.rule}</span>
+      {tab === 'overview' && (
+        <>
+          <div className="card" style={{ marginBottom: 24, display: 'flex', gap: 32, alignItems: 'center' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 32, fontWeight: 700, color: avgScore >= run.threshold ? 'var(--success)' : 'var(--highlight)' }}>
+                {avgScore.toFixed(2)}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Average Score</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--success)' }}>{passCount}</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Passed</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 32, fontWeight: 700, color: failCount > 0 ? 'var(--highlight)' : 'var(--text-muted)' }}>{failCount}</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Failed</div>
+            </div>
           </div>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-            {r.reason}
-          </p>
-        </div>
-      ))}
 
-      <div style={{ marginTop: 32 }}>
-        <h3
-          className="section-title"
-          style={{ marginBottom: 12, cursor: 'pointer', userSelect: 'none' }}
-          onClick={() => setOutputOpen(!outputOpen)}
-        >
-          Agent Output {outputOpen ? '▾' : '▸'}
-        </h3>
-        {outputOpen && (
-          <div className="card markdown-content" style={{ fontSize: 13, lineHeight: 1.7 }}>
-            <ReactMarkdown>{run.output}</ReactMarkdown>
-          </div>
-        )}
-      </div>
+          <h3 className="section-title" style={{ marginBottom: 12 }}>Results</h3>
+          {run.results.map(r => (
+            <div key={r.rule} className="card" style={{ marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                <span
+                  className={`score-badge ${r.score >= run.threshold ? 'pass' : 'fail'}`}
+                  style={{ fontSize: 16, fontWeight: 600 }}
+                >
+                  {r.score.toFixed(2)}
+                </span>
+                <span style={{ fontSize: 15, fontWeight: 500 }}>{r.rule}</span>
+              </div>
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+                {r.reason}
+              </p>
+            </div>
+          ))}
+        </>
+      )}
+
+      {tab === 'output' && (
+        <div className="card markdown-content" style={{ fontSize: 13, lineHeight: 1.7 }}>
+          <ReactMarkdown>{run.output}</ReactMarkdown>
+        </div>
+      )}
+
+      {tab === 'raw' && (
+        <div style={{ position: 'relative' }}>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(JSON.stringify(run, null, 2));
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            }}
+            style={{
+              position: 'absolute',
+              top: 12,
+              right: 12,
+              padding: '4px 10px',
+              fontSize: 12,
+              background: 'var(--surface-hover)',
+              color: 'var(--text-muted)',
+              border: '1px solid var(--surface-elevated)',
+              borderRadius: 'var(--radius)',
+              cursor: 'pointer',
+            }}
+          >
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+          <pre className="card" style={{
+            fontSize: 12,
+            lineHeight: 1.5,
+            fontFamily: 'var(--mono)',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            overflow: 'auto',
+          }}>
+            {JSON.stringify(run, null, 2)}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }
