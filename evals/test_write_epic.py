@@ -22,7 +22,7 @@ def _ensure_db():
 def load_scenarios() -> list[dict]:
     _ensure_db()
     from services.db.evals import list_enabled_scenarios_for_suite
-    return list_enabled_scenarios_for_suite("rules_plans")
+    return list_enabled_scenarios_for_suite("skills_write_epic")
 
 
 def scenario_ids(scenarios):
@@ -30,7 +30,7 @@ def scenario_ids(scenarios):
 
 
 @pytest.mark.parametrize("scenario", load_scenarios(), ids=scenario_ids(load_scenarios()))
-def test_rules_compliance(scenario, eval_config):
+def test_write_epic_compliance(scenario, eval_config):
     from services.db.evals import resolve_items, resolve_extra_context
 
     model = eval_config["model"]

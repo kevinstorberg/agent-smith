@@ -1,0 +1,48 @@
+scenarios:
+  - name: saas_project_management
+    enabled: true
+    prompt: |
+      Write an epic for building an MVP of a SaaS project management tool. The product
+      lets teams create projects, add tasks with assignees and due dates, track task
+      status (todo/in-progress/done), and view a dashboard of project progress. The
+      system has two services: a Python FastAPI API and a React frontend (Admin Portal).
+      There is a PostgreSQL database. Multi-tenancy is required — each organization sees
+      only its own data. Auth uses JWT tokens. Assume a data model and system architecture
+      document exist and should be referenced by link.
+
+  - name: iot_fleet_monitoring
+    enabled: true
+    prompt: |
+      Write an epic for building an MVP of an IoT fleet monitoring platform. The product
+      ingests telemetry events (GPS, battery, temperature) from devices via an HTTP
+      ingestion API, stores them in PostgreSQL, and displays real-time fleet status on a
+      React dashboard. The system has three services: an Ingestion API (FastAPI), a
+      Dashboard API (FastAPI), and a React frontend. Devices authenticate with API keys.
+      Human users authenticate with JWT. Each customer organization sees only its own
+      devices. An ETL service periodically aggregates raw telemetry into hourly summaries.
+      Assume a data model and system architecture document exist.
+
+  - name: ecommerce_marketplace
+    enabled: true
+    prompt: |
+      Write an epic for building an MVP of a B2B e-commerce marketplace. Vendors list
+      products with pricing and inventory. Buyers browse a catalog, add items to a cart,
+      and place orders. Orders trigger inventory deductions and email notifications. The
+      system has a Python FastAPI API, a React storefront for buyers, and a React admin
+      portal for vendors. PostgreSQL database. Multi-tenancy is per-vendor — each vendor
+      manages their own products and sees only their own orders. Auth uses JWT with
+      role-based access (vendor admin, buyer). An Order Processing Service handles
+      inventory and notifications asynchronously. Assume a data model and system
+      architecture document exist.
+
+  - name: healthcare_scheduling
+    enabled: true
+    prompt: |
+      Write an epic for building an MVP of a healthcare appointment scheduling system.
+      Clinics manage providers (doctors), patients, and appointment slots. Patients can
+      be booked into available slots. The system enforces that a provider cannot be
+      double-booked and that appointments respect provider availability schedules. The
+      system has a Python FastAPI API, a React admin portal for clinic staff, and a
+      PostgreSQL database. Multi-tenancy is per-clinic. Auth uses JWT. A Notifications
+      Service sends appointment confirmations and reminders via email. Assume a data
+      model and system architecture document exist.

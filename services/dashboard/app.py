@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from services.db import init_db
-from services.dashboard.routers import harness, memory, evals, plans
+from services.dashboard.routers import harness, memory, evals, plans, eval_configs
 
 app = FastAPI(title="Agent Smith Dashboard")
 
@@ -29,6 +29,7 @@ app.include_router(harness.router, prefix="/api/harness", tags=["harness"])
 app.include_router(memory.router, prefix="/api/memory", tags=["memory"])
 app.include_router(evals.router, prefix="/api/evals", tags=["evals"])
 app.include_router(plans.router, prefix="/api/plans", tags=["plans"])
+app.include_router(eval_configs.router, prefix="/api/eval-configs", tags=["eval-configs"])
 
 dist_dir = Path(__file__).parent / "ui" / "dist"
 if dist_dir.exists():

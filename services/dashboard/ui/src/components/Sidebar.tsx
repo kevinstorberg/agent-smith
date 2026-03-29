@@ -70,9 +70,13 @@ export function Sidebar() {
       </div>
 
       <div className="sidebar-section">
-        <NavLink to="/evals" className={navClass}>Evals</NavLink>
         <NavLink to="/memory" className={navClass}>Memory</NavLink>
         <NavLink to="/plans" className={navClass}>Plans</NavLink>
+      </div>
+
+      <div className="sidebar-section">
+        <NavLink to="/eval-configs" className={navClass}>Evals</NavLink>
+        <NavLink to="/evals" className={navClass}>Results</NavLink>
       </div>
 
       <div className="sidebar-section">

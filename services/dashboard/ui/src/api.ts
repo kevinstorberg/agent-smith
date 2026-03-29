@@ -102,6 +102,7 @@ export interface EvalRun {
   id: number;
   timestamp: string;
   eval_type: string;
+  subcategory: string | null;
   scenario: string;
   test_model: string;
   judge_model: string;
@@ -110,11 +111,42 @@ export interface EvalRun {
   created_at: string;
 }
 
+export interface EvalRunDetail extends EvalRun {
+  prompt: string | null;
+  output: string;
+}
+
 export interface Plan {
   id: number;
   title: string;
   body: string;
   project: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EvalSuite {
+  id: number;
+  name: string;
+  eval_type: string;
+  subcategory: string;
+  judge_prompt: string;
+  items: Record<string, unknown>;
+  config: Record<string, unknown>;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  scenario_count?: number;
+  scenarios?: EvalScenario[];
+}
+
+export interface EvalScenario {
+  id: number;
+  suite_id: number;
+  name: string;
+  prompt: string;
+  enabled: boolean;
+  sort_key: string;
   created_at: string;
   updated_at: string;
 }
@@ -184,7 +216,10 @@ export const api = {
     chartAverage: (params?: Record<string, string>) =>
       get<AverageChartPoint[]>('/evals/chart/average', params),
     categories: () => get<string[]>('/evals/categories'),
-    get: (id: number) => get<EvalRun>(`/evals/${id}`),
+    subcategories: (params?: Record<string, string>) =>
+      get<string[]>('/evals/subcategories', params),
+    get: (id: number) => get<EvalRunDetail>(`/evals/${id}`),
+    remove: (id: number) => del<{ deleted: number }>(`/evals/${id}`),
   },
   plans: {
     list: (pagination?: PaginationParams & { project?: string }) =>
@@ -199,5 +234,26 @@ export const api = {
     update: (id: number, body: { title?: string; body?: string; project?: string | null }) =>
       put<Plan>(`/plans/${id}`, body),
     remove: (id: number) => del(`/plans/${id}`),
+  },
+  evalConfigs: {
+    suites: {
+      list: (params?: Record<string, string>) =>
+        get<Paginated<EvalSuite>>('/eval-configs/suites', params),
+      get: (id: number) => get<EvalSuite>(`/eval-configs/suites/${id}`),
+      create: (body: Partial<EvalSuite>) => post<EvalSuite>('/eval-configs/suites', body),
+      update: (id: number, body: Partial<EvalSuite>) =>
+        put<EvalSuite>(`/eval-configs/suites/${id}`, body),
+      remove: (id: number) => del<{ deleted: number }>(`/eval-configs/suites/${id}`),
+    },
+    scenarios: {
+      list: (suiteId: number, params?: Record<string, string>) =>
+        get<EvalScenario[]>(`/eval-configs/suites/${suiteId}/scenarios`, params),
+      get: (id: number) => get<EvalScenario>(`/eval-configs/scenarios/${id}`),
+      create: (suiteId: number, body: { name: string; prompt: string; enabled?: boolean }) =>
+        post<EvalScenario>(`/eval-configs/suites/${suiteId}/scenarios`, body),
+      update: (id: number, body: Partial<EvalScenario>) =>
+        put<EvalScenario>(`/eval-configs/scenarios/${id}`, body),
+      remove: (id: number) => del<{ deleted: number }>(`/eval-configs/scenarios/${id}`),
+    },
   },
 };

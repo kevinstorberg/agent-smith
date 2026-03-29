@@ -8,9 +8,10 @@ from services.db import get_connection
 
 INSERT_SQL = """
 INSERT INTO eval_results
-    (timestamp, eval_type, scenario, test_model, judge_model, threshold, output, results)
+    (timestamp, eval_type, subcategory, scenario, test_model, judge_model, threshold,
+     prompt, output, results, eval_suite_id, eval_scenario_id)
 VALUES
-    (%s, %s, %s, %s, %s, %s, %s, %s)
+    (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 RETURNING id
 """
 
@@ -24,17 +25,25 @@ def save_result(
     threshold: float,
     output: str,
     results: list[dict],
+    subcategory: str | None = None,
+    prompt: str | None = None,
+    eval_suite_id: int | None = None,
+    eval_scenario_id: int | None = None,
 ) -> int:
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(INSERT_SQL, (
                 timestamp,
                 eval_type,
+                subcategory,
                 scenario,
                 test_model,
                 judge_model,
                 threshold,
+                prompt,
                 Json(output),
                 Json(results),
+                eval_suite_id,
+                eval_scenario_id,
             ))
             return cur.fetchone()[0]
