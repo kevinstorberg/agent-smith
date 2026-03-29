@@ -44,16 +44,22 @@ def evaluate(
     judge_config_path: str | None = None,
     rule_name: str | None = None,
     rule_content: str | None = None,
+    judge_prompt: str | None = None,
 ) -> dict:
     if rule_content is None:
         assert rule_path, "Either rule_path or rule_content must be provided."
         rule_content = Path(rule_path).read_text(encoding="utf-8")
     if rule_name is None:
         rule_name = Path(rule_path).stem if rule_path else "unnamed"
-    config = _load_judge_config(judge_config_path)
+
+    if judge_prompt is not None:
+        prompt = judge_prompt
+    else:
+        config = _load_judge_config(judge_config_path)
+        prompt = config["prompt"]
 
     steps = _rule_to_steps(rule_content)
-    criteria = f"{config['prompt']}\n\nRule:\n{rule_content}"
+    criteria = f"{prompt}\n\nRule:\n{rule_content}"
 
     metric = GEval(
         name=rule_name,

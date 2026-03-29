@@ -1,28 +1,28 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-import yaml
 
 from evals.shared.runner import run_agent
 from evals.shared.judge import evaluate
 from evals.shared.results import save_eval_result
 
-SCENARIOS_PATH = Path(__file__).parent / "config" / "write_ticket" / "scenarios.yaml"
-JUDGE_CONFIG_PATH = str(Path(__file__).parent / "config" / "write_ticket" / "judge.yaml")
+_db_initialized = False
 
 
-def _load_skill_content() -> str:
-    from services.db.harness import get_skill
-    skill = get_skill("write_ticket")
-    assert skill, "write_ticket skill not found in harness DB"
-    return skill["content"]["body"]
+def _ensure_db():
+    global _db_initialized
+    if not _db_initialized:
+        from scripts.shared.paths import bootstrap
+        bootstrap()
+        from services.db import init_db
+        init_db()
+        _db_initialized = True
 
 
 def load_scenarios() -> list[dict]:
-    all_scenarios = yaml.safe_load(SCENARIOS_PATH.read_text(encoding="utf-8"))["scenarios"]
-    return [s for s in all_scenarios if s.get("enabled", True)]
+    _ensure_db()
+    from services.db.evals import list_enabled_scenarios_for_suite
+    return list_enabled_scenarios_for_suite("skills_write_ticket")
 
 
 def scenario_ids(scenarios):
@@ -31,28 +31,37 @@ def scenario_ids(scenarios):
 
 @pytest.mark.parametrize("scenario", load_scenarios(), ids=scenario_ids(load_scenarios()))
 def test_write_ticket_compliance(scenario, eval_config):
+    from services.db.evals import resolve_items, resolve_extra_context
+
     model = eval_config["model"]
-    skill_content = _load_skill_content()
-    output = run_agent(model, scenario["prompt"], extra_context=skill_content)
+    extra_ctx = resolve_extra_context(scenario["items"])
+    output = run_agent(model, scenario["prompt"], extra_context=extra_ctx)
 
-    result = evaluate(
-        scenario["prompt"], output,
-        threshold=eval_config["threshold"],
-        judge_config_path=JUDGE_CONFIG_PATH,
-        rule_name="write_ticket",
-        rule_content=skill_content,
-    )
+    items = resolve_items(scenario["items"])
+    assert items, "No items to evaluate against."
 
-    all_results = [result]
+    all_results = []
+    for item_name, item_content in items:
+        result = evaluate(
+            scenario["prompt"], output,
+            threshold=eval_config["threshold"],
+            judge_prompt=scenario["judge_prompt"],
+            rule_name=item_name,
+            rule_content=item_content,
+        )
+        all_results.append(result)
 
     save_eval_result(
-        "skills", scenario["name"], model,
+        scenario["eval_type"], scenario["name"], model,
         eval_config["judge_model"], eval_config["threshold"],
         output, all_results,
-        subcategory="write_ticket",
+        subcategory=scenario["subcategory"],
         prompt=scenario["prompt"],
+        eval_suite_id=scenario["suite_id"],
+        eval_scenario_id=scenario["id"],
     )
 
-    assert result["score"] >= eval_config["threshold"], (
-        f"{result['rule']}: scored {result['score']}: {result['reason']}"
-    )
+    for r in all_results:
+        assert r["score"] >= eval_config["threshold"], (
+            f"{r['rule']}: scored {r['score']}: {r['reason']}"
+        )

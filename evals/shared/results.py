@@ -15,6 +15,8 @@ def save_eval_result(
     results: list[dict],
     subcategory: str | None = None,
     prompt: str | None = None,
+    eval_suite_id: int | None = None,
+    eval_scenario_id: int | None = None,
 ) -> int:
     return save_result(
         timestamp=datetime.now(timezone.utc),
@@ -27,4 +29,6 @@ def save_eval_result(
         results=results,
         subcategory=subcategory,
         prompt=prompt,
+        eval_suite_id=eval_suite_id,
+        eval_scenario_id=eval_scenario_id,
     )
