@@ -17,27 +17,19 @@ pip install -r requirements.txt
 
 ```text
 assets/              # static assets (images, etc.)
-harness/
-  main.md            # preamble prepended to every agent's rules file
-  rules/             # behavioral directives (markdown, composed in order)
-  skills/            # slash commands (one subdirectory per skill, each with SKILL.md)
-  mcp/               # MCP server definitions (one JSON file per server)
 evals/               # LLM-as-judge evaluation framework (DeepEval + G-Eval)
+  config/            # eval suite configs (scenarios + judge prompts, migrated to DB)
+scripts/             # migration and sync utilities
 services/
-  db/                # shared Postgres connection + Alembic migrations
-  memory/            # local vector memory MCP server (LanceDB + sentence-transformers)
-  dashboard/         # web UI (FastAPI + React) for evals, harness config, and memory
-tmp/                 # scratch files and draft plans (gitignored contents)
+  db/                # Postgres connection + Alembic migrations
+  memory/            # vector memory MCP server (LanceDB + sentence-transformers)
+  dashboard/         # web UI (FastAPI + React)
 ```
 
-Each harness category has a `shared/` subfolder (applied to all agents), per-agent subfolders
-(`claude/`, `codex/`, `gemini/`), and a `local/` subfolder (gitignored, machine-specific).
-Files within `rules/` and `mcp/` are processed in lexicographic order.
+## Harness
 
-## Manifest
-
-`harness.yaml` declares, for each agent and category, the target file/directory and which
-source folders to pull from.
+Rules, skills, tools, and hooks are stored in Postgres with versioning, project scoping,
+and per-agent assignment. Managed via the dashboard UI, MCP tools, or direct DB access.
 
 ## Sync
 
@@ -45,18 +37,17 @@ source folders to pull from.
 ./sync.py
 ```
 
-Reads `harness.yaml` and applies three operations:
+Reads harness items from the database and writes them to each agent's config files:
 
-- **compose** — concatenates markdown files into a single rules file
+- **compose** — concatenates rules into a single markdown file
 - **copy** — syncs skill subdirectories to the agent's skills directory
-- **merge** — merges MCP server JSON into the agent's config file
+- **merge** — merges MCP server configs into the agent's settings file
 
-Only writes when content has changed.
+Supports Claude, Codex, and Gemini. Only writes when content has changed.
 
 ## Memory
 
-A local vector memory system with time-weighted retrieval. Recent and frequently
-accessed memories are gently preferred over old ones via LangChain's
+A local vector memory system with time-weighted retrieval via LangChain's
 `TimeWeightedVectorStoreRetriever`.
 
 **One-time setup:**
@@ -92,19 +83,24 @@ in `.env` with a `PINECONE_API_KEY` to use Pinecone cloud instead. The server ru
 
 ## Evals
 
-LLM-as-judge evaluation of rule compliance using DeepEval. Invokes a real CLI agent,
-then scores its output against every rule in `harness/rules/shared/`.
+LLM-as-judge evaluation using DeepEval's G-Eval metric. Three eval suites:
+
+- **rules/plans** — scores agent-generated plans against harness rules
+- **skills/write_ticket** — scores generated tickets against ticket-writing criteria
+- **skills/write_epic** — scores generated epics against epic-writing criteria
+
+Eval suites and scenarios are stored in Postgres (`eval_suites` + `eval_scenarios` tables)
+and loaded at test time. Results are stored in `eval_results`.
 
 ```sh
 .venv/bin/pytest evals/ -v
 ```
 
 Configure via `EVAL_MODEL`, `EVAL_JUDGE_MODEL`, and `EVAL_THRESHOLD` in `.env`.
-Results are stored in Postgres (see Database section below).
 
 ## Database
 
-Postgres is used for eval results and will be extended for future features.
+Postgres stores harness items, eval configs, eval results, plans, and memory metadata.
 
 ```sh
 brew install postgresql@17
@@ -122,15 +118,15 @@ Set `DATABASE_URL` in `.env` to override the default (`postgresql://localhost/ag
 
 ## Dashboard
 
-A local web UI for browsing harness config, searching memories, and visualizing eval scores.
+A local web UI for managing the harness and viewing eval results.
 
 ```sh
 .venv/bin/uvicorn services.dashboard.app:app --port 7654
 open http://localhost:7654
 ```
 
-Three tabs: **Harness** (rules, skills, MCP servers), **Memory** (semantic search + browse),
-**Evals** (score chart over time + run details).
+Sections: **Harness** (rules, skills, tools, hooks), **Memory** (semantic search + browse),
+**Plans**, **Evals** (suite + scenario config), **Results** (score charts + run details).
 
 For frontend development with hot reload:
 
@@ -151,5 +147,4 @@ Slack_ENABLED=false
 
 ## Planned Features
 - Additional agent model support (e.g. Mistral Code)
-- Repo/project scoped rules, skills, and tooling
 - Conversion into an open source library
