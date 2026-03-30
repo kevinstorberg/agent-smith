@@ -12,8 +12,9 @@ bootstrap()
 from services.db import init_db  # noqa: E402
 from services.db.harness import upsert_rule, upsert_skill, upsert_tool  # noqa: E402
 
+from services.config import ALL_AGENTS  # noqa: E402
+
 HARNESS_ROOT = REPO_ROOT / "harness"
-ALL_AGENTS = ["claude", "codex", "gemini"]
 
 
 def _parse_skill_frontmatter(text: str) -> tuple[str, str]:

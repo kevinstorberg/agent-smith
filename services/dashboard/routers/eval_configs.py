@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from services.db.evals import (
     list_suites, get_suite, create_suite, update_suite, delete_suite,
     list_scenarios, get_scenario, create_scenario, update_scenario, delete_scenario,
 )
+from services.dashboard.routers.base import require_found
 
 router = APIRouter()
 
@@ -67,9 +68,7 @@ def list_suites_endpoint(
 
 @router.get("/suites/{suite_id}")
 def get_suite_endpoint(suite_id: int):
-    suite = get_suite(suite_id)
-    if not suite:
-        raise HTTPException(status_code=404, detail="Suite not found")
+    suite = require_found(get_suite(suite_id), "Suite", suite_id)
     suite["scenarios"] = list_scenarios(suite_id, enabled_only=False)
     return suite
 
@@ -90,9 +89,7 @@ def create_suite_endpoint(body: CreateSuiteRequest):
 
 @router.put("/suites/{suite_id}")
 def update_suite_endpoint(suite_id: int, body: UpdateSuiteRequest):
-    if not get_suite(suite_id):
-        raise HTTPException(status_code=404, detail="Suite not found")
-
+    require_found(get_suite(suite_id), "Suite", suite_id)
     kwargs = {k: v for k, v in body.model_dump().items() if v is not None}
     if kwargs:
         update_suite(suite_id, **kwargs)
@@ -101,8 +98,7 @@ def update_suite_endpoint(suite_id: int, body: UpdateSuiteRequest):
 
 @router.delete("/suites/{suite_id}")
 def delete_suite_endpoint(suite_id: int):
-    if not get_suite(suite_id):
-        raise HTTPException(status_code=404, detail="Suite not found")
+    require_found(get_suite(suite_id), "Suite", suite_id)
     delete_suite(suite_id)
     return {"deleted": suite_id}
 
@@ -114,23 +110,18 @@ def delete_suite_endpoint(suite_id: int):
 
 @router.get("/suites/{suite_id}/scenarios")
 def list_scenarios_endpoint(suite_id: int, enabled_only: bool = Query(False)):
-    if not get_suite(suite_id):
-        raise HTTPException(status_code=404, detail="Suite not found")
+    require_found(get_suite(suite_id), "Suite", suite_id)
     return list_scenarios(suite_id, enabled_only=enabled_only)
 
 
 @router.get("/scenarios/{scenario_id}")
 def get_scenario_endpoint(scenario_id: int):
-    sc = get_scenario(scenario_id)
-    if not sc:
-        raise HTTPException(status_code=404, detail="Scenario not found")
-    return sc
+    return require_found(get_scenario(scenario_id), "Scenario", scenario_id)
 
 
 @router.post("/suites/{suite_id}/scenarios", status_code=201)
 def create_scenario_endpoint(suite_id: int, body: CreateScenarioRequest):
-    if not get_suite(suite_id):
-        raise HTTPException(status_code=404, detail="Suite not found")
+    require_found(get_suite(suite_id), "Suite", suite_id)
     scenario_id = create_scenario(
         suite_id=suite_id,
         name=body.name,
@@ -142,9 +133,7 @@ def create_scenario_endpoint(suite_id: int, body: CreateScenarioRequest):
 
 @router.put("/scenarios/{scenario_id}")
 def update_scenario_endpoint(scenario_id: int, body: UpdateScenarioRequest):
-    if not get_scenario(scenario_id):
-        raise HTTPException(status_code=404, detail="Scenario not found")
-
+    require_found(get_scenario(scenario_id), "Scenario", scenario_id)
     kwargs = {k: v for k, v in body.model_dump().items() if v is not None}
     if kwargs:
         update_scenario(scenario_id, **kwargs)
@@ -153,7 +142,6 @@ def update_scenario_endpoint(scenario_id: int, body: UpdateScenarioRequest):
 
 @router.delete("/scenarios/{scenario_id}")
 def delete_scenario_endpoint(scenario_id: int):
-    if not get_scenario(scenario_id):
-        raise HTTPException(status_code=404, detail="Scenario not found")
+    require_found(get_scenario(scenario_id), "Scenario", scenario_id)
     delete_scenario(scenario_id)
     return {"deleted": scenario_id}

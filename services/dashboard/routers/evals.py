@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from psycopg2.extras import RealDictCursor
 
 from services.db import get_connection
+from services.db.base_model import BaseModel
+from services.dashboard.routers.base import require_found
 
 router = APIRouter()
 
@@ -30,12 +32,6 @@ def _build_filters(scenario="", model="", eval_type="", subcategory="", date_fro
         params.append(date_to)
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     return where, params
-
-
-def _serialize_timestamps(row):
-    row["timestamp"] = row["timestamp"].isoformat()
-    row["created_at"] = row["created_at"].isoformat()
-    return row
 
 
 @router.get("")
@@ -65,7 +61,7 @@ def list_evals(
             )
             rows = cur.fetchall()
 
-    return {"items": [_serialize_timestamps(row) for row in rows], "total": total}
+    return {"items": [BaseModel.serialize_timestamps(row) for row in rows], "total": total}
 
 
 @router.get("/categories")
@@ -150,10 +146,7 @@ def get_eval(eval_id: int):
             cur.execute("SELECT * FROM eval_results WHERE id = %s", (eval_id,))
             row = cur.fetchone()
 
-    if not row:
-        raise HTTPException(status_code=404, detail="Eval not found")
-
-    return _serialize_timestamps(row)
+    return BaseModel.serialize_timestamps(require_found(row, "Eval", eval_id))
 
 
 @router.delete("/{eval_id}")
@@ -163,7 +156,5 @@ def delete_eval(eval_id: int):
             cur.execute("DELETE FROM eval_results WHERE id = %s RETURNING id", (eval_id,))
             row = cur.fetchone()
 
-    if not row:
-        raise HTTPException(status_code=404, detail="Eval not found")
-
+    require_found(row, "Eval", eval_id)
     return {"deleted": eval_id}

@@ -4,6 +4,7 @@ import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-p
 import { api } from '../api';
 import type { HarnessItem } from '../api';
 import { Pagination } from '../components/Pagination';
+import { usePagination } from '../hooks/usePagination';
 
 const TYPE_LABELS: Record<string, string> = {
   rule: 'Rules',
@@ -13,11 +14,6 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export function HarnessIndexPage({ type }: { type: string }) {
-  const [items, setItems] = useState<HarnessItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [limit, setLimit] = useState(10);
-  const [offset, setOffset] = useState(0);
   const [projectFilter, setProjectFilter] = useState('');
   const [nameFilter, setNameFilter] = useState('');
   const [saveMsg, setSaveMsg] = useState('');
@@ -25,19 +21,16 @@ export function HarnessIndexPage({ type }: { type: string }) {
 
   const hasFilters = !!(nameFilter || projectFilter);
 
+  const { items, setItems, total, loading, limit, offset, setLimit, setOffset } = usePagination<HarnessItem>(
+    (l, o) => api.harness.items.list(type, { limit: l, offset: o }),
+    [type],
+  );
+
   useEffect(() => {
     setOffset(0);
     setNameFilter('');
     setProjectFilter('');
   }, [type]);
-
-  useEffect(() => {
-    setLoading(true);
-    api.harness.items.list(type, { limit, offset }).then(res => {
-      setItems(res.items);
-      setTotal(res.total);
-    }).finally(() => setLoading(false));
-  }, [type, limit, offset]);
 
   const toggleEnabled = async (item: HarnessItem) => {
     await api.harness.items.updateMetadata(type, item.id, { enabled: !item.enabled });

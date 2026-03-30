@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from services.db.plans import list_plans, search_plans, get_plan, create_plan, update_plan, delete_plan
+from services.dashboard.routers.base import require_found
 
 router = APIRouter()
 
@@ -25,10 +26,7 @@ def search(q: str = Query(..., min_length=1), project: str = Query("")):
 
 @router.get("/{plan_id}")
 def get_one(plan_id: int):
-    plan = get_plan(plan_id)
-    if not plan:
-        raise HTTPException(404, "Plan not found")
-    return plan
+    return require_found(get_plan(plan_id), "Plan", plan_id)
 
 
 class CreateRequest(BaseModel):
@@ -51,9 +49,7 @@ class UpdateRequest(BaseModel):
 
 @router.put("/{plan_id}")
 def update(plan_id: int, body: UpdateRequest):
-    existing = get_plan(plan_id)
-    if not existing:
-        raise HTTPException(404, "Plan not found")
+    require_found(get_plan(plan_id), "Plan", plan_id)
     update_plan(
         plan_id,
         title=body.title,
@@ -65,8 +61,6 @@ def update(plan_id: int, body: UpdateRequest):
 
 @router.delete("/{plan_id}")
 def delete(plan_id: int):
-    existing = get_plan(plan_id)
-    if not existing:
-        raise HTTPException(404, "Plan not found")
+    require_found(get_plan(plan_id), "Plan", plan_id)
     delete_plan(plan_id)
     return {"deleted": True, "id": plan_id}

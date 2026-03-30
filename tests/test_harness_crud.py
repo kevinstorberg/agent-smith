@@ -6,14 +6,13 @@ from services.db.harness import (
     create_item, update_content, update_metadata,
     get_item_by_id, get_version_history, list_items, list_items_full,
 )
+from services.config import ALL_AGENTS
 from tests.conftest import postgres_available
 
 
 pytestmark = pytest.mark.skipif(
     not postgres_available(), reason="Postgres not available"
 )
-
-ALL_AGENTS = ["claude", "codex", "gemini"]
 CONTENT = {"body": "## Test", "metadata": {}}
 
 
