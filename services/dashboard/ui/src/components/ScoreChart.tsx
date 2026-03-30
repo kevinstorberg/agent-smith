@@ -55,7 +55,7 @@ const chartOptions = {
 };
 
 interface ScoreChartProps {
-  mode: 'average' | 'by-rule';
+  mode: 'average' | 'breakdown';
   data?: ChartPoint[];
   averageData?: AverageChartPoint[];
 }

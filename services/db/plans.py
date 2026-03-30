@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from psycopg2.extras import RealDictCursor
 
+from scripts.shared.validation import assert_not_empty
 from services.db import get_connection
 from services.db.base_model import BaseModel
 
@@ -55,7 +56,7 @@ def list_plans(
 
 
 def search_plans(query: str, project: str | None = None, limit: int = 10) -> list[dict]:
-    assert query, "Search query must not be empty."
+    assert_not_empty(query, "query")
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             sql = "SELECT * FROM plans WHERE title ILIKE %s"
@@ -74,8 +75,8 @@ def get_plan(plan_id: int) -> dict | None:
 
 
 def create_plan(title: str, body: str, project: str | None = None) -> int:
-    assert title, "Title must not be empty."
-    assert body, "Body must not be empty."
+    assert_not_empty(title, "title")
+    assert_not_empty(body, "body")
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(

@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import MDEditor from '@uiw/react-md-editor';
 import { api } from '../api';
 import type { Plan } from '../api';
+import { CopyButton } from '../components/CopyButton';
 
 const styles = {
   header: {
@@ -199,7 +200,8 @@ export function PlanDetailPage() {
               Updated {new Date(plan!.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
             </span>
           </div>
-          <div className="card">
+          <div className="card" style={{ position: 'relative' }}>
+            <CopyButton text={plan!.body} style={{ position: 'absolute', top: 12, right: 12, zIndex: 1 }} />
             <div className="markdown-content">
               <ReactMarkdown>{plan!.body}</ReactMarkdown>
             </div>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from psycopg2.extras import Json, RealDictCursor
 
+from scripts.shared.validation import assert_not_empty
 from services.db import get_connection
 from services.db.base_model import BaseModel
 
@@ -123,7 +124,7 @@ def create_item(
     sort_key: str | None = None,
     enabled: bool = True,
 ) -> int:
-    assert name, "name must not be empty."
+    assert_not_empty(name, "name")
     assert isinstance(content, dict) and "body" in content, "content must be a dict with a 'body' key."
     table = _table(item_type)
 
@@ -198,7 +199,7 @@ def update_metadata(
 
 
 def reorder_items(item_type: str, ids: list[int]) -> None:
-    assert ids, "ids must not be empty."
+    assert_not_empty(ids, "ids")
     table = _table(item_type)
 
     with get_connection() as conn:
@@ -211,7 +212,7 @@ def reorder_items(item_type: str, ids: list[int]) -> None:
 
 
 def get_version_history(item_type: str, name: str, project: str | None = None) -> list[dict]:
-    assert name, "name must not be empty."
+    assert_not_empty(name, "name")
     table = _table(item_type)
 
     with get_connection() as conn:
@@ -230,7 +231,7 @@ def get_version_history(item_type: str, name: str, project: str | None = None) -
 
 
 def get_item(item_type: str, name: str, project: str | None = None) -> dict | None:
-    assert name, "name must not be empty."
+    assert_not_empty(name, "name")
     table = _table(item_type)
     latest = _LATEST_VERSION_CLAUSE.format(table=table)
 
@@ -262,7 +263,7 @@ def upsert_item(
     sort_key: str | None = None,
     enabled: bool = True,
 ) -> int:
-    assert name, "name must not be empty."
+    assert_not_empty(name, "name")
     assert isinstance(content, dict) and "body" in content, "content must be a dict with a 'body' key."
     table = _table(item_type)
 

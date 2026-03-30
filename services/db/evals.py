@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from psycopg2.extras import Json, RealDictCursor
 
+from scripts.shared.validation import assert_not_empty
 from services.db import get_connection
 from services.db.base_model import BaseModel
 
@@ -93,7 +94,7 @@ def get_suite(suite_id: int) -> dict | None:
 
 
 def get_suite_by_name(name: str) -> dict | None:
-    assert name, "name must not be empty."
+    assert_not_empty(name, "name")
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT * FROM eval_suites WHERE name = %s", (name,))
@@ -110,10 +111,10 @@ def create_suite(
     config: dict | None = None,
     enabled: bool = True,
 ) -> int:
-    assert name, "name must not be empty."
-    assert eval_type, "eval_type must not be empty."
-    assert subcategory, "subcategory must not be empty."
-    assert judge_prompt, "judge_prompt must not be empty."
+    assert_not_empty(name, "name")
+    assert_not_empty(eval_type, "eval_type")
+    assert_not_empty(subcategory, "subcategory")
+    assert_not_empty(judge_prompt, "judge_prompt")
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -206,8 +207,8 @@ def create_scenario(
     enabled: bool = True,
 ) -> int:
     assert suite_id > 0, "suite_id must be positive."
-    assert name, "name must not be empty."
-    assert prompt, "prompt must not be empty."
+    assert_not_empty(name, "name")
+    assert_not_empty(prompt, "prompt")
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -243,7 +244,7 @@ def upsert_scenario(
     enabled: bool = True,
 ) -> int:
     assert suite_id > 0, "suite_id must be positive."
-    assert name, "name must not be empty."
+    assert_not_empty(name, "name")
 
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -265,7 +266,7 @@ def upsert_scenario(
 
 
 def list_enabled_scenarios_for_suite(suite_name: str) -> list[dict]:
-    assert suite_name, "suite_name must not be empty."
+    assert_not_empty(suite_name, "suite_name")
 
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:

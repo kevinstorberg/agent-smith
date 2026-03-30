@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-import yaml
-
 from services.config import ALL_AGENTS, MCP_URL
-
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def seed_memory_tool() -> None:
@@ -41,43 +35,7 @@ def seed_plan_tools() -> None:
         )
 
 
-def seed_rule_evals() -> None:
-    """Seed the rules/plans eval suite and its scenarios if the suite doesn't exist."""
-    from services.db.evals import get_suite_by_name, create_suite, create_scenario
-
-    if get_suite_by_name("rules_plans"):
-        return
-
-    evals_config = REPO_ROOT / "evals" / "config" / "rules"
-    judge_path = evals_config / "judge.yaml"
-    scenarios_path = evals_config / "scenarios.yaml"
-
-    assert judge_path.exists(), f"Judge config not found: {judge_path}"
-    assert scenarios_path.exists(), f"Scenarios not found: {scenarios_path}"
-
-    judge_data = yaml.safe_load(judge_path.read_text(encoding="utf-8"))
-    assert "prompt" in judge_data, f"No 'prompt' key in {judge_path}"
-
-    suite_id = create_suite(
-        name="rules_plans",
-        eval_type="rules",
-        subcategory="plans",
-        judge_prompt=judge_data["prompt"],
-        items={"source": "harness", "harness_type": "rule", "agent": "claude", "exclude": ["memory"]},
-    )
-
-    scenarios_data = yaml.safe_load(scenarios_path.read_text(encoding="utf-8"))
-    for sc in scenarios_data.get("scenarios", []):
-        create_scenario(
-            suite_id=suite_id,
-            name=sc["name"],
-            prompt=sc["prompt"],
-            enabled=sc.get("enabled", True),
-        )
-
-
 def seed_all() -> None:
     """Run all seeders. Safe for existing databases — only inserts missing data."""
     seed_memory_tool()
     seed_plan_tools()
-    seed_rule_evals()

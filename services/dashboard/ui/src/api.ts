@@ -108,6 +108,7 @@ export interface EvalRun {
   judge_model: string;
   threshold: number;
   results: { rule: string; score: number; reason: string }[];
+  eval_suite_id: number | null;
   created_at: string;
 }
 

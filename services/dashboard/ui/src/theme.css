@@ -678,6 +678,16 @@ pre {
   color: #fff;
 }
 
+/* Layout utilities */
+.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.flex-row { display: flex; align-items: center; gap: 8px; }
+.flex-wrap { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Text utilities */
+.text-muted { color: var(--text-muted); font-size: 13px; }
+.text-muted-sm { color: var(--text-muted); font-size: 12px; }
+.text-mono { font-family: var(--mono); font-size: 12px; }
+
 @media (max-width: 768px) {
   .sidebar {
     position: static;

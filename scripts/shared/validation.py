@@ -7,6 +7,10 @@ _UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I
 )
 
+def assert_not_empty(value: str, field: str) -> None:
+    assert value, f"{field} must not be empty."
+
+
 def validate_memory_id(id: str) -> None:
     if not _UUID_RE.match(id):
         raise ValueError(f"Invalid memory ID format: {id}")

@@ -89,11 +89,10 @@ def create_suite_endpoint(body: CreateSuiteRequest):
 
 @router.put("/suites/{suite_id}")
 def update_suite_endpoint(suite_id: int, body: UpdateSuiteRequest):
-    require_found(get_suite(suite_id), "Suite", suite_id)
     kwargs = {k: v for k, v in body.model_dump().items() if v is not None}
     if kwargs:
         update_suite(suite_id, **kwargs)
-    return get_suite(suite_id)
+    return require_found(get_suite(suite_id), "Suite", suite_id)
 
 
 @router.delete("/suites/{suite_id}")
@@ -133,11 +132,10 @@ def create_scenario_endpoint(suite_id: int, body: CreateScenarioRequest):
 
 @router.put("/scenarios/{scenario_id}")
 def update_scenario_endpoint(scenario_id: int, body: UpdateScenarioRequest):
-    require_found(get_scenario(scenario_id), "Scenario", scenario_id)
     kwargs = {k: v for k, v in body.model_dump().items() if v is not None}
     if kwargs:
         update_scenario(scenario_id, **kwargs)
-    return get_scenario(scenario_id)
+    return require_found(get_scenario(scenario_id), "Scenario", scenario_id)
 
 
 @router.delete("/scenarios/{scenario_id}")

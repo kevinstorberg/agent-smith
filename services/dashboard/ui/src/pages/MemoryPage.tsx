@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api';
 import type { MemoryItem } from '../api';
 import { Pagination } from '../components/Pagination';
+import { CopyButton } from '../components/CopyButton';
 
 type Mode = 'list' | 'search';
 
@@ -176,8 +177,11 @@ export function MemoryPage() {
                   </div>
                 </div>
               ) : (
-                <div style={{ marginBottom: 8, fontSize: 13, lineHeight: 1.6 }}>
-                  {isExpanded ? item.content : preview(item.content)}
+                <div style={{ marginBottom: 8, fontSize: 13, lineHeight: 1.6, position: 'relative' }}>
+                  {isExpanded && <CopyButton text={item.content} style={{ position: 'absolute', top: -4, right: 0 }} />}
+                  <div style={{ paddingRight: isExpanded ? 60 : 0 }}>
+                    {isExpanded ? item.content : preview(item.content)}
+                  </div>
                 </div>
               )}
             </div>
