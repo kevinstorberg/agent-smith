@@ -11,9 +11,13 @@ bootstrap()
 
 
 def cmd_init():
+    import os
     from services.db import init_db
     from services.db.harness import upsert_item
     init_db()
+
+    port = os.environ.get("DASHBOARD_PORT", "7654")
+    url = f"http://localhost:{port}/mcp/"
 
     ALL_AGENTS = ["claude", "codex", "gemini"]
     tools = [
@@ -23,7 +27,7 @@ def cmd_init():
     for name, desc in tools:
         upsert_item(
             "tool", name,
-            content={"body": "", "metadata": {"url": "http://localhost:7367/mcp/", "description": desc}},
+            content={"body": "", "metadata": {"url": url, "description": desc}},
             agents=ALL_AGENTS,
         )
         print(f"  registered: {name}")
