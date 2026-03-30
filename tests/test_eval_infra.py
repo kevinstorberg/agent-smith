@@ -144,7 +144,7 @@ def test_save_result_with_suite_and_scenario_ids():
     init_db()
 
     suite = get_suite_by_name("rules_plans")
-    assert suite, "rules_plans suite must exist (run migrate_evals_to_db.py)"
+    assert suite, "rules_plans suite must exist in the database"
 
     from services.db.evals import list_scenarios
     scenarios = list_scenarios(suite["id"])
