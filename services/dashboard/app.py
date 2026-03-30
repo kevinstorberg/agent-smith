@@ -66,5 +66,6 @@ async def spa_fallback(request: Request, path: str):
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("DASHBOARD_PORT", "7654"))
+    from services.config import DASHBOARD_PORT
+    port = int(DASHBOARD_PORT)
     uvicorn.run("services.dashboard.app:app", host="0.0.0.0", port=port, reload=True)

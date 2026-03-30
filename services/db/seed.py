@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import yaml
 
+from services.config import ALL_AGENTS, MCP_URL
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-ALL_AGENTS = ["claude", "codex", "gemini"]
-
-
-def _mcp_url() -> str:
-    port = os.environ.get("DASHBOARD_PORT", "7654")
-    return f"http://localhost:{port}/mcp/"
 
 
 def seed_memory_tool() -> None:
@@ -23,7 +18,7 @@ def seed_memory_tool() -> None:
 
     create_item(
         "tool", "memory",
-        content={"body": "", "metadata": {"url": _mcp_url(), "description": "Vector memory with semantic search"}},
+        content={"body": "", "metadata": {"url": MCP_URL, "description": "Vector memory with semantic search"}},
         agents=ALL_AGENTS,
     )
 
@@ -41,7 +36,7 @@ def seed_plan_tools() -> None:
             continue
         create_item(
             "tool", name,
-            content={"body": "", "metadata": {"url": _mcp_url(), "description": desc}},
+            content={"body": "", "metadata": {"url": MCP_URL, "description": desc}},
             agents=ALL_AGENTS,
         )
 

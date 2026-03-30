@@ -11,15 +11,12 @@ bootstrap()
 
 
 def cmd_init():
-    import os
     from services.db import init_db
     from services.db.harness import upsert_item
+    from services.config import ALL_AGENTS, MCP_URL
     init_db()
 
-    port = os.environ.get("DASHBOARD_PORT", "7654")
-    url = f"http://localhost:{port}/mcp/"
-
-    ALL_AGENTS = ["claude", "codex", "gemini"]
+    url = MCP_URL
     tools = [
         ("plan_save", "Save a finalized plan to the database"),
         ("plan_get", "Retrieve a plan by ID or fuzzy search"),

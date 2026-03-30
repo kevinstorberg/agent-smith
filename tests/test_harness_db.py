@@ -5,14 +5,13 @@ import pytest
 from services.db.harness import (
     upsert_item, list_items, get_item, map_hook_event,
 )
+from services.config import ALL_AGENTS
 from tests.conftest import postgres_available
 
 
 pytestmark = pytest.mark.skipif(
     not postgres_available(), reason="Postgres not available"
 )
-
-ALL_AGENTS = ["claude", "codex", "gemini"]
 RULE_CONTENT = {"body": "## Test Rule\n* **The Rule:** Be good.", "metadata": {}}
 
 

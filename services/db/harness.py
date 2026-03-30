@@ -3,6 +3,11 @@ from __future__ import annotations
 from psycopg2.extras import Json, RealDictCursor
 
 from services.db import get_connection
+from services.db.base_model import BaseModel
+
+def content_metadata(item: dict) -> dict:
+    return item.get("content", {}).get("metadata", {})
+
 
 VALID_TABLES = {
     "rule": "harness_rules",
@@ -174,38 +179,22 @@ def update_metadata(
     sort_key: str | None = None,
     project: str | None = "UNSET",
 ) -> None:
-    assert item_id > 0, "item_id must be positive."
     table = _table(item_type)
 
-    sets = []
-    params: list = []
-
+    fields: dict = {}
     if enabled is not None:
-        sets.append("enabled = %s")
-        params.append(enabled)
+        fields["enabled"] = enabled
     if agents is not None:
-        sets.append("agents = %s")
-        params.append(sorted(agents))
+        fields["agents"] = sorted(agents)
     if name is not None:
-        sets.append("name = %s")
-        params.append(name)
+        fields["name"] = name
     if sort_key is not None:
-        sets.append("sort_key = %s")
-        params.append(sort_key)
+        fields["sort_key"] = sort_key
     if project != "UNSET":
-        sets.append("project = %s")
-        params.append(project or None)
+        fields["project"] = project or None
 
-    assert sets, "At least one field must be provided."
-    sets.append("updated_at = now()")
-    params.append(item_id)
-
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"UPDATE {table} SET {', '.join(sets)} WHERE id = %s",
-                params,
-            )
+    model = type("_HarnessModel", (BaseModel,), {"table": table})
+    model.dynamic_update(item_id, fields)
 
 
 def reorder_items(item_type: str, ids: list[int]) -> None:
@@ -352,7 +341,7 @@ def collect_skills_from_db(agent: str, project: str | None = None) -> dict[str, 
     rows = list_items("skill", project=project, agent=agent)
     result = {}
     for r in rows:
-        meta = r["content"].get("metadata", {})
+        meta = content_metadata(r)
         result[r["name"]] = {
             "skill_md": r["content"]["body"],
             "files": meta.get("files", {}),
@@ -362,14 +351,14 @@ def collect_skills_from_db(agent: str, project: str | None = None) -> dict[str, 
 
 def collect_tools_from_db(agent: str, project: str | None = None) -> dict[str, dict]:
     rows = list_items("tool", project=project, agent=agent)
-    return {r["name"]: r["content"].get("metadata", {}) for r in rows}
+    return {r["name"]: content_metadata(r) for r in rows}
 
 
 def collect_hooks_from_db(agent: str, project: str | None = None) -> dict[str, list[dict]]:
     rows = list_items("hook", project=project, agent=agent)
     events: dict[str, list[dict]] = {}
     for r in rows:
-        meta = r["content"].get("metadata", {})
+        meta = content_metadata(r)
         canonical = meta.get("event", "")
         mapped = map_hook_event(canonical, agent)
         if not mapped:

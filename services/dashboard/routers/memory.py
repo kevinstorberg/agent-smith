@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from services.memory.db import search, list_memories, get, update, delete
+from services.dashboard.routers.base import require_found
 
 router = APIRouter()
 
@@ -34,10 +35,7 @@ def list_all(
 
 @router.get("/{memory_id}")
 def get_memory(memory_id: str):
-    item = get(memory_id)
-    if not item:
-        raise HTTPException(404, "Memory not found")
-    return item
+    return require_found(get(memory_id), "Memory", memory_id)
 
 
 class MemoryUpdate(BaseModel):
@@ -48,9 +46,7 @@ class MemoryUpdate(BaseModel):
 
 @router.put("/{memory_id}")
 def update_memory(memory_id: str, body: MemoryUpdate):
-    existing = get(memory_id)
-    if not existing:
-        raise HTTPException(404, "Memory not found")
+    require_found(get(memory_id), "Memory", memory_id)
     update(
         memory_id,
         content=body.content,
@@ -62,8 +58,6 @@ def update_memory(memory_id: str, body: MemoryUpdate):
 
 @router.delete("/{memory_id}")
 def delete_memory(memory_id: str):
-    existing = get(memory_id)
-    if not existing:
-        raise HTTPException(404, "Memory not found")
+    require_found(get(memory_id), "Memory", memory_id)
     delete(memory_id)
     return {"deleted": True, "id": memory_id}

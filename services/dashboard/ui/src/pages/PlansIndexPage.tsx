@@ -3,25 +3,18 @@ import { useNavigate } from 'react-router';
 import { api } from '../api';
 import type { Plan } from '../api';
 import { Pagination } from '../components/Pagination';
+import { usePagination } from '../hooks/usePagination';
 
 export function PlansIndexPage() {
-  const [items, setItems] = useState<Plan[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [limit, setLimit] = useState(10);
-  const [offset, setOffset] = useState(0);
   const [projectFilter, setProjectFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Plan[] | null>(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    setLoading(true);
-    api.plans.list({ limit, offset, project: projectFilter || undefined }).then(res => {
-      setItems(res.items);
-      setTotal(res.total);
-    }).finally(() => setLoading(false));
-  }, [limit, offset, projectFilter]);
+  const { items, total, loading, limit, offset, setLimit, setOffset } = usePagination<Plan>(
+    (l, o) => api.plans.list({ limit: l, offset: o, project: projectFilter || undefined }),
+    [projectFilter],
+  );
 
   useEffect(() => {
     if (!searchQuery.trim()) {

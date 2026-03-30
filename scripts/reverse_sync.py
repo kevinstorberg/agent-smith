@@ -11,10 +11,9 @@ from scripts.shared.paths import bootstrap  # noqa: E402
 bootstrap()
 
 from scripts.shared.agents import AGENT_TARGETS, _read_config  # noqa: E402
+from services.config import ALL_AGENTS  # noqa: E402
 from services.db import init_db  # noqa: E402
 from services.db.harness import upsert_item  # noqa: E402
-
-ALL_AGENTS = list(AGENT_TARGETS)
 
 
 def _slugify(heading: str) -> str:

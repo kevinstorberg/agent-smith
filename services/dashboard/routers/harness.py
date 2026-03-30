@@ -11,8 +11,9 @@ from services.db.harness import (
     VALID_TABLES,
     list_items, list_items_full, get_item_by_id,
     create_item, update_content, update_metadata, get_version_history,
-    reorder_items,
+    reorder_items, content_metadata,
 )
+from services.dashboard.routers.base import require_found
 
 router = APIRouter()
 
@@ -35,7 +36,7 @@ def get_skills(project: str = Query(""), agent: str = Query("")):
     rows = list_items("skill", project=project or None, agent=agent or None)
     result = []
     for r in rows:
-        meta = r["content"].get("metadata", {})
+        meta = content_metadata(r)
         files = sorted(meta.get("files", {}).keys())
         result.append({"name": r["name"], "content": r["content"]["body"], "files": files})
     return result
@@ -44,13 +45,13 @@ def get_skills(project: str = Query(""), agent: str = Query("")):
 @router.get("/mcp")
 def get_mcp(project: str = Query(""), agent: str = Query("")):
     rows = list_items("tool", project=project or None, agent=agent or None)
-    return [{"name": r["name"], "config": r["content"].get("metadata", {})} for r in rows]
+    return [{"name": r["name"], "config": content_metadata(r)} for r in rows]
 
 
 @router.get("/hooks")
 def get_hooks(project: str = Query(""), agent: str = Query("")):
     rows = list_items("hook", project=project or None, agent=agent or None)
-    return [{"name": r["name"], "config": r["content"].get("metadata", {})} for r in rows]
+    return [{"name": r["name"], "config": content_metadata(r)} for r in rows]
 
 
 @router.get("/items/{item_type}")
@@ -82,10 +83,7 @@ def reorder_harness(item_type: str, body: ReorderRequest):
 @router.get("/items/{item_type}/{item_id}")
 def get_harness(item_type: str, item_id: int):
     _validate_type(item_type)
-    row = get_item_by_id(item_type, item_id)
-    if not row:
-        raise HTTPException(404, f"{item_type} not found: {item_id}")
-    return row
+    return require_found(get_item_by_id(item_type, item_id), item_type, item_id)
 
 
 class CreateRequest(BaseModel):
@@ -118,9 +116,7 @@ class ContentUpdate(BaseModel):
 @router.put("/items/{item_type}/{item_id}/content")
 def update_harness_content(item_type: str, item_id: int, body: ContentUpdate):
     _validate_type(item_type)
-    existing = get_item_by_id(item_type, item_id)
-    if not existing:
-        raise HTTPException(404, f"{item_type} not found: {item_id}")
+    require_found(get_item_by_id(item_type, item_id), item_type, item_id)
     new_id = update_content(item_type, item_id, body.content)
     return get_item_by_id(item_type, new_id)
 
@@ -136,9 +132,7 @@ class MetadataUpdate(BaseModel):
 @router.patch("/items/{item_type}/{item_id}")
 def patch_harness_metadata(item_type: str, item_id: int, body: MetadataUpdate):
     _validate_type(item_type)
-    existing = get_item_by_id(item_type, item_id)
-    if not existing:
-        raise HTTPException(404, f"{item_type} not found: {item_id}")
+    require_found(get_item_by_id(item_type, item_id), item_type, item_id)
     update_metadata(
         item_type, item_id,
         enabled=body.enabled, agents=body.agents,
@@ -151,18 +145,14 @@ def patch_harness_metadata(item_type: str, item_id: int, body: MetadataUpdate):
 @router.get("/items/{item_type}/{item_id}/history")
 def get_harness_history(item_type: str, item_id: int):
     _validate_type(item_type)
-    item = get_item_by_id(item_type, item_id)
-    if not item:
-        raise HTTPException(404, f"{item_type} not found: {item_id}")
+    item = require_found(get_item_by_id(item_type, item_id), item_type, item_id)
     return get_version_history(item_type, item["name"], project=item.get("project"))
 
 
 @router.delete("/items/{item_type}/{item_id}")
 def delete_harness(item_type: str, item_id: int):
     _validate_type(item_type)
-    existing = get_item_by_id(item_type, item_id)
-    if not existing:
-        raise HTTPException(404, f"{item_type} not found: {item_id}")
+    require_found(get_item_by_id(item_type, item_id), item_type, item_id)
     update_metadata(item_type, item_id, enabled=False)
     return {"deleted": True, "id": item_id}
 

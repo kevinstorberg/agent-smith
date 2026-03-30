@@ -3,15 +3,63 @@ from __future__ import annotations
 from psycopg2.extras import Json, RealDictCursor
 
 from services.db import get_connection
+from services.db.base_model import BaseModel
 
 
-def _serialize(row: dict) -> dict:
-    result = dict(row)
-    if result.get("created_at"):
-        result["created_at"] = result["created_at"].isoformat()
-    if result.get("updated_at"):
-        result["updated_at"] = result["updated_at"].isoformat()
-    return result
+class SuiteModel(BaseModel):
+    table = "eval_suites"
+
+    @classmethod
+    def update(
+        cls,
+        suite_id: int,
+        *,
+        name: str | None = None,
+        eval_type: str | None = None,
+        subcategory: str | None = None,
+        judge_prompt: str | None = None,
+        items: dict | None = None,
+        config: dict | None = None,
+        enabled: bool | None = None,
+    ) -> None:
+        fields = {}
+        if name is not None:
+            fields["name"] = name
+        if eval_type is not None:
+            fields["eval_type"] = eval_type
+        if subcategory is not None:
+            fields["subcategory"] = subcategory
+        if judge_prompt is not None:
+            fields["judge_prompt"] = judge_prompt
+        if items is not None:
+            fields["items"] = items
+        if config is not None:
+            fields["config"] = config
+        if enabled is not None:
+            fields["enabled"] = enabled
+        cls.dynamic_update(suite_id, fields, json_fields={"items", "config"})
+
+
+class ScenarioModel(BaseModel):
+    table = "eval_scenarios"
+
+    @classmethod
+    def update(
+        cls,
+        scenario_id: int,
+        *,
+        name: str | None = None,
+        prompt: str | None = None,
+        enabled: bool | None = None,
+    ) -> None:
+        fields = {}
+        if name is not None:
+            fields["name"] = name
+        if prompt is not None:
+            fields["prompt"] = prompt
+        if enabled is not None:
+            fields["enabled"] = enabled
+        cls.dynamic_update(scenario_id, fields)
 
 
 # ---------------------------------------------------------------------------
@@ -35,18 +83,13 @@ def list_suites(
                 f"ORDER BY name LIMIT %s OFFSET %s",
                 (limit, offset),
             )
-            items = [_serialize(r) for r in cur.fetchall()]
+            items = [SuiteModel.serialize_timestamps(r) for r in cur.fetchall()]
 
     return items, total
 
 
 def get_suite(suite_id: int) -> dict | None:
-    assert suite_id > 0, "suite_id must be positive."
-    with get_connection() as conn:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT * FROM eval_suites WHERE id = %s", (suite_id,))
-            row = cur.fetchone()
-            return _serialize(row) if row else None
+    return SuiteModel.find_by_id(suite_id)
 
 
 def get_suite_by_name(name: str) -> dict | None:
@@ -55,7 +98,7 @@ def get_suite_by_name(name: str) -> dict | None:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT * FROM eval_suites WHERE name = %s", (name,))
             row = cur.fetchone()
-            return _serialize(row) if row else None
+            return SuiteModel.serialize_timestamps(row) if row else None
 
 
 def create_suite(
@@ -98,50 +141,15 @@ def update_suite(
     config: dict | None = None,
     enabled: bool | None = None,
 ) -> None:
-    assert suite_id > 0, "suite_id must be positive."
-
-    sets: list[str] = []
-    params: list = []
-
-    if name is not None:
-        sets.append("name = %s")
-        params.append(name)
-    if eval_type is not None:
-        sets.append("eval_type = %s")
-        params.append(eval_type)
-    if subcategory is not None:
-        sets.append("subcategory = %s")
-        params.append(subcategory)
-    if judge_prompt is not None:
-        sets.append("judge_prompt = %s")
-        params.append(judge_prompt)
-    if items is not None:
-        sets.append("items = %s")
-        params.append(Json(items))
-    if config is not None:
-        sets.append("config = %s")
-        params.append(Json(config))
-    if enabled is not None:
-        sets.append("enabled = %s")
-        params.append(enabled)
-
-    assert sets, "At least one field must be provided."
-    sets.append("updated_at = now()")
-    params.append(suite_id)
-
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"UPDATE eval_suites SET {', '.join(sets)} WHERE id = %s",
-                params,
-            )
+    SuiteModel.update(
+        suite_id,
+        name=name, eval_type=eval_type, subcategory=subcategory,
+        judge_prompt=judge_prompt, items=items, config=config, enabled=enabled,
+    )
 
 
 def delete_suite(suite_id: int) -> None:
-    assert suite_id > 0, "suite_id must be positive."
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM eval_suites WHERE id = %s", (suite_id,))
+    SuiteModel.delete_by_id(suite_id)
 
 
 def upsert_suite(
@@ -174,7 +182,7 @@ def upsert_suite(
 
 
 def list_scenarios(suite_id: int, enabled_only: bool = True) -> list[dict]:
-    assert suite_id > 0, "suite_id must be positive."
+    ScenarioModel._validate_id(suite_id)
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             where = "WHERE suite_id = %s"
@@ -184,16 +192,11 @@ def list_scenarios(suite_id: int, enabled_only: bool = True) -> list[dict]:
                 f"SELECT * FROM eval_scenarios {where} ORDER BY sort_key, name",
                 (suite_id,),
             )
-            return [_serialize(r) for r in cur.fetchall()]
+            return [ScenarioModel.serialize_timestamps(r) for r in cur.fetchall()]
 
 
 def get_scenario(scenario_id: int) -> dict | None:
-    assert scenario_id > 0, "scenario_id must be positive."
-    with get_connection() as conn:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT * FROM eval_scenarios WHERE id = %s", (scenario_id,))
-            row = cur.fetchone()
-            return _serialize(row) if row else None
+    return ScenarioModel.find_by_id(scenario_id)
 
 
 def create_scenario(
@@ -226,38 +229,11 @@ def update_scenario(
     prompt: str | None = None,
     enabled: bool | None = None,
 ) -> None:
-    assert scenario_id > 0, "scenario_id must be positive."
-
-    sets: list[str] = []
-    params: list = []
-
-    if name is not None:
-        sets.append("name = %s")
-        params.append(name)
-    if prompt is not None:
-        sets.append("prompt = %s")
-        params.append(prompt)
-    if enabled is not None:
-        sets.append("enabled = %s")
-        params.append(enabled)
-
-    assert sets, "At least one field must be provided."
-    sets.append("updated_at = now()")
-    params.append(scenario_id)
-
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"UPDATE eval_scenarios SET {', '.join(sets)} WHERE id = %s",
-                params,
-            )
+    ScenarioModel.update(scenario_id, name=name, prompt=prompt, enabled=enabled)
 
 
 def delete_scenario(scenario_id: int) -> None:
-    assert scenario_id > 0, "scenario_id must be positive."
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM eval_scenarios WHERE id = %s", (scenario_id,))
+    ScenarioModel.delete_by_id(scenario_id)
 
 
 def upsert_scenario(
@@ -289,11 +265,6 @@ def upsert_scenario(
 
 
 def list_enabled_scenarios_for_suite(suite_name: str) -> list[dict]:
-    """Return enabled scenarios with suite config merged in.
-
-    Each dict contains: id, suite_id, name, prompt, enabled, plus suite-level
-    fields: judge_prompt, items, config, eval_type, subcategory.
-    """
     assert suite_name, "suite_name must not be empty."
 
     with get_connection() as conn:
@@ -323,11 +294,6 @@ def list_enabled_scenarios_for_suite(suite_name: str) -> list[dict]:
 
 
 def resolve_items(items: dict) -> list[tuple[str, str]]:
-    """Resolve a suite's items JSONB to [(name, body_content), ...].
-
-    source=harness: queries harness DB for matching items, applies exclude list.
-    source=skill: fetches named skill from harness DB.
-    """
     source = items.get("source")
     assert source, "items must have a 'source' key."
 
@@ -356,9 +322,6 @@ def resolve_items(items: dict) -> list[tuple[str, str]]:
 
 
 def resolve_extra_context(items: dict) -> str | None:
-    """For source=skill, return the skill body as agent extra_context.
-    For source=harness, return None.
-    """
     source = items.get("source")
     if source == "skill":
         from services.db.harness import get_skill
