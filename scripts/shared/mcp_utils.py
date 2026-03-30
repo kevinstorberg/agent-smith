@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import tomli_w
@@ -18,10 +17,7 @@ def sync_mcp(agent: str, dry_run: bool) -> None:
     dest = Path(cfg["mcp_file"]).expanduser()
 
     servers = collect_tools_from_db(agent)
-    servers = {
-        name: expand_env(srv) for name, srv in servers.items()
-        if os.environ.get(f"{name}_ENABLED", "").lower() != "false"
-    }
+    servers = {name: expand_env(srv) for name, srv in servers.items()}
 
     if dry_run:
         print(f"  would sync {len(servers)} server(s) -> {dest}")

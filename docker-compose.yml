@@ -1,0 +1,34 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${DASHBOARD_PORT:-7654}:${DASHBOARD_PORT:-7654}"
+    environment:
+      DASHBOARD_PORT: "${DASHBOARD_PORT:-7654}"
+    env_file:
+      - .env.default
+      - path: .env
+        required: false
+    volumes:
+      - memory_store:/app/memory_store
+      - ${RDS_CERT_PATH:-/dev/null}:/certs/rds-global-bundle.pem:ro
+
+  postgres:
+    image: postgres:17
+    profiles: [local-db]
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-agent_smith}"
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-agent_smith}"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
+  memory_store:

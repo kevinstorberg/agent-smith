@@ -1,0 +1,12 @@
+.venv/
+.git/
+__pycache__/
+*.pyc
+node_modules/
+services/dashboard/ui/node_modules/
+memory_store/
+*.pid
+*.log
+.env
+tmp/
+.pytest_cache/

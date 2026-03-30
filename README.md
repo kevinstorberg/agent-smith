@@ -5,13 +5,33 @@
 A single harness for managing rules, skills, and MCP servers across multiple AI coding agents.
 One source of truth, synced everywhere.
 
-## Setup
+## Quick Start
+
+```sh
+docker compose up
+```
+
+This starts Postgres, runs migrations, seeds default data, and launches the
+dashboard + MCP server. See `DASHBOARD_PORT` in `.env.default` for the port
+(default 7654).
+
+Agents connect to the MCP endpoint at `http://localhost:<DASHBOARD_PORT>/mcp/`.
+
+## Manual Setup (development without Docker)
 
 ```sh
 python3.13 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+
+brew install postgresql@17
+brew services start postgresql@17
+createdb agent_smith
+
+.venv/bin/uvicorn services.dashboard.app:app --port 7654
 ```
+
+Migrations and data seeding run automatically on startup.
 
 ## Structure
 
@@ -22,14 +42,15 @@ evals/               # LLM-as-judge evaluation framework (DeepEval + G-Eval)
 scripts/             # migration and sync utilities
 services/
   db/                # Postgres connection + Alembic migrations
-  memory/            # vector memory MCP server (LanceDB + sentence-transformers)
-  dashboard/         # web UI (FastAPI + React)
+  memory/            # vector memory + MCP tools (LanceDB + sentence-transformers)
+  dashboard/         # web UI (FastAPI + React) + MCP endpoint
 ```
 
 ## Harness
 
 Rules, skills, tools, and hooks are stored in Postgres with versioning, project scoping,
 and per-agent assignment. Managed via the dashboard UI, MCP tools, or direct DB access.
+Enable/disable items in the UI — sync respects the DB `enabled` flag.
 
 ## Sync
 
@@ -48,19 +69,9 @@ Supports Claude, Codex, and Gemini. Only writes when content has changed.
 ## Memory
 
 A local vector memory system with time-weighted retrieval via LangChain's
-`TimeWeightedVectorStoreRetriever`.
+`TimeWeightedVectorStoreRetriever`. Served as MCP tools on the dashboard endpoint.
 
-**One-time setup:**
-
-```sh
-./memory.py init    # create the local database
-./memory.py start   # start the MCP server and grant all agents access
-```
-
-`start` writes the MCP config to all agents via `./sync.py`. `stop` removes it.
-The database persists across start/stop cycles.
-
-**Human interface:**
+**CLI interface:**
 
 ```sh
 ./memory.py list [--repo REPO]         # browse memories
@@ -68,12 +79,10 @@ The database persists across start/stop cycles.
 ./memory.py add "CONTENT" [--repo R] [--tags t1 t2]
 ./memory.py show ID
 ./memory.py delete ID
-./memory.py status                     # check if server is running
 ```
 
 Default backend is LanceDB (local, stored in `memory_store/`). Set `MEMORY_BACKEND=pinecone`
-in `.env` with a `PINECONE_API_KEY` to use Pinecone cloud instead. The server runs on
-`localhost:7367`.
+in `.env` with a `PINECONE_API_KEY` to use Pinecone cloud instead.
 
 ## Tests
 
@@ -101,13 +110,6 @@ Configure via `EVAL_MODEL`, `EVAL_JUDGE_MODEL`, and `EVAL_THRESHOLD` in `.env`.
 ## Database
 
 Postgres stores harness items, eval configs, eval results, plans, and memory metadata.
-
-```sh
-brew install postgresql@17
-brew services start postgresql@17
-createdb agent_smith
-```
-
 Schema is managed by Alembic. Migrations run automatically on app startup, or manually:
 
 ```sh
@@ -116,34 +118,12 @@ Schema is managed by Alembic. Migrations run automatically on app startup, or ma
 
 Set `DATABASE_URL` in `.env` to override the default (`postgresql://localhost/agent_smith`).
 
-## Dashboard
-
-A local web UI for managing the harness and viewing eval results.
-
-```sh
-.venv/bin/uvicorn services.dashboard.app:app --port 7654
-open http://localhost:7654
-```
-
-Sections: **Harness** (rules, skills, tools, hooks), **Memory** (semantic search + browse),
-**Plans**, **Evals** (suite + scenario config), **Results** (score charts + run details).
-
-For frontend development with hot reload:
-
-```sh
-cd services/dashboard/ui && npm install && npm run dev
-```
-
 ## Environment
 
 `.env.default` contains defaults and is committed. `.env` contains local overrides and is
 gitignored. Both are loaded automatically (`.env` first, then `.env.default` fills gaps).
 
-Disable individual MCP servers by setting `{Name}_ENABLED=false` in `.env`:
-
-```sh
-Slack_ENABLED=false
-```
+See `.env.default` for all available configuration options.
 
 ## Planned Features
 - Additional agent model support (e.g. Mistral Code)
