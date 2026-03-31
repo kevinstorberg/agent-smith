@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router';
 import { api } from '../api';
+import { useNotification } from '../context/NotificationContext';
 
 const HARNESS_LINKS = [
   { path: '/harness/agents', label: 'Agents' },
@@ -17,24 +18,19 @@ function navClass({ isActive }: { isActive: boolean }): string {
 export function Sidebar() {
   const [syncing, setSyncing] = useState(false);
   const [unsyncing, setUnsyncing] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-
-  function showToast(message: string, type: 'success' | 'error') {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 4000);
-  }
+  const { notify } = useNotification();
 
   async function handleSync() {
     setSyncing(true);
     try {
       const res = await api.harness.sync();
       if (res.success) {
-        showToast('Sync complete', 'success');
+        notify('Sync complete', 'success');
       } else {
-        showToast(`Sync failed: ${res.stderr || res.stdout}`, 'error');
+        notify(`Sync failed: ${res.stderr || res.stdout}`, 'error');
       }
     } catch (err) {
-      showToast(`Sync error: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      notify(`Sync error: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setSyncing(false);
     }
@@ -47,12 +43,12 @@ export function Sidebar() {
       const res = await api.harness.unsync();
       if (res.success) {
         const count = res.removed?.length || 0;
-        showToast(`Unsynced — ${count} item${count !== 1 ? 's' : ''} removed`, 'success');
+        notify(`Unsynced — ${count} item${count !== 1 ? 's' : ''} removed`, 'success');
       } else {
-        showToast('Unsync failed', 'error');
+        notify('Unsync failed', 'error');
       }
     } catch (err) {
-      showToast(`Unsync error: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      notify(`Unsync error: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setUnsyncing(false);
     }
@@ -91,11 +87,6 @@ export function Sidebar() {
         </div>
       </div>
 
-      {toast && (
-        <div className={`toast toast-${toast.type}`}>
-          {toast.message}
-        </div>
-      )}
     </nav>
   );
 }

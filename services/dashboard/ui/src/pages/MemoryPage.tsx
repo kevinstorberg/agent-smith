@@ -3,10 +3,12 @@ import { api } from '../api';
 import type { MemoryItem } from '../api';
 import { Pagination } from '../components/Pagination';
 import { CopyButton } from '../components/CopyButton';
+import { useNotification } from '../context/NotificationContext';
 
 type Mode = 'list' | 'search';
 
 export function MemoryPage() {
+  const { notify } = useNotification();
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<MemoryItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -73,7 +75,7 @@ export function MemoryPage() {
       setEditingId(null);
       await fetchData();
     } catch (err) {
-      alert(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+      notify(`Save failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
     setSaving(false);
   };
@@ -85,7 +87,7 @@ export function MemoryPage() {
       setConfirmDeleteId(null);
       await fetchData();
     } catch (err) {
-      alert(`Delete failed: ${err instanceof Error ? err.message : String(err)}`);
+      notify(`Delete failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
     setSaving(false);
   };

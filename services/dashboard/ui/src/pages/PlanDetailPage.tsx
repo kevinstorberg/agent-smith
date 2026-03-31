@@ -5,6 +5,7 @@ import MDEditor from '@uiw/react-md-editor';
 import { api } from '../api';
 import type { Plan } from '../api';
 import { CopyButton } from '../components/CopyButton';
+import { useNotification } from '../context/NotificationContext';
 
 const styles = {
   header: {
@@ -67,6 +68,7 @@ const styles = {
 export function PlanDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { notify } = useNotification();
   const isNew = id === 'new' || !id;
 
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -132,7 +134,7 @@ export function PlanDetailPage() {
         await loadPlan();
       }
     } catch (err) {
-      alert(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+      notify(`Save failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setSaving(false);
     }

@@ -10,13 +10,17 @@ import { PlanDetailPage } from './pages/PlanDetailPage';
 import { EvalSuitesPage } from './pages/EvalSuitesPage';
 import { EvalSuiteDetailPage } from './pages/EvalSuiteDetailPage';
 import { Sidebar } from './components/Sidebar';
+import { NotificationBar } from './components/NotificationBar';
+import { NotificationProvider } from './context/NotificationContext';
 
 export default function App() {
   return (
-    <div className="app">
-      <Sidebar />
-      <div className="main-content">
-        <Routes>
+    <NotificationProvider>
+      <div className="app">
+        <Sidebar />
+        <div className="main-content">
+          <NotificationBar />
+          <Routes>
           <Route path="/" element={<Navigate to="/harness/rules" replace />} />
           <Route path="/harness/rules" element={<HarnessIndexPage type="rule" />} />
           <Route path="/harness/skills" element={<HarnessIndexPage type="skill" />} />
@@ -38,8 +42,9 @@ export default function App() {
           <Route path="/eval-configs" element={<EvalSuitesPage />} />
           <Route path="/eval-configs/new" element={<EvalSuiteDetailPage />} />
           <Route path="/eval-configs/:id" element={<EvalSuiteDetailPage />} />
-        </Routes>
+          </Routes>
+        </div>
       </div>
-    </div>
+    </NotificationProvider>
   );
 }
