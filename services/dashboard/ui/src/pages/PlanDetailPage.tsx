@@ -5,7 +5,7 @@ import MDEditor from '@uiw/react-md-editor';
 import { api } from '../api';
 import type { Plan } from '../api';
 import { CopyButton } from '../components/CopyButton';
-import { useNotification } from '../context/NotificationContext';
+import { useNotification } from '../context/useNotification';
 
 const styles = {
   header: {

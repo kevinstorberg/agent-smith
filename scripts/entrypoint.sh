@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "[entrypoint] Waiting for Postgres..."
+echo "[entrypoint] Waiting for Postgres ($APP_ENV)..."
 until python -c "
-import psycopg2, os
-psycopg2.connect(os.environ.get('DATABASE_URL', 'postgresql://localhost/agent_smith'))
+from services.config import DATABASE_URL
+import psycopg2
+psycopg2.connect(DATABASE_URL)
 " 2>/dev/null; do
   sleep 1
 done

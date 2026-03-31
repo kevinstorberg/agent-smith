@@ -5,7 +5,7 @@ import { api } from '../api';
 import type { HarnessItem } from '../api';
 import { Pagination } from '../components/Pagination';
 import { usePagination } from '../hooks/usePagination';
-import { useNotification } from '../context/NotificationContext';
+import { useNotification } from '../context/useNotification';
 
 const TYPE_LABELS: Record<string, string> = {
   rule: 'Rules',

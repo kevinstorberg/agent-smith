@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router';
 import { api } from '../api';
 import type { EvalSuite, EvalScenario } from '../api';
 import { CopyButton } from '../components/CopyButton';
-import { useNotification } from '../context/NotificationContext';
+import { useNotification } from '../context/useNotification';
 
 export function EvalSuiteDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -63,7 +63,7 @@ export function EvalSuiteDetailPage() {
     setEditEnabled(data.enabled ?? true);
   };
 
-  useEffect(() => { loadSuite(); }, [id, isNew]);
+  useEffect(() => { loadSuite(); }, [id, isNew]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startEditing = () => {
     populateEditFields(suite);

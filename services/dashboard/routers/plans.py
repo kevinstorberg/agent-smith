@@ -4,7 +4,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from services.db.plans import list_plans, search_plans, get_plan, create_plan, update_plan, delete_plan
-from services.dashboard.routers.base import require_found
+from services.dashboard.routers.base import require_found, list_response, delete_response, empty_to_none
 
 router = APIRouter()
 
@@ -15,13 +15,13 @@ def list_all(
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
-    items, total = list_plans(project=project or None, limit=limit, offset=offset)
-    return {"items": items, "total": total}
+    items, total = list_plans(project=empty_to_none(project), limit=limit, offset=offset)
+    return list_response(items, total)
 
 
 @router.get("/search")
 def search(q: str = Query(..., min_length=1), project: str = Query("")):
-    return search_plans(q, project=project or None)
+    return search_plans(q, project=empty_to_none(project))
 
 
 @router.get("/{plan_id}")
@@ -62,4 +62,4 @@ def update(plan_id: int, body: UpdateRequest):
 def delete(plan_id: int):
     require_found(get_plan(plan_id), "Plan", plan_id)
     delete_plan(plan_id)
-    return {"deleted": True, "id": plan_id}
+    return delete_response(plan_id)

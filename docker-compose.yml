@@ -1,13 +1,16 @@
+x-postgres-image: &postgres-image postgres:17
+
 services:
   app:
     build: .
     ports:
       - "${DASHBOARD_PORT:-7654}:${DASHBOARD_PORT:-7654}"
     environment:
+      APP_ENV: "${APP_ENV:-production}"
       DASHBOARD_PORT: "${DASHBOARD_PORT:-7654}"
     env_file:
       - .env.default
-      - path: .env
+      - path: .env.production
         required: false
     volumes:
       - memory_store:/app/memory_store
@@ -18,7 +21,7 @@ services:
       - ${HOME}/.gemini:/root/.gemini
 
   postgres:
-    image: postgres:17
+    image: *postgres-image
     profiles: [local-db]
     environment:
       POSTGRES_DB: "${POSTGRES_DB:-agent_smith}"
@@ -32,6 +35,31 @@ services:
       interval: 2s
       timeout: 5s
       retries: 10
+
+  test-db:
+    image: *postgres-image
+    profiles: [test]
+    environment:
+      POSTGRES_DB: agent_smith_test
+      POSTGRES_HOST_AUTH_METHOD: trust
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agent_smith_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  test:
+    build: .
+    profiles: [test]
+    depends_on:
+      test-db:
+        condition: service_healthy
+    environment:
+      APP_ENV: test
+    env_file:
+      - .env.default
+      - .env.test
+    entrypoint: ["python", "-m", "pytest", "tests/", "-v"]
 
 volumes:
   pgdata:

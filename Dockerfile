@@ -16,6 +16,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 COPY --from=frontend /app/services/dashboard/ui/dist services/dashboard/ui/dist/
 
+ENV APP_ENV=production
+
 COPY scripts/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

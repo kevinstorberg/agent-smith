@@ -4,7 +4,6 @@ from services.config import ALL_AGENTS, MCP_URL
 
 
 def seed_memory_tool() -> None:
-    """Seed the memory MCP tool if it doesn't already exist."""
     from services.db.harness import get_tool, create_item
 
     if get_tool("memory"):
@@ -18,7 +17,6 @@ def seed_memory_tool() -> None:
 
 
 def seed_plan_tools() -> None:
-    """Seed the plan_save and plan_get MCP tools if they don't already exist."""
     from services.db.harness import get_tool, create_item
 
     tools = [
@@ -36,6 +34,5 @@ def seed_plan_tools() -> None:
 
 
 def seed_all() -> None:
-    """Run all seeders. Safe for existing databases — only inserts missing data."""
     seed_memory_tool()
     seed_plan_tools()

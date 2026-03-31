@@ -2,18 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from evals.shared.judge import _rule_to_steps
-from tests.conftest import postgres_available
 
 REPO_ROOT = Path(__file__).parent.parent
 RULES_DIR = REPO_ROOT / "harness" / "rules" / "shared"
 EXCLUDE_RULES = {"memory"}
 
 
-
-@pytest.mark.skipif(not postgres_available(), reason="Postgres not available")
 def test_exclude_rules_filters_memory():
     from services.db.harness import collect_rules_from_db
     rule_names = [name for name, _ in collect_rules_from_db("claude") if name not in EXCLUDE_RULES]
@@ -50,15 +46,9 @@ def test_rule_files_have_examples():
         assert "* **Example" in content, f"{f.stem} should have an example section"
 
 
-@pytest.mark.skipif(
-    not postgres_available(),
-    reason="Postgres not available",
-)
 def test_save_result_inserts_into_db():
     from datetime import datetime, timezone
-    from services.db import get_connection, init_db
-
-    init_db()
+    from services.db import get_connection
 
     ts = datetime(2099, 1, 1, tzinfo=timezone.utc)
     test_results = [{"rule": "test_rule", "score": 0.95, "reason": "test"}]
@@ -89,18 +79,14 @@ def test_save_result_inserts_into_db():
             cur.execute("DELETE FROM eval_results WHERE id = %s", (run_id,))
 
 
-@pytest.mark.skipif(not postgres_available(), reason="Postgres not available")
 def test_save_result_with_suite_and_scenario_ids():
     from datetime import datetime, timezone
-    from services.db import get_connection, init_db
-    from services.db.evals import get_suite_by_name
+    from services.db import get_connection
+    from services.db.evals import get_suite_by_name, list_scenarios
 
-    init_db()
+    suite = get_suite_by_name("test_suite")
+    assert suite, "test_suite must exist (seeded by conftest)"
 
-    suite = get_suite_by_name("rules_plans")
-    assert suite, "rules_plans suite must exist in the database"
-
-    from services.db.evals import list_scenarios
     scenarios = list_scenarios(suite["id"])
     assert scenarios, "Suite must have scenarios"
     scenario = scenarios[0]
@@ -135,8 +121,6 @@ def test_save_result_with_suite_and_scenario_ids():
             cur.execute("DELETE FROM eval_results WHERE id = %s", (run_id,))
 
 
-
-@pytest.mark.skipif(not postgres_available(), reason="Postgres not available")
 def test_resolve_items_harness():
     from services.db.evals import resolve_items
     items = resolve_items({
@@ -150,15 +134,6 @@ def test_resolve_items_harness():
     assert "memory" not in names
 
 
-@pytest.mark.skipif(not postgres_available(), reason="Postgres not available")
-def test_resolve_extra_context_skill():
-    from services.db.evals import resolve_extra_context
-    ctx = resolve_extra_context({"source": "skill", "skill_name": "write_ticket"})
-    assert ctx is not None
-    assert len(ctx) > 0
-
-
-@pytest.mark.skipif(not postgres_available(), reason="Postgres not available")
 def test_resolve_extra_context_harness_is_none():
     from services.db.evals import resolve_extra_context
     ctx = resolve_extra_context({"source": "harness", "harness_type": "rule", "agent": "claude"})

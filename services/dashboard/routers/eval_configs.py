@@ -7,14 +7,10 @@ from services.db.evals import (
     list_suites, get_suite, create_suite, update_suite, delete_suite,
     list_scenarios, get_scenario, create_scenario, update_scenario, delete_scenario,
 )
-from services.dashboard.routers.base import require_found
+from services.dashboard.routers.base import require_found, list_response, delete_response
 
 router = APIRouter()
 
-
-# ---------------------------------------------------------------------------
-# Request models
-# ---------------------------------------------------------------------------
 
 
 class CreateSuiteRequest(BaseModel):
@@ -49,10 +45,6 @@ class UpdateScenarioRequest(BaseModel):
     enabled: bool | None = None
 
 
-# ---------------------------------------------------------------------------
-# Suite endpoints
-# ---------------------------------------------------------------------------
-
 
 @router.get("/suites")
 def list_suites_endpoint(
@@ -63,7 +55,7 @@ def list_suites_endpoint(
     items, total = list_suites(enabled_only=enabled_only, limit=limit, offset=offset)
     for item in items:
         item["scenario_count"] = len(list_scenarios(item["id"], enabled_only=False))
-    return {"items": items, "total": total}
+    return list_response(items, total)
 
 
 @router.get("/suites/{suite_id}")
@@ -99,12 +91,8 @@ def update_suite_endpoint(suite_id: int, body: UpdateSuiteRequest):
 def delete_suite_endpoint(suite_id: int):
     require_found(get_suite(suite_id), "Suite", suite_id)
     delete_suite(suite_id)
-    return {"deleted": suite_id}
+    return delete_response(suite_id)
 
-
-# ---------------------------------------------------------------------------
-# Scenario endpoints
-# ---------------------------------------------------------------------------
 
 
 @router.get("/suites/{suite_id}/scenarios")
@@ -142,4 +130,4 @@ def update_scenario_endpoint(scenario_id: int, body: UpdateScenarioRequest):
 def delete_scenario_endpoint(scenario_id: int):
     require_found(get_scenario(scenario_id), "Scenario", scenario_id)
     delete_scenario(scenario_id)
-    return {"deleted": scenario_id}
+    return delete_response(scenario_id)

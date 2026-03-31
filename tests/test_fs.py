@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scripts.shared.fs import atomic_write, compose_strings, extract_brief
+from scripts.shared.fs import atomic_write, compose_strings, extract_brief, _compose_agent_file
 
 
 def test_compose_strings_preserves_order():
@@ -44,3 +44,36 @@ def test_atomic_write_skips_unchanged(tmp_path: Path):
     changed, msg = atomic_write(path, "hello")
     assert changed is False
     assert "unchanged" in msg
+
+
+def test_compose_agent_file_with_metadata():
+    body = "You are a code reviewer."
+    metadata = {"description": "Reviews code", "model": "sonnet"}
+    result = _compose_agent_file(body, metadata)
+    assert result.startswith("---\n")
+    assert "description: Reviews code" in result
+    assert "model: sonnet" in result
+    assert "You are a code reviewer." in result
+
+
+def test_compose_agent_file_no_metadata():
+    body = "You are a helper."
+    result = _compose_agent_file(body, {})
+    assert result.strip() == "You are a helper."
+    assert "---" not in result
+
+
+def test_compose_agent_file_with_scoped_rules():
+    body = "Agent prompt."
+    metadata = {"description": "test"}
+    rules = [{"content": {"body": "## Rule 1\nBe good."}}]
+    result = _compose_agent_file(body, metadata, scoped_rules=rules)
+    assert "# Rules" in result
+    assert "## Rule 1" in result
+
+
+def test_compose_agent_file_no_scoped_rules():
+    body = "Agent prompt."
+    metadata = {"description": "test"}
+    result = _compose_agent_file(body, metadata, scoped_rules=None)
+    assert "# Rules" not in result

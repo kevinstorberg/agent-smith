@@ -1,4 +1,4 @@
-import { useNotification } from '../context/NotificationContext';
+import { useNotification } from '../context/useNotification';
 
 export function NotificationBar() {
   const { notifications, dismiss } = useNotification();

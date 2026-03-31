@@ -4,7 +4,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from services.memory.db import search, list_memories, get, update, delete
-from services.dashboard.routers.base import require_found
+from services.dashboard.routers.base import require_found, list_response, delete_response, empty_to_none
 
 router = APIRouter()
 
@@ -16,9 +16,9 @@ def search_memories(
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
-    all_results = search(q, repo=repo or None, limit=limit + offset)
+    all_results = search(q, repo=empty_to_none(repo), limit=limit + offset)
     items = all_results[offset:offset + limit]
-    return {"items": items, "total": len(all_results)}
+    return list_response(items, len(all_results))
 
 
 @router.get("/list")
@@ -27,10 +27,9 @@ def list_all(
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
-    all_results = list_memories(repo=repo or None, limit=limit + offset + 100)
-    total = len(all_results)
+    all_results = list_memories(repo=empty_to_none(repo), limit=limit + offset + 100)
     items = all_results[offset:offset + limit]
-    return {"items": items, "total": total}
+    return list_response(items, len(all_results))
 
 
 @router.get("/{memory_id}")
@@ -59,4 +58,4 @@ def update_memory(memory_id: str, body: MemoryUpdate):
 def delete_memory(memory_id: str):
     require_found(get(memory_id), "Memory", memory_id)
     delete(memory_id)
-    return {"deleted": True, "id": memory_id}
+    return delete_response(memory_id)

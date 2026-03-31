@@ -42,7 +42,8 @@ def sync_rules(agent: str, dry_run: bool) -> None:
     rules_dir = Path(cfg["rules_dir"]).expanduser() if "rules_dir" in cfg else None
 
     if rules_dir:
-        transform = lambda text, name: extract_brief(text, rules_dir / f"{name}.md")
+        def transform(text, name):
+            return extract_brief(text, rules_dir / f"{name}.md")
     else:
         transform = None
 

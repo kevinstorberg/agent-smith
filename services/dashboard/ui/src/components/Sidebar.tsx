@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router';
 import { api } from '../api';
-import { useNotification } from '../context/NotificationContext';
+import { useNotification } from '../context/useNotification';
 
 const HARNESS_LINKS = [
   { path: '/harness/agents', label: 'Agents' },

@@ -1,0 +1,11 @@
+[lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E402",  # module-level imports not at top — intentional for sys.path setup
+    "E501",  # line too long — not enforced
+]
+
+[lint.per-file-ignores]
+"scripts/*.py" = ["E402"]
+"services/db/migrations/*.py" = ["E402"]
+"evals/*.py" = ["E402"]

@@ -11,11 +11,8 @@ from langchain_pinecone import PineconeVectorStore
 from pinecone import Pinecone, ServerlessSpec
 
 from scripts.shared.validation import validate_memory_id
+from services.config import PINECONE_INDEX as INDEX_NAME, PINECONE_CLOUD as CLOUD, PINECONE_REGION as REGION
 from services.memory.backends import build_row
-
-INDEX_NAME = os.environ.get("PINECONE_INDEX", "agent-smith-memories")
-CLOUD = os.environ.get("PINECONE_CLOUD", "aws")
-REGION = os.environ.get("PINECONE_REGION", "us-east-1")
 DIMENSION = 384  # all-MiniLM-L6-v2
 
 _pc: Pinecone | None = None

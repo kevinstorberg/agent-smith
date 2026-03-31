@@ -8,6 +8,7 @@ from scripts.shared.paths import bootstrap  # noqa: E402
 bootstrap()
 
 from mcp.server.fastmcp import FastMCP  # noqa: E402
+from scripts.shared.validation import empty_to_none  # noqa: E402
 
 import services.memory.db as db
 
@@ -27,7 +28,7 @@ def memory_add(content: str, repo: str = "", tags: list[str] | None = None) -> s
     Returns:
         The ID of the newly created memory.
     """
-    id = db.add(content=content, repo=repo or None, tags=tags or [])
+    id = db.add(content=content, repo=empty_to_none(repo), tags=tags or [])
     return id
 
 
@@ -45,7 +46,7 @@ def memory_search(query: str, repo: str = "", limit: int = db.DEFAULT_LIMIT) -> 
         List of matching memories ordered by relevance, each with id, content,
         repo, tags, score, created_at, updated_at.
     """
-    return db.search(query=query, repo=repo or None, limit=limit)
+    return db.search(query=query, repo=empty_to_none(repo), limit=limit)
 
 
 @mcp.tool()
@@ -60,7 +61,7 @@ def memory_list(repo: str = "", limit: int = db.DEFAULT_LIMIT) -> list[dict]:
     Returns:
         List of memories with id, content, repo, tags, created_at, updated_at.
     """
-    return db.list_memories(repo=repo or None, limit=limit)
+    return db.list_memories(repo=empty_to_none(repo), limit=limit)
 
 
 @mcp.tool()
@@ -101,7 +102,7 @@ def memory_update(
     db.update(
         id=id,
         content=content or None,
-        repo=repo or None,
+        repo=empty_to_none(repo),
         tags=tags,
     )
     return f"Updated: {id}"
@@ -121,7 +122,7 @@ def plan_save(title: str, body: str, project: str = "") -> str:
         Confirmation with the plan ID.
     """
     from services.db.plans import create_plan
-    plan_id = create_plan(title, body, project=project or None)
+    plan_id = create_plan(title, body, project=empty_to_none(project))
     return f"Plan saved (id={plan_id})"
 
 
@@ -145,9 +146,7 @@ def plan_get(plan_id: int = 0, query: str = "") -> dict | list[dict]:
     return []
 
 
-from services.db.harness import list_items, get_item, upsert_item
-
-VALID_TYPES = ("rule", "skill", "tool", "hook", "agent")
+from services.db.harness import VALID_TABLES, list_items, get_item, upsert_item
 
 
 @mcp.tool()
@@ -160,15 +159,15 @@ def harness_list(
     List harness items (rules, skills, tools, or hooks).
 
     Args:
-        item_type: One of "rule", "skill", "tool", "hook", "agent".
+        item_type: A valid harness item type (rule, skill, tool, hook, agent).
         project:   Filter to a specific project (empty = shared only).
         agent:     Filter to items assigned to this agent (empty = all).
 
     Returns:
         List of items with name, content, agents, enabled, version.
     """
-    assert item_type in VALID_TYPES, f"item_type must be one of {VALID_TYPES}"
-    return list_items(item_type, project=project or None, agent=agent or None)
+    assert item_type in VALID_TABLES, f"item_type must be one of {VALID_TABLES}"
+    return list_items(item_type, project=empty_to_none(project), agent=empty_to_none(agent))
 
 
 @mcp.tool()
@@ -182,14 +181,14 @@ def harness_get(
 
     Args:
         name:      The item name (e.g. "dry", "commit", "Slack").
-        item_type: One of "rule", "skill", "tool", "hook", "agent".
+        item_type: A valid harness item type (rule, skill, tool, hook, agent).
         project:   Project scope (empty = shared).
 
     Returns:
         The item dict, or None if not found.
     """
-    assert item_type in VALID_TYPES, f"item_type must be one of {VALID_TYPES}"
-    return get_item(item_type, name, project=project or None)
+    assert item_type in VALID_TABLES, f"item_type must be one of {VALID_TABLES}"
+    return get_item(item_type, name, project=empty_to_none(project))
 
 
 @mcp.tool()
@@ -205,7 +204,7 @@ def harness_upsert(
 
     Args:
         name:      The item name.
-        item_type: One of "rule", "skill", "tool", "hook", "agent".
+        item_type: A valid harness item type (rule, skill, tool, hook, agent).
         content:   Dict with "body" (str) and "metadata" (dict) keys.
         project:   Project scope (empty = shared).
         agents:    List of agents to assign (e.g. ["claude", "codex"]).
@@ -213,10 +212,10 @@ def harness_upsert(
     Returns:
         Confirmation with the item ID.
     """
-    assert item_type in VALID_TYPES, f"item_type must be one of {VALID_TYPES}"
+    assert item_type in VALID_TABLES, f"item_type must be one of {VALID_TABLES}"
     item_id = upsert_item(
         item_type, name, content,
-        project=project or None,
+        project=empty_to_none(project),
         agents=agents,
     )
     return f"Upserted {item_type} '{name}' (id={item_id})"
@@ -233,19 +232,19 @@ def harness_disable(
 
     Args:
         name:      The item name.
-        item_type: One of "rule", "skill", "tool", "hook", "agent".
+        item_type: A valid harness item type (rule, skill, tool, hook, agent).
         project:   Project scope (empty = shared).
 
     Returns:
         Confirmation message.
     """
-    assert item_type in VALID_TYPES, f"item_type must be one of {VALID_TYPES}"
-    existing = get_item(item_type, name, project=project or None)
+    assert item_type in VALID_TABLES, f"item_type must be one of {VALID_TABLES}"
+    existing = get_item(item_type, name, project=empty_to_none(project))
     if not existing:
         return f"Not found: {item_type} '{name}'"
     upsert_item(
         item_type, name, existing["content"],
-        project=project or None,
+        project=empty_to_none(project),
         agents=existing["agents"],
         enabled=False,
     )

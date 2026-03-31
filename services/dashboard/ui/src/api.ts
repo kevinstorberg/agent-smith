@@ -180,9 +180,7 @@ export const api = {
     unsync: () => post<{ success: boolean; removed: string[] }>('/harness/unsync', {}),
     items: {
       list: (type: string, params?: PaginationParams & { name?: string; project?: string }) => {
-        const query: Record<string, string> = {};
-        if (params?.limit !== undefined) query.limit = String(params.limit);
-        if (params?.offset !== undefined) query.offset = String(params.offset);
+        const query = paginationToParams(params);
         if (params?.name) query.name = params.name;
         if (params?.project) query.project = params.project;
         return get<Paginated<HarnessItem>>(`/harness/items/${type}`, query);

@@ -7,7 +7,7 @@ function typeFromPath(pathname: string): string {
   return match ? match[1] : 'rule';
 }
 import { api } from '../api';
-import { useNotification } from '../context/NotificationContext';
+import { useNotification } from '../context/useNotification';
 
 const ALL_AGENTS = ['claude', 'codex', 'gemini'];
 

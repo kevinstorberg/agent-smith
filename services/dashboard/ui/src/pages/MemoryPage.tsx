@@ -3,7 +3,7 @@ import { api } from '../api';
 import type { MemoryItem } from '../api';
 import { Pagination } from '../components/Pagination';
 import { CopyButton } from '../components/CopyButton';
-import { useNotification } from '../context/NotificationContext';
+import { useNotification } from '../context/useNotification';
 
 type Mode = 'list' | 'search';
 

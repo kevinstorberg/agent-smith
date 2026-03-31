@@ -1,4 +1,5 @@
-from services.db.connection import get_connection, DATABASE_URL
+from services.db.connection import get_connection
+from services.config import DATABASE_URL
 
 __all__ = ["get_connection", "DATABASE_URL", "init_db"]
 

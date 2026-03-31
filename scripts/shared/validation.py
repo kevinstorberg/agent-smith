@@ -31,6 +31,10 @@ def validate_postgres_url(url: str, label: str = "DATABASE_URL") -> None:
         raise ValueError(f"{label} must be a postgresql:// URL, got: {url[:20]}...")
 
 
+def empty_to_none(value: str) -> str | None:
+    return value or None
+
+
 def extract_memory_metadata(row: dict) -> dict:
     meta = row.get("metadata", {})
     return {

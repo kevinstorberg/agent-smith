@@ -31,6 +31,7 @@ def upgrade() -> None:
         sa.Column('name', sa.Text, nullable=False),
         sa.Column('project', sa.Text, nullable=True),
         sa.Column('agents', ARRAY(sa.Text), nullable=False),
+        sa.Column('subagents', ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'")),
         sa.Column('content', JSONB, nullable=False),
         sa.Column('sort_key', sa.Text, nullable=False, server_default=sa.text("''")),
         sa.Column('enabled', sa.Boolean, nullable=False, server_default=sa.text('true')),

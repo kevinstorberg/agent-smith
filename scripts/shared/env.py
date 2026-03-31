@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 
-def _load_env_file(path: Path) -> None:
+def _load_env_file(path: Path, override: bool = False) -> None:
     if not path.is_file():
         return
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -15,7 +15,7 @@ def _load_env_file(path: Path) -> None:
         key, _, val = line.partition("=")
         key = key.strip()
         val = val.strip().strip("'\"")
-        if key and key not in os.environ:
+        if key and (override or key not in os.environ):
             os.environ[key] = val
 
 
