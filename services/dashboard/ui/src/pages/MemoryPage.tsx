@@ -14,7 +14,6 @@ export function MemoryPage() {
   const [mode, setMode] = useState<Mode>('list');
   const [limit, setLimit] = useState(10);
   const [offset, setOffset] = useState(0);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [editRepo, setEditRepo] = useState('');
@@ -84,7 +83,6 @@ export function MemoryPage() {
     try {
       await api.memory.remove(id);
       setConfirmDeleteId(null);
-      setExpandedId(null);
       await fetchData();
     } catch (err) {
       alert(`Delete failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -92,8 +90,6 @@ export function MemoryPage() {
     setSaving(false);
   };
 
-  const preview = (content: string) =>
-    content.length > 100 ? content.slice(0, 100) + '...' : content;
 
   return (
     <div>
@@ -121,12 +117,11 @@ export function MemoryPage() {
       )}
 
       {!loading && items.map(item => {
-        const isExpanded = expandedId === item.id;
         const isEditing = editingId === item.id;
 
         return (
-          <div key={item.id} className="card" style={{ cursor: isExpanded ? 'default' : 'pointer' }}>
-            <div onClick={() => { if (!isEditing) setExpandedId(isExpanded ? null : item.id); }}>
+          <div key={item.id} className="card">
+            <div>
               {isEditing ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase' as const }}>Content</label>
@@ -178,40 +173,39 @@ export function MemoryPage() {
                 </div>
               ) : (
                 <div style={{ marginBottom: 8, fontSize: 13, lineHeight: 1.6, position: 'relative' }}>
-                  {isExpanded && <CopyButton text={item.content} style={{ position: 'absolute', top: -4, right: 0 }} />}
-                  <div style={{ paddingRight: isExpanded ? 60 : 0 }}>
-                    {isExpanded ? item.content : preview(item.content)}
+                  <CopyButton text={item.content} style={{ position: 'absolute', top: -4, right: 0 }} />
+                  <div style={{ paddingRight: 60 }}>
+                    {item.content}
                   </div>
                 </div>
               )}
             </div>
 
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: editingId === item.id ? 12 : 0 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: isEditing ? 12 : 0 }}>
               {item.repo && <span className="tag" style={{ background: 'rgba(91,141,239,0.15)', color: 'var(--info)', borderColor: 'rgba(91,141,239,0.3)' }}>{item.repo}</span>}
               {item.tags?.map(t => <span key={t} className="tag">{t}</span>)}
               {item.created_at && (
-                <span style={{ color: 'var(--text-muted)', fontSize: 12, marginLeft: 'auto' }}>
+                <span className="text-muted-sm">
                   {new Date(item.created_at).toLocaleString()}
                 </span>
               )}
+              {!isEditing && (
+                <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                  <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }} onClick={e => { e.stopPropagation(); startEdit(item); }}>Edit</button>
+                  {confirmDeleteId === item.id ? (
+                    <>
+                      <span style={{ color: 'var(--warning)', fontSize: 12, alignSelf: 'center' }}>Delete?</span>
+                      <button className="btn btn-danger" style={{ fontSize: 11, padding: '3px 10px' }} onClick={e => { e.stopPropagation(); deleteMemory(item.id); }} disabled={saving}>
+                        {saving ? '...' : 'Yes'}
+                      </button>
+                      <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }} onClick={e => { e.stopPropagation(); setConfirmDeleteId(null); }}>No</button>
+                    </>
+                  ) : (
+                    <button className="btn btn-danger" style={{ fontSize: 11, padding: '3px 10px' }} onClick={e => { e.stopPropagation(); setConfirmDeleteId(item.id); }}>Delete</button>
+                  )}
+                </div>
+              )}
             </div>
-
-            {isExpanded && !isEditing && (
-              <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
-                <button className="btn" onClick={e => { e.stopPropagation(); startEdit(item); }}>Edit</button>
-                {confirmDeleteId === item.id ? (
-                  <>
-                    <span style={{ color: 'var(--warning)', fontSize: 13, alignSelf: 'center' }}>Delete this memory?</span>
-                    <button className="btn btn-danger" onClick={e => { e.stopPropagation(); deleteMemory(item.id); }} disabled={saving}>
-                      {saving ? 'Deleting...' : 'Confirm'}
-                    </button>
-                    <button className="btn" onClick={e => { e.stopPropagation(); setConfirmDeleteId(null); }}>Cancel</button>
-                  </>
-                ) : (
-                  <button className="btn btn-danger" onClick={e => { e.stopPropagation(); setConfirmDeleteId(item.id); }}>Delete</button>
-                )}
-              </div>
-            )}
           </div>
         );
       })}

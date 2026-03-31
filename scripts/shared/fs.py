@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import os
 import shutil
-import tempfile
 from pathlib import Path
 
 
@@ -30,18 +28,7 @@ def atomic_write(path: Path | str, content: str) -> tuple[bool, str]:
     if path.exists() and path.read_text(encoding="utf-8") == content:
         return False, f"unchanged: {path}"
 
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        delete=False,
-        dir=str(path.parent),
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-    ) as tmp:
-        tmp.write(content)
-        tmp_path = Path(tmp.name)
-
-    os.replace(str(tmp_path), str(path))
+    path.write_text(content, encoding="utf-8")
     return True, f"updated:   {path}"
 
 
