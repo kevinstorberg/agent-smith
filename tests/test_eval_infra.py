@@ -136,9 +136,6 @@ def test_save_result_with_suite_and_scenario_ids():
 
 
 
-# --- resolve_items ---
-
-
 @pytest.mark.skipif(not postgres_available(), reason="Postgres not available")
 def test_resolve_items_harness():
     from services.db.evals import resolve_items

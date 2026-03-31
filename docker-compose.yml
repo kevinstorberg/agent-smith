@@ -12,6 +12,10 @@ services:
     volumes:
       - memory_store:/app/memory_store
       - ${RDS_CERT_PATH:-/dev/null}:/certs/rds-global-bundle.pem:ro
+      - ${HOME}/.claude:/root/.claude
+      - ${HOME}/.claude.json:/root/.claude.json
+      - ${HOME}/.codex:/root/.codex
+      - ${HOME}/.gemini:/root/.gemini
 
   postgres:
     image: postgres:17

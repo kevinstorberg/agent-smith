@@ -65,11 +65,15 @@ def list_harness(
     item_type: str,
     project: str = Query(""),
     agent: str = Query(""),
+    name: str = Query(""),
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
     _validate_type(item_type)
     all_items = list_items_full(item_type, project=project or None, agent=agent or None)
+    if name:
+        name_lower = name.lower()
+        all_items = [i for i in all_items if name_lower in i["name"].lower()]
     total = len(all_items)
     items = all_items[offset:offset + limit]
     return {"items": items, "total": total}

@@ -14,20 +14,40 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export function HarnessIndexPage({ type }: { type: string }) {
-  const [projectFilter, setProjectFilter] = useState('');
+  const [nameInput, setNameInput] = useState('');
+  const [projectInput, setProjectInput] = useState('');
   const [nameFilter, setNameFilter] = useState('');
+  const [projectFilter, setProjectFilter] = useState('');
   const [saveMsg, setSaveMsg] = useState('');
   const navigate = useNavigate();
 
   const hasFilters = !!(nameFilter || projectFilter);
 
   const { items, setItems, total, loading, limit, offset, setLimit, setOffset } = usePagination<HarnessItem>(
-    (l, o) => api.harness.items.list(type, { limit: l, offset: o }),
-    [type],
+    (l, o) => api.harness.items.list(type, {
+      limit: l, offset: o,
+      name: nameFilter || undefined,
+      project: projectFilter || undefined,
+    }),
+    [type, nameFilter, projectFilter],
   );
 
+  const dragDisabled = hasFilters;
+
+  // Debounce name and project inputs
   useEffect(() => {
-    setOffset(0);
+    const timeout = setTimeout(() => setNameFilter(nameInput), 300);
+    return () => clearTimeout(timeout);
+  }, [nameInput]);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => setProjectFilter(projectInput), 300);
+    return () => clearTimeout(timeout);
+  }, [projectInput]);
+
+  useEffect(() => {
+    setNameInput('');
+    setProjectInput('');
     setNameFilter('');
     setProjectFilter('');
   }, [type]);
@@ -55,15 +75,6 @@ export function HarnessIndexPage({ type }: { type: string }) {
     }
   };
 
-  const displayed = items.filter(i => {
-    if (nameFilter && !i.name.toLowerCase().includes(nameFilter.toLowerCase())) return false;
-    if (projectFilter) {
-      const pf = projectFilter.toLowerCase();
-      if (!(i.project?.toLowerCase().includes(pf) || (!i.project && pf === 'shared'))) return false;
-    }
-    return true;
-  });
-
   if (loading) return <div className="loading">Loading...</div>;
 
   return (
@@ -85,25 +96,25 @@ export function HarnessIndexPage({ type }: { type: string }) {
       <div className="filters" style={{ marginBottom: 12 }}>
         <input
           placeholder="Search by name..."
-          value={nameFilter}
-          onChange={e => setNameFilter(e.target.value)}
+          value={nameInput}
+          onChange={e => setNameInput(e.target.value)}
           style={{ maxWidth: 260 }}
         />
         <input
           placeholder="Filter by project..."
-          value={projectFilter}
-          onChange={e => setProjectFilter(e.target.value)}
+          value={projectInput}
+          onChange={e => setProjectInput(e.target.value)}
           style={{ maxWidth: 220 }}
         />
       </div>
 
       <DragDropContext onDragEnd={onDragEnd}>
-        <Droppable droppableId="harness-table" isDropDisabled={hasFilters}>
+        <Droppable droppableId="harness-table" isDropDisabled={dragDisabled}>
           {(provided) => (
             <table className="table">
               <thead>
                 <tr>
-                  {!hasFilters && <th style={{ width: 36 }}></th>}
+                  {!dragDisabled && <th style={{ width: 36 }}></th>}
                   <th>Name</th>
                   <th>Project</th>
                   <th>Enabled</th>
@@ -113,8 +124,8 @@ export function HarnessIndexPage({ type }: { type: string }) {
                 </tr>
               </thead>
               <tbody ref={provided.innerRef} {...provided.droppableProps}>
-                {displayed.map((item, index) => (
-                  <Draggable key={String(item.id)} draggableId={String(item.id)} index={index} isDragDisabled={hasFilters}>
+                {items.map((item, index) => (
+                  <Draggable key={String(item.id)} draggableId={String(item.id)} index={index} isDragDisabled={dragDisabled}>
                     {(prov, snapshot) => (
                       <tr
                         ref={prov.innerRef}
@@ -126,7 +137,7 @@ export function HarnessIndexPage({ type }: { type: string }) {
                           ...prov.draggableProps.style,
                         }}
                       >
-                        {!hasFilters && (
+                        {!dragDisabled && (
                           <td
                             {...prov.dragHandleProps}
                             onClick={e => e.stopPropagation()}
@@ -171,8 +182,8 @@ export function HarnessIndexPage({ type }: { type: string }) {
                   </Draggable>
                 ))}
                 {provided.placeholder}
-                {displayed.length === 0 && (
-                  <tr><td colSpan={hasFilters ? 6 : 7} className="loading">No {TYPE_LABELS[type]?.toLowerCase() || 'items'} found</td></tr>
+                {items.length === 0 && (
+                  <tr><td colSpan={dragDisabled ? 6 : 7} className="loading">No {TYPE_LABELS[type]?.toLowerCase() || 'items'} found</td></tr>
                 )}
               </tbody>
             </table>

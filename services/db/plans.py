@@ -55,7 +55,7 @@ def list_plans(
     return items, total
 
 
-def search_plans(query: str, project: str | None = None, limit: int = 10) -> list[dict]:
+def search_plans(query: str, project: str | None = None, limit: int = 100) -> list[dict]:
     assert_not_empty(query, "query")
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
