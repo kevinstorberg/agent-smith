@@ -5,7 +5,7 @@ from psycopg2.extras import RealDictCursor
 
 from services.db import get_connection
 from services.db.base_model import BaseModel
-from services.dashboard.routers.base import require_found
+from services.dashboard.routers.base import require_found, list_response, delete_response
 
 router = APIRouter()
 
@@ -61,7 +61,7 @@ def list_evals(
             )
             rows = cur.fetchall()
 
-    return {"items": [BaseModel.serialize_timestamps(row) for row in rows], "total": total}
+    return list_response([BaseModel.serialize_timestamps(row) for row in rows], total)
 
 
 @router.get("/categories")
@@ -157,4 +157,4 @@ def delete_eval(eval_id: int):
             row = cur.fetchone()
 
     require_found(row, "Eval", eval_id)
-    return {"deleted": eval_id}
+    return delete_response(eval_id)

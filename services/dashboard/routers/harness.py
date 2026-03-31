@@ -13,7 +13,7 @@ from services.db.harness import (
     create_item, update_content, update_metadata, get_version_history,
     reorder_items, content_metadata, delete_item,
 )
-from services.dashboard.routers.base import require_found
+from services.dashboard.routers.base import require_found, list_response, delete_response, empty_to_none
 
 router = APIRouter()
 
@@ -27,13 +27,13 @@ def _validate_type(item_type: str) -> None:
 
 @router.get("/rules")
 def get_rules(project: str = Query(""), agent: str = Query("")):
-    rows = list_items("rule", project=project or None, agent=agent or None)
+    rows = list_items("rule", project=empty_to_none(project), agent=empty_to_none(agent))
     return [{"name": r["name"], "content": r["content"]["body"]} for r in rows]
 
 
 @router.get("/skills")
 def get_skills(project: str = Query(""), agent: str = Query("")):
-    rows = list_items("skill", project=project or None, agent=agent or None)
+    rows = list_items("skill", project=empty_to_none(project), agent=empty_to_none(agent))
     result = []
     for r in rows:
         meta = content_metadata(r)
@@ -44,19 +44,19 @@ def get_skills(project: str = Query(""), agent: str = Query("")):
 
 @router.get("/mcp")
 def get_mcp(project: str = Query(""), agent: str = Query("")):
-    rows = list_items("tool", project=project or None, agent=agent or None)
+    rows = list_items("tool", project=empty_to_none(project), agent=empty_to_none(agent))
     return [{"name": r["name"], "config": content_metadata(r)} for r in rows]
 
 
 @router.get("/hooks")
 def get_hooks(project: str = Query(""), agent: str = Query("")):
-    rows = list_items("hook", project=project or None, agent=agent or None)
+    rows = list_items("hook", project=empty_to_none(project), agent=empty_to_none(agent))
     return [{"name": r["name"], "config": content_metadata(r)} for r in rows]
 
 
 @router.get("/agents")
 def get_agents(project: str = Query(""), agent: str = Query("")):
-    rows = list_items("agent", project=project or None, agent=agent or None)
+    rows = list_items("agent", project=empty_to_none(project), agent=empty_to_none(agent))
     return [{"name": r["name"], "description": content_metadata(r).get("description", "")} for r in rows]
 
 
@@ -70,13 +70,13 @@ def list_harness(
     offset: int = Query(0, ge=0),
 ):
     _validate_type(item_type)
-    all_items = list_items_full(item_type, project=project or None, agent=agent or None)
+    all_items = list_items_full(item_type, project=empty_to_none(project), agent=empty_to_none(agent))
     if name:
         name_lower = name.lower()
         all_items = [i for i in all_items if name_lower in i["name"].lower()]
     total = len(all_items)
     items = all_items[offset:offset + limit]
-    return {"items": items, "total": total}
+    return list_response(items, total)
 
 
 class ReorderRequest(BaseModel):
@@ -162,7 +162,7 @@ def delete_harness(item_type: str, item_id: int):
     _validate_type(item_type)
     require_found(get_item_by_id(item_type, item_id), item_type, item_id)
     delete_item(item_type, item_id)
-    return {"deleted": True, "id": item_id}
+    return delete_response(item_id)
 
 
 @router.post("/sync")
