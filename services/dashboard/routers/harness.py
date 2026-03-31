@@ -54,6 +54,12 @@ def get_hooks(project: str = Query(""), agent: str = Query("")):
     return [{"name": r["name"], "config": content_metadata(r)} for r in rows]
 
 
+@router.get("/agents")
+def get_agents(project: str = Query(""), agent: str = Query("")):
+    rows = list_items("agent", project=project or None, agent=agent or None)
+    return [{"name": r["name"], "description": content_metadata(r).get("description", "")} for r in rows]
+
+
 @router.get("/items/{item_type}")
 def list_harness(
     item_type: str,

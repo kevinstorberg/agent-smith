@@ -21,7 +21,7 @@ def main() -> int:
     init_db()
 
     from scripts.shared.agents import AGENT_TARGETS
-    from scripts.shared.fs import sync_rules, sync_skills
+    from scripts.shared.fs import sync_rules, sync_skills, sync_agents
     from scripts.shared.mcp_utils import sync_mcp
 
     for agent in AGENT_TARGETS:
@@ -31,6 +31,8 @@ def main() -> int:
         sync_skills(agent, args.dry_run)
         print(f"[{agent}/mcp]")
         sync_mcp(agent, args.dry_run)
+        print(f"[{agent}/agents]")
+        sync_agents(agent, args.dry_run)
 
     return 0
 

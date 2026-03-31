@@ -22,10 +22,12 @@ export default function App() {
           <Route path="/harness/skills" element={<HarnessIndexPage type="skill" />} />
           <Route path="/harness/tools" element={<HarnessIndexPage type="tool" />} />
           <Route path="/harness/hooks" element={<HarnessIndexPage type="hook" />} />
+          <Route path="/harness/agents" element={<HarnessIndexPage type="agent" />} />
           <Route path="/harness/rule/new" element={<HarnessCreatePage />} />
           <Route path="/harness/skill/new" element={<HarnessCreatePage />} />
           <Route path="/harness/tool/new" element={<HarnessCreatePage />} />
           <Route path="/harness/hook/new" element={<HarnessCreatePage />} />
+          <Route path="/harness/agent/new" element={<HarnessCreatePage />} />
           <Route path="/harness/:type/:id" element={<HarnessDetailPage />} />
           <Route path="/memory" element={<MemoryPage />} />
           <Route path="/evals" element={<EvalsPage />} />

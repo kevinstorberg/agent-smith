@@ -116,3 +116,51 @@ def sync_skills(agent: str, dry_run: bool) -> None:
         if stale.is_dir() and stale.name not in skills:
             shutil.rmtree(stale)
             print(f"  removed:   {stale}")
+
+
+def _compose_agent_file(body: str, metadata: dict, scoped_rules: list | None = None) -> str:
+    parts = []
+    if metadata:
+        import yaml
+        frontmatter = yaml.dump(metadata, default_flow_style=False).rstrip()
+        parts.append(f"---\n{frontmatter}\n---\n")
+    parts.append(body.rstrip())
+    if scoped_rules:
+        parts.append("\n\n# Rules\n")
+        for rule in scoped_rules:
+            parts.append(rule["content"]["body"].rstrip())
+    return "\n\n".join(parts) + "\n"
+
+
+def sync_agents(agent: str, dry_run: bool) -> None:
+    from scripts.shared.agents import AGENT_TARGETS
+    from services.db.harness import collect_agents_from_db
+
+    cfg = AGENT_TARGETS[agent]
+    agents_dir = cfg.get("agents_dir")
+    if not agents_dir:
+        return
+
+    dest_dir = Path(agents_dir).expanduser()
+    agent_defs = collect_agents_from_db(agent)
+
+    if dry_run:
+        print(f"  would sync {len(agent_defs)} agent(s) -> {dest_dir}")
+        return
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    source_names = set()
+
+    for name, data in sorted(agent_defs.items()):
+        filename = f"{name}.md"
+        source_names.add(filename)
+        content = _compose_agent_file(
+            data["body"], data["metadata"], data.get("scoped_rules"),
+        )
+        _, msg = atomic_write(dest_dir / filename, content)
+        print(f"  {msg}")
+
+    for stale in dest_dir.glob("*.md"):
+        if stale.name not in source_names:
+            stale.unlink()
+            print(f"  removed:   {stale}")

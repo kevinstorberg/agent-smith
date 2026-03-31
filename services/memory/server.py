@@ -147,7 +147,7 @@ def plan_get(plan_id: int = 0, query: str = "") -> dict | list[dict]:
 
 from services.db.harness import list_items, get_item, upsert_item
 
-VALID_TYPES = ("rule", "skill", "tool", "hook")
+VALID_TYPES = ("rule", "skill", "tool", "hook", "agent")
 
 
 @mcp.tool()
@@ -160,7 +160,7 @@ def harness_list(
     List harness items (rules, skills, tools, or hooks).
 
     Args:
-        item_type: One of "rule", "skill", "tool", "hook".
+        item_type: One of "rule", "skill", "tool", "hook", "agent".
         project:   Filter to a specific project (empty = shared only).
         agent:     Filter to items assigned to this agent (empty = all).
 
@@ -182,7 +182,7 @@ def harness_get(
 
     Args:
         name:      The item name (e.g. "dry", "commit", "Slack").
-        item_type: One of "rule", "skill", "tool", "hook".
+        item_type: One of "rule", "skill", "tool", "hook", "agent".
         project:   Project scope (empty = shared).
 
     Returns:
@@ -205,7 +205,7 @@ def harness_upsert(
 
     Args:
         name:      The item name.
-        item_type: One of "rule", "skill", "tool", "hook".
+        item_type: One of "rule", "skill", "tool", "hook", "agent".
         content:   Dict with "body" (str) and "metadata" (dict) keys.
         project:   Project scope (empty = shared).
         agents:    List of agents to assign (e.g. ["claude", "codex"]).
@@ -233,7 +233,7 @@ def harness_disable(
 
     Args:
         name:      The item name.
-        item_type: One of "rule", "skill", "tool", "hook".
+        item_type: One of "rule", "skill", "tool", "hook", "agent".
         project:   Project scope (empty = shared).
 
     Returns:
