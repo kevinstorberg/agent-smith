@@ -36,3 +36,9 @@ if "pytest" in sys.modules and APP_ENV != "test":
 ALL_AGENTS: list[str] = list(AGENT_TARGETS)
 DASHBOARD_PORT: str = os.environ.get("DASHBOARD_PORT", "7654")
 MCP_URL: str = f"http://localhost:{DASHBOARD_PORT}/mcp/"
+
+# --- Memory backend ---
+MEMORY_STORE_PATH: str = os.environ.get("MEMORY_STORE_PATH", str(_repo_root / "memory_store"))
+PINECONE_INDEX: str = os.environ.get("PINECONE_INDEX", "agent-smith-memories")
+PINECONE_CLOUD: str = os.environ.get("PINECONE_CLOUD", "aws")
+PINECONE_REGION: str = os.environ.get("PINECONE_REGION", "us-east-1")

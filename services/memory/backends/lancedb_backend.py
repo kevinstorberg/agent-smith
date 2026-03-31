@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import lancedb
@@ -8,11 +7,9 @@ from langchain_core.vectorstores import VectorStore
 from langchain_community.vectorstores import LanceDB as LanceDBVectorStore
 
 from scripts.shared.validation import validate_memory_id
+from services.config import MEMORY_STORE_PATH
 
-STORE_PATH = Path(os.environ.get(
-    "MEMORY_STORE_PATH",
-    str(Path(__file__).parent.parent.parent.parent / "memory_store"),
-))
+STORE_PATH = Path(MEMORY_STORE_PATH)
 TABLE_NAME = "memories"
 
 

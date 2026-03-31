@@ -10,8 +10,12 @@ echo "=== Backend tests ==="
 docker compose run --rm --build test "$@"
 
 echo ""
-echo "=== Frontend lint ==="
+echo "=== Frontend install ==="
 cd services/dashboard/ui
+npm ci
+
+echo ""
+echo "=== Frontend lint ==="
 npm run lint
 
 echo ""

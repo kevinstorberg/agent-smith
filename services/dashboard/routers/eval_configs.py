@@ -142,4 +142,4 @@ def update_scenario_endpoint(scenario_id: int, body: UpdateScenarioRequest):
 def delete_scenario_endpoint(scenario_id: int):
     require_found(get_scenario(scenario_id), "Scenario", scenario_id)
     delete_scenario(scenario_id)
-    return {"deleted": scenario_id}
+    return delete_response(scenario_id)

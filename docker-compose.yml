@@ -1,3 +1,5 @@
+x-postgres-image: &postgres-image postgres:17
+
 services:
   app:
     build: .
@@ -19,7 +21,7 @@ services:
       - ${HOME}/.gemini:/root/.gemini
 
   postgres:
-    image: postgres:17
+    image: *postgres-image
     profiles: [local-db]
     environment:
       POSTGRES_DB: "${POSTGRES_DB:-agent_smith}"
@@ -35,7 +37,7 @@ services:
       retries: 10
 
   test-db:
-    image: postgres:17
+    image: *postgres-image
     profiles: [test]
     environment:
       POSTGRES_DB: agent_smith_test

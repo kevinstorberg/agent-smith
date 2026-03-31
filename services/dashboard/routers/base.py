@@ -19,5 +19,4 @@ def delete_response(item_id: int | str) -> dict:
     return {"deleted": True, "id": item_id}
 
 
-def empty_to_none(value: str) -> str | None:
-    return value or None
+from scripts.shared.validation import empty_to_none  # noqa: F401 — re-exported for router convenience
