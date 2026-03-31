@@ -274,7 +274,14 @@ export function HarnessDetailPage() {
         </button>
         <div style={{ display: 'flex', gap: 8 }}>
           {!editing && !previewVersion && (
-            <button style={styles.btn} onClick={startEditing}>Edit</button>
+            <>
+              <button style={styles.btn} onClick={startEditing}>Edit</button>
+              <button className="btn btn-danger" onClick={() => {
+                if (confirm(`Delete ${type} "${displayItem.name}"?`)) {
+                  api.harness.items.remove(type, displayItem.id).then(() => navigate(backPath));
+                }
+              }}>Delete</button>
+            </>
           )}
           {editing && (
             <>

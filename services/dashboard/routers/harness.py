@@ -11,7 +11,7 @@ from services.db.harness import (
     VALID_TABLES,
     list_items, list_items_full, get_item_by_id,
     create_item, update_content, update_metadata, get_version_history,
-    reorder_items, content_metadata,
+    reorder_items, content_metadata, delete_item,
 )
 from services.dashboard.routers.base import require_found
 
@@ -161,7 +161,7 @@ def get_harness_history(item_type: str, item_id: int):
 def delete_harness(item_type: str, item_id: int):
     _validate_type(item_type)
     require_found(get_item_by_id(item_type, item_id), item_type, item_id)
-    update_metadata(item_type, item_id, enabled=False)
+    delete_item(item_type, item_id)
     return {"deleted": True, "id": item_id}
 
 
