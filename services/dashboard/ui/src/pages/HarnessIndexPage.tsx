@@ -5,6 +5,7 @@ import { api } from '../api';
 import type { HarnessItem } from '../api';
 import { Pagination } from '../components/Pagination';
 import { usePagination } from '../hooks/usePagination';
+import { useNotification } from '../context/NotificationContext';
 
 const TYPE_LABELS: Record<string, string> = {
   rule: 'Rules',
@@ -18,8 +19,8 @@ export function HarnessIndexPage({ type }: { type: string }) {
   const [projectInput, setProjectInput] = useState('');
   const [nameFilter, setNameFilter] = useState('');
   const [projectFilter, setProjectFilter] = useState('');
-  const [saveMsg, setSaveMsg] = useState('');
   const navigate = useNavigate();
+  const { notify } = useNotification();
 
   const hasFilters = !!(nameFilter || projectFilter);
 
@@ -67,11 +68,9 @@ export function HarnessIndexPage({ type }: { type: string }) {
 
     try {
       await api.harness.items.reorder(type, reordered.map(i => i.id));
-      setSaveMsg('Sort order saved');
-      setTimeout(() => setSaveMsg(''), 2000);
+      notify('Sort order saved', 'success');
     } catch {
-      setSaveMsg('Failed to save order');
-      setTimeout(() => setSaveMsg(''), 3000);
+      notify('Failed to save order', 'error');
     }
   };
 
@@ -82,11 +81,6 @@ export function HarnessIndexPage({ type }: { type: string }) {
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <h2 style={{ fontSize: 18, fontWeight: 600 }}>{TYPE_LABELS[type] || type}</h2>
-          {saveMsg && (
-            <span style={{ fontSize: 12, color: 'var(--success)', transition: 'opacity 0.3s' }}>
-              {saveMsg}
-            </span>
-          )}
         </div>
         <button className="btn btn-primary" onClick={() => navigate(`/harness/${type}/new`)}>
           + New {type.charAt(0).toUpperCase() + type.slice(1)}

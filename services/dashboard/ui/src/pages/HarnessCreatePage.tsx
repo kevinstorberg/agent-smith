@@ -7,6 +7,7 @@ function typeFromPath(pathname: string): string {
   return match ? match[1] : 'rule';
 }
 import { api } from '../api';
+import { useNotification } from '../context/NotificationContext';
 
 const ALL_AGENTS = ['claude', 'codex', 'gemini'];
 
@@ -119,7 +120,7 @@ export function HarnessCreatePage() {
   const [body, setBody] = useState('');
   const [metadataJson, setMetadataJson] = useState(PLACEHOLDER_METADATA[type] || '{}');
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const { notify } = useNotification();
 
   const toggleAgent = (agent: string) => {
     setAgents(prev =>
@@ -128,13 +129,12 @@ export function HarnessCreatePage() {
   };
 
   const save = async () => {
-    setError('');
     if (!name.trim()) {
-      setError('Name is required.');
+      notify('Name is required.', 'error');
       return;
     }
     if (agents.length === 0) {
-      setError('At least one agent must be selected.');
+      notify('At least one agent must be selected.', 'error');
       return;
     }
 
@@ -146,7 +146,7 @@ export function HarnessCreatePage() {
         const parsed = JSON.parse(metadataJson);
         content = { body: '', metadata: parsed };
       } catch {
-        setError('Invalid JSON in metadata field.');
+        notify('Invalid JSON in metadata field.', 'error');
         return;
       }
     }
@@ -163,7 +163,7 @@ export function HarnessCreatePage() {
       });
       navigate(`/harness/${type}/${created.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      notify(err instanceof Error ? err.message : String(err), 'error');
     } finally {
       setSaving(false);
     }
@@ -182,20 +182,6 @@ export function HarnessCreatePage() {
       <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 20 }}>
         New {TYPE_LABELS[type] || type}
       </h2>
-
-      {error && (
-        <div style={{
-          background: 'rgba(233, 69, 96, 0.15)',
-          border: '1px solid var(--highlight)',
-          borderRadius: 'var(--radius)',
-          padding: '10px 14px',
-          marginBottom: 16,
-          color: 'var(--highlight)',
-          fontSize: 13,
-        }}>
-          {error}
-        </div>
-      )}
 
       <div style={styles.field}>
         <label style={styles.label}>Name</label>

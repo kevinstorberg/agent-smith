@@ -3,10 +3,12 @@ import { useParams, useNavigate } from 'react-router';
 import { api } from '../api';
 import type { EvalSuite, EvalScenario } from '../api';
 import { CopyButton } from '../components/CopyButton';
+import { useNotification } from '../context/NotificationContext';
 
 export function EvalSuiteDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { notify } = useNotification();
   const isNew = id === 'new' || !id;
 
   const [suite, setSuite] = useState<Partial<EvalSuite>>({
@@ -79,8 +81,8 @@ export function EvalSuiteDetailPage() {
     try {
       let parsedItems: Record<string, unknown>;
       let parsedConfig: Record<string, unknown>;
-      try { parsedItems = JSON.parse(editItemsJson); } catch { alert('Invalid JSON in Items field'); return; }
-      try { parsedConfig = JSON.parse(editConfigJson); } catch { alert('Invalid JSON in Config field'); return; }
+      try { parsedItems = JSON.parse(editItemsJson); } catch { notify('Invalid JSON in Items field', 'error'); return; }
+      try { parsedConfig = JSON.parse(editConfigJson); } catch { notify('Invalid JSON in Config field', 'error'); return; }
 
       const body = {
         name: editName,
