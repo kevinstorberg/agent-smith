@@ -4,21 +4,10 @@ import os
 import re
 from pathlib import Path
 
-import yaml
 from deepeval.metrics import GEval
 from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 
 JUDGE_MODEL = os.environ.get("EVAL_JUDGE_MODEL", "gpt-5.4")
-JUDGE_CONFIG_PATH = Path(__file__).parent.parent / "config" / "rules" / "judge.yaml"
-
-_judge_configs: dict[str, dict] = {}
-
-
-def _load_judge_config(config_path: str | None = None) -> dict:
-    path = config_path or str(JUDGE_CONFIG_PATH)
-    if path not in _judge_configs:
-        _judge_configs[path] = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    return _judge_configs[path]
 
 
 def _strip_code_blocks(text: str) -> str:
@@ -41,25 +30,19 @@ def evaluate(
     output: str,
     rule_path: str = "",
     threshold: float = 0.0,
-    judge_config_path: str | None = None,
     rule_name: str | None = None,
     rule_content: str | None = None,
-    judge_prompt: str | None = None,
+    judge_prompt: str = "",
 ) -> dict:
+    assert judge_prompt, "judge_prompt is required."
     if rule_content is None:
         assert rule_path, "Either rule_path or rule_content must be provided."
         rule_content = Path(rule_path).read_text(encoding="utf-8")
     if rule_name is None:
         rule_name = Path(rule_path).stem if rule_path else "unnamed"
 
-    if judge_prompt is not None:
-        prompt = judge_prompt
-    else:
-        config = _load_judge_config(judge_config_path)
-        prompt = config["prompt"]
-
     steps = _rule_to_steps(rule_content)
-    criteria = f"{prompt}\n\nRule:\n{rule_content}"
+    criteria = f"{judge_prompt}\n\nRule:\n{rule_content}"
 
     metric = GEval(
         name=rule_name,

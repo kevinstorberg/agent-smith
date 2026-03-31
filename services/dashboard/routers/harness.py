@@ -116,9 +116,8 @@ class ContentUpdate(BaseModel):
 @router.put("/items/{item_type}/{item_id}/content")
 def update_harness_content(item_type: str, item_id: int, body: ContentUpdate):
     _validate_type(item_type)
-    require_found(get_item_by_id(item_type, item_id), item_type, item_id)
     new_id = update_content(item_type, item_id, body.content)
-    return get_item_by_id(item_type, new_id)
+    return require_found(get_item_by_id(item_type, new_id), item_type, new_id)
 
 
 class MetadataUpdate(BaseModel):
@@ -132,7 +131,6 @@ class MetadataUpdate(BaseModel):
 @router.patch("/items/{item_type}/{item_id}")
 def patch_harness_metadata(item_type: str, item_id: int, body: MetadataUpdate):
     _validate_type(item_type)
-    require_found(get_item_by_id(item_type, item_id), item_type, item_id)
     update_metadata(
         item_type, item_id,
         enabled=body.enabled, agents=body.agents,

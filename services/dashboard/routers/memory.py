@@ -46,14 +46,13 @@ class MemoryUpdate(BaseModel):
 
 @router.put("/{memory_id}")
 def update_memory(memory_id: str, body: MemoryUpdate):
-    require_found(get(memory_id), "Memory", memory_id)
     update(
         memory_id,
         content=body.content,
         repo=body.repo,
         tags=body.tags,
     )
-    return get(memory_id)
+    return require_found(get(memory_id), "Memory", memory_id)
 
 
 @router.delete("/{memory_id}")

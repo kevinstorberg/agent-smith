@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import MDEditor from '@uiw/react-md-editor';
 import { api } from '../api';
 import type { HarnessItem } from '../api';
+import { CopyButton } from '../components/CopyButton';
 
 const ALL_AGENTS = ['claude', 'codex', 'gemini'];
 
@@ -390,13 +391,16 @@ export function HarnessDetailPage() {
             />
           )
         ) : (
-          isMarkdownType(type) ? (
-            <div className="markdown-content">
-              <ReactMarkdown>{displayBody}</ReactMarkdown>
-            </div>
-          ) : (
-            <pre>{displayBody}</pre>
-          )
+          <div style={{ position: 'relative' }}>
+            <CopyButton text={displayBody} style={{ position: 'absolute', top: 8, right: 8, zIndex: 1 }} />
+            {isMarkdownType(type) ? (
+              <div className="markdown-content">
+                <ReactMarkdown>{displayBody}</ReactMarkdown>
+              </div>
+            ) : (
+              <pre>{displayBody}</pre>
+            )}
+          </div>
         )}
       </div>
 

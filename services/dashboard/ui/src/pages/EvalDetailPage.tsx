@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from '../api';
 import type { EvalRunDetail } from '../api';
+import { CopyButton } from '../components/CopyButton';
 
 type Tab = 'overview' | 'output' | 'raw';
 
@@ -12,7 +13,6 @@ export function EvalDetailPage() {
   const navigate = useNavigate();
   const [run, setRun] = useState<EvalRunDetail | null>(null);
   const [tab, setTab] = useState<Tab>('overview');
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -36,7 +36,7 @@ export function EvalDetailPage() {
           onClick={() => navigate('/evals')}
           style={{ color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}
         >
-          &larr; Back to Evals
+          &larr; Back to Results
         </a>
         <button
           onClick={() => {
@@ -65,13 +65,22 @@ export function EvalDetailPage() {
         {new Date(run.timestamp).toLocaleString()}
       </p>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
+      <div className="flex-wrap" style={{ marginBottom: 24 }}>
         <span className="tag">
           {run.eval_type}{run.subcategory ? ` / ${run.subcategory}` : ''}
         </span>
         <span className="tag">model: {run.test_model}</span>
         <span className="tag">judge: {run.judge_model}</span>
         <span className="tag">threshold: {run.threshold}</span>
+        {run.eval_suite_id && (
+          <span
+            className="tag"
+            style={{ cursor: 'pointer', textDecoration: 'underline' }}
+            onClick={() => navigate(`/eval-configs/${run.eval_suite_id}`)}
+          >
+            eval config &rarr;
+          </span>
+        )}
       </div>
 
       <div className="sub-tabs" style={{ marginBottom: 24 }}>
@@ -107,7 +116,8 @@ export function EvalDetailPage() {
 
           <h3 className="section-title" style={{ marginBottom: 12 }}>Results</h3>
           {run.results.map(r => (
-            <div key={r.rule} className="card" style={{ marginBottom: 12 }}>
+            <div key={r.rule} className="card" style={{ marginBottom: 12, position: 'relative' }}>
+              <CopyButton text={r.reason} style={{ position: 'absolute', top: 12, right: 12 }} />
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
                 <span
                   className={`score-badge ${r.score >= run.threshold ? 'pass' : 'fail'}`}
@@ -117,7 +127,7 @@ export function EvalDetailPage() {
                 </span>
                 <span style={{ fontSize: 15, fontWeight: 500 }}>{r.rule}</span>
               </div>
-              <p style={{ color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6, margin: 0, paddingRight: 60 }}>
                 {r.reason}
               </p>
             </div>
@@ -126,34 +136,20 @@ export function EvalDetailPage() {
       )}
 
       {tab === 'output' && (
-        <div className="card markdown-content" style={{ fontSize: 13, lineHeight: 1.7 }}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{run.output}</ReactMarkdown>
+        <div style={{ position: 'relative' }}>
+          <CopyButton text={run.output} style={{ position: 'absolute', top: 12, right: 12, zIndex: 1 }} />
+          <div className="card markdown-content" style={{ fontSize: 13, lineHeight: 1.7 }}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{run.output}</ReactMarkdown>
+          </div>
         </div>
       )}
 
       {tab === 'raw' && (
         <div style={{ position: 'relative' }}>
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText(JSON.stringify(run, null, 2));
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            }}
-            style={{
-              position: 'absolute',
-              top: 12,
-              right: 12,
-              padding: '4px 10px',
-              fontSize: 12,
-              background: 'var(--surface-hover)',
-              color: 'var(--text-muted)',
-              border: '1px solid var(--surface-elevated)',
-              borderRadius: 'var(--radius)',
-              cursor: 'pointer',
-            }}
-          >
-            {copied ? 'Copied' : 'Copy'}
-          </button>
+          <CopyButton
+            text={JSON.stringify(run, null, 2)}
+            style={{ position: 'absolute', top: 12, right: 12, zIndex: 1 }}
+          />
           <pre className="card" style={{
             fontSize: 12,
             lineHeight: 1.5,

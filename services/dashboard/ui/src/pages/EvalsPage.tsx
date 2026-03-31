@@ -5,7 +5,7 @@ import type { EvalRun, ChartPoint, AverageChartPoint } from '../api';
 import { ScoreChart } from '../components/ScoreChart';
 import { Pagination } from '../components/Pagination';
 
-type ChartMode = 'average' | 'by-rule';
+type ChartMode = 'average' | 'breakdown';
 
 export function EvalsPage() {
   const navigate = useNavigate();
@@ -85,7 +85,7 @@ export function EvalsPage() {
 
   return (
     <div>
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Evals</h2>
+      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Results</h2>
 
       <div className="filters">
         <select
@@ -115,12 +115,14 @@ export function EvalsPage() {
         >
           Average
         </button>
-        <button
-          className={chartMode === 'by-rule' ? 'active' : ''}
-          onClick={() => setChartMode('by-rule')}
-        >
-          By Rule
-        </button>
+        {runs.some(r => r.results.length > 1) && (
+          <button
+            className={chartMode === 'breakdown' ? 'active' : ''}
+            onClick={() => setChartMode('breakdown')}
+          >
+            Breakdown
+          </button>
+        )}
       </div>
 
       <ScoreChart

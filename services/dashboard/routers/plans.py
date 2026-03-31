@@ -49,14 +49,13 @@ class UpdateRequest(BaseModel):
 
 @router.put("/{plan_id}")
 def update(plan_id: int, body: UpdateRequest):
-    require_found(get_plan(plan_id), "Plan", plan_id)
     update_plan(
         plan_id,
         title=body.title,
         body=body.body,
         project=body.project if body.project != "UNSET" else "UNSET",
     )
-    return get_plan(plan_id)
+    return require_found(get_plan(plan_id), "Plan", plan_id)
 
 
 @router.delete("/{plan_id}")

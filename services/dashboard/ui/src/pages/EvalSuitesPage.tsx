@@ -29,21 +29,10 @@ export function EvalSuitesPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600 }}>Eval Configs</h2>
-        <button
-          onClick={() => navigate('/eval-configs/new')}
-          style={{
-            padding: '6px 16px',
-            fontSize: 13,
-            background: 'var(--accent)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 'var(--radius)',
-            cursor: 'pointer',
-          }}
-        >
-          New Suite
+      <div className="page-header">
+        <h2 style={{ fontSize: 18, fontWeight: 600 }}>Evals</h2>
+        <button className="btn btn-primary" onClick={() => navigate('/eval-configs/new')}>
+          + New Suite
         </button>
       </div>
 
@@ -58,6 +47,7 @@ export function EvalSuitesPage() {
               <th>Scenarios</th>
               <th>Enabled</th>
               <th>Updated</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -72,22 +62,35 @@ export function EvalSuitesPage() {
                   <span className="tag">{suite.eval_type} / {suite.subcategory}</span>
                 </td>
                 <td>{suite.scenario_count ?? '—'}</td>
-                <td>
-                  <input
-                    type="checkbox"
-                    checked={suite.enabled}
-                    onClick={e => e.stopPropagation()}
-                    onChange={() => toggleEnabled(suite)}
-                  />
+                <td onClick={e => e.stopPropagation()}>
+                  <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      type="checkbox"
+                      checked={suite.enabled}
+                      onChange={() => toggleEnabled(suite)}
+                      style={{ accentColor: 'var(--success)', width: 16, height: 16 }}
+                    />
+                    <span style={{ color: suite.enabled ? 'var(--success)' : 'var(--text-muted)', fontSize: 12 }}>
+                      {suite.enabled ? 'On' : 'Off'}
+                    </span>
+                  </label>
                 </td>
                 <td style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                  {new Date(suite.updated_at).toLocaleDateString()}
+                  {new Date(suite.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </td>
+                <td onClick={e => e.stopPropagation()}>
+                  <a
+                    onClick={() => navigate(`/evals?category=${suite.eval_type}&subcategory=${suite.subcategory}`)}
+                    style={{ color: 'var(--info)', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}
+                  >
+                    Results &rarr;
+                  </a>
                 </td>
               </tr>
             ))}
             {suites.length === 0 && (
               <tr>
-                <td colSpan={5} className="loading">
+                <td colSpan={6} className="loading">
                   No eval suites found
                 </td>
               </tr>

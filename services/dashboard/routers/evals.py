@@ -54,7 +54,7 @@ def list_evals(
 
             cur.execute(
                 f"SELECT id, timestamp, eval_type, subcategory, scenario, test_model, judge_model, "
-                f"threshold, results, created_at "
+                f"threshold, results, eval_suite_id, created_at "
                 f"FROM eval_results {where} "
                 f"ORDER BY timestamp DESC LIMIT %s OFFSET %s",
                 params + [limit, offset],
