@@ -4,19 +4,6 @@ import uuid
 
 import pytest
 
-from tests.conftest import postgres_available
-
-pytestmark = pytest.mark.skipif(
-    not postgres_available(),
-    reason="Postgres not available",
-)
-
-
-@pytest.fixture(autouse=True)
-def _init():
-    from services.db import init_db
-    init_db()
-
 
 def _unique(prefix: str = "test") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"

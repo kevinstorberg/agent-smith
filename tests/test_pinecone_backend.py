@@ -6,8 +6,7 @@ import pytest
 
 import services.memory.backends.pinecone_backend as pb
 from tests.shared_backend_contract import (
-    VALID_ID, MISSING_ID,
-    assert_get_row_not_found, assert_delete_raises_if_missing, assert_invalid_id_rejected,
+    VALID_ID, assert_get_row_not_found, assert_delete_raises_if_missing, assert_invalid_id_rejected,
 )
 
 

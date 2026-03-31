@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
 from scripts.shared.paths import REPO_ROOT
 

@@ -1,4 +1,3 @@
-import os
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -17,7 +16,7 @@ if config.config_file_name is not None:
 
 target_metadata = None
 
-database_url = os.environ.get("DATABASE_URL", "postgresql://localhost/agent_smith")
+from services.config import DATABASE_URL as database_url
 config.set_main_option("sqlalchemy.url", database_url)
 
 

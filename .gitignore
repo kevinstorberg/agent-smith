@@ -1,4 +1,7 @@
 .env
+.env.production
+.env.development
+.env.test
 .venv
 __pycache__/
 memory_store/

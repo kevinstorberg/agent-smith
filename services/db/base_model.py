@@ -55,8 +55,6 @@ class BaseModel:
 
         sets, params = [], []
         for col, val in fields.items():
-            if val is None:
-                continue
             sets.append(f"{col} = %s")
             params.append(Json(val) if col in json_fields else val)
 

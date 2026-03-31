@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "[entrypoint] Waiting for Postgres..."
+# Resolve the correct DATABASE_URL based on APP_ENV
+DB_VAR="DATABASE_URL_${APP_ENV^^}"
+DB_URL="${!DB_VAR:-}"
+
+if [ -z "$DB_URL" ]; then
+  echo "[entrypoint] ERROR: $DB_VAR is not set for APP_ENV=$APP_ENV"
+  exit 1
+fi
+
+echo "[entrypoint] Waiting for Postgres ($APP_ENV)..."
 until python -c "
-import psycopg2, os
-psycopg2.connect(os.environ.get('DATABASE_URL', 'postgresql://localhost/agent_smith'))
+import psycopg2
+psycopg2.connect('$DB_URL')
 " 2>/dev/null; do
   sleep 1
 done

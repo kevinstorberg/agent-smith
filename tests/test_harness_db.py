@@ -6,19 +6,12 @@ from services.db.harness import (
     upsert_item, list_items, get_item, map_hook_event,
 )
 from services.config import ALL_AGENTS
-from tests.conftest import postgres_available
-
-
-pytestmark = pytest.mark.skipif(
-    not postgres_available(), reason="Postgres not available"
-)
 RULE_CONTENT = {"body": "## Test Rule\n* **The Rule:** Be good.", "metadata": {}}
 
 
 @pytest.fixture(autouse=True)
 def _clean_harness_tables():
-    from services.db import get_connection, init_db
-    init_db()
+    from services.db import get_connection
     yield
     with get_connection() as conn:
         with conn.cursor() as cur:

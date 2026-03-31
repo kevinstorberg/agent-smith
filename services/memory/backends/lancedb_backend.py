@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 import lancedb
+from langchain_core.vectorstores import VectorStore
 from langchain_community.vectorstores import LanceDB as LanceDBVectorStore
 
 from scripts.shared.validation import validate_memory_id

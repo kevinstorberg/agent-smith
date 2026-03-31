@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import os
 from contextlib import contextmanager
 
 import psycopg2
 
+from services.config import DATABASE_URL
 from scripts.shared.validation import validate_postgres_url
-
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://localhost/agent_smith")
 
 
 @contextmanager

@@ -61,7 +61,7 @@ export function EvalSuiteDetailPage() {
     setEditEnabled(data.enabled ?? true);
   };
 
-  useEffect(() => { loadSuite(); }, [id, isNew]);
+  useEffect(() => { loadSuite(); }, [id, isNew]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startEditing = () => {
     populateEditFields(suite);

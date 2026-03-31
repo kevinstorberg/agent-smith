@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import os
+
+os.environ["APP_ENV"] = "test"
+
 import pytest
 
 
-def postgres_available() -> bool:
-    try:
-        from services.db.connection import DATABASE_URL
-        import psycopg2
-        conn = psycopg2.connect(DATABASE_URL)
-        conn.close()
-        return True
-    except Exception:
-        return False
+@pytest.fixture(scope="session", autouse=True)
+def _setup_test_db():
+    from services.db.create import create_database
+    from services.config import DATABASE_URL
+    from services.db import init_db
+
+    create_database(DATABASE_URL)
+    init_db()
+
+    from tests.seeds import seed_test_data
+    seed_test_data()

@@ -47,9 +47,9 @@ services/
 
 ## Harness
 
-Rules, skills, tools, and hooks are stored in Postgres with versioning, project scoping,
-and per-agent assignment. Managed via the dashboard UI, MCP tools, or direct DB access.
-Enable/disable items in the UI — sync respects the DB `enabled` flag.
+Rules, skills, tools, hooks, and sub-agents are stored in Postgres with versioning, project
+scoping, and per-agent assignment. Managed via the dashboard UI, MCP tools, or direct DB
+access. Enable/disable items in the UI — sync respects the DB `enabled` flag.
 
 ## Sync
 
@@ -62,6 +62,7 @@ Reads harness items from the database and writes them to each agent's config fil
 - **compose** — concatenates rules into a single markdown file
 - **copy** — syncs skill subdirectories to the agent's skills directory
 - **merge** — merges MCP server configs into the agent's settings file
+- **agents** — syncs sub-agent definitions as markdown files with YAML frontmatter
 
 Supports Claude, Codex, and Gemini. Only writes when content has changed.
 
@@ -86,8 +87,14 @@ in `.env` with a `PINECONE_API_KEY` to use Pinecone cloud instead.
 ## Tests
 
 ```sh
-.venv/bin/pytest tests/ -v
+./audit.sh
 ```
+
+Runs backend tests (pytest) and frontend tests (Vitest). Pytest flags are forwarded:
+`./audit.sh -x` stops on first failure, `./audit.sh -k test_plans` filters by name.
+
+CI runs both suites plus a Docker build validation. DB-dependent tests use a Postgres
+service container in CI.
 
 ## Evals
 

@@ -69,7 +69,7 @@ def test_get_connection_rolls_back_on_exception(mock_pg, monkeypatch):
     from services.db.connection import get_connection
 
     with pytest.raises(RuntimeError):
-        with get_connection() as conn:
+        with get_connection():
             raise RuntimeError("boom")
 
     mock_conn.rollback.assert_called_once()
