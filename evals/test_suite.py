@@ -1,44 +1,19 @@
 from __future__ import annotations
 
-import pytest
-
-from evals.shared.runner import run_agent
 from evals.shared.judge import evaluate
 from evals.shared.results import save_eval_result
-
-_db_initialized = False
-
-
-def _ensure_db():
-    global _db_initialized
-    if not _db_initialized:
-        from scripts.shared.paths import bootstrap
-        bootstrap()
-        from services.db import init_db
-        init_db()
-        _db_initialized = True
+from evals.shared.runner import run_agent
 
 
-def load_scenarios() -> list[dict]:
-    _ensure_db()
-    from services.db.evals import list_enabled_scenarios_for_suite
-    return list_enabled_scenarios_for_suite("skills_write_epic")
-
-
-def scenario_ids(scenarios):
-    return [s["name"] for s in scenarios]
-
-
-@pytest.mark.parametrize("scenario", load_scenarios(), ids=scenario_ids(load_scenarios()))
-def test_write_epic_compliance(scenario, eval_config):
-    from services.db.evals import resolve_items, resolve_extra_context
+def test_compliance(suite_name: str, scenario: dict, eval_config: dict) -> None:
+    from services.db.evals import resolve_extra_context, resolve_items
 
     model = eval_config["model"]
     extra_ctx = resolve_extra_context(scenario["items"])
     output = run_agent(model, scenario["prompt"], extra_context=extra_ctx)
 
     items = resolve_items(scenario["items"])
-    assert items, "No items to evaluate against."
+    assert items, f"No items to evaluate for scenario '{scenario['name']}' in suite '{suite_name}'."
 
     all_results = []
     for item_name, item_content in items:
@@ -63,5 +38,5 @@ def test_write_epic_compliance(scenario, eval_config):
 
     for r in all_results:
         assert r["score"] >= eval_config["threshold"], (
-            f"{r['rule']}: scored {r['score']}: {r['reason']}"
+            f"[{suite_name}] {r['rule']}: scored {r['score']}: {r['reason']}"
         )

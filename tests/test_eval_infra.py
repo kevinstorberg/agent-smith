@@ -4,53 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from evals.shared.judge import _rule_to_steps, _load_judge_config
+from evals.shared.judge import _rule_to_steps
 from tests.conftest import postgres_available
 
 REPO_ROOT = Path(__file__).parent.parent
 RULES_DIR = REPO_ROOT / "harness" / "rules" / "shared"
 EXCLUDE_RULES = {"memory"}
 
-
-# --- rules eval infra ---
-# TODO: These tests import from evals/test_*.py which triggers DB-backed
-# parametrize at import time, breaking CI (no Postgres). Needs a proper
-# solution to decouple collection-time DB access from test imports.
-
-
-# @pytest.mark.skipif(not postgres_available(), reason="Postgres not available")
-# def test_load_scenarios_filters_disabled():
-#     from evals.test_rules import load_scenarios
-#     scenarios = load_scenarios()
-#     for s in scenarios:
-#         assert s.get("enabled", True) is True
-
-
-# @pytest.mark.skipif(not postgres_available(), reason="Postgres not available")
-# def test_load_scenarios_returns_nonempty():
-#     from evals.test_rules import load_scenarios
-#     assert len(load_scenarios()) > 0
-
-
-# @pytest.mark.skipif(not postgres_available(), reason="Postgres not available")
-# def test_load_scenarios_have_suite_config():
-#     from evals.test_rules import load_scenarios
-#     scenarios = load_scenarios()
-#     assert len(scenarios) > 0
-#     sc = scenarios[0]
-#     assert "judge_prompt" in sc
-#     assert "items" in sc
-#     assert "eval_type" in sc
-#     assert "subcategory" in sc
-#     assert sc["eval_type"] == "rules"
-#     assert sc["subcategory"] == "plans"
-
-
-# @pytest.mark.skipif(not postgres_available(), reason="Postgres not available")
-# def test_run_agent_rejects_unknown_model():
-#     from evals.shared.runner import run_agent
-#     with pytest.raises(ValueError):
-#         run_agent("unknown-model-xyz", "hello")
 
 
 @pytest.mark.skipif(not postgres_available(), reason="Postgres not available")
@@ -80,12 +40,6 @@ def test_rule_to_steps_works_on_real_rules():
             continue
         steps = _rule_to_steps(f.read_text(encoding="utf-8"))
         assert len(steps) >= 3, f"{f.stem} should have at least 3 process steps"
-
-
-def test_judge_config_loads():
-    config = _load_judge_config()
-    assert "prompt" in config
-    assert "examples" not in config
 
 
 def test_rule_files_have_examples():
@@ -180,37 +134,6 @@ def test_save_result_with_suite_and_scenario_ids():
 
             cur.execute("DELETE FROM eval_results WHERE id = %s", (run_id,))
 
-
-# --- write_ticket eval infra ---
-
-
-# @pytest.mark.skipif(not postgres_available(), reason="Postgres not available")
-# def test_write_ticket_scenarios_load():
-#     from evals.test_write_ticket import load_scenarios as load_wt_scenarios
-#     scenarios = load_wt_scenarios()
-#     assert len(scenarios) > 0
-#     for s in scenarios:
-#         assert "name" in s
-#         assert "prompt" in s
-#         assert "judge_prompt" in s
-#         assert s["eval_type"] == "skills"
-#         assert s["subcategory"] == "write_ticket"
-
-
-# --- write_epic eval infra ---
-
-
-# @pytest.mark.skipif(not postgres_available(), reason="Postgres not available")
-# def test_write_epic_scenarios_load():
-#     from evals.test_write_epic import load_scenarios as load_we_scenarios
-#     scenarios = load_we_scenarios()
-#     assert len(scenarios) > 0
-#     for s in scenarios:
-#         assert "name" in s
-#         assert "prompt" in s
-#         assert "judge_prompt" in s
-#         assert s["eval_type"] == "skills"
-#         assert s["subcategory"] == "write_epic"
 
 
 # --- resolve_items ---

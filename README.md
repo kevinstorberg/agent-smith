@@ -38,7 +38,6 @@ Migrations and data seeding run automatically on startup.
 ```text
 assets/              # static assets (images, etc.)
 evals/               # LLM-as-judge evaluation framework (DeepEval + G-Eval)
-  config/            # eval suite configs (scenarios + judge prompts, migrated to DB)
 scripts/             # migration and sync utilities
 services/
   db/                # Postgres connection + Alembic migrations
@@ -92,17 +91,19 @@ in `.env` with a `PINECONE_API_KEY` to use Pinecone cloud instead.
 
 ## Evals
 
-LLM-as-judge evaluation using DeepEval's G-Eval metric. Three eval suites:
+LLM-as-judge evaluation using DeepEval's G-Eval metric. Eval suites and scenarios
+are stored entirely in Postgres (`eval_suites` + `eval_scenarios` tables) and
+discovered dynamically at test time. Results are stored in `eval_results`.
 
-- **rules/plans** — scores agent-generated plans against harness rules
-- **skills/write_ticket** — scores generated tickets against ticket-writing criteria
-- **skills/write_epic** — scores generated epics against epic-writing criteria
-
-Eval suites and scenarios are stored in Postgres (`eval_suites` + `eval_scenarios` tables)
-and loaded at test time. Results are stored in `eval_results`.
+A single test runner handles all suites — no per-suite test files needed. New suites
+added to the database are picked up automatically.
 
 ```sh
-.venv/bin/pytest evals/ -v
+# Run a specific suite by name
+docker compose exec app python -m pytest evals/test_suite.py --suite rules_plans -v
+
+# Run all enabled suites
+docker compose exec app python -m pytest evals/test_suite.py -v
 ```
 
 Configure via `EVAL_MODEL`, `EVAL_JUDGE_MODEL`, and `EVAL_THRESHOLD` in `.env`.
