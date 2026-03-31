@@ -15,6 +15,7 @@ VALID_TABLES = {
     "skill": "harness_skills",
     "tool": "harness_tools",
     "hook": "harness_hooks",
+    "agent": "harness_agents",
 }
 
 HOOK_EVENT_MAP = {
@@ -53,6 +54,8 @@ def _row_to_dict(row: dict) -> dict:
     result = dict(row)
     if result.get("agents") is not None:
         result["agents"] = sorted(result["agents"])
+    if result.get("subagents") is not None:
+        result["subagents"] = sorted(result["subagents"])
     return result
 
 
@@ -121,6 +124,7 @@ def create_item(
     content: dict,
     project: str | None = None,
     agents: list[str] | None = None,
+    subagents: list[str] | None = None,
     sort_key: str | None = None,
     enabled: bool = True,
 ) -> int:
@@ -130,16 +134,18 @@ def create_item(
 
     if agents is not None:
         agents = sorted(agents)
+    if subagents is not None:
+        subagents = sorted(subagents)
 
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 f"""
-                INSERT INTO {table} (name, project, agents, content, sort_key, enabled, version)
-                VALUES (%s, %s, %s, %s, %s, %s, 1)
+                INSERT INTO {table} (name, project, agents, subagents, content, sort_key, enabled, version)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 1)
                 RETURNING id
                 """,
-                (name, project, agents or [], Json(content), sort_key or name, enabled),
+                (name, project, agents or [], subagents or [], Json(content), sort_key or name, enabled),
             )
             return cur.fetchone()[0]
 
@@ -176,6 +182,7 @@ def update_metadata(
     item_id: int,
     enabled: bool | None = None,
     agents: list[str] | None = None,
+    subagents: list[str] | None = None,
     name: str | None = None,
     sort_key: str | None = None,
     project: str | None = "UNSET",
@@ -187,6 +194,8 @@ def update_metadata(
         fields["enabled"] = enabled
     if agents is not None:
         fields["agents"] = sorted(agents)
+    if subagents is not None:
+        fields["subagents"] = sorted(subagents)
     if name is not None:
         fields["name"] = name
     if sort_key is not None:
@@ -260,6 +269,7 @@ def upsert_item(
     content: dict,
     project: str | None = None,
     agents: list[str] | None = None,
+    subagents: list[str] | None = None,
     sort_key: str | None = None,
     enabled: bool = True,
 ) -> int:
@@ -269,6 +279,8 @@ def upsert_item(
 
     if agents is not None:
         agents = sorted(agents)
+    if subagents is not None:
+        subagents = sorted(subagents)
 
     existing = get_item(item_type, name, project=project)
     if existing:
@@ -280,11 +292,11 @@ def upsert_item(
         with conn.cursor() as cur:
             cur.execute(
                 f"""
-                INSERT INTO {table} (name, project, agents, content, sort_key, enabled, version)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO {table} (name, project, agents, subagents, content, sort_key, enabled, version)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
-                (name, project, agents or [], Json(content), sort_key or name, enabled, new_version),
+                (name, project, agents or [], subagents or [], Json(content), sort_key or name, enabled, new_version),
             )
             return cur.fetchone()[0]
 
@@ -332,6 +344,15 @@ def get_hook(name: str, **kwargs) -> dict | None:
 def upsert_hook(name: str, **kwargs) -> int:
     return upsert_item("hook", name, **kwargs)
 
+def list_agents(**kwargs) -> list[dict]:
+    return list_items("agent", **kwargs)
+
+def get_agent(name: str, **kwargs) -> dict | None:
+    return get_item("agent", name, **kwargs)
+
+def upsert_agent(name: str, **kwargs) -> int:
+    return upsert_item("agent", name, **kwargs)
+
 
 def collect_rules_from_db(agent: str, project: str | None = None) -> list[tuple[str, str]]:
     rows = list_items("rule", project=project, agent=agent)
@@ -369,3 +390,36 @@ def collect_hooks_from_db(agent: str, project: str | None = None) -> dict[str, l
             "hooks": meta.get("hooks", []),
         })
     return events
+
+
+def _collect_scoped_items(
+    item_type: str, subagent_name: str, agent: str, project: str | None = None,
+) -> list[dict]:
+    table = _table(item_type)
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"SELECT * FROM {table} WHERE enabled = true "
+                f"AND (%s = ANY(subagents) OR '*' = ANY(subagents)) "
+                f"AND %s = ANY(agents) "
+                f"ORDER BY sort_key",
+                (subagent_name, agent),
+            )
+            return [_row_to_dict(r) for r in cur.fetchall()]
+
+
+def collect_agents_from_db(agent: str, project: str | None = None) -> dict[str, dict]:
+    rows = list_items("agent", project=project, agent=agent)
+    result = {}
+    for r in rows:
+        name = r["name"]
+        meta = content_metadata(r)
+        scoped_rules = _collect_scoped_items("rule", name, agent, project)
+        scoped_tools = _collect_scoped_items("tool", name, agent, project)
+        result[name] = {
+            "body": r["content"]["body"],
+            "metadata": meta,
+            "scoped_rules": scoped_rules,
+            "scoped_tools": scoped_tools,
+        }
+    return result

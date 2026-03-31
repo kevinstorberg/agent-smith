@@ -3,6 +3,7 @@ import { NavLink } from 'react-router';
 import { api } from '../api';
 
 const HARNESS_LINKS = [
+  { path: '/harness/agents', label: 'Agents' },
   { path: '/harness/hooks', label: 'Hooks' },
   { path: '/harness/rules', label: 'Rules' },
   { path: '/harness/skills', label: 'Skills' },

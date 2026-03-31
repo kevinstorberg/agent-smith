@@ -12,6 +12,7 @@ AGENT_TARGETS = {
         "rules_file": "~/.claude/CLAUDE.md",
         "rules_dir": "~/.claude/rules/",
         "skills_dir": "~/.claude/skills/",
+        "agents_dir": "~/.claude/agents/",
         "mcp_file": "~/.claude.json",
         "mcp_key": "mcpServers",
         "mcp_format": "json",
@@ -23,6 +24,7 @@ AGENT_TARGETS = {
     "codex": {
         "rules_file": "~/.codex/AGENTS.md",
         "skills_dir": "~/.codex/skills/",
+        "agents_dir": "~/.codex/agents/",
         "mcp_file": "~/.codex/config.toml",
         "mcp_key": "mcp_servers",
         "mcp_format": "toml",
@@ -34,6 +36,7 @@ AGENT_TARGETS = {
     "gemini": {
         "rules_file": "~/.gemini/GEMINI.md",
         "skills_dir": "~/.gemini/skills/",
+        "agents_dir": "~/.gemini/agents/",
         "mcp_file": "~/.gemini/settings.json",
         "mcp_key": "mcpServers",
         "mcp_format": "json",
@@ -83,6 +86,12 @@ def unsync_agent(agent: str) -> list[str]:
     if skills_dir.exists():
         shutil.rmtree(skills_dir)
         removed.append(str(skills_dir))
+
+    if "agents_dir" in cfg:
+        agents_dir = Path(cfg["agents_dir"]).expanduser()
+        if agents_dir.exists():
+            shutil.rmtree(agents_dir)
+            removed.append(str(agents_dir))
 
     mcp_file = Path(cfg["mcp_file"]).expanduser()
     if mcp_file.exists():
