@@ -5,6 +5,7 @@ import MDEditor from '@uiw/react-md-editor';
 import { api } from '../api';
 import type { HarnessItem } from '../api';
 import { CopyButton } from '../components/CopyButton';
+import { useNotification } from '../context/NotificationContext';
 
 const ALL_AGENTS = ['claude', 'codex', 'gemini'];
 
@@ -129,6 +130,7 @@ const styles = {
 export function HarnessDetailPage() {
   const { type = '', id = '' } = useParams<{ type: string; id: string }>();
   const navigate = useNavigate();
+  const { notify } = useNotification();
   const numericId = Number(id);
 
   const [item, setItem] = useState<HarnessItem | null>(null);
@@ -233,7 +235,7 @@ export function HarnessDetailPage() {
         await loadHistory();
       }
     } catch (err) {
-      alert(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+      notify(`Save failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setSaving(false);
     }
@@ -247,7 +249,7 @@ export function HarnessDetailPage() {
       setPreviewVersion(null);
       navigate(`/harness/${type}/${updated.id}`, { replace: true });
     } catch (err) {
-      alert(`Restore failed: ${err instanceof Error ? err.message : String(err)}`);
+      notify(`Restore failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setSaving(false);
     }
