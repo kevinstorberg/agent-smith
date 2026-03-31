@@ -39,19 +39,11 @@ export function EvalDetailPage() {
           &larr; Back to Results
         </a>
         <button
+          className="btn btn-danger"
           onClick={() => {
             if (confirm(`Delete eval run #${run.id}?`)) {
               api.evals.remove(run.id).then(() => navigate('/evals'));
             }
-          }}
-          style={{
-            padding: '4px 12px',
-            fontSize: 12,
-            background: 'transparent',
-            color: 'var(--highlight)',
-            border: '1px solid var(--highlight)',
-            borderRadius: 'var(--radius)',
-            cursor: 'pointer',
           }}
         >
           Delete

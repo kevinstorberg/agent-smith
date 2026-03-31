@@ -148,8 +148,15 @@ export function PlanDetailPage() {
           &larr; Back to plans
         </button>
         <div style={{ display: 'flex', gap: 8 }}>
-          {!editing && (
-            <button style={styles.btn} onClick={startEditing}>Edit</button>
+          {!editing && plan && (
+            <>
+              <button style={styles.btn} onClick={startEditing}>Edit</button>
+              <button className="btn btn-danger" onClick={() => {
+                if (confirm(`Delete plan "${plan.title}"?`)) {
+                  api.plans.remove(plan.id).then(() => navigate('/plans'));
+                }
+              }}>Delete</button>
+            </>
           )}
           {editing && (
             <>

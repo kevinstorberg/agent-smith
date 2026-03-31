@@ -354,6 +354,13 @@ def upsert_agent(name: str, **kwargs) -> int:
     return upsert_item("agent", name, **kwargs)
 
 
+def delete_item(item_type: str, item_id: int) -> None:
+    table = _table(item_type)
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"DELETE FROM {table} WHERE id = %s", (item_id,))
+
+
 def collect_rules_from_db(agent: str, project: str | None = None) -> list[tuple[str, str]]:
     rows = list_items("rule", project=project, agent=agent)
     return [(r["name"], r["content"]["body"]) for r in rows]
