@@ -4,7 +4,6 @@ from fastapi import HTTPException
 
 
 def require_found(item, label: str = "Item", item_id: int | str = ""):
-    """Return item if truthy, raise 404 otherwise."""
     if not item:
         detail = f"{label} not found" + (f": {item_id}" if item_id else "")
         raise HTTPException(status_code=404, detail=detail)
@@ -19,4 +18,4 @@ def delete_response(item_id: int | str) -> dict:
     return {"deleted": True, "id": item_id}
 
 
-from scripts.shared.validation import empty_to_none  # noqa: F401 — re-exported for router convenience
+from scripts.shared.validation import empty_to_none  # noqa: F401

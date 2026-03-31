@@ -1,20 +1,5 @@
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
-
-type NotificationType = 'success' | 'error' | 'warning' | 'info';
-
-interface Notification {
-  id: string;
-  message: string;
-  type: NotificationType;
-}
-
-interface NotificationContextValue {
-  notifications: Notification[];
-  notify: (message: string, type: NotificationType) => void;
-  dismiss: (id: string) => void;
-}
-
-const NotificationContext = createContext<NotificationContextValue | null>(null);
+import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { NotificationContext, type Notification, type NotificationType } from './useNotification';
 
 const AUTO_DISMISS_MS = 7000;
 
@@ -49,12 +34,4 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       {children}
     </NotificationContext.Provider>
   );
-}
-
-export function useNotification(): NotificationContextValue {
-  const context = useContext(NotificationContext);
-  if (!context) {
-    throw new Error('useNotification must be used within a NotificationProvider');
-  }
-  return context;
 }

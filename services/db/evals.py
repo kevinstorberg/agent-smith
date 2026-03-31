@@ -63,11 +63,6 @@ class ScenarioModel(BaseModel):
         cls.dynamic_update(scenario_id, fields)
 
 
-# ---------------------------------------------------------------------------
-# Suites
-# ---------------------------------------------------------------------------
-
-
 def list_suites(
     enabled_only: bool = True,
     limit: int = 50,
@@ -177,10 +172,6 @@ def upsert_suite(
     return create_suite(name, eval_type, subcategory, judge_prompt, items, config, enabled)
 
 
-# ---------------------------------------------------------------------------
-# Scenarios
-# ---------------------------------------------------------------------------
-
 
 def list_scenarios(suite_id: int, enabled_only: bool = True) -> list[dict]:
     ScenarioModel._validate_id(suite_id)
@@ -260,9 +251,6 @@ def upsert_scenario(
     return create_scenario(suite_id, name, prompt, enabled)
 
 
-# ---------------------------------------------------------------------------
-# Query helpers for test runners
-# ---------------------------------------------------------------------------
 
 
 def list_enabled_scenarios_for_suite(suite_name: str) -> list[dict]:
@@ -289,9 +277,6 @@ def list_enabled_scenarios_for_suite(suite_name: str) -> list[dict]:
             return [dict(r) for r in cur.fetchall()]
 
 
-# ---------------------------------------------------------------------------
-# Item resolution
-# ---------------------------------------------------------------------------
 
 
 def resolve_items(items: dict) -> list[tuple[str, str]]:

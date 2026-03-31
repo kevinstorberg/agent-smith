@@ -38,9 +38,6 @@ def scenario_id(suite_id):
         pass
 
 
-# ---------------------------------------------------------------------------
-# Suite CRUD
-# ---------------------------------------------------------------------------
 
 
 def test_create_suite(suite_id):
@@ -135,10 +132,6 @@ def test_create_suite_rejects_empty_judge_prompt():
         create_suite("empty_judge", "rules", "plans", "")
 
 
-# ---------------------------------------------------------------------------
-# Scenario CRUD
-# ---------------------------------------------------------------------------
-
 
 def test_create_scenario(suite_id, scenario_id):
     from services.db.evals import get_scenario
@@ -207,9 +200,6 @@ def test_list_enabled_scenarios_merges_suite_config(suite_id, scenario_id):
     assert sc["subcategory"] == "plans"
 
 
-# ---------------------------------------------------------------------------
-# Item resolution
-# ---------------------------------------------------------------------------
 
 
 def test_resolve_items_harness_source():

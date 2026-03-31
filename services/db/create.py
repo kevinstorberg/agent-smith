@@ -1,4 +1,3 @@
-"""Create databases for configured environments. Idempotent."""
 from __future__ import annotations
 
 import os
@@ -10,7 +9,6 @@ from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 
 def create_database(url: str) -> bool:
-    """Create the database if it doesn't exist. Returns True if created."""
     db_name = url.rsplit("/", 1)[-1].split("?")[0]
     base = url.rsplit("/", 1)[0] + "/postgres"
     if "?" in url:

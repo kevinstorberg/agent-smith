@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router';
 import { api } from '../api';
 import type { EvalSuite, EvalScenario } from '../api';
 import { CopyButton } from '../components/CopyButton';
-import { useNotification } from '../context/NotificationContext';
+import { useNotification } from '../context/useNotification';
 
 export function EvalSuiteDetailPage() {
   const { id } = useParams<{ id: string }>();

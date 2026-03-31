@@ -12,10 +12,6 @@ from services.dashboard.routers.base import require_found, list_response, delete
 router = APIRouter()
 
 
-# ---------------------------------------------------------------------------
-# Request models
-# ---------------------------------------------------------------------------
-
 
 class CreateSuiteRequest(BaseModel):
     name: str
@@ -48,10 +44,6 @@ class UpdateScenarioRequest(BaseModel):
     prompt: str | None = None
     enabled: bool | None = None
 
-
-# ---------------------------------------------------------------------------
-# Suite endpoints
-# ---------------------------------------------------------------------------
 
 
 @router.get("/suites")
@@ -101,10 +93,6 @@ def delete_suite_endpoint(suite_id: int):
     delete_suite(suite_id)
     return delete_response(suite_id)
 
-
-# ---------------------------------------------------------------------------
-# Scenario endpoints
-# ---------------------------------------------------------------------------
 
 
 @router.get("/suites/{suite_id}/scenarios")
