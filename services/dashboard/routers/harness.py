@@ -12,6 +12,7 @@ from services.db.harness import (
     list_items, list_items_full, get_item_by_id,
     create_item, update_content, update_metadata, get_version_history,
     reorder_items, content_metadata, delete_item,
+    create_config, update_config, delete_config, list_configs,
 )
 from services.dashboard.routers.base import require_found, list_response, delete_response, empty_to_none
 
@@ -76,6 +77,8 @@ def list_harness(
         all_items = [i for i in all_items if name_lower in i["name"].lower()]
     total = len(all_items)
     items = all_items[offset:offset + limit]
+    for item in items:
+        item["configs"] = list_configs(item["id"], item_type)
     return list_response(items, total)
 
 
@@ -103,17 +106,26 @@ class CreateRequest(BaseModel):
     agents: list[str] = []
     sort_key: str | None = None
     enabled: bool = True
+    device: str = "*"
+    repo: str = "*"
 
 
 @router.post("/items/{item_type}", status_code=201)
 def create_harness(item_type: str, body: CreateRequest):
     _validate_type(item_type)
+    _validate_repo(body.repo)
     try:
         item_id = create_item(
             item_type, body.name, body.content,
             project=body.project, agents=body.agents,
             sort_key=body.sort_key, enabled=body.enabled,
         )
+        if body.device != "*" or body.repo != "*":
+            configs = list_configs(item_id, item_type)
+            if configs:
+                update_config(configs[0]["id"], device=body.device, repo=body.repo)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(409, str(e)) from e
     return get_item_by_id(item_type, item_id)
@@ -163,6 +175,62 @@ def delete_harness(item_type: str, item_id: int):
     require_found(get_item_by_id(item_type, item_id), item_type, item_id)
     delete_item(item_type, item_id)
     return delete_response(item_id)
+
+
+def _validate_repo(repo: str) -> None:
+    if repo != "*" and not repo.startswith("/"):
+        raise HTTPException(422, f"repo must be '*' or an absolute path, got: {repo!r}")
+
+
+class ConfigCreate(BaseModel):
+    device: str = "*"
+    repo: str = "*"
+    agents: list[str] = ["claude", "codex", "gemini"]
+    subagents: list[str] = []
+    enabled: bool = True
+    exclude: bool = False
+
+
+class ConfigUpdate(BaseModel):
+    device: str | None = None
+    repo: str | None = None
+    agents: list[str] | None = None
+    subagents: list[str] | None = None
+    enabled: bool | None = None
+    exclude: bool | None = None
+
+
+@router.post("/items/{item_type}/{item_id}/configs", status_code=201)
+def add_config(item_type: str, item_id: int, body: ConfigCreate):
+    _validate_type(item_type)
+    require_found(get_item_by_id(item_type, item_id), item_type, item_id)
+    _validate_repo(body.repo)
+    config_id = create_config(
+        item_id, item_type,
+        device=body.device, repo=body.repo,
+        agents=body.agents, subagents=body.subagents,
+        enabled=body.enabled, exclude=body.exclude,
+    )
+    return {"id": config_id, "item_id": item_id, "item_type": item_type}
+
+
+@router.patch("/items/{item_type}/{item_id}/configs/{config_id}")
+def patch_config(item_type: str, item_id: int, config_id: int, body: ConfigUpdate):
+    _validate_type(item_type)
+    if body.repo is not None:
+        _validate_repo(body.repo)
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not fields:
+        raise HTTPException(422, "No fields to update")
+    update_config(config_id, **fields)
+    return list_configs(item_id, item_type)
+
+
+@router.delete("/items/{item_type}/{item_id}/configs/{config_id}")
+def remove_config(item_type: str, item_id: int, config_id: int):
+    _validate_type(item_type)
+    delete_config(config_id)
+    return {"deleted": config_id}
 
 
 @router.post("/sync")

@@ -11,12 +11,9 @@ RULE_CONTENT = {"body": "## Test Rule\n* **The Rule:** Be good.", "metadata": {}
 
 @pytest.fixture(autouse=True)
 def _clean_harness_tables():
-    from services.db import get_connection
     yield
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            for table in ("harness_rules", "harness_skills", "harness_tools", "harness_hooks"):
-                cur.execute(f"DELETE FROM {table} WHERE name LIKE 'test_%'")
+    from tests.conftest import clean_harness_rows
+    clean_harness_rows("test_%")
 
 
 def test_upsert_rule_creates_new_row():

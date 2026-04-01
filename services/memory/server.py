@@ -146,7 +146,10 @@ def plan_get(plan_id: int = 0, query: str = "") -> dict | list[dict]:
     return []
 
 
-from services.db.harness import VALID_TABLES, list_items, get_item, upsert_item
+from services.db.harness import (
+    VALID_TABLES, list_items, get_item, upsert_item,
+    list_configs, update_config,
+)
 
 
 @mcp.tool()
@@ -156,7 +159,7 @@ def harness_list(
     agent: str = "",
 ) -> list[dict]:
     """
-    List harness items (rules, skills, tools, or hooks).
+    List harness items (rules, skills, tools, hooks, or agents).
 
     Args:
         item_type: A valid harness item type (rule, skill, tool, hook, agent).
@@ -164,10 +167,13 @@ def harness_list(
         agent:     Filter to items assigned to this agent (empty = all).
 
     Returns:
-        List of items with name, content, agents, enabled, version.
+        List of items with name, content, agents, enabled, version, and configs.
     """
     assert item_type in VALID_TABLES, f"item_type must be one of {VALID_TABLES}"
-    return list_items(item_type, project=empty_to_none(project), agent=empty_to_none(agent))
+    rows = list_items(item_type, project=empty_to_none(project), agent=empty_to_none(agent))
+    for row in rows:
+        row["configs"] = list_configs(row["id"], item_type)
+    return rows
 
 
 @mcp.tool()
@@ -185,10 +191,13 @@ def harness_get(
         project:   Project scope (empty = shared).
 
     Returns:
-        The item dict, or None if not found.
+        The item dict with configs, or None if not found.
     """
     assert item_type in VALID_TABLES, f"item_type must be one of {VALID_TABLES}"
-    return get_item(item_type, name, project=empty_to_none(project))
+    item = get_item(item_type, name, project=empty_to_none(project))
+    if item:
+        item["configs"] = list_configs(item["id"], item_type)
+    return item
 
 
 @mcp.tool()
@@ -198,9 +207,12 @@ def harness_upsert(
     content: dict,
     project: str = "",
     agents: list[str] | None = None,
+    device: str = "*",
+    repo: str = "*",
 ) -> str:
     """
     Create or update a harness item. Bumps version on update.
+    The device and repo set the default deployment config for new items.
 
     Args:
         name:      The item name.
@@ -208,6 +220,8 @@ def harness_upsert(
         content:   Dict with "body" (str) and "metadata" (dict) keys.
         project:   Project scope (empty = shared).
         agents:    List of agents to assign (e.g. ["claude", "codex"]).
+        device:    Device scope for default config ("*" = all devices).
+        repo:      Repo scope for default config ("*" = global, or absolute path).
 
     Returns:
         Confirmation with the item ID.
@@ -218,6 +232,10 @@ def harness_upsert(
         project=empty_to_none(project),
         agents=agents,
     )
+    if device != "*" or repo != "*":
+        configs = list_configs(item_id, item_type)
+        if configs:
+            update_config(configs[0]["id"], device=device, repo=repo)
     return f"Upserted {item_type} '{name}' (id={item_id})"
 
 
@@ -228,7 +246,8 @@ def harness_disable(
     project: str = "",
 ) -> str:
     """
-    Disable a harness item (it will be excluded from sync).
+    Disable a harness item by disabling all its config rows.
+    The item will be excluded from sync.
 
     Args:
         name:      The item name.
@@ -242,13 +261,10 @@ def harness_disable(
     existing = get_item(item_type, name, project=empty_to_none(project))
     if not existing:
         return f"Not found: {item_type} '{name}'"
-    upsert_item(
-        item_type, name, existing["content"],
-        project=empty_to_none(project),
-        agents=existing["agents"],
-        enabled=False,
-    )
-    return f"Disabled {item_type} '{name}'"
+    configs = list_configs(existing["id"], item_type)
+    for cfg in configs:
+        update_config(cfg["id"], enabled=False)
+    return f"Disabled {item_type} '{name}' ({len(configs)} config(s) disabled)"
 
 
 @mcp.tool()

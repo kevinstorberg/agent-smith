@@ -1,32 +1,14 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router';
 import MDEditor from '@uiw/react-md-editor';
+import { api } from '../api';
+import { useNotification } from '../context/useNotification';
+import { ALL_AGENTS, TYPE_PATHS, TYPE_LABELS, isMarkdownType, toggleArrayItem, formatError } from '../constants';
+import { harnessStyles as styles } from '../styles/harness';
 
 function typeFromPath(pathname: string): string {
   const match = pathname.match(/\/harness\/(\w+)\/new/);
   return match ? match[1] : 'rule';
-}
-import { api } from '../api';
-import { useNotification } from '../context/useNotification';
-
-const ALL_AGENTS = ['claude', 'codex', 'gemini'];
-
-const TYPE_PATHS: Record<string, string> = {
-  rule: 'rules',
-  skill: 'skills',
-  tool: 'tools',
-  hook: 'hooks',
-};
-
-const TYPE_LABELS: Record<string, string> = {
-  rule: 'Rule',
-  skill: 'Skill',
-  tool: 'Tool',
-  hook: 'Hook',
-};
-
-function isMarkdownType(type: string): boolean {
-  return type === 'rule' || type === 'skill';
 }
 
 const PLACEHOLDER_METADATA: Record<string, string> = {
@@ -36,75 +18,6 @@ const PLACEHOLDER_METADATA: Record<string, string> = {
     matcher: 'Bash',
     hooks: [{ type: 'command', command: '/path/to/script.sh' }],
   }, null, 2),
-};
-
-const styles = {
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  } as React.CSSProperties,
-  backLink: {
-    color: 'var(--text-muted)',
-    cursor: 'pointer',
-    fontSize: 13,
-    background: 'none',
-    border: 'none',
-    fontFamily: 'var(--font)',
-    textDecoration: 'underline',
-  } as React.CSSProperties,
-  field: {
-    marginBottom: 20,
-  } as React.CSSProperties,
-  label: {
-    display: 'block',
-    fontSize: 12,
-    fontWeight: 500,
-    color: 'var(--text-muted)',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.05em',
-    marginBottom: 6,
-  } as React.CSSProperties,
-  input: {
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius)',
-    color: 'var(--text)',
-    padding: '8px 12px',
-    fontSize: 14,
-    fontFamily: 'var(--font)',
-    width: '100%',
-  } as React.CSSProperties,
-  textarea: {
-    background: 'var(--bg)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius)',
-    color: 'var(--text)',
-    padding: 12,
-    fontFamily: 'var(--mono)',
-    fontSize: 13,
-    width: '100%',
-    minHeight: 400,
-    resize: 'vertical' as const,
-  } as React.CSSProperties,
-  checkboxRow: {
-    display: 'flex',
-    gap: 16,
-    alignItems: 'center',
-  } as React.CSSProperties,
-  checkboxLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    cursor: 'pointer',
-    fontSize: 13,
-  } as React.CSSProperties,
-  actions: {
-    display: 'flex',
-    gap: 8,
-    marginTop: 20,
-  } as React.CSSProperties,
 };
 
 export function HarnessCreatePage() {
@@ -120,13 +33,13 @@ export function HarnessCreatePage() {
   const [body, setBody] = useState('');
   const [metadataJson, setMetadataJson] = useState(PLACEHOLDER_METADATA[type] || '{}');
   const [saving, setSaving] = useState(false);
+  const [device, setDevice] = useState('*');
+  const [repo, setRepo] = useState('*');
   const { notify } = useNotification();
 
-  const toggleAgent = (agent: string) => {
-    setAgents(prev =>
-      prev.includes(agent) ? prev.filter(a => a !== agent) : [...prev, agent]
-    );
-  };
+  const isValidRepo = (r: string) => r === '*' || r.startsWith('/');
+
+  const toggleAgent = (agent: string) => setAgents(prev => toggleArrayItem(prev, agent));
 
   const save = async () => {
     if (!name.trim()) {
@@ -135,6 +48,10 @@ export function HarnessCreatePage() {
     }
     if (agents.length === 0) {
       notify('At least one agent must be selected.', 'error');
+      return;
+    }
+    if (!isValidRepo(repo)) {
+      notify('Repo must be * or an absolute path.', 'error');
       return;
     }
 
@@ -160,10 +77,12 @@ export function HarnessCreatePage() {
         content,
         agents,
         enabled,
+        device: device.trim() || '*',
+        repo: repo.trim() || '*',
       });
       navigate(`/harness/${type}/${created.id}`);
     } catch (err) {
-      notify(err instanceof Error ? err.message : String(err), 'error');
+      notify(formatError(err), 'error');
     } finally {
       setSaving(false);
     }
@@ -241,6 +160,31 @@ export function HarnessCreatePage() {
           />
           Enabled
         </label>
+      </div>
+
+      <div style={{ ...styles.field, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+        <label style={{ ...styles.label, marginBottom: 12 }}>Deployment Configuration</label>
+        <div style={{ display: 'flex', gap: 16 }}>
+          <div style={{ flex: '1 1 180px' }}>
+            <label style={styles.label}>Device</label>
+            <input
+              style={styles.input}
+              value={device}
+              onChange={e => setDevice(e.target.value)}
+              placeholder="* = all devices"
+            />
+          </div>
+          <div style={{ flex: '2 1 280px' }}>
+            <label style={styles.label}>Repo</label>
+            <input
+              style={{ ...styles.input, fontFamily: 'var(--mono)', borderColor: isValidRepo(repo) ? undefined : 'var(--highlight)' }}
+              value={repo}
+              onChange={e => setRepo(e.target.value)}
+              placeholder="* = global, or /absolute/path"
+            />
+            {!isValidRepo(repo) && <span style={{ fontSize: 11, color: 'var(--highlight)', marginTop: 2, display: 'block' }}>Must be * or an absolute path</span>}
+          </div>
+        </div>
       </div>
 
       <div style={styles.field}>

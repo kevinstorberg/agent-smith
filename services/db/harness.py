@@ -50,6 +50,10 @@ def _table(item_type: str) -> str:
     return VALID_TABLES[item_type]
 
 
+def _sort_optional_list(value: list[str] | None) -> list[str] | None:
+    return sorted(value) if value is not None else None
+
+
 def _row_to_dict(row: dict) -> dict:
     result = dict(row)
     if result.get("agents") is not None:
@@ -115,7 +119,15 @@ def get_item_by_id(item_type: str, item_id: int) -> dict | None:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(f"SELECT * FROM {table} WHERE id = %s", (item_id,))
             row = cur.fetchone()
-            return _row_to_dict(row) if row else None
+            if not row:
+                return None
+            result = _row_to_dict(row)
+            cur.execute(
+                "SELECT * FROM harness_configs WHERE item_id = %s AND item_type = %s ORDER BY id",
+                (item_id, item_type),
+            )
+            result["configs"] = [_config_row_to_dict(r) for r in cur.fetchall()]
+            return result
 
 
 def create_item(
@@ -132,10 +144,8 @@ def create_item(
     assert isinstance(content, dict) and "body" in content, "content must be a dict with a 'body' key."
     table = _table(item_type)
 
-    if agents is not None:
-        agents = sorted(agents)
-    if subagents is not None:
-        subagents = sorted(subagents)
+    agents = _sort_optional_list(agents)
+    subagents = _sort_optional_list(subagents)
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -147,7 +157,16 @@ def create_item(
                 """,
                 (name, project, agents or [], subagents or [], Json(content), sort_key or name, enabled),
             )
-            return cur.fetchone()[0]
+            item_id = cur.fetchone()[0]
+
+            cur.execute(
+                """
+                INSERT INTO harness_configs (item_id, item_type, device, repo, agents, subagents, enabled, exclude)
+                VALUES (%s, %s, '*', '*', %s, %s, %s, false)
+                """,
+                (item_id, item_type, agents or [], subagents or [], enabled),
+            )
+            return item_id
 
 
 def update_content(item_type: str, item_id: int, content: dict) -> int:
@@ -164,14 +183,14 @@ def update_content(item_type: str, item_id: int, content: dict) -> int:
             new_version = source["version"] + 1
             cur.execute(
                 f"""
-                INSERT INTO {table} (name, project, agents, content, sort_key, enabled, version)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO {table} (name, project, agents, subagents, content, sort_key, enabled, version)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
                     source["name"], source["project"], source["agents"],
-                    Json(content), source["sort_key"], source["enabled"],
-                    new_version,
+                    source["subagents"], Json(content), source["sort_key"],
+                    source["enabled"], new_version,
                 ),
             )
             return cur.fetchone()["id"]
@@ -193,9 +212,9 @@ def update_metadata(
     if enabled is not None:
         fields["enabled"] = enabled
     if agents is not None:
-        fields["agents"] = sorted(agents)
+        fields["agents"] = _sort_optional_list(agents)
     if subagents is not None:
-        fields["subagents"] = sorted(subagents)
+        fields["subagents"] = _sort_optional_list(subagents)
     if name is not None:
         fields["name"] = name
     if sort_key is not None:
@@ -277,10 +296,8 @@ def upsert_item(
     assert isinstance(content, dict) and "body" in content, "content must be a dict with a 'body' key."
     table = _table(item_type)
 
-    if agents is not None:
-        agents = sorted(agents)
-    if subagents is not None:
-        subagents = sorted(subagents)
+    agents = _sort_optional_list(agents)
+    subagents = _sort_optional_list(subagents)
 
     existing = get_item(item_type, name, project=project)
     if existing:
@@ -298,7 +315,17 @@ def upsert_item(
                 """,
                 (name, project, agents or [], subagents or [], Json(content), sort_key or name, enabled, new_version),
             )
-            return cur.fetchone()[0]
+            item_id = cur.fetchone()[0]
+
+            if new_version == 1:
+                cur.execute(
+                    """
+                    INSERT INTO harness_configs (item_id, item_type, device, repo, agents, subagents, enabled, exclude)
+                    VALUES (%s, %s, '*', '*', %s, %s, %s, false)
+                    """,
+                    (item_id, item_type, agents or [], subagents or [], enabled),
+                )
+            return item_id
 
 
 def map_hook_event(canonical_name: str, agent: str) -> str | None:
@@ -358,6 +385,10 @@ def delete_item(item_type: str, item_id: int) -> None:
     table = _table(item_type)
     with get_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM harness_configs WHERE item_id = %s AND item_type = %s",
+                (item_id, item_type),
+            )
             cur.execute(f"DELETE FROM {table} WHERE id = %s", (item_id,))
 
 
@@ -430,3 +461,118 @@ def collect_agents_from_db(agent: str, project: str | None = None) -> dict[str, 
             "scoped_tools": scoped_tools,
         }
     return result
+
+
+# ---------------------------------------------------------------------------
+# harness_configs CRUD
+# ---------------------------------------------------------------------------
+
+def list_configs(item_id: int, item_type: str) -> list[dict]:
+    assert item_id > 0, "item_id must be positive."
+    _table(item_type)  # validate item_type
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM harness_configs WHERE item_id = %s AND item_type = %s ORDER BY id",
+                (item_id, item_type),
+            )
+            return [_config_row_to_dict(r) for r in cur.fetchall()]
+
+
+def create_config(
+    item_id: int,
+    item_type: str,
+    device: str = "*",
+    repo: str = "*",
+    agents: list[str] | None = None,
+    subagents: list[str] | None = None,
+    enabled: bool = True,
+    exclude: bool = False,
+) -> int:
+    assert item_id > 0, "item_id must be positive."
+    _table(item_type)  # validate item_type
+    agents = _sort_optional_list(agents)
+    subagents = _sort_optional_list(subagents)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO harness_configs (item_id, item_type, device, repo, agents, subagents, enabled, exclude)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (item_id, item_type, device, repo, agents or [], subagents or [], enabled, exclude),
+            )
+            return cur.fetchone()[0]
+
+
+def update_config(config_id: int, **fields) -> None:
+    assert config_id > 0, "config_id must be positive."
+    assert fields, "At least one field must be provided."
+
+    sets, params = [], []
+    for col, val in fields.items():
+        if col in ("agents", "subagents"):
+            val = _sort_optional_list(val)
+        sets.append(f"{col} = %s")
+        params.append(val)
+
+    sets.append("updated_at = now()")
+    params.append(config_id)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE harness_configs SET {', '.join(sets)} WHERE id = %s",
+                params,
+            )
+
+
+def delete_config(config_id: int) -> None:
+    assert config_id > 0, "config_id must be positive."
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM harness_configs WHERE id = %s", (config_id,))
+
+
+_config_row_to_dict = _row_to_dict
+
+
+# ---------------------------------------------------------------------------
+# Config resolution
+# ---------------------------------------------------------------------------
+
+def resolve_sync_targets(item: dict, agent: str, device_name: str) -> list[str]:
+    """Returns repo targets ('*' for global, absolute paths for repo-local, empty for no sync).
+
+    Configs are the sole authority — legacy item columns are not consulted.
+    """
+    configs = item.get("configs", [])
+    relevant = [
+        c for c in configs
+        if c["enabled"]
+        and agent in c["agents"]
+        and _device_matches(c["device"], device_name)
+    ]
+
+    additive = [c for c in relevant if not c["exclude"]]
+    subtractive = [c for c in relevant if c["exclude"]]
+
+    if not additive:
+        return []
+
+    targets = {c["repo"] for c in additive}
+
+    for c in subtractive:
+        targets.discard(c["repo"])
+
+    return sorted(targets)
+
+
+def _device_matches(config_device: str, device_name: str) -> bool:
+    if config_device == "*":
+        return True
+    if not device_name:
+        return False
+    return config_device == device_name

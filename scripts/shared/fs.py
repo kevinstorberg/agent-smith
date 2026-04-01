@@ -32,12 +32,8 @@ def atomic_write(path: Path | str, content: str) -> tuple[bool, str]:
     return True, f"updated:   {path}"
 
 
-def sync_rules(agent: str, dry_run: bool) -> None:
-    from scripts.shared.agents import AGENT_TARGETS
-    from services.db.harness import collect_rules_from_db
-
-    cfg = AGENT_TARGETS[agent]
-    items = collect_rules_from_db(agent)
+def _sync_rules_to_target(items: list[tuple[str, str]], cfg: dict, dry_run: bool) -> None:
+    """Sync rule items to a target config (global home dir or repo-local dir)."""
     rules_file = Path(cfg["rules_file"]).expanduser()
     rules_dir = Path(cfg["rules_dir"]).expanduser() if "rules_dir" in cfg else None
 
@@ -59,6 +55,67 @@ def sync_rules(agent: str, dry_run: bool) -> None:
         _sync_rules_dir(items, rules_dir, dry_run)
 
 
+def _resolve_and_partition(
+    item_type: str, agent: str, device_name: str,
+) -> tuple[list[dict], dict[str, list[dict]]]:
+    """Resolve sync targets for all items and partition into global vs per-repo.
+
+    Fetches all items regardless of legacy agent/enabled columns — config rows
+    are the sole authority for sync decisions.
+    """
+    from services.db.harness import list_items_full, list_configs, resolve_sync_targets
+
+    rows = list_items_full(item_type)
+    global_items: list[dict] = []
+    repo_items: dict[str, list[dict]] = {}
+
+    for row in rows:
+        configs = list_configs(row["id"], item_type)
+        targets = resolve_sync_targets({**row, "configs": configs}, agent=agent, device_name=device_name)
+        for target in targets:
+            if target == "*":
+                global_items.append(row)
+            else:
+                repo_items.setdefault(target, []).append(row)
+
+    return global_items, repo_items
+
+
+def _sync_to_repo_targets(
+    repo_rows: dict[str, list[dict]],
+    agent: str,
+    target_key: str,
+    sync_fn,
+    dry_run: bool,
+) -> None:
+    """Iterate repo targets, resolve paths, and call the sync function for each."""
+    from scripts.shared.agents import repo_config
+
+    for repo_path, rows in repo_rows.items():
+        if not Path(repo_path).is_dir():
+            print(f"  warning: repo path does not exist, skipping: {repo_path}")
+            continue
+        rcfg = repo_config(agent, repo_path)
+        if rcfg.get(target_key):
+            sync_fn(rows, rcfg, dry_run)
+
+
+def sync_rules(agent: str, dry_run: bool, device_name: str = "") -> None:
+    from scripts.shared.agents import AGENT_TARGETS
+
+    cfg = AGENT_TARGETS[agent]
+    global_rows, repo_rows = _resolve_and_partition("rule", agent, device_name)
+
+    global_items = [(r["name"], r["content"]["body"]) for r in global_rows]
+    _sync_rules_to_target(global_items, cfg, dry_run)
+
+    def _repo_sync(rows, rcfg, dr):
+        items = [(r["name"], r["content"]["body"]) for r in rows]
+        _sync_rules_to_target(items, rcfg, dr)
+
+    _sync_to_repo_targets(repo_rows, agent, "rules_file", _repo_sync, dry_run)
+
+
 def _sync_rules_dir(items: list[tuple[str, str]], dest_dir: Path, dry_run: bool) -> None:
     if dry_run:
         print(f"  would copy {len(items)} file(s) -> {dest_dir}")
@@ -77,13 +134,8 @@ def _sync_rules_dir(items: list[tuple[str, str]], dest_dir: Path, dry_run: bool)
             print(f"  removed:   {stale}")
 
 
-def sync_skills(agent: str, dry_run: bool) -> None:
-    from scripts.shared.agents import AGENT_TARGETS
-    from services.db.harness import collect_skills_from_db
-
-    skills = collect_skills_from_db(agent)
-    dest_dir = Path(AGENT_TARGETS[agent]["skills_dir"]).expanduser()
-
+def _sync_skills_to_target(skills: dict[str, dict], dest_dir: Path, dry_run: bool) -> None:
+    """Sync skill items to a target directory."""
     if dry_run:
         print(f"  would sync {len(skills)} skill(s) -> {dest_dir}")
         return
@@ -106,6 +158,28 @@ def sync_skills(agent: str, dry_run: bool) -> None:
             print(f"  removed:   {stale}")
 
 
+def sync_skills(agent: str, dry_run: bool, device_name: str = "") -> None:
+    from scripts.shared.agents import AGENT_TARGETS
+    from services.db.harness import content_metadata
+
+    cfg = AGENT_TARGETS[agent]
+    global_rows, repo_rows = _resolve_and_partition("skill", agent, device_name)
+
+    def rows_to_skills(rows: list[dict]) -> dict[str, dict]:
+        result = {}
+        for r in rows:
+            meta = content_metadata(r)
+            result[r["name"]] = {"skill_md": r["content"]["body"], "files": meta.get("files", {})}
+        return result
+
+    _sync_skills_to_target(rows_to_skills(global_rows), Path(cfg["skills_dir"]).expanduser(), dry_run)
+
+    def _repo_sync(rows, rcfg, dr):
+        _sync_skills_to_target(rows_to_skills(rows), Path(rcfg["skills_dir"]), dr)
+
+    _sync_to_repo_targets(repo_rows, agent, "skills_dir", _repo_sync, dry_run)
+
+
 def _compose_agent_file(body: str, metadata: dict, scoped_rules: list | None = None) -> str:
     parts = []
     if metadata:
@@ -120,7 +194,7 @@ def _compose_agent_file(body: str, metadata: dict, scoped_rules: list | None = N
     return "\n\n".join(parts) + "\n"
 
 
-def sync_agents(agent: str, dry_run: bool) -> None:
+def sync_agents(agent: str, dry_run: bool, device_name: str = "") -> None:
     from scripts.shared.agents import AGENT_TARGETS
     from services.db.harness import collect_agents_from_db
 

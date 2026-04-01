@@ -113,6 +113,7 @@ export function HarnessIndexPage({ type }: { type: string }) {
                   <th>Project</th>
                   <th>Enabled</th>
                   <th>Agents</th>
+                  <th>Configs</th>
                   <th>Version</th>
                   <th>Updated</th>
                 </tr>
@@ -167,6 +168,21 @@ export function HarnessIndexPage({ type }: { type: string }) {
                             ))}
                           </div>
                         </td>
+                        <td>
+                          {(item.configs ?? []).length > 0 ? (
+                            <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <span className="tag" style={{ fontSize: 11 }}>{item.configs.length}</span>
+                              {item.configs.some(c => c.device !== '*') && (
+                                <span className="tag" style={{ background: 'rgba(255,165,0,0.15)', color: 'var(--warning)', fontSize: 10 }}>device</span>
+                              )}
+                              {item.configs.some(c => c.repo !== '*') && (
+                                <span className="tag" style={{ background: 'rgba(100,200,100,0.15)', color: 'var(--success)', fontSize: 10 }}>repo</span>
+                              )}
+                            </div>
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>default</span>
+                          )}
+                        </td>
                         <td style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>v{item.version}</td>
                         <td style={{ color: 'var(--text-muted)', fontSize: 13 }}>
                           {new Date(item.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -177,7 +193,7 @@ export function HarnessIndexPage({ type }: { type: string }) {
                 ))}
                 {provided.placeholder}
                 {items.length === 0 && (
-                  <tr><td colSpan={dragDisabled ? 6 : 7} className="loading">No {TYPE_LABELS[type]?.toLowerCase() || 'items'} found</td></tr>
+                  <tr><td colSpan={dragDisabled ? 7 : 8} className="loading">No {TYPE_LABELS[type]?.toLowerCase() || 'items'} found</td></tr>
                 )}
               </tbody>
             </table>

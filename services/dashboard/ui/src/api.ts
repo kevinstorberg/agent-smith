@@ -60,6 +60,16 @@ export interface PaginationParams {
   offset?: number;
 }
 
+export interface HarnessConfig {
+  id: number;
+  device: string;
+  repo: string;
+  agents: string[];
+  subagents: string[];
+  enabled: boolean;
+  exclude: boolean;
+}
+
 export interface HarnessItem {
   id: number;
   name: string;
@@ -71,6 +81,7 @@ export interface HarnessItem {
   version: number;
   created_at: string;
   updated_at: string;
+  configs: HarnessConfig[];
 }
 
 export interface Rule {
@@ -193,6 +204,14 @@ export const api = {
         patch<HarnessItem>(`/harness/items/${type}/${id}`, body),
       history: (type: string, id: number) => get<HarnessItem[]>(`/harness/items/${type}/${id}/history`),
       remove: (type: string, id: number) => del(`/harness/items/${type}/${id}`),
+      configs: {
+        add: (type: string, itemId: number, body: Partial<HarnessConfig>) =>
+          post<{ id: number }>(`/harness/items/${type}/${itemId}/configs`, body),
+        update: (type: string, itemId: number, configId: number, body: Partial<HarnessConfig>) =>
+          patch<HarnessConfig[]>(`/harness/items/${type}/${itemId}/configs/${configId}`, body),
+        remove: (type: string, itemId: number, configId: number) =>
+          del(`/harness/items/${type}/${itemId}/configs/${configId}`),
+      },
       reorder: (type: string, ids: number[]) => put<{ reordered: boolean }>(`/harness/items/${type}/reorder`, { ids }),
     },
   },
