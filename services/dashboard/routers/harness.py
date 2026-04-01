@@ -120,7 +120,6 @@ def create_harness(item_type: str, body: CreateRequest):
             project=body.project, agents=body.agents,
             sort_key=body.sort_key, enabled=body.enabled,
         )
-        # Update the auto-created default config with device/repo if non-default
         if body.device != "*" or body.repo != "*":
             configs = list_configs(item_id, item_type)
             if configs:

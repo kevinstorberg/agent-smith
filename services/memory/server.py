@@ -232,7 +232,6 @@ def harness_upsert(
         project=empty_to_none(project),
         agents=agents,
     )
-    # Update the default config with device/repo if non-default
     if device != "*" or repo != "*":
         configs = list_configs(item_id, item_type)
         if configs:

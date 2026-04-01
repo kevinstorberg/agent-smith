@@ -159,7 +159,6 @@ def create_item(
             )
             item_id = cur.fetchone()[0]
 
-            # Auto-create default config row (additive, wildcard device/repo)
             cur.execute(
                 """
                 INSERT INTO harness_configs (item_id, item_type, device, repo, agents, subagents, enabled, exclude)
@@ -318,7 +317,6 @@ def upsert_item(
             )
             item_id = cur.fetchone()[0]
 
-            # Auto-create default config for new items (version 1)
             if new_version == 1:
                 cur.execute(
                     """
@@ -546,20 +544,11 @@ _config_row_to_dict = _row_to_dict
 # ---------------------------------------------------------------------------
 
 def resolve_sync_targets(item: dict, agent: str, device_name: str) -> list[str]:
-    """Compute the list of repo targets where this item should sync.
+    """Returns repo targets ('*' for global, absolute paths for repo-local, empty for no sync).
 
-    Returns a list of strings: '*' means global (home dirs), absolute paths
-    mean repo-local. Empty list means "don't sync this item."
-
-    Resolution — configs are the sole authority:
-    1. Filter configs by enabled, agent, and device.
-    2. Additive configs (exclude=False) build the target set.
-    3. Subtractive configs (exclude=True) remove from the target set.
-    4. No matching additive configs → empty (no sync).
+    Configs are the sole authority — legacy item columns are not consulted.
     """
     configs = item.get("configs", [])
-
-    # Filter to relevant configs: enabled, matching agent, matching device
     relevant = [
         c for c in configs
         if c["enabled"]
@@ -582,11 +571,6 @@ def resolve_sync_targets(item: dict, agent: str, device_name: str) -> list[str]:
 
 
 def _device_matches(config_device: str, device_name: str) -> bool:
-    """Check if a config's device field matches the current device.
-
-    Wildcard configs always match. Device-specific configs only match
-    when a device_name is set and equals the config's device.
-    """
     if config_device == "*":
         return True
     if not device_name:
