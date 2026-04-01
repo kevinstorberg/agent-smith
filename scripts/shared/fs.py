@@ -58,10 +58,14 @@ def _sync_rules_to_target(items: list[tuple[str, str]], cfg: dict, dry_run: bool
 def _resolve_and_partition(
     item_type: str, agent: str, device_name: str,
 ) -> tuple[list[dict], dict[str, list[dict]]]:
-    """Resolve sync targets for all items and partition into global vs per-repo."""
-    from services.db.harness import list_items, list_configs, resolve_sync_targets
+    """Resolve sync targets for all items and partition into global vs per-repo.
 
-    rows = list_items(item_type, agent=agent)
+    Fetches all items regardless of legacy agent/enabled columns — config rows
+    are the sole authority for sync decisions.
+    """
+    from services.db.harness import list_items_full, list_configs, resolve_sync_targets
+
+    rows = list_items_full(item_type)
     global_items: list[dict] = []
     repo_items: dict[str, list[dict]] = {}
 
@@ -77,8 +81,27 @@ def _resolve_and_partition(
     return global_items, repo_items
 
 
+def _sync_to_repo_targets(
+    repo_rows: dict[str, list[dict]],
+    agent: str,
+    target_key: str,
+    sync_fn,
+    dry_run: bool,
+) -> None:
+    """Iterate repo targets, resolve paths, and call the sync function for each."""
+    from scripts.shared.agents import repo_config
+
+    for repo_path, rows in repo_rows.items():
+        if not Path(repo_path).is_dir():
+            print(f"  warning: repo path does not exist, skipping: {repo_path}")
+            continue
+        rcfg = repo_config(agent, repo_path)
+        if rcfg.get(target_key):
+            sync_fn(rows, rcfg, dry_run)
+
+
 def sync_rules(agent: str, dry_run: bool, device_name: str = "") -> None:
-    from scripts.shared.agents import AGENT_TARGETS, repo_config
+    from scripts.shared.agents import AGENT_TARGETS
 
     cfg = AGENT_TARGETS[agent]
     global_rows, repo_rows = _resolve_and_partition("rule", agent, device_name)
@@ -86,14 +109,11 @@ def sync_rules(agent: str, dry_run: bool, device_name: str = "") -> None:
     global_items = [(r["name"], r["content"]["body"]) for r in global_rows]
     _sync_rules_to_target(global_items, cfg, dry_run)
 
-    for repo_path, rows in repo_rows.items():
-        if not Path(repo_path).is_dir():
-            print(f"  warning: repo path does not exist, skipping: {repo_path}")
-            continue
-        rcfg = repo_config(agent, repo_path)
-        if rcfg:
-            items = [(r["name"], r["content"]["body"]) for r in rows]
-            _sync_rules_to_target(items, rcfg, dry_run)
+    def _repo_sync(rows, rcfg, dr):
+        items = [(r["name"], r["content"]["body"]) for r in rows]
+        _sync_rules_to_target(items, rcfg, dr)
+
+    _sync_to_repo_targets(repo_rows, agent, "rules_file", _repo_sync, dry_run)
 
 
 def _sync_rules_dir(items: list[tuple[str, str]], dest_dir: Path, dry_run: bool) -> None:
@@ -139,7 +159,7 @@ def _sync_skills_to_target(skills: dict[str, dict], dest_dir: Path, dry_run: boo
 
 
 def sync_skills(agent: str, dry_run: bool, device_name: str = "") -> None:
-    from scripts.shared.agents import AGENT_TARGETS, repo_config
+    from scripts.shared.agents import AGENT_TARGETS
     from services.db.harness import content_metadata
 
     cfg = AGENT_TARGETS[agent]
@@ -154,13 +174,10 @@ def sync_skills(agent: str, dry_run: bool, device_name: str = "") -> None:
 
     _sync_skills_to_target(rows_to_skills(global_rows), Path(cfg["skills_dir"]).expanduser(), dry_run)
 
-    for repo_path, rows in repo_rows.items():
-        if not Path(repo_path).is_dir():
-            print(f"  warning: repo path does not exist, skipping: {repo_path}")
-            continue
-        rcfg = repo_config(agent, repo_path)
-        if rcfg.get("skills_dir"):
-            _sync_skills_to_target(rows_to_skills(rows), Path(rcfg["skills_dir"]), dry_run)
+    def _repo_sync(rows, rcfg, dr):
+        _sync_skills_to_target(rows_to_skills(rows), Path(rcfg["skills_dir"]), dr)
+
+    _sync_to_repo_targets(repo_rows, agent, "skills_dir", _repo_sync, dry_run)
 
 
 def _compose_agent_file(body: str, metadata: dict, scoped_rules: list | None = None) -> str:

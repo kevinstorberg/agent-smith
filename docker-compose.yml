@@ -19,6 +19,7 @@ services:
       - ${HOME}/.claude.json:/root/.claude.json
       - ${HOME}/.codex:/root/.codex
       - ${HOME}/.gemini:/root/.gemini
+      - ${HOME}:${HOME}
 
   postgres:
     image: *postgres-image

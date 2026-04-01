@@ -13,13 +13,9 @@ CONTENT = {"body": "## Test", "metadata": {}}
 
 @pytest.fixture(autouse=True)
 def _clean():
-    from services.db import get_connection
     yield
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            for t, item_type in [("harness_rules", "rule"), ("harness_skills", "skill"), ("harness_tools", "tool"), ("harness_hooks", "hook")]:
-                cur.execute(f"DELETE FROM harness_configs WHERE item_type = %s AND item_id IN (SELECT id FROM {t} WHERE name LIKE 'crud_%%' OR name LIKE 'reorder_%%' OR name = 'to_delete')", (item_type,))
-                cur.execute(f"DELETE FROM {t} WHERE name LIKE 'crud_%' OR name LIKE 'reorder_%' OR name = 'to_delete'")
+    from tests.conftest import clean_harness_rows
+    clean_harness_rows("crud_%", "reorder_%", "to_delete")
 
 
 def test_create_item_inserts_with_version_1():

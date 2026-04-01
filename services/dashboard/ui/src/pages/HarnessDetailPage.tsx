@@ -6,19 +6,8 @@ import { api } from '../api';
 import type { HarnessItem, HarnessConfig } from '../api';
 import { CopyButton } from '../components/CopyButton';
 import { useNotification } from '../context/useNotification';
-
-const ALL_AGENTS = ['claude', 'codex', 'gemini'];
-
-const TYPE_PATHS: Record<string, string> = {
-  rule: 'rules',
-  skill: 'skills',
-  tool: 'tools',
-  hook: 'hooks',
-};
-
-function isMarkdownType(type: string): boolean {
-  return type === 'rule' || type === 'skill';
-}
+import { ALL_AGENTS, TYPE_PATHS, isMarkdownType, toggleArrayItem, formatError } from '../constants';
+import { harnessStyles as styles } from '../styles/harness';
 
 function formatBody(item: HarnessItem, type: string): string {
   if (isMarkdownType(type)) return item.content.body;
@@ -34,98 +23,6 @@ function formatTimestamp(ts: string): string {
   });
 }
 
-const styles = {
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  } as React.CSSProperties,
-  backLink: {
-    color: 'var(--text-muted)',
-    cursor: 'pointer',
-    fontSize: 13,
-    background: 'none',
-    border: 'none',
-    fontFamily: 'var(--font)',
-    textDecoration: 'underline',
-  } as React.CSSProperties,
-  badges: {
-    display: 'flex',
-    gap: 8,
-    alignItems: 'center',
-    marginBottom: 16,
-    flexWrap: 'wrap',
-  } as React.CSSProperties,
-  btn: {
-    background: 'var(--accent)',
-    color: 'var(--text)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius)',
-    padding: '6px 14px',
-    cursor: 'pointer',
-    fontSize: 13,
-    fontFamily: 'var(--font)',
-  } as React.CSSProperties,
-  btnDanger: {
-    background: 'var(--highlight)',
-    color: 'var(--text)',
-    border: '1px solid var(--highlight)',
-    borderRadius: 'var(--radius)',
-    padding: '4px 10px',
-    cursor: 'pointer',
-    fontSize: 12,
-    fontFamily: 'var(--font)',
-  } as React.CSSProperties,
-  input: {
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius)',
-    color: 'var(--text)',
-    padding: '8px 12px',
-    fontSize: 18,
-    fontWeight: 600,
-    fontFamily: 'var(--font)',
-    width: '100%',
-  } as React.CSSProperties,
-  textarea: {
-    background: 'var(--bg)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius)',
-    color: 'var(--text)',
-    padding: 12,
-    fontFamily: 'var(--mono)',
-    fontSize: 13,
-    width: '100%',
-    minHeight: 400,
-    resize: 'vertical' as const,
-  } as React.CSSProperties,
-  checkboxRow: {
-    display: 'flex',
-    gap: 16,
-    alignItems: 'center',
-    marginBottom: 20,
-  } as React.CSSProperties,
-  checkboxLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    cursor: 'pointer',
-    fontSize: 13,
-  } as React.CSSProperties,
-  versionItem: {
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius)',
-    padding: '10px 14px',
-    marginBottom: 8,
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    cursor: 'pointer',
-    transition: 'background 0.15s',
-  } as React.CSSProperties,
-} as const;
 
 export function HarnessDetailPage() {
   const { type = '', id = '' } = useParams<{ type: string; id: string }>();
@@ -244,7 +141,7 @@ export function HarnessDetailPage() {
         await loadHistory();
       }
     } catch (err) {
-      notify(`Save failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      notify(`Save failed: ${formatError(err)}`, 'error');
     } finally {
       setSaving(false);
     }
@@ -258,17 +155,13 @@ export function HarnessDetailPage() {
       setPreviewVersion(null);
       navigate(`/harness/${type}/${updated.id}`, { replace: true });
     } catch (err) {
-      notify(`Restore failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      notify(`Restore failed: ${formatError(err)}`, 'error');
     } finally {
       setSaving(false);
     }
   };
 
-  const toggleAgent = (agent: string) => {
-    setEditAgents(prev =>
-      prev.includes(agent) ? prev.filter(a => a !== agent) : [...prev, agent]
-    );
-  };
+  const toggleAgent = (agent: string) => setEditAgents(prev => toggleArrayItem(prev, agent));
 
   const isValidRepo = (r: string) => r === '*' || r.startsWith('/');
 
@@ -317,7 +210,7 @@ export function HarnessDetailPage() {
       cancelConfigForm();
       await loadItem();
     } catch (err) {
-      notify(`Config save failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      notify(`Config save failed: ${formatError(err)}`, 'error');
     } finally {
       setCfgSaving(false);
     }
@@ -329,15 +222,11 @@ export function HarnessDetailPage() {
       await api.harness.items.configs.remove(type, item.id, configId);
       await loadItem();
     } catch (err) {
-      notify(`Config delete failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      notify(`Config delete failed: ${formatError(err)}`, 'error');
     }
   };
 
-  const toggleCfgAgent = (agent: string) => {
-    setCfgAgents(prev =>
-      prev.includes(agent) ? prev.filter(a => a !== agent) : [...prev, agent]
-    );
-  };
+  const toggleCfgAgent = (agent: string) => setCfgAgents(prev => toggleArrayItem(prev, agent));
 
   if (loading) return <div className="loading">Loading...</div>;
   if (!item) return <div className="loading">Item not found</div>;

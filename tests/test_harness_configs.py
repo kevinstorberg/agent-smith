@@ -12,12 +12,9 @@ CONTENT = {"body": "## Test Config", "metadata": {}}
 
 @pytest.fixture(autouse=True)
 def _clean_config_test_data():
-    from services.db import get_connection
     yield
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM harness_configs WHERE item_type = 'rule' AND item_id IN (SELECT id FROM harness_rules WHERE name LIKE 'cfg_%')")
-            cur.execute("DELETE FROM harness_rules WHERE name LIKE 'cfg_%'")
+    from tests.conftest import clean_harness_rows
+    clean_harness_rows("cfg_%")
 
 
 def _count_configs(item_id: int, item_type: str = "rule") -> int:
@@ -203,22 +200,21 @@ class TestVersionBumpPreservesAllFields:
 # ---------------------------------------------------------------------------
 
 class TestResolveNoConfigs:
-    """Items with no config rows fall back to global sync."""
+    """Items with no config rows do not sync — configs are the sole authority."""
 
-    def test_resolve_no_configs_syncs_globally(self):
+    def test_resolve_no_configs_returns_empty(self):
         from services.db.harness import resolve_sync_targets
-        # Manually create an item dict with no configs
         item = {"agents": ALL_AGENTS, "enabled": True, "configs": []}
         targets = resolve_sync_targets(item, agent="claude", device_name="work")
-        assert targets == ["*"]
+        assert targets == []
 
-    def test_resolve_no_configs_respects_legacy_agent_filter(self):
+    def test_resolve_no_configs_ignores_legacy_agent_field(self):
         from services.db.harness import resolve_sync_targets
         item = {"agents": ["gemini"], "enabled": True, "configs": []}
         targets = resolve_sync_targets(item, agent="claude", device_name="work")
         assert targets == []
 
-    def test_resolve_no_configs_respects_legacy_disabled(self):
+    def test_resolve_no_configs_ignores_legacy_enabled_field(self):
         from services.db.harness import resolve_sync_targets
         item = {"agents": ALL_AGENTS, "enabled": False, "configs": []}
         targets = resolve_sync_targets(item, agent="claude", device_name="work")
@@ -356,8 +352,8 @@ class TestResolveDisabledIgnored:
             {"device": "*", "repo": "*", "agents": ["claude"], "subagents": [], "enabled": False, "exclude": False},
         ], "agents": ALL_AGENTS, "enabled": True}
         targets = resolve_sync_targets(item, agent="claude", device_name="work")
-        # No enabled configs → fall back to legacy (which is enabled=True, agents includes claude)
-        assert targets == ["*"]
+        # No enabled configs → no sync (configs are sole authority)
+        assert targets == []
 
     def test_disabled_config_with_enabled_config(self):
         from services.db.harness import resolve_sync_targets

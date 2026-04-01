@@ -50,6 +50,10 @@ def _table(item_type: str) -> str:
     return VALID_TABLES[item_type]
 
 
+def _sort_optional_list(value: list[str] | None) -> list[str] | None:
+    return sorted(value) if value is not None else None
+
+
 def _row_to_dict(row: dict) -> dict:
     result = dict(row)
     if result.get("agents") is not None:
@@ -140,10 +144,8 @@ def create_item(
     assert isinstance(content, dict) and "body" in content, "content must be a dict with a 'body' key."
     table = _table(item_type)
 
-    if agents is not None:
-        agents = sorted(agents)
-    if subagents is not None:
-        subagents = sorted(subagents)
+    agents = _sort_optional_list(agents)
+    subagents = _sort_optional_list(subagents)
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -211,9 +213,9 @@ def update_metadata(
     if enabled is not None:
         fields["enabled"] = enabled
     if agents is not None:
-        fields["agents"] = sorted(agents)
+        fields["agents"] = _sort_optional_list(agents)
     if subagents is not None:
-        fields["subagents"] = sorted(subagents)
+        fields["subagents"] = _sort_optional_list(subagents)
     if name is not None:
         fields["name"] = name
     if sort_key is not None:
@@ -295,10 +297,8 @@ def upsert_item(
     assert isinstance(content, dict) and "body" in content, "content must be a dict with a 'body' key."
     table = _table(item_type)
 
-    if agents is not None:
-        agents = sorted(agents)
-    if subagents is not None:
-        subagents = sorted(subagents)
+    agents = _sort_optional_list(agents)
+    subagents = _sort_optional_list(subagents)
 
     existing = get_item(item_type, name, project=project)
     if existing:
@@ -493,10 +493,8 @@ def create_config(
 ) -> int:
     assert item_id > 0, "item_id must be positive."
     _table(item_type)  # validate item_type
-    if agents is not None:
-        agents = sorted(agents)
-    if subagents is not None:
-        subagents = sorted(subagents)
+    agents = _sort_optional_list(agents)
+    subagents = _sort_optional_list(subagents)
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -517,10 +515,8 @@ def update_config(config_id: int, **fields) -> None:
 
     sets, params = [], []
     for col, val in fields.items():
-        if col == "agents" and val is not None:
-            val = sorted(val)
-        if col == "subagents" and val is not None:
-            val = sorted(val)
+        if col in ("agents", "subagents"):
+            val = _sort_optional_list(val)
         sets.append(f"{col} = %s")
         params.append(val)
 
@@ -542,13 +538,7 @@ def delete_config(config_id: int) -> None:
             cur.execute("DELETE FROM harness_configs WHERE id = %s", (config_id,))
 
 
-def _config_row_to_dict(row: dict) -> dict:
-    result = dict(row)
-    if result.get("agents") is not None:
-        result["agents"] = sorted(result["agents"])
-    if result.get("subagents") is not None:
-        result["subagents"] = sorted(result["subagents"])
-    return result
+_config_row_to_dict = _row_to_dict
 
 
 # ---------------------------------------------------------------------------
@@ -561,11 +551,11 @@ def resolve_sync_targets(item: dict, agent: str, device_name: str) -> list[str]:
     Returns a list of strings: '*' means global (home dirs), absolute paths
     mean repo-local. Empty list means "don't sync this item."
 
-    Resolution:
-    1. If no config rows exist, fall back to legacy columns.
-    2. Filter configs by enabled, agent, and device.
-    3. Additive configs (exclude=False) build the target set.
-    4. Subtractive configs (exclude=True) remove from the target set.
+    Resolution — configs are the sole authority:
+    1. Filter configs by enabled, agent, and device.
+    2. Additive configs (exclude=False) build the target set.
+    3. Subtractive configs (exclude=True) remove from the target set.
+    4. No matching additive configs → empty (no sync).
     """
     configs = item.get("configs", [])
 
@@ -580,18 +570,7 @@ def resolve_sync_targets(item: dict, agent: str, device_name: str) -> list[str]:
     additive = [c for c in relevant if not c["exclude"]]
     subtractive = [c for c in relevant if c["exclude"]]
 
-    # No relevant additive configs → decide between legacy fallback and empty
     if not additive:
-        # Check if there are ANY enabled additive configs at all (for any agent/device)
-        all_additive = [c for c in configs if not c["exclude"] and c["enabled"]]
-        if not all_additive:
-            # No enabled additive configs exist → legacy fallback
-            if item.get("enabled") is False:
-                return []
-            if agent not in item.get("agents", []):
-                return []
-            return ["*"]
-        # Enabled additive configs exist but none match this agent/device → don't sync
         return []
 
     targets = {c["repo"] for c in additive}
