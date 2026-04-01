@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router';
 import ReactMarkdown from 'react-markdown';
 import MDEditor from '@uiw/react-md-editor';
 import { api } from '../api';
-import type { HarnessItem } from '../api';
+import type { HarnessItem, HarnessConfig } from '../api';
 import { CopyButton } from '../components/CopyButton';
 import { useNotification } from '../context/useNotification';
 
@@ -148,6 +148,15 @@ export function HarnessDetailPage() {
   const [history, setHistory] = useState<HarnessItem[]>([]);
   const [previewVersion, setPreviewVersion] = useState<HarnessItem | null>(null);
 
+  const [addingConfig, setAddingConfig] = useState(false);
+  const [editingConfigId, setEditingConfigId] = useState<number | null>(null);
+  const [cfgDevice, setCfgDevice] = useState('*');
+  const [cfgRepo, setCfgRepo] = useState('*');
+  const [cfgAgents, setCfgAgents] = useState<string[]>([...ALL_AGENTS]);
+  const [cfgEnabled, setCfgEnabled] = useState(true);
+  const [cfgExclude, setCfgExclude] = useState(false);
+  const [cfgSaving, setCfgSaving] = useState(false);
+
   const loadItem = useCallback(async () => {
     setLoading(true);
     try {
@@ -257,6 +266,75 @@ export function HarnessDetailPage() {
 
   const toggleAgent = (agent: string) => {
     setEditAgents(prev =>
+      prev.includes(agent) ? prev.filter(a => a !== agent) : [...prev, agent]
+    );
+  };
+
+  const isValidRepo = (r: string) => r === '*' || r.startsWith('/');
+
+  const resetCfgForm = () => {
+    setCfgDevice('*');
+    setCfgRepo('*');
+    setCfgAgents([...ALL_AGENTS]);
+    setCfgEnabled(true);
+    setCfgExclude(false);
+  };
+
+  const startAddConfig = () => {
+    resetCfgForm();
+    setEditingConfigId(null);
+    setAddingConfig(true);
+  };
+
+  const startEditConfig = (cfg: HarnessConfig) => {
+    setCfgDevice(cfg.device);
+    setCfgRepo(cfg.repo);
+    setCfgAgents([...cfg.agents]);
+    setCfgEnabled(cfg.enabled);
+    setCfgExclude(cfg.exclude);
+    setEditingConfigId(cfg.id);
+    setAddingConfig(false);
+  };
+
+  const cancelConfigForm = () => {
+    setAddingConfig(false);
+    setEditingConfigId(null);
+  };
+
+  const saveConfig = async () => {
+    if (!item || !isValidRepo(cfgRepo)) return;
+    setCfgSaving(true);
+    try {
+      if (editingConfigId) {
+        await api.harness.items.configs.update(type, item.id, editingConfigId, {
+          device: cfgDevice, repo: cfgRepo, agents: cfgAgents, enabled: cfgEnabled, exclude: cfgExclude,
+        });
+      } else {
+        await api.harness.items.configs.add(type, item.id, {
+          device: cfgDevice, repo: cfgRepo, agents: cfgAgents, enabled: cfgEnabled, exclude: cfgExclude,
+        });
+      }
+      cancelConfigForm();
+      await loadItem();
+    } catch (err) {
+      notify(`Config save failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      setCfgSaving(false);
+    }
+  };
+
+  const deleteConfig = async (configId: number) => {
+    if (!item) return;
+    try {
+      await api.harness.items.configs.remove(type, item.id, configId);
+      await loadItem();
+    } catch (err) {
+      notify(`Config delete failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    }
+  };
+
+  const toggleCfgAgent = (agent: string) => {
+    setCfgAgents(prev =>
       prev.includes(agent) ? prev.filter(a => a !== agent) : [...prev, agent]
     );
   };
@@ -423,6 +501,142 @@ export function HarnessDetailPage() {
           </button>
         </div>
       )}
+
+      <h3 className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        Configurations
+        {!previewVersion && !addingConfig && editingConfigId === null && (
+          <button style={{ ...styles.btn, fontSize: 12, padding: '4px 10px' }} onClick={startAddConfig}>+ Add</button>
+        )}
+      </h3>
+      <div style={{ marginBottom: 24 }}>
+        {(item.configs ?? []).length === 0 && !addingConfig && (
+          <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 12 }}>
+            No configurations — using legacy defaults
+          </div>
+        )}
+        {(item.configs ?? []).map(cfg => (
+          editingConfigId === cfg.id ? (
+            <div key={cfg.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 14, marginBottom: 8 }}>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 180px' }}>
+                  <label style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4 }}>Device</label>
+                  <input style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', padding: '6px 10px', fontSize: 13, fontFamily: 'var(--font)', width: '100%' }} value={cfgDevice} onChange={e => setCfgDevice(e.target.value)} placeholder="* = all devices" />
+                </div>
+                <div style={{ flex: '2 1 280px' }}>
+                  <label style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4 }}>Repo</label>
+                  <input style={{ background: 'var(--bg)', border: `1px solid ${isValidRepo(cfgRepo) ? 'var(--border)' : 'var(--highlight)'}`, borderRadius: 'var(--radius)', color: 'var(--text)', padding: '6px 10px', fontSize: 13, fontFamily: 'var(--mono)', width: '100%' }} value={cfgRepo} onChange={e => setCfgRepo(e.target.value)} placeholder="* = global, or /absolute/path" />
+                  {!isValidRepo(cfgRepo) && <span style={{ fontSize: 11, color: 'var(--highlight)', marginTop: 2, display: 'block' }}>Must be * or an absolute path</span>}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+                {ALL_AGENTS.map(a => (
+                  <label key={a} style={styles.checkboxLabel}>
+                    <input type="checkbox" checked={cfgAgents.includes(a)} onChange={() => toggleCfgAgent(a)} style={{ accentColor: 'var(--highlight)', width: 14, height: 14 }} />
+                    {a}
+                  </label>
+                ))}
+                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>|</span>
+                <label style={styles.checkboxLabel}>
+                  <input type="checkbox" checked={cfgEnabled} onChange={() => setCfgEnabled(!cfgEnabled)} style={{ accentColor: 'var(--success)', width: 14, height: 14 }} />
+                  Enabled
+                </label>
+                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>|</span>
+                <label style={styles.checkboxLabel}>
+                  <input type="radio" name="cfgMode" checked={!cfgExclude} onChange={() => setCfgExclude(false)} style={{ accentColor: 'var(--success)', width: 14, height: 14 }} />
+                  Include
+                </label>
+                <label style={styles.checkboxLabel}>
+                  <input type="radio" name="cfgMode" checked={cfgExclude} onChange={() => setCfgExclude(true)} style={{ accentColor: 'var(--highlight)', width: 14, height: 14 }} />
+                  Exclude
+                </label>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button style={{ ...styles.btn, fontSize: 12, padding: '4px 10px', opacity: cfgSaving ? 0.5 : 1 }} onClick={saveConfig} disabled={cfgSaving || !isValidRepo(cfgRepo)}>{cfgSaving ? 'Saving...' : 'Save'}</button>
+                <button style={{ ...styles.btn, fontSize: 12, padding: '4px 10px' }} onClick={cancelConfigForm}>Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <div
+              key={cfg.id}
+              style={{
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius)',
+                padding: '10px 14px',
+                marginBottom: 8,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span className="tag" style={{ background: cfg.exclude ? 'rgba(255,100,100,0.15)' : 'rgba(100,200,100,0.15)', color: cfg.exclude ? 'var(--highlight)' : 'var(--success)', fontWeight: 600, fontSize: 11 }}>
+                  {cfg.exclude ? 'Exclude' : 'Include'}
+                </span>
+                <span className="tag" style={{ background: 'rgba(255,165,0,0.15)', color: 'var(--warning)' }}>
+                  {cfg.device === '*' ? 'All devices' : cfg.device}
+                </span>
+                <span className="tag" style={{ background: 'rgba(100,200,100,0.15)', color: 'var(--success)', fontFamily: 'var(--mono)', fontSize: 11 }}>
+                  {cfg.repo === '*' ? 'Global' : cfg.repo}
+                </span>
+                {cfg.agents.map(a => (
+                  <span key={a} className="tag">{a}</span>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: cfg.enabled ? 'var(--success)' : 'var(--text-muted)' }}>
+                  {cfg.enabled ? 'Enabled' : 'Disabled'}
+                </span>
+                {!previewVersion && (
+                  <>
+                    <button style={{ ...styles.btn, fontSize: 11, padding: '2px 8px' }} onClick={() => startEditConfig(cfg)}>Edit</button>
+                    <button style={{ ...styles.btnDanger, fontSize: 11, padding: '2px 8px' }} onClick={() => { if (confirm('Delete this configuration?')) deleteConfig(cfg.id); }}>Delete</button>
+                  </>
+                )}
+              </div>
+            </div>
+          )
+        ))}
+        {addingConfig && (
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 14, marginBottom: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>New Configuration</div>
+            <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 180px' }}>
+                <label style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4 }}>Device</label>
+                <input style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', padding: '6px 10px', fontSize: 13, fontFamily: 'var(--font)', width: '100%' }} value={cfgDevice} onChange={e => setCfgDevice(e.target.value)} placeholder="* = all devices" />
+              </div>
+              <div style={{ flex: '2 1 280px' }}>
+                <label style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4 }}>Repo</label>
+                <input style={{ background: 'var(--bg)', border: `1px solid ${isValidRepo(cfgRepo) ? 'var(--border)' : 'var(--highlight)'}`, borderRadius: 'var(--radius)', color: 'var(--text)', padding: '6px 10px', fontSize: 13, fontFamily: 'var(--mono)', width: '100%' }} value={cfgRepo} onChange={e => setCfgRepo(e.target.value)} placeholder="* = global, or /absolute/path" />
+                {!isValidRepo(cfgRepo) && <span style={{ fontSize: 11, color: 'var(--highlight)', marginTop: 2, display: 'block' }}>Must be * or an absolute path</span>}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+              {ALL_AGENTS.map(a => (
+                <label key={a} style={styles.checkboxLabel}>
+                  <input type="checkbox" checked={cfgAgents.includes(a)} onChange={() => toggleCfgAgent(a)} style={{ accentColor: 'var(--highlight)', width: 14, height: 14 }} />
+                  {a}
+                </label>
+              ))}
+              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>|</span>
+              <label style={styles.checkboxLabel}>
+                <input type="checkbox" checked={cfgEnabled} onChange={() => setCfgEnabled(!cfgEnabled)} style={{ accentColor: 'var(--success)', width: 14, height: 14 }} />
+                Enabled
+              </label>
+              <label style={styles.checkboxLabel}>
+                <input type="checkbox" checked={cfgExclude} onChange={() => setCfgExclude(!cfgExclude)} style={{ accentColor: 'var(--highlight)', width: 14, height: 14 }} />
+                Exclude
+              </label>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button style={{ ...styles.btn, fontSize: 12, padding: '4px 10px', opacity: cfgSaving ? 0.5 : 1 }} onClick={saveConfig} disabled={cfgSaving || !isValidRepo(cfgRepo)}>{cfgSaving ? 'Saving...' : 'Add'}</button>
+              <button style={{ ...styles.btn, fontSize: 12, padding: '4px 10px' }} onClick={cancelConfigForm}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
 
       <h3 className="section-title">Version History</h3>
       <div>

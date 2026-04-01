@@ -120,7 +120,11 @@ export function HarnessCreatePage() {
   const [body, setBody] = useState('');
   const [metadataJson, setMetadataJson] = useState(PLACEHOLDER_METADATA[type] || '{}');
   const [saving, setSaving] = useState(false);
+  const [device, setDevice] = useState('*');
+  const [repo, setRepo] = useState('*');
   const { notify } = useNotification();
+
+  const isValidRepo = (r: string) => r === '*' || r.startsWith('/');
 
   const toggleAgent = (agent: string) => {
     setAgents(prev =>
@@ -135,6 +139,10 @@ export function HarnessCreatePage() {
     }
     if (agents.length === 0) {
       notify('At least one agent must be selected.', 'error');
+      return;
+    }
+    if (!isValidRepo(repo)) {
+      notify('Repo must be * or an absolute path.', 'error');
       return;
     }
 
@@ -160,6 +168,8 @@ export function HarnessCreatePage() {
         content,
         agents,
         enabled,
+        device: device.trim() || '*',
+        repo: repo.trim() || '*',
       });
       navigate(`/harness/${type}/${created.id}`);
     } catch (err) {
@@ -241,6 +251,31 @@ export function HarnessCreatePage() {
           />
           Enabled
         </label>
+      </div>
+
+      <div style={{ ...styles.field, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+        <label style={{ ...styles.label, marginBottom: 12 }}>Deployment Configuration</label>
+        <div style={{ display: 'flex', gap: 16 }}>
+          <div style={{ flex: '1 1 180px' }}>
+            <label style={styles.label}>Device</label>
+            <input
+              style={styles.input}
+              value={device}
+              onChange={e => setDevice(e.target.value)}
+              placeholder="* = all devices"
+            />
+          </div>
+          <div style={{ flex: '2 1 280px' }}>
+            <label style={styles.label}>Repo</label>
+            <input
+              style={{ ...styles.input, fontFamily: 'var(--mono)', borderColor: isValidRepo(repo) ? undefined : 'var(--highlight)' }}
+              value={repo}
+              onChange={e => setRepo(e.target.value)}
+              placeholder="* = global, or /absolute/path"
+            />
+            {!isValidRepo(repo) && <span style={{ fontSize: 11, color: 'var(--highlight)', marginTop: 2, display: 'block' }}>Must be * or an absolute path</span>}
+          </div>
+        </div>
       </div>
 
       <div style={styles.field}>

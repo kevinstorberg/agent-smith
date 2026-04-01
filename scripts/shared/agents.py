@@ -48,6 +48,31 @@ AGENT_TARGETS = {
 }
 
 
+_REPO_SUBDIRS: dict[str, dict[str, str]] = {
+    "claude": {
+        "rules_file": ".claude/CLAUDE.md",
+        "rules_dir": ".claude/rules/",
+        "skills_dir": ".claude/skills/",
+        "agents_dir": ".claude/agents/",
+    },
+    "codex": {
+        "rules_file": "AGENTS.md",
+        "skills_dir": ".agents/skills/",
+    },
+    "gemini": {
+        "rules_file": ".gemini/GEMINI.md",
+        "skills_dir": ".gemini/skills/",
+    },
+}
+
+
+def repo_config(agent: str, repo_path: str) -> dict[str, str]:
+    """Resolve absolute config paths for a provider within a repo root."""
+    assert Path(repo_path).is_absolute(), f"repo_path must be absolute: {repo_path}"
+    base = _REPO_SUBDIRS.get(agent, {})
+    return {k: str(Path(repo_path) / v) for k, v in base.items()}
+
+
 def _read_config(path: Path, fmt: str) -> dict:
     if not path.exists():
         return {}
@@ -71,6 +96,7 @@ def unsync_agent(agent: str) -> list[str]:
     cfg = AGENT_TARGETS[agent]
     removed: list[str] = []
 
+    # Clean global home dirs
     rules_file = Path(cfg["rules_file"]).expanduser()
     if rules_file.exists():
         rules_file.unlink()
@@ -100,6 +126,44 @@ def unsync_agent(agent: str) -> list[str]:
             del data[cfg["mcp_key"]]
             _write_config(mcp_file, data, cfg["mcp_format"])
             removed.append(f"{mcp_file} (removed {cfg['mcp_key']})")
+
+    # Clean repo-scoped files
+    removed.extend(_unsync_repo_targets(agent))
+
+    return removed
+
+
+def _unsync_repo_targets(agent: str) -> list[str]:
+    """Remove synced files from repo-scoped config directories."""
+    removed: list[str] = []
+    try:
+        from services.db import get_connection
+        from psycopg2.extras import RealDictCursor
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT DISTINCT repo FROM harness_configs WHERE repo != '*' AND %s = ANY(agents)",
+                    (agent,),
+                )
+                repos = [row["repo"] for row in cur.fetchall()]
+    except Exception:
+        return removed
+
+    for repo_path in repos:
+        if not Path(repo_path).is_dir():
+            continue
+        rcfg = repo_config(agent, repo_path)
+        for key in ("rules_file", "rules_dir", "skills_dir", "agents_dir"):
+            path = rcfg.get(key)
+            if not path:
+                continue
+            p = Path(path)
+            if p.is_file():
+                p.unlink()
+                removed.append(str(p))
+            elif p.is_dir():
+                shutil.rmtree(p)
+                removed.append(str(p))
 
     return removed
 

@@ -34,6 +34,7 @@ if "pytest" in sys.modules and APP_ENV != "test":
 
 # --- Agent config ---
 ALL_AGENTS: list[str] = list(AGENT_TARGETS)
+DEVICE_NAME: str = os.environ.get("DEVICE_NAME", "my-space")
 DASHBOARD_PORT: str = os.environ.get("DASHBOARD_PORT", "7654")
 MCP_URL: str = f"http://localhost:{DASHBOARD_PORT}/mcp/"
 

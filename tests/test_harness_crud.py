@@ -17,7 +17,8 @@ def _clean():
     yield
     with get_connection() as conn:
         with conn.cursor() as cur:
-            for t in ("harness_rules", "harness_skills", "harness_tools", "harness_hooks"):
+            for t, item_type in [("harness_rules", "rule"), ("harness_skills", "skill"), ("harness_tools", "tool"), ("harness_hooks", "hook")]:
+                cur.execute(f"DELETE FROM harness_configs WHERE item_type = %s AND item_id IN (SELECT id FROM {t} WHERE name LIKE 'crud_%%' OR name LIKE 'reorder_%%' OR name = 'to_delete')", (item_type,))
                 cur.execute(f"DELETE FROM {t} WHERE name LIKE 'crud_%' OR name LIKE 'reorder_%' OR name = 'to_delete'")
 
 

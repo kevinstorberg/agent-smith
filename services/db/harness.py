@@ -115,7 +115,15 @@ def get_item_by_id(item_type: str, item_id: int) -> dict | None:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(f"SELECT * FROM {table} WHERE id = %s", (item_id,))
             row = cur.fetchone()
-            return _row_to_dict(row) if row else None
+            if not row:
+                return None
+            result = _row_to_dict(row)
+            cur.execute(
+                "SELECT * FROM harness_configs WHERE item_id = %s AND item_type = %s ORDER BY id",
+                (item_id, item_type),
+            )
+            result["configs"] = [_config_row_to_dict(r) for r in cur.fetchall()]
+            return result
 
 
 def create_item(
@@ -147,7 +155,17 @@ def create_item(
                 """,
                 (name, project, agents or [], subagents or [], Json(content), sort_key or name, enabled),
             )
-            return cur.fetchone()[0]
+            item_id = cur.fetchone()[0]
+
+            # Auto-create default config row (additive, wildcard device/repo)
+            cur.execute(
+                """
+                INSERT INTO harness_configs (item_id, item_type, device, repo, agents, subagents, enabled, exclude)
+                VALUES (%s, %s, '*', '*', %s, %s, %s, false)
+                """,
+                (item_id, item_type, agents or [], subagents or [], enabled),
+            )
+            return item_id
 
 
 def update_content(item_type: str, item_id: int, content: dict) -> int:
@@ -164,14 +182,14 @@ def update_content(item_type: str, item_id: int, content: dict) -> int:
             new_version = source["version"] + 1
             cur.execute(
                 f"""
-                INSERT INTO {table} (name, project, agents, content, sort_key, enabled, version)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO {table} (name, project, agents, subagents, content, sort_key, enabled, version)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
                     source["name"], source["project"], source["agents"],
-                    Json(content), source["sort_key"], source["enabled"],
-                    new_version,
+                    source["subagents"], Json(content), source["sort_key"],
+                    source["enabled"], new_version,
                 ),
             )
             return cur.fetchone()["id"]
@@ -298,7 +316,18 @@ def upsert_item(
                 """,
                 (name, project, agents or [], subagents or [], Json(content), sort_key or name, enabled, new_version),
             )
-            return cur.fetchone()[0]
+            item_id = cur.fetchone()[0]
+
+            # Auto-create default config for new items (version 1)
+            if new_version == 1:
+                cur.execute(
+                    """
+                    INSERT INTO harness_configs (item_id, item_type, device, repo, agents, subagents, enabled, exclude)
+                    VALUES (%s, %s, '*', '*', %s, %s, %s, false)
+                    """,
+                    (item_id, item_type, agents or [], subagents or [], enabled),
+                )
+            return item_id
 
 
 def map_hook_event(canonical_name: str, agent: str) -> str | None:
@@ -358,6 +387,10 @@ def delete_item(item_type: str, item_id: int) -> None:
     table = _table(item_type)
     with get_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM harness_configs WHERE item_id = %s AND item_type = %s",
+                (item_id, item_type),
+            )
             cur.execute(f"DELETE FROM {table} WHERE id = %s", (item_id,))
 
 
@@ -430,3 +463,153 @@ def collect_agents_from_db(agent: str, project: str | None = None) -> dict[str, 
             "scoped_tools": scoped_tools,
         }
     return result
+
+
+# ---------------------------------------------------------------------------
+# harness_configs CRUD
+# ---------------------------------------------------------------------------
+
+def list_configs(item_id: int, item_type: str) -> list[dict]:
+    assert item_id > 0, "item_id must be positive."
+    _table(item_type)  # validate item_type
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM harness_configs WHERE item_id = %s AND item_type = %s ORDER BY id",
+                (item_id, item_type),
+            )
+            return [_config_row_to_dict(r) for r in cur.fetchall()]
+
+
+def create_config(
+    item_id: int,
+    item_type: str,
+    device: str = "*",
+    repo: str = "*",
+    agents: list[str] | None = None,
+    subagents: list[str] | None = None,
+    enabled: bool = True,
+    exclude: bool = False,
+) -> int:
+    assert item_id > 0, "item_id must be positive."
+    _table(item_type)  # validate item_type
+    if agents is not None:
+        agents = sorted(agents)
+    if subagents is not None:
+        subagents = sorted(subagents)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO harness_configs (item_id, item_type, device, repo, agents, subagents, enabled, exclude)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (item_id, item_type, device, repo, agents or [], subagents or [], enabled, exclude),
+            )
+            return cur.fetchone()[0]
+
+
+def update_config(config_id: int, **fields) -> None:
+    assert config_id > 0, "config_id must be positive."
+    assert fields, "At least one field must be provided."
+
+    sets, params = [], []
+    for col, val in fields.items():
+        if col == "agents" and val is not None:
+            val = sorted(val)
+        if col == "subagents" and val is not None:
+            val = sorted(val)
+        sets.append(f"{col} = %s")
+        params.append(val)
+
+    sets.append("updated_at = now()")
+    params.append(config_id)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE harness_configs SET {', '.join(sets)} WHERE id = %s",
+                params,
+            )
+
+
+def delete_config(config_id: int) -> None:
+    assert config_id > 0, "config_id must be positive."
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM harness_configs WHERE id = %s", (config_id,))
+
+
+def _config_row_to_dict(row: dict) -> dict:
+    result = dict(row)
+    if result.get("agents") is not None:
+        result["agents"] = sorted(result["agents"])
+    if result.get("subagents") is not None:
+        result["subagents"] = sorted(result["subagents"])
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Config resolution
+# ---------------------------------------------------------------------------
+
+def resolve_sync_targets(item: dict, agent: str, device_name: str) -> list[str]:
+    """Compute the list of repo targets where this item should sync.
+
+    Returns a list of strings: '*' means global (home dirs), absolute paths
+    mean repo-local. Empty list means "don't sync this item."
+
+    Resolution:
+    1. If no config rows exist, fall back to legacy columns.
+    2. Filter configs by enabled, agent, and device.
+    3. Additive configs (exclude=False) build the target set.
+    4. Subtractive configs (exclude=True) remove from the target set.
+    """
+    configs = item.get("configs", [])
+
+    # Filter to relevant configs: enabled, matching agent, matching device
+    relevant = [
+        c for c in configs
+        if c["enabled"]
+        and agent in c["agents"]
+        and _device_matches(c["device"], device_name)
+    ]
+
+    additive = [c for c in relevant if not c["exclude"]]
+    subtractive = [c for c in relevant if c["exclude"]]
+
+    # No relevant additive configs → decide between legacy fallback and empty
+    if not additive:
+        # Check if there are ANY enabled additive configs at all (for any agent/device)
+        all_additive = [c for c in configs if not c["exclude"] and c["enabled"]]
+        if not all_additive:
+            # No enabled additive configs exist → legacy fallback
+            if item.get("enabled") is False:
+                return []
+            if agent not in item.get("agents", []):
+                return []
+            return ["*"]
+        # Enabled additive configs exist but none match this agent/device → don't sync
+        return []
+
+    targets = {c["repo"] for c in additive}
+
+    for c in subtractive:
+        targets.discard(c["repo"])
+
+    return sorted(targets)
+
+
+def _device_matches(config_device: str, device_name: str) -> bool:
+    """Check if a config's device field matches the current device.
+
+    Wildcard configs always match. Device-specific configs only match
+    when a device_name is set and equals the config's device.
+    """
+    if config_device == "*":
+        return True
+    if not device_name:
+        return False
+    return config_device == device_name

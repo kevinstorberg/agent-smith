@@ -5,10 +5,16 @@ __all__ = ["get_connection", "DATABASE_URL", "init_db"]
 
 
 def init_db() -> None:
+    import logging
+    import traceback
     from alembic.config import Config
     from alembic import command
     from pathlib import Path
 
     alembic_ini = Path(__file__).parent.parent.parent / "alembic.ini"
     alembic_cfg = Config(str(alembic_ini))
-    command.upgrade(alembic_cfg, "head")
+    try:
+        command.upgrade(alembic_cfg, "head")
+    except Exception:
+        logging.getLogger("init_db").critical("Migration failed:\n%s", traceback.format_exc())
+        raise
