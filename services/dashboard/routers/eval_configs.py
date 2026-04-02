@@ -9,7 +9,7 @@ from services.db.evals import (
     list_suites, get_suite, create_suite, update_suite, delete_suite,
     list_scenarios, get_scenario, create_scenario, update_scenario, delete_scenario,
 )
-from services.dashboard.routers.base import require_found, list_response, delete_response
+from services.dashboard.routers.base import require_found, list_response, delete_response, update_fields
 
 router = APIRouter()
 
@@ -83,7 +83,7 @@ def create_suite_endpoint(body: CreateSuiteRequest):
 
 @router.put("/suites/{suite_id}")
 def update_suite_endpoint(suite_id: int, body: UpdateSuiteRequest):
-    kwargs = {k: v for k, v in body.model_dump().items() if v is not None}
+    kwargs = update_fields(body)
     if kwargs:
         update_suite(suite_id, **kwargs)
     return require_found(get_suite(suite_id), "Suite", suite_id)
@@ -122,7 +122,7 @@ def create_scenario_endpoint(suite_id: int, body: CreateScenarioRequest):
 
 @router.put("/scenarios/{scenario_id}")
 def update_scenario_endpoint(scenario_id: int, body: UpdateScenarioRequest):
-    kwargs = {k: v for k, v in body.model_dump().items() if v is not None}
+    kwargs = update_fields(body)
     if kwargs:
         update_scenario(scenario_id, **kwargs)
     return require_found(get_scenario(scenario_id), "Scenario", scenario_id)

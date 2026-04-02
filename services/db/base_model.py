@@ -69,6 +69,10 @@ class BaseModel:
                     params,
                 )
 
+    @staticmethod
+    def _collect_fields(**kwargs) -> dict:
+        return {k: v for k, v in kwargs.items() if v is not None}
+
     @classmethod
     def count(cls, where: str = "", params: tuple = ()) -> int:
         with get_connection() as conn:

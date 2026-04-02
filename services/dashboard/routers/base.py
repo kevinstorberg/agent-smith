@@ -18,4 +18,8 @@ def delete_response(item_id: int | str) -> dict:
     return {"deleted": True, "id": item_id}
 
 
+def update_fields(body) -> dict:
+    return {k: v for k, v in body.model_dump().items() if v is not None}
+
+
 from scripts.shared.validation import empty_to_none  # noqa: F401

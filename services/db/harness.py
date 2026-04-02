@@ -209,21 +209,15 @@ def update_metadata(
 ) -> None:
     table = _table(item_type)
 
-    fields: dict = {}
-    if enabled is not None:
-        fields["enabled"] = enabled
+    fields = BaseModel._collect_fields(
+        enabled=enabled, name=name, sort_key=sort_key, clone_as_skill=clone_as_skill,
+    )
     if agents is not None:
         fields["agents"] = _sort_optional_list(agents)
     if subagents is not None:
         fields["subagents"] = _sort_optional_list(subagents)
-    if name is not None:
-        fields["name"] = name
-    if sort_key is not None:
-        fields["sort_key"] = sort_key
     if project != "UNSET":
         fields["project"] = project or None
-    if clone_as_skill is not None:
-        fields["clone_as_skill"] = clone_as_skill
 
     model = type("_HarnessModel", (BaseModel,), {"table": table})
     model.dynamic_update(item_id, fields)

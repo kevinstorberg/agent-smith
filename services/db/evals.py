@@ -23,21 +23,10 @@ class SuiteModel(BaseModel):
         config: dict | None = None,
         enabled: bool | None = None,
     ) -> None:
-        fields = {}
-        if name is not None:
-            fields["name"] = name
-        if eval_type is not None:
-            fields["eval_type"] = eval_type
-        if subcategory is not None:
-            fields["subcategory"] = subcategory
-        if judge_prompt is not None:
-            fields["judge_prompt"] = judge_prompt
-        if items is not None:
-            fields["items"] = items
-        if config is not None:
-            fields["config"] = config
-        if enabled is not None:
-            fields["enabled"] = enabled
+        fields = cls._collect_fields(
+            name=name, eval_type=eval_type, subcategory=subcategory,
+            judge_prompt=judge_prompt, items=items, config=config, enabled=enabled,
+        )
         cls.dynamic_update(suite_id, fields, json_fields={"items", "config"})
 
 
@@ -53,13 +42,7 @@ class ScenarioModel(BaseModel):
         prompt: str | None = None,
         enabled: bool | None = None,
     ) -> None:
-        fields = {}
-        if name is not None:
-            fields["name"] = name
-        if prompt is not None:
-            fields["prompt"] = prompt
-        if enabled is not None:
-            fields["enabled"] = enabled
+        fields = cls._collect_fields(name=name, prompt=prompt, enabled=enabled)
         cls.dynamic_update(scenario_id, fields)
 
 
