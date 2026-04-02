@@ -61,7 +61,7 @@ def import_rules(agent: str, dry_run: bool) -> int:
                 if dry_run:
                     print(f"  [dry-run] rule: {f.stem}")
                 else:
-                    upsert_item("rule", f.stem, content={"body": body, "metadata": {}}, agents=ALL_AGENTS, sort_key=str(i).zfill(3))
+                    upsert_item("rule", f.stem, content={"body": body, "metadata": {}}, agents=ALL_AGENTS, sort_key=i)
                     print(f"  rule: {f.stem}")
                 count += 1
             return count
@@ -81,7 +81,7 @@ def import_rules(agent: str, dry_run: bool) -> int:
         if dry_run:
             print(f"  [dry-run] rule: {name}")
         else:
-            upsert_item("rule", name, content={"body": section, "metadata": {}}, agents=ALL_AGENTS, sort_key=str(i).zfill(3))
+            upsert_item("rule", name, content={"body": section, "metadata": {}}, agents=ALL_AGENTS, sort_key=i)
             print(f"  rule: {name}")
         count += 1
 

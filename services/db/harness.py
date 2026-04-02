@@ -137,7 +137,7 @@ def create_item(
     project: str | None = None,
     agents: list[str] | None = None,
     subagents: list[str] | None = None,
-    sort_key: str | None = None,
+    sort_key: int | None = None,
     enabled: bool = True,
 ) -> int:
     assert_not_empty(name, "name")
@@ -155,7 +155,7 @@ def create_item(
                 VALUES (%s, %s, %s, %s, %s, %s, %s, 1)
                 RETURNING id
                 """,
-                (name, project, agents or [], subagents or [], Json(content), sort_key or name, enabled),
+                (name, project, agents or [], subagents or [], Json(content), sort_key if sort_key is not None else 0, enabled),
             )
             item_id = cur.fetchone()[0]
 
@@ -203,7 +203,7 @@ def update_metadata(
     agents: list[str] | None = None,
     subagents: list[str] | None = None,
     name: str | None = None,
-    sort_key: str | None = None,
+    sort_key: int | None = None,
     project: str | None = "UNSET",
     clone_as_skill: bool | None = None,
 ) -> None:
@@ -238,7 +238,7 @@ def reorder_items(item_type: str, ids: list[int]) -> None:
             for i, item_id in enumerate(ids):
                 cur.execute(
                     f"UPDATE {table} SET sort_key = %s, updated_at = now() WHERE id = %s",
-                    (str(i).zfill(3), item_id),
+                    (i, item_id),
                 )
 
 
@@ -292,7 +292,7 @@ def upsert_item(
     project: str | None = None,
     agents: list[str] | None = None,
     subagents: list[str] | None = None,
-    sort_key: str | None = None,
+    sort_key: int | None = None,
     enabled: bool = True,
 ) -> int:
     assert_not_empty(name, "name")
@@ -316,7 +316,7 @@ def upsert_item(
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
-                (name, project, agents or [], subagents or [], Json(content), sort_key or name, enabled, new_version),
+                (name, project, agents or [], subagents or [], Json(content), sort_key if sort_key is not None else 0, enabled, new_version),
             )
             item_id = cur.fetchone()[0]
 

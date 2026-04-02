@@ -3,7 +3,8 @@ import { useNavigate, useLocation } from 'react-router';
 import MDEditor from '@uiw/react-md-editor';
 import { api } from '../api';
 import { useNotification } from '../context/useNotification';
-import { ALL_AGENTS, TYPE_PATHS, TYPE_LABELS, isMarkdownType, toggleArrayItem, formatError } from '../constants';
+import { ALL_AGENTS, TYPE_PATHS, TYPE_LABELS, isMarkdownType, toggleArrayItem, formatError, MAX_NAME_LENGTH, nameError, isValidRepo } from '../constants';
+import { FieldError } from '../components/FieldError';
 import { harnessStyles as styles } from '../styles/harness';
 
 function typeFromPath(pathname: string): string {
@@ -38,13 +39,12 @@ export function HarnessCreatePage() {
   const [repo, setRepo] = useState('*');
   const { notify } = useNotification();
 
-  const isValidRepo = (r: string) => r === '*' || r.startsWith('/');
-
   const toggleAgent = (agent: string) => setAgents(prev => toggleArrayItem(prev, agent));
 
   const save = async () => {
-    if (!name.trim()) {
-      notify('Name is required.', 'error');
+    const nameErr = nameError(name.trim());
+    if (nameErr) {
+      notify(nameErr, 'error');
       return;
     }
     if (agents.length === 0) {
@@ -74,7 +74,7 @@ export function HarnessCreatePage() {
       const created = await api.harness.items.create(type, {
         name: name.trim(),
         project: project.trim() || null,
-        sort_key: sortKey.trim() || undefined,
+        sort_key: sortKey ? parseInt(sortKey, 10) : undefined,
         content,
         agents,
         enabled,
@@ -109,11 +109,13 @@ export function HarnessCreatePage() {
       <div style={styles.field}>
         <label style={styles.label}>Name</label>
         <input
-          style={styles.input}
+          style={{ ...styles.input, borderColor: name && nameError(name) ? 'var(--highlight)' : undefined }}
           value={name}
           onChange={e => setName(e.target.value)}
-          placeholder={`e.g. ${type === 'tool' ? 'MyAPI' : type === 'hook' ? 'lint_on_save' : 'my_new_' + type}`}
+          placeholder={`e.g. ${type === 'tool' ? 'my_api' : type === 'hook' ? 'lint_on_save' : 'my_new_' + type}`}
+          maxLength={MAX_NAME_LENGTH}
         />
+        <FieldError error={name ? nameError(name) : null} maxLength={MAX_NAME_LENGTH} currentLength={name.length} />
       </div>
 
       <div style={{ ...styles.field, display: 'flex', gap: 16 }}>
@@ -129,10 +131,12 @@ export function HarnessCreatePage() {
         <div style={{ width: 140 }}>
           <label style={styles.label}>Sort Order</label>
           <input
+            type="number"
+            min={0}
             style={{ ...styles.input, fontFamily: 'var(--mono)' }}
             value={sortKey}
             onChange={e => setSortKey(e.target.value)}
-            placeholder="e.g. 005"
+            placeholder="e.g. 5"
           />
         </div>
       </div>

@@ -18,8 +18,8 @@ DOCKER_BUILDKIT=1 BUILDKIT_PROGRESS=plain docker compose build ${BUILD_ARGS[@]+"
 echo ""
 echo "=== Generating ERD ==="
 docker compose run --rm --entrypoint bash app -c \
-  "apt-get update && apt-get install -y graphviz > /dev/null 2>&1 && python scripts/generate_erd.py -o ${HOME}/sondermind/agent-smith/docs/erd.png" \
-  2>&1 | cat || echo "  ERD generation skipped (non-fatal)"
+  "python scripts/install_graphviz.py && python scripts/generate_erd.py -o ${HOME}/sondermind/agent-smith/docs/erd.png" \
+  2>&1 | cat || echo "  ERD generation failed (non-fatal)"
 
 echo ""
 echo "=== Starting app ==="

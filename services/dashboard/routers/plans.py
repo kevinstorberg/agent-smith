@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from scripts.shared.validation import MAX_TITLE_LENGTH, MAX_BODY_LENGTH
 
 from services.db.plans import list_plans, search_plans, get_plan, create_plan, update_plan, delete_plan
 from services.dashboard.routers.base import require_found, list_response, delete_response, empty_to_none
@@ -30,8 +32,8 @@ def get_one(plan_id: int):
 
 
 class CreateRequest(BaseModel):
-    title: str
-    body: str
+    title: str = Field(min_length=1, max_length=MAX_TITLE_LENGTH)
+    body: str = Field(min_length=1, max_length=MAX_BODY_LENGTH)
     project: str | None = None
 
 
@@ -42,8 +44,8 @@ def create(body: CreateRequest):
 
 
 class UpdateRequest(BaseModel):
-    title: str | None = None
-    body: str | None = None
+    title: str | None = Field(None, min_length=1, max_length=MAX_TITLE_LENGTH)
+    body: str | None = Field(None, min_length=1, max_length=MAX_BODY_LENGTH)
     project: str | None = "UNSET"
 
 

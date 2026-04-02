@@ -77,12 +77,18 @@ export function EvalSuiteDetailPage() {
   };
 
   const save = async () => {
+    if (!editName.trim()) { notify('Name is required.', 'error'); return; }
+    if (!editEvalType.trim()) { notify('Eval type is required.', 'error'); return; }
+    if (!editSubcategory.trim()) { notify('Subcategory is required.', 'error'); return; }
+    if (!editJudgePrompt.trim()) { notify('Judge prompt is required.', 'error'); return; }
+
+    let parsedItems: Record<string, unknown>;
+    let parsedConfig: Record<string, unknown>;
+    try { parsedItems = JSON.parse(editItemsJson); } catch { notify('Invalid JSON in Items field', 'error'); return; }
+    try { parsedConfig = JSON.parse(editConfigJson); } catch { notify('Invalid JSON in Config field', 'error'); return; }
+
     setSaving(true);
     try {
-      let parsedItems: Record<string, unknown>;
-      let parsedConfig: Record<string, unknown>;
-      try { parsedItems = JSON.parse(editItemsJson); } catch { notify('Invalid JSON in Items field', 'error'); return; }
-      try { parsedConfig = JSON.parse(editConfigJson); } catch { notify('Invalid JSON in Config field', 'error'); return; }
 
       const body = {
         name: editName,
@@ -148,7 +154,8 @@ export function EvalSuiteDetailPage() {
   };
 
   const addScenario = async () => {
-    if (!newName.trim() || !newPrompt.trim()) return;
+    if (!newName.trim()) { notify('Scenario name is required.', 'error'); return; }
+    if (!newPrompt.trim()) { notify('Scenario prompt is required.', 'error'); return; }
     setSaving(true);
     try {
       const created = await api.evalConfigs.scenarios.create(Number(id), {

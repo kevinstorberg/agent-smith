@@ -40,8 +40,8 @@ def test_upsert_rule_rejects_empty_name():
 
 
 def test_list_rules_ordered_by_sort_key():
-    upsert_item("rule", "test_zz", content=RULE_CONTENT, agents=ALL_AGENTS, sort_key="zz")
-    upsert_item("rule", "test_aa", content=RULE_CONTENT, agents=ALL_AGENTS, sort_key="aa")
+    upsert_item("rule", "test_zz", content=RULE_CONTENT, agents=ALL_AGENTS, sort_key=20)
+    upsert_item("rule", "test_aa", content=RULE_CONTENT, agents=ALL_AGENTS, sort_key=10)
     rows = list_items("rule")
     names = [r["name"] for r in rows if r["name"].startswith("test_")]
     assert names.index("test_aa") < names.index("test_zz")

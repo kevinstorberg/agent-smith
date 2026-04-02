@@ -146,3 +146,56 @@ def test_reorder_items_sets_sort_key():
     r1 = get_item_by_id("rule", id1)
     r2 = get_item_by_id("rule", id2)
     assert r3["sort_key"] < r1["sort_key"] < r2["sort_key"]
+
+
+# ---------------------------------------------------------------------------
+# Pydantic model validation tests
+# ---------------------------------------------------------------------------
+
+class TestCreateRequestValidation:
+    def test_rejects_empty_name(self):
+        from pydantic import ValidationError
+        from services.dashboard.routers.harness import CreateRequest
+        with pytest.raises(ValidationError, match="name"):
+            CreateRequest(name="", content={"body": "", "metadata": {}})
+
+    def test_rejects_long_name(self):
+        from pydantic import ValidationError
+        from services.dashboard.routers.harness import CreateRequest
+        with pytest.raises(ValidationError, match="name"):
+            CreateRequest(name="a" * 41, content={"body": "", "metadata": {}})
+
+    def test_rejects_name_with_spaces(self):
+        from pydantic import ValidationError
+        from services.dashboard.routers.harness import CreateRequest
+        with pytest.raises(ValidationError, match="name"):
+            CreateRequest(name="my rule", content={"body": "", "metadata": {}})
+
+    def test_rejects_name_with_uppercase(self):
+        from pydantic import ValidationError
+        from services.dashboard.routers.harness import CreateRequest
+        with pytest.raises(ValidationError, match="name"):
+            CreateRequest(name="MyRule", content={"body": "", "metadata": {}})
+
+    def test_accepts_valid_name(self):
+        from services.dashboard.routers.harness import CreateRequest
+        req = CreateRequest(name="my_rule_1", content={"body": "test", "metadata": {}})
+        assert req.name == "my_rule_1"
+
+    def test_rejects_invalid_agent(self):
+        from pydantic import ValidationError
+        from services.dashboard.routers.harness import CreateRequest
+        with pytest.raises(ValidationError, match="agents"):
+            CreateRequest(name="valid", content={"body": "", "metadata": {}}, agents=["fake"])
+
+    def test_rejects_bad_repo(self):
+        from pydantic import ValidationError
+        from services.dashboard.routers.harness import CreateRequest
+        with pytest.raises(ValidationError, match="repo"):
+            CreateRequest(name="valid", content={"body": "", "metadata": {}}, repo="relative/path")
+
+    def test_rejects_content_without_body(self):
+        from pydantic import ValidationError
+        from services.dashboard.routers.harness import CreateRequest
+        with pytest.raises(ValidationError, match="content"):
+            CreateRequest(name="valid", content={"other": "val"})

@@ -5,8 +5,12 @@ import sys
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
+from scripts.shared.validation import (
+    MAX_NAME_LENGTH, validate_item_name, validate_repo_format, validate_agents_list,
+)
+from services.config import ALL_AGENTS
 from services.db.harness import (
     VALID_TABLES,
     list_items, list_items_full, get_item_by_id,
@@ -85,6 +89,15 @@ def list_harness(
 class ReorderRequest(BaseModel):
     ids: list[int]
 
+    @field_validator("ids")
+    @classmethod
+    def ids_must_be_valid(cls, v: list[int]) -> list[int]:
+        if not v:
+            raise ValueError("ids must not be empty")
+        if any(i <= 0 for i in v):
+            raise ValueError("all ids must be positive")
+        return v
+
 
 @router.put("/items/{item_type}/reorder")
 def reorder_harness(item_type: str, body: ReorderRequest):
@@ -100,20 +113,41 @@ def get_harness(item_type: str, item_id: int):
 
 
 class CreateRequest(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
     content: dict
     project: str | None = None
     agents: list[str] = []
-    sort_key: str | None = None
+    sort_key: int | None = None
     enabled: bool = True
     device: str = "*"
     repo: str = "*"
+
+    @field_validator("name")
+    @classmethod
+    def name_must_be_valid(cls, v: str) -> str:
+        return validate_item_name(v)
+
+    @field_validator("content")
+    @classmethod
+    def content_must_have_body(cls, v: dict) -> dict:
+        if "body" not in v or not isinstance(v["body"], str):
+            raise ValueError("content must have a 'body' key with a string value")
+        return v
+
+    @field_validator("agents")
+    @classmethod
+    def agents_must_be_known(cls, v: list[str]) -> list[str]:
+        return validate_agents_list(v, ALL_AGENTS)
+
+    @field_validator("repo")
+    @classmethod
+    def repo_must_be_valid(cls, v: str) -> str:
+        return validate_repo_format(v)
 
 
 @router.post("/items/{item_type}", status_code=201)
 def create_harness(item_type: str, body: CreateRequest):
     _validate_type(item_type)
-    _validate_repo(body.repo)
     try:
         item_id = create_item(
             item_type, body.name, body.content,
@@ -134,6 +168,13 @@ def create_harness(item_type: str, body: CreateRequest):
 class ContentUpdate(BaseModel):
     content: dict
 
+    @field_validator("content")
+    @classmethod
+    def content_must_have_body(cls, v: dict) -> dict:
+        if "body" not in v or not isinstance(v["body"], str):
+            raise ValueError("content must have a 'body' key with a string value")
+        return v
+
 
 @router.put("/items/{item_type}/{item_id}/content")
 def update_harness_content(item_type: str, item_id: int, body: ContentUpdate):
@@ -145,10 +186,24 @@ def update_harness_content(item_type: str, item_id: int, body: ContentUpdate):
 class MetadataUpdate(BaseModel):
     enabled: bool | None = None
     agents: list[str] | None = None
-    name: str | None = None
-    sort_key: str | None = None
+    name: str | None = Field(None, min_length=1, max_length=MAX_NAME_LENGTH)
+    sort_key: int | None = None
     project: str | None = None
     clone_as_skill: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_must_be_valid(cls, v: str | None) -> str | None:
+        if v is not None:
+            validate_item_name(v)
+        return v
+
+    @field_validator("agents")
+    @classmethod
+    def agents_must_be_known(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None:
+            validate_agents_list(v, ALL_AGENTS)
+        return v
 
 
 @router.patch("/items/{item_type}/{item_id}")
@@ -181,11 +236,6 @@ def delete_harness(item_type: str, item_id: int):
     return delete_response(item_id)
 
 
-def _validate_repo(repo: str) -> None:
-    if repo != "*" and not repo.startswith("/"):
-        raise HTTPException(422, f"repo must be '*' or an absolute path, got: {repo!r}")
-
-
 class ConfigCreate(BaseModel):
     device: str = "*"
     repo: str = "*"
@@ -193,6 +243,16 @@ class ConfigCreate(BaseModel):
     subagents: list[str] = []
     enabled: bool = True
     exclude: bool = False
+
+    @field_validator("repo")
+    @classmethod
+    def repo_must_be_valid(cls, v: str) -> str:
+        return validate_repo_format(v)
+
+    @field_validator("agents")
+    @classmethod
+    def agents_must_be_known(cls, v: list[str]) -> list[str]:
+        return validate_agents_list(v, ALL_AGENTS)
 
 
 class ConfigUpdate(BaseModel):
@@ -203,12 +263,25 @@ class ConfigUpdate(BaseModel):
     enabled: bool | None = None
     exclude: bool | None = None
 
+    @field_validator("repo")
+    @classmethod
+    def repo_must_be_valid(cls, v: str | None) -> str | None:
+        if v is not None:
+            validate_repo_format(v)
+        return v
+
+    @field_validator("agents")
+    @classmethod
+    def agents_must_be_known(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None:
+            validate_agents_list(v, ALL_AGENTS)
+        return v
+
 
 @router.post("/items/{item_type}/{item_id}/configs", status_code=201)
 def add_config(item_type: str, item_id: int, body: ConfigCreate):
     _validate_type(item_type)
     require_found(get_item_by_id(item_type, item_id), item_type, item_id)
-    _validate_repo(body.repo)
     config_id = create_config(
         item_id, item_type,
         device=body.device, repo=body.repo,
@@ -221,8 +294,6 @@ def add_config(item_type: str, item_id: int, body: ConfigCreate):
 @router.patch("/items/{item_type}/{item_id}/configs/{config_id}")
 def patch_config(item_type: str, item_id: int, config_id: int, body: ConfigUpdate):
     _validate_type(item_type)
-    if body.repo is not None:
-        _validate_repo(body.repo)
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     if not fields:
         raise HTTPException(422, "No fields to update")

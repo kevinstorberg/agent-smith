@@ -25,3 +25,23 @@ export function toggleArrayItem<T>(arr: T[], item: T): T[] {
 export function formatError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
+
+export const MAX_NAME_LENGTH = 40;
+export const MAX_TITLE_LENGTH = 200;
+export const MAX_BODY_LENGTH = 100_000;
+const NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
+
+export function isValidName(name: string): boolean {
+  return NAME_PATTERN.test(name) && name.length <= MAX_NAME_LENGTH;
+}
+
+export function nameError(name: string): string | null {
+  if (!name.trim()) return 'Name is required.';
+  if (!NAME_PATTERN.test(name)) return 'Name must be lowercase letters, digits, and underscores only.';
+  if (name.length > MAX_NAME_LENGTH) return `Name must be ${MAX_NAME_LENGTH} characters or fewer.`;
+  return null;
+}
+
+export function isValidRepo(r: string): boolean {
+  return r === '*' || r.startsWith('/');
+}

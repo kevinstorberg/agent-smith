@@ -7,7 +7,8 @@ import type { HarnessItem, HarnessConfig } from '../api';
 import { CopyButton } from '../components/CopyButton';
 import { ConfigForm } from '../components/ConfigForm';
 import { useNotification } from '../context/useNotification';
-import { ALL_AGENTS, TYPE_PATHS, isMarkdownType, toggleArrayItem, formatError } from '../constants';
+import { ALL_AGENTS, TYPE_PATHS, isMarkdownType, toggleArrayItem, formatError, MAX_NAME_LENGTH, nameError, isValidRepo } from '../constants';
+import { FieldError } from '../components/FieldError';
 import { harnessStyles as styles } from '../styles/harness';
 
 function formatBody(item: HarnessItem, type: string): string {
@@ -63,7 +64,7 @@ export function HarnessDetailPage() {
       setItem(data);
       setEditName(data.name);
       setEditProject(data.project || '');
-      setEditSortKey(data.sort_key || '');
+      setEditSortKey(String(data.sort_key ?? 0));
       setEditAgents([...data.agents]);
       setEditEnabled(data.enabled);
       setEditCloneAsSkill(!!data.clone_as_skill);
@@ -91,7 +92,7 @@ export function HarnessDetailPage() {
     if (!item) return;
     setEditName(item.name);
     setEditProject(item.project || '');
-    setEditSortKey(item.sort_key || '');
+    setEditSortKey(String(item.sort_key ?? 0));
     setEditAgents([...item.agents]);
     setEditEnabled(item.enabled);
     setEditCloneAsSkill(!!item.clone_as_skill);
@@ -106,15 +107,25 @@ export function HarnessDetailPage() {
 
   const save = async () => {
     if (!item) return;
+
+    const nameErr = nameError(editName.trim());
+    if (nameErr) { notify(nameErr, 'error'); return; }
+    if (editAgents.length === 0) { notify('At least one agent must be selected.', 'error'); return; }
+
+    if (!isMarkdownType(type)) {
+      try { JSON.parse(editBody); } catch { notify('Invalid JSON in metadata field.', 'error'); return; }
+    }
+
     setSaving(true);
     try {
       const originalBody = formatBody(item, type);
       const bodyChanged = editBody !== originalBody;
+      const editSortKeyNum = editSortKey ? parseInt(editSortKey, 10) : 0;
       const metadataChanged =
         editName !== item.name ||
         editEnabled !== item.enabled ||
         editCloneAsSkill !== !!item.clone_as_skill ||
-        editSortKey !== (item.sort_key || '') ||
+        editSortKeyNum !== (item.sort_key || 0) ||
         (editProject || null) !== item.project ||
         JSON.stringify(editAgents.sort()) !== JSON.stringify([...item.agents].sort());
 
@@ -132,7 +143,7 @@ export function HarnessDetailPage() {
         await api.harness.items.updateMetadata(type, currentId, {
           name: editName,
           project: editProject || null,
-          sort_key: editSortKey || undefined,
+          sort_key: editSortKeyNum,
           agents: editAgents,
           enabled: editEnabled,
           ...(type === 'rule' ? { clone_as_skill: editCloneAsSkill } : {}),
@@ -169,7 +180,6 @@ export function HarnessDetailPage() {
 
   const toggleAgent = (agent: string) => setEditAgents(prev => toggleArrayItem(prev, agent));
 
-  const isValidRepo = (r: string) => r === '*' || r.startsWith('/');
 
   const resetCfgForm = () => {
     setCfgDevice('*');
@@ -201,7 +211,11 @@ export function HarnessDetailPage() {
   };
 
   const saveConfig = async () => {
-    if (!item || !isValidRepo(cfgRepo)) return;
+    if (!item) return;
+    if (!isValidRepo(cfgRepo)) {
+      notify('Repo must be * or an absolute path.', 'error');
+      return;
+    }
     setCfgSaving(true);
     try {
       if (editingConfigId) {
@@ -269,11 +283,15 @@ export function HarnessDetailPage() {
       </div>
 
       {editing ? (
-        <input
-          style={{ ...styles.input, marginBottom: 12 }}
-          value={editName}
-          onChange={e => setEditName(e.target.value)}
-        />
+        <div style={{ marginBottom: 12 }}>
+          <input
+            style={{ ...styles.input, borderColor: editName && nameError(editName) ? 'var(--highlight)' : undefined }}
+            value={editName}
+            onChange={e => setEditName(e.target.value)}
+            maxLength={MAX_NAME_LENGTH}
+          />
+          <FieldError error={editName ? nameError(editName) : null} maxLength={MAX_NAME_LENGTH} currentLength={editName.length} />
+        </div>
       ) : (
         <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
           {displayItem.name}
@@ -325,10 +343,12 @@ export function HarnessDetailPage() {
                 Sort Order
               </label>
               <input
+                type="number"
+                min={0}
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', padding: '6px 10px', fontSize: 13, fontFamily: 'var(--mono)', width: 120 }}
                 value={editSortKey}
                 onChange={e => setEditSortKey(e.target.value)}
-                placeholder="e.g. 005"
+                placeholder="e.g. 5"
               />
             </div>
           </div>
