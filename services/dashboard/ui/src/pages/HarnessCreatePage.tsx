@@ -30,6 +30,7 @@ export function HarnessCreatePage() {
   const [sortKey, setSortKey] = useState('');
   const [agents, setAgents] = useState<string[]>([...ALL_AGENTS]);
   const [enabled, setEnabled] = useState(true);
+  const [cloneAsSkill, setCloneAsSkill] = useState(false);
   const [body, setBody] = useState('');
   const [metadataJson, setMetadataJson] = useState(PLACEHOLDER_METADATA[type] || '{}');
   const [saving, setSaving] = useState(false);
@@ -80,6 +81,9 @@ export function HarnessCreatePage() {
         device: device.trim() || '*',
         repo: repo.trim() || '*',
       });
+      if (cloneAsSkill && type === 'rule') {
+        await api.harness.items.updateMetadata(type, created.id, { clone_as_skill: true });
+      }
       navigate(`/harness/${type}/${created.id}`);
     } catch (err) {
       notify(formatError(err), 'error');
@@ -151,15 +155,28 @@ export function HarnessCreatePage() {
       </div>
 
       <div style={styles.field}>
-        <label style={styles.checkboxLabel}>
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={() => setEnabled(!enabled)}
-            style={{ accentColor: 'var(--success)', width: 16, height: 16 }}
-          />
-          Enabled
-        </label>
+        <div style={styles.checkboxRow}>
+          <label style={styles.checkboxLabel}>
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={() => setEnabled(!enabled)}
+              style={{ accentColor: 'var(--success)', width: 16, height: 16 }}
+            />
+            Enabled
+          </label>
+          {type === 'rule' && (
+            <label style={styles.checkboxLabel}>
+              <input
+                type="checkbox"
+                checked={cloneAsSkill}
+                onChange={() => setCloneAsSkill(!cloneAsSkill)}
+                style={{ accentColor: 'var(--highlight)', width: 16, height: 16 }}
+              />
+              Clone as Skill
+            </label>
+          )}
+        </div>
       </div>
 
       <div style={{ ...styles.field, borderTop: '1px solid var(--border)', paddingTop: 16 }}>

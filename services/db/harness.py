@@ -205,6 +205,7 @@ def update_metadata(
     name: str | None = None,
     sort_key: str | None = None,
     project: str | None = "UNSET",
+    clone_as_skill: bool | None = None,
 ) -> None:
     table = _table(item_type)
 
@@ -221,6 +222,8 @@ def update_metadata(
         fields["sort_key"] = sort_key
     if project != "UNSET":
         fields["project"] = project or None
+    if clone_as_skill is not None:
+        fields["clone_as_skill"] = clone_as_skill
 
     model = type("_HarnessModel", (BaseModel,), {"table": table})
     model.dynamic_update(item_id, fields)

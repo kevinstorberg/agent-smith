@@ -158,12 +158,30 @@ def _sync_skills_to_target(skills: dict[str, dict], dest_dir: Path, dry_run: boo
             print(f"  removed:   {stale}")
 
 
+def _collect_skill_clones(
+    agent: str, device_name: str,
+) -> tuple[dict[str, dict], dict[str, dict[str, dict]]]:
+    """Fetch rules with clone_as_skill=True and format them as skill maps."""
+    global_rows, repo_rows = _resolve_and_partition("rule", agent, device_name)
+
+    def to_skills(rows: list[dict]) -> dict[str, dict]:
+        return {
+            r["name"]: {"skill_md": r["content"]["body"], "files": {}}
+            for r in rows if r.get("clone_as_skill")
+        }
+
+    global_clones = to_skills(global_rows)
+    repo_clones = {repo: to_skills(rows) for repo, rows in repo_rows.items()}
+    return global_clones, repo_clones
+
+
 def sync_skills(agent: str, dry_run: bool, device_name: str = "") -> None:
     from scripts.shared.agents import AGENT_TARGETS
     from services.db.harness import content_metadata
 
     cfg = AGENT_TARGETS[agent]
     global_rows, repo_rows = _resolve_and_partition("skill", agent, device_name)
+    global_clones, repo_clones = _collect_skill_clones(agent, device_name)
 
     def rows_to_skills(rows: list[dict]) -> dict[str, dict]:
         result = {}
@@ -172,12 +190,22 @@ def sync_skills(agent: str, dry_run: bool, device_name: str = "") -> None:
             result[r["name"]] = {"skill_md": r["content"]["body"], "files": meta.get("files", {})}
         return result
 
-    _sync_skills_to_target(rows_to_skills(global_rows), Path(cfg["skills_dir"]).expanduser(), dry_run)
+    global_skills = {**global_clones, **rows_to_skills(global_rows)}
+    _sync_skills_to_target(global_skills, Path(cfg["skills_dir"]).expanduser(), dry_run)
 
-    def _repo_sync(rows, rcfg, dr):
-        _sync_skills_to_target(rows_to_skills(rows), Path(rcfg["skills_dir"]), dr)
+    from scripts.shared.agents import repo_config as _repo_config
 
-    _sync_to_repo_targets(repo_rows, agent, "skills_dir", _repo_sync, dry_run)
+    all_repo_paths = set(repo_rows) | set(repo_clones)
+    for repo_path in all_repo_paths:
+        if not Path(repo_path).is_dir():
+            print(f"  warning: repo path does not exist, skipping: {repo_path}")
+            continue
+        rcfg = _repo_config(agent, repo_path)
+        if not rcfg.get("skills_dir"):
+            continue
+        clones = repo_clones.get(repo_path, {})
+        real = rows_to_skills(repo_rows.get(repo_path, []))
+        _sync_skills_to_target({**clones, **real}, Path(rcfg["skills_dir"]), dry_run)
 
 
 def _compose_agent_file(body: str, metadata: dict, scoped_rules: list | None = None) -> str:

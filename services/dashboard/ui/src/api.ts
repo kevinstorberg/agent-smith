@@ -78,6 +78,7 @@ export interface HarnessItem {
   content: { body: string; metadata: Record<string, unknown> };
   sort_key: string;
   enabled: boolean;
+  clone_as_skill?: boolean;
   version: number;
   created_at: string;
   updated_at: string;

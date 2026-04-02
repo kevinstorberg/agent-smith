@@ -148,16 +148,20 @@ class MetadataUpdate(BaseModel):
     name: str | None = None
     sort_key: str | None = None
     project: str | None = None
+    clone_as_skill: bool | None = None
 
 
 @router.patch("/items/{item_type}/{item_id}")
 def patch_harness_metadata(item_type: str, item_id: int, body: MetadataUpdate):
     _validate_type(item_type)
+    if body.clone_as_skill is not None and item_type != "rule":
+        raise HTTPException(422, "clone_as_skill only applies to rules")
     update_metadata(
         item_type, item_id,
         enabled=body.enabled, agents=body.agents,
         name=body.name, sort_key=body.sort_key,
         project=body.project if body.project is not None else "UNSET",
+        clone_as_skill=body.clone_as_skill,
     )
     return get_item_by_id(item_type, item_id)
 

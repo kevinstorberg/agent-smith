@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pathlib import Path
 
-from scripts.shared.fs import atomic_write, compose_strings, extract_brief, _compose_agent_file
+from scripts.shared.fs import atomic_write, compose_strings, extract_brief, _compose_agent_file, _sync_skills_to_target
 
 
 def test_compose_strings_preserves_order():
@@ -150,3 +150,35 @@ class TestSyncRulesRepoTarget:
 
         assert (tmp_path / "CLAUDE.md").exists()
         assert "Global" in (tmp_path / "CLAUDE.md").read_text()
+
+
+# ---------------------------------------------------------------------------
+# Skill clone tests
+# ---------------------------------------------------------------------------
+
+class TestSkillClone:
+    def test_clone_writes_skill_directory(self, tmp_path: Path):
+        skills = {"my_rule": {"skill_md": "## Cloned Rule\nContent here.", "files": {}}}
+        _sync_skills_to_target(skills, tmp_path, dry_run=False)
+
+        skill_md = tmp_path / "my_rule" / "SKILL.md"
+        assert skill_md.exists()
+        assert "Cloned Rule" in skill_md.read_text()
+
+    def test_real_skill_wins_over_clone(self, tmp_path: Path):
+        clones = {"shared": {"skill_md": "clone body", "files": {}}}
+        real = {"shared": {"skill_md": "real body", "files": {}}}
+        merged = {**clones, **real}
+        _sync_skills_to_target(merged, tmp_path, dry_run=False)
+
+        content = (tmp_path / "shared" / "SKILL.md").read_text()
+        assert "real body" in content
+        assert "clone body" not in content
+
+    def test_clone_with_no_files(self, tmp_path: Path):
+        skills = {"empty_clone": {"skill_md": "body", "files": {}}}
+        _sync_skills_to_target(skills, tmp_path, dry_run=False)
+
+        entries = list((tmp_path / "empty_clone").iterdir())
+        assert len(entries) == 1
+        assert entries[0].name == "SKILL.md"

@@ -41,6 +41,7 @@ export function HarnessDetailPage() {
   const [editSortKey, setEditSortKey] = useState('');
   const [editAgents, setEditAgents] = useState<string[]>([]);
   const [editEnabled, setEditEnabled] = useState(true);
+  const [editCloneAsSkill, setEditCloneAsSkill] = useState(false);
   const [editBody, setEditBody] = useState('');
 
   const [history, setHistory] = useState<HarnessItem[]>([]);
@@ -65,6 +66,7 @@ export function HarnessDetailPage() {
       setEditSortKey(data.sort_key || '');
       setEditAgents([...data.agents]);
       setEditEnabled(data.enabled);
+      setEditCloneAsSkill(!!data.clone_as_skill);
       setEditBody(formatBody(data, type));
     } finally {
       setLoading(false);
@@ -92,6 +94,7 @@ export function HarnessDetailPage() {
     setEditSortKey(item.sort_key || '');
     setEditAgents([...item.agents]);
     setEditEnabled(item.enabled);
+    setEditCloneAsSkill(!!item.clone_as_skill);
     setEditBody(formatBody(item, type));
     setPreviewVersion(null);
     setEditing(true);
@@ -110,6 +113,7 @@ export function HarnessDetailPage() {
       const metadataChanged =
         editName !== item.name ||
         editEnabled !== item.enabled ||
+        editCloneAsSkill !== !!item.clone_as_skill ||
         editSortKey !== (item.sort_key || '') ||
         (editProject || null) !== item.project ||
         JSON.stringify(editAgents.sort()) !== JSON.stringify([...item.agents].sort());
@@ -131,6 +135,7 @@ export function HarnessDetailPage() {
           sort_key: editSortKey || undefined,
           agents: editAgents,
           enabled: editEnabled,
+          ...(type === 'rule' ? { clone_as_skill: editCloneAsSkill } : {}),
         });
       }
 
@@ -286,6 +291,11 @@ export function HarnessDetailPage() {
         <span className="tag" style={{ background: displayItem.enabled ? 'var(--success)' : 'var(--text-muted)', color: '#1a1a2e' }}>
           {displayItem.enabled ? 'Enabled' : 'Disabled'}
         </span>
+        {displayItem.clone_as_skill && (
+          <span className="tag" style={{ background: 'rgba(255,100,100,0.15)', color: 'var(--highlight)' }}>
+            Skill Clone
+          </span>
+        )}
         {displayItem.project && (
           <span className="tag" style={{ background: 'rgba(91,141,239,0.15)', color: 'var(--info)', borderColor: 'rgba(91,141,239,0.3)' }}>
             {displayItem.project}
@@ -332,6 +342,17 @@ export function HarnessDetailPage() {
               />
               Enabled
             </label>
+            {type === 'rule' && (
+              <label style={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={editCloneAsSkill}
+                  onChange={() => setEditCloneAsSkill(!editCloneAsSkill)}
+                  style={{ accentColor: 'var(--highlight)', width: 16, height: 16 }}
+                />
+                Clone as Skill
+              </label>
+            )}
             <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>|</span>
             {ALL_AGENTS.map(agent => (
               <label key={agent} style={styles.checkboxLabel}>

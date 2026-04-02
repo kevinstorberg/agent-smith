@@ -15,7 +15,7 @@ CONTENT = {"body": "## Test", "metadata": {}}
 def _clean():
     yield
     from tests.conftest import clean_harness_rows
-    clean_harness_rows("crud_%", "reorder_%", "to_delete")
+    clean_harness_rows("crud_%", "reorder_%", "to_delete", "clone_%")
 
 
 def test_create_item_inserts_with_version_1():
@@ -119,6 +119,20 @@ def test_delete_item_removes_row():
     assert get_item_by_id("rule", item_id) is not None
     delete_item("rule", item_id)
     assert get_item_by_id("rule", item_id) is None
+
+
+def test_update_metadata_clone_as_skill():
+    item_id = create_item("rule", "clone_toggle", content=CONTENT, agents=ALL_AGENTS)
+    row = get_item_by_id("rule", item_id)
+    assert row["clone_as_skill"] is False
+
+    update_metadata("rule", item_id, clone_as_skill=True)
+    row = get_item_by_id("rule", item_id)
+    assert row["clone_as_skill"] is True
+
+    update_metadata("rule", item_id, clone_as_skill=False)
+    row = get_item_by_id("rule", item_id)
+    assert row["clone_as_skill"] is False
 
 
 def test_reorder_items_sets_sort_key():
