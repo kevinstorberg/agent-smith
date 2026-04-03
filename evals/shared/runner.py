@@ -9,7 +9,7 @@ EXCLUDE_RULES = {"memory"}
 
 
 def _load_rules_context() -> str:
-    from services.db.harness import collect_rules_from_db
+    from services.api.models.rule import collect_rules_from_db
     items = [
         (name, body) for name, body in collect_rules_from_db("claude")
         if name not in EXCLUDE_RULES

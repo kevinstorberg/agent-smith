@@ -4,8 +4,8 @@ from fastapi import APIRouter, Query
 from psycopg2.extras import RealDictCursor
 
 from services.db import get_connection
-from services.db.base_model import BaseModel
-from services.dashboard.routers.base import require_found, list_response, delete_response
+from services.api.models.base import BaseModel
+from services.api.routers.base import require_found, list_response, delete_response
 
 router = APIRouter()
 
@@ -54,14 +54,24 @@ def list_evals(
 
             cur.execute(
                 f"SELECT id, timestamp, eval_type, subcategory, scenario, test_model, judge_model, "
-                f"threshold, results, eval_suite_id, created_at "
+                f"threshold, eval_suite_id, created_at, "
+                f"(SELECT avg((r->>'score')::float) FROM jsonb_array_elements(results) r) AS score_avg, "
+                f"jsonb_array_length(results) AS score_count "
                 f"FROM eval_results {where} "
                 f"ORDER BY timestamp DESC LIMIT %s OFFSET %s",
                 params + [limit, offset],
             )
             rows = cur.fetchall()
 
-    return list_response([BaseModel.serialize_timestamps(row) for row in rows], total)
+    items = []
+    for row in rows:
+        item = BaseModel.serialize_timestamps(row)
+        if item.get("score_avg") is not None:
+            item["score_avg"] = round(item["score_avg"], 3)
+        else:
+            item["score_avg"] = 0
+        items.append(item)
+    return list_response(items, total)
 
 
 @router.get("/categories")

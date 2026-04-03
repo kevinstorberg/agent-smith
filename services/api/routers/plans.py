@@ -5,8 +5,8 @@ from pydantic import BaseModel, Field
 
 from scripts.shared.validation import MAX_TITLE_LENGTH, MAX_BODY_LENGTH
 
-from services.db.plans import list_plans, search_plans, get_plan, create_plan, update_plan, delete_plan
-from services.dashboard.routers.base import require_found, list_response, delete_response, empty_to_none
+from services.api.models.plan import list_plans, search_plans, get_plan, create_plan, update_plan, delete_plan
+from services.api.routers.base import require_found, list_response, delete_response, empty_to_none
 
 router = APIRouter()
 

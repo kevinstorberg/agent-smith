@@ -12,7 +12,7 @@ bootstrap()
 
 def cmd_init():
     from services.db import init_db
-    from services.db.harness import upsert_item
+    from services.api.models.shared.harness import upsert_item
     from services.config import ALL_AGENTS, MCP_URL
     init_db()
 

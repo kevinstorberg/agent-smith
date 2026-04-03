@@ -4,7 +4,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from services.memory.db import search, list_memories, get, update, delete
-from services.dashboard.routers.base import require_found, list_response, delete_response, empty_to_none
+from services.api.routers.base import require_found, list_response, delete_response, empty_to_none
 
 router = APIRouter()
 
@@ -27,7 +27,7 @@ def list_all(
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
-    all_results = list_memories(repo=empty_to_none(repo), limit=limit + offset + 100)
+    all_results = list_memories(repo=empty_to_none(repo), limit=limit + offset)
     items = all_results[offset:offset + limit]
     return list_response(items, len(all_results))
 

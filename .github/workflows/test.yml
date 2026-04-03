@@ -56,16 +56,16 @@ jobs:
           node-version: "22"
 
       - name: Install dependencies
-        run: cd services/dashboard/ui && npm ci
+        run: cd services/client && npm ci
 
       - name: Lint
-        run: cd services/dashboard/ui && npm run lint
+        run: cd services/client && npm run lint
 
       - name: Run frontend tests
-        run: cd services/dashboard/ui && npm test
+        run: cd services/client && npm test
 
       - name: Build frontend
-        run: cd services/dashboard/ui && npm run build
+        run: cd services/client && npm run build
 
   docker:
     runs-on: ubuntu-latest

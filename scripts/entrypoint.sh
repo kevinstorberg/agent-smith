@@ -11,6 +11,6 @@ psycopg2.connect(DATABASE_URL)
 done
 
 echo "[entrypoint] Starting server on port ${DASHBOARD_PORT:-7654}..."
-exec uvicorn services.dashboard.app:app \
+exec uvicorn services.api.app:app \
   --host 0.0.0.0 \
   --port "${DASHBOARD_PORT:-7654}"

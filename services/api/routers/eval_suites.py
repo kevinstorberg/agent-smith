@@ -5,11 +5,11 @@ from pydantic import BaseModel, Field
 
 from scripts.shared.validation import MAX_NAME_LENGTH, MAX_BODY_LENGTH
 
-from services.db.evals import (
+from services.api.models.evals import (
     list_suites, get_suite, create_suite, update_suite, delete_suite,
     list_scenarios, get_scenario, create_scenario, update_scenario, delete_scenario,
 )
-from services.dashboard.routers.base import require_found, list_response, delete_response, update_fields
+from services.api.routers.base import require_found, list_response, delete_response, update_fields
 
 router = APIRouter()
 
@@ -55,8 +55,6 @@ def list_suites_endpoint(
     offset: int = Query(0, ge=0),
 ):
     items, total = list_suites(enabled_only=enabled_only, limit=limit, offset=offset)
-    for item in items:
-        item["scenario_count"] = len(list_scenarios(item["id"], enabled_only=False))
     return list_response(items, total)
 
 

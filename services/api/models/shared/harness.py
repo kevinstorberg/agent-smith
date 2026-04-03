@@ -4,7 +4,8 @@ from psycopg2.extras import Json, RealDictCursor
 
 from scripts.shared.validation import assert_not_empty
 from services.db import get_connection
-from services.db.base_model import BaseModel
+from services.api.models.base import BaseModel
+
 
 def content_metadata(item: dict) -> dict:
     return item.get("content", {}).get("metadata", {})
@@ -16,24 +17,6 @@ VALID_TABLES = {
     "tool": "harness_tools",
     "hook": "harness_hooks",
     "agent": "harness_agents",
-}
-
-HOOK_EVENT_MAP = {
-    "claude": {
-        "pre_tool_use": "PreToolUse",
-        "post_tool_use": "PostToolUse",
-        "post_tool_use_failure": "PostToolUseFailure",
-        "stop": "Stop",
-        "stop_failure": "StopFailure",
-        "user_prompt_submit": "UserPromptSubmit",
-        "notification": "Notification",
-        "session_start": "SessionStart",
-        "session_end": "SessionEnd",
-        "subagent_start": "SubagentStart",
-        "subagent_stop": "SubagentStop",
-        "permission_request": "PermissionRequest",
-        "instructions_loaded": "InstructionsLoaded",
-    },
 }
 
 _LATEST_VERSION_CLAUSE = """
@@ -61,6 +44,25 @@ def _row_to_dict(row: dict) -> dict:
     if result.get("subagents") is not None:
         result["subagents"] = sorted(result["subagents"])
     return result
+
+
+def _get_model(item_type: str):
+    from services.api.models.rule import RuleModel
+    from services.api.models.skill import SkillModel
+    from services.api.models.tool import ToolModel
+    from services.api.models.hook import HookModel
+    from services.api.models.agent import AgentModel
+    registry = {
+        "rule": RuleModel, "skill": SkillModel, "tool": ToolModel,
+        "hook": HookModel, "agent": AgentModel,
+    }
+    return registry[item_type]
+
+
+def _project_clause(project: str | None) -> tuple[str, list]:
+    if project is None:
+        return "AND project IS NULL", []
+    return "AND project = %s", [project]
 
 
 def _list_items_internal(
@@ -107,12 +109,32 @@ def list_items(item_type: str, project: str | None = None, agent: str | None = N
     return _list_items_internal(item_type, project, agent, enabled_only=True)
 
 
+def list_items_summary(item_type: str, project: str | None = None, agent: str | None = None) -> list[dict]:
+    table = _table(item_type)
+    latest = _LATEST_VERSION_CLAUSE.format(table=table)
+    cols = "id, name, project, agents, sort_key, enabled, version, clone_as_skill, created_at, updated_at"
+
+    query = f"SELECT {cols} FROM {table}\n        WHERE {latest}\n          AND (project IS NULL OR project = %s)"
+    params: list = [project]
+
+    if agent:
+        query += "\n          AND %s = ANY(agents)"
+        params.append(agent)
+
+    query += "\n        ORDER BY sort_key"
+
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, params)
+            return [_row_to_dict(r) for r in cur.fetchall()]
+
+
 def list_items_full(item_type: str, project: str | None = None, agent: str | None = None) -> list[dict]:
     return _list_items_internal(item_type, project, agent, enabled_only=False)
 
 
 def get_item_by_id(item_type: str, item_id: int) -> dict | None:
-    assert item_id > 0, "item_id must be positive."
+    BaseModel._validate_id(item_id)
     table = _table(item_type)
 
     with get_connection() as conn:
@@ -126,7 +148,7 @@ def get_item_by_id(item_type: str, item_id: int) -> dict | None:
                 "SELECT * FROM harness_configs WHERE item_id = %s AND item_type = %s ORDER BY id",
                 (item_id, item_type),
             )
-            result["configs"] = [_config_row_to_dict(r) for r in cur.fetchall()]
+            result["configs"] = [_row_to_dict(r) for r in cur.fetchall()]
             return result
 
 
@@ -170,7 +192,7 @@ def create_item(
 
 
 def update_content(item_type: str, item_id: int, content: dict) -> int:
-    assert item_id > 0, "item_id must be positive."
+    BaseModel._validate_id(item_id)
     assert isinstance(content, dict) and "body" in content, "content must be a dict with a 'body' key."
     table = _table(item_type)
 
@@ -207,7 +229,7 @@ def update_metadata(
     project: str | None = "UNSET",
     clone_as_skill: bool | None = None,
 ) -> None:
-    table = _table(item_type)
+    _table(item_type)  # validate
 
     fields = BaseModel._collect_fields(
         enabled=enabled, name=name, sort_key=sort_key, clone_as_skill=clone_as_skill,
@@ -219,7 +241,7 @@ def update_metadata(
     if project != "UNSET":
         fields["project"] = project or None
 
-    model = type("_HarnessModel", (BaseModel,), {"table": table})
+    model = _get_model(item_type)
     model.dynamic_update(item_id, fields)
 
 
@@ -239,20 +261,29 @@ def reorder_items(item_type: str, ids: list[int]) -> None:
 def get_version_history(item_type: str, name: str, project: str | None = None) -> list[dict]:
     assert_not_empty(name, "name")
     table = _table(item_type)
+    proj_clause, proj_params = _project_clause(project)
 
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            if project is None:
-                cur.execute(
-                    f"SELECT * FROM {table} WHERE name = %s AND project IS NULL ORDER BY version DESC",
-                    (name,),
-                )
-            else:
-                cur.execute(
-                    f"SELECT * FROM {table} WHERE name = %s AND project = %s ORDER BY version DESC",
-                    (name, project),
-                )
+            cur.execute(
+                f"SELECT * FROM {table} WHERE name = %s {proj_clause} ORDER BY version DESC",
+                [name] + proj_params,
+            )
             return [_row_to_dict(r) for r in cur.fetchall()]
+
+
+def get_version_history_summary(item_type: str, name: str, project: str | None = None) -> list[dict]:
+    assert_not_empty(name, "name")
+    table = _table(item_type)
+    proj_clause, proj_params = _project_clause(project)
+
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"SELECT id, version, created_at FROM {table} WHERE name = %s {proj_clause} ORDER BY version DESC",
+                [name] + proj_params,
+            )
+            return [dict(r) for r in cur.fetchall()]
 
 
 def get_item(item_type: str, name: str, project: str | None = None) -> dict | None:
@@ -325,59 +356,6 @@ def upsert_item(
             return item_id
 
 
-def map_hook_event(canonical_name: str, agent: str) -> str | None:
-    agent_map = HOOK_EVENT_MAP.get(agent)
-    if not agent_map:
-        return None
-    return agent_map.get(canonical_name)
-
-
-def list_rules(**kwargs) -> list[dict]:
-    return list_items("rule", **kwargs)
-
-def get_rule(name: str, **kwargs) -> dict | None:
-    return get_item("rule", name, **kwargs)
-
-def upsert_rule(name: str, **kwargs) -> int:
-    return upsert_item("rule", name, **kwargs)
-
-def list_skills(**kwargs) -> list[dict]:
-    return list_items("skill", **kwargs)
-
-def get_skill(name: str, **kwargs) -> dict | None:
-    return get_item("skill", name, **kwargs)
-
-def upsert_skill(name: str, **kwargs) -> int:
-    return upsert_item("skill", name, **kwargs)
-
-def list_tools(**kwargs) -> list[dict]:
-    return list_items("tool", **kwargs)
-
-def get_tool(name: str, **kwargs) -> dict | None:
-    return get_item("tool", name, **kwargs)
-
-def upsert_tool(name: str, **kwargs) -> int:
-    return upsert_item("tool", name, **kwargs)
-
-def list_hooks(**kwargs) -> list[dict]:
-    return list_items("hook", **kwargs)
-
-def get_hook(name: str, **kwargs) -> dict | None:
-    return get_item("hook", name, **kwargs)
-
-def upsert_hook(name: str, **kwargs) -> int:
-    return upsert_item("hook", name, **kwargs)
-
-def list_agents(**kwargs) -> list[dict]:
-    return list_items("agent", **kwargs)
-
-def get_agent(name: str, **kwargs) -> dict | None:
-    return get_item("agent", name, **kwargs)
-
-def upsert_agent(name: str, **kwargs) -> int:
-    return upsert_item("agent", name, **kwargs)
-
-
 def delete_item(item_type: str, item_id: int) -> None:
     table = _table(item_type)
     with get_connection() as conn:
@@ -387,189 +365,3 @@ def delete_item(item_type: str, item_id: int) -> None:
                 (item_id, item_type),
             )
             cur.execute(f"DELETE FROM {table} WHERE id = %s", (item_id,))
-
-
-def collect_rules_from_db(agent: str, project: str | None = None) -> list[tuple[str, str]]:
-    rows = list_items("rule", project=project, agent=agent)
-    return [(r["name"], r["content"]["body"]) for r in rows]
-
-
-def collect_skills_from_db(agent: str, project: str | None = None) -> dict[str, dict]:
-    rows = list_items("skill", project=project, agent=agent)
-    result = {}
-    for r in rows:
-        meta = content_metadata(r)
-        result[r["name"]] = {
-            "skill_md": r["content"]["body"],
-            "files": meta.get("files", {}),
-        }
-    return result
-
-
-def collect_tools_from_db(agent: str, project: str | None = None) -> dict[str, dict]:
-    rows = list_items("tool", project=project, agent=agent)
-    return {r["name"]: content_metadata(r) for r in rows}
-
-
-def collect_hooks_from_db(agent: str, project: str | None = None) -> dict[str, list[dict]]:
-    rows = list_items("hook", project=project, agent=agent)
-    events: dict[str, list[dict]] = {}
-    for r in rows:
-        meta = content_metadata(r)
-        canonical = meta.get("event", "")
-        mapped = map_hook_event(canonical, agent)
-        if not mapped:
-            continue
-        events.setdefault(mapped, []).append({
-            "matcher": meta.get("matcher", ""),
-            "hooks": meta.get("hooks", []),
-        })
-    return events
-
-
-def _collect_scoped_items(
-    item_type: str, subagent_name: str, agent: str, project: str | None = None,
-) -> list[dict]:
-    table = _table(item_type)
-    with get_connection() as conn:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                f"SELECT * FROM {table} WHERE enabled = true "
-                f"AND (%s = ANY(subagents) OR '*' = ANY(subagents)) "
-                f"AND %s = ANY(agents) "
-                f"ORDER BY sort_key",
-                (subagent_name, agent),
-            )
-            return [_row_to_dict(r) for r in cur.fetchall()]
-
-
-def collect_agents_from_db(agent: str, project: str | None = None) -> dict[str, dict]:
-    rows = list_items("agent", project=project, agent=agent)
-    result = {}
-    for r in rows:
-        name = r["name"]
-        meta = content_metadata(r)
-        scoped_rules = _collect_scoped_items("rule", name, agent, project)
-        scoped_tools = _collect_scoped_items("tool", name, agent, project)
-        result[name] = {
-            "body": r["content"]["body"],
-            "metadata": meta,
-            "scoped_rules": scoped_rules,
-            "scoped_tools": scoped_tools,
-        }
-    return result
-
-
-# ---------------------------------------------------------------------------
-# harness_configs CRUD
-# ---------------------------------------------------------------------------
-
-def list_configs(item_id: int, item_type: str) -> list[dict]:
-    assert item_id > 0, "item_id must be positive."
-    _table(item_type)  # validate item_type
-    with get_connection() as conn:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                "SELECT * FROM harness_configs WHERE item_id = %s AND item_type = %s ORDER BY id",
-                (item_id, item_type),
-            )
-            return [_config_row_to_dict(r) for r in cur.fetchall()]
-
-
-def create_config(
-    item_id: int,
-    item_type: str,
-    device: str = "*",
-    repo: str = "*",
-    agents: list[str] | None = None,
-    subagents: list[str] | None = None,
-    enabled: bool = True,
-    exclude: bool = False,
-) -> int:
-    assert item_id > 0, "item_id must be positive."
-    _table(item_type)  # validate item_type
-    agents = _sort_optional_list(agents)
-    subagents = _sort_optional_list(subagents)
-
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO harness_configs (item_id, item_type, device, repo, agents, subagents, enabled, exclude)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-                """,
-                (item_id, item_type, device, repo, agents or [], subagents or [], enabled, exclude),
-            )
-            return cur.fetchone()[0]
-
-
-def update_config(config_id: int, **fields) -> None:
-    assert config_id > 0, "config_id must be positive."
-    assert fields, "At least one field must be provided."
-
-    sets, params = [], []
-    for col, val in fields.items():
-        if col in ("agents", "subagents"):
-            val = _sort_optional_list(val)
-        sets.append(f"{col} = %s")
-        params.append(val)
-
-    sets.append("updated_at = now()")
-    params.append(config_id)
-
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"UPDATE harness_configs SET {', '.join(sets)} WHERE id = %s",
-                params,
-            )
-
-
-def delete_config(config_id: int) -> None:
-    assert config_id > 0, "config_id must be positive."
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM harness_configs WHERE id = %s", (config_id,))
-
-
-_config_row_to_dict = _row_to_dict
-
-
-# ---------------------------------------------------------------------------
-# Config resolution
-# ---------------------------------------------------------------------------
-
-def resolve_sync_targets(item: dict, agent: str, device_name: str) -> list[str]:
-    """Returns repo targets ('*' for global, absolute paths for repo-local, empty for no sync).
-
-    Configs are the sole authority — legacy item columns are not consulted.
-    """
-    configs = item.get("configs", [])
-    relevant = [
-        c for c in configs
-        if c["enabled"]
-        and agent in c["agents"]
-        and _device_matches(c["device"], device_name)
-    ]
-
-    additive = [c for c in relevant if not c["exclude"]]
-    subtractive = [c for c in relevant if c["exclude"]]
-
-    if not additive:
-        return []
-
-    targets = {c["repo"] for c in additive}
-
-    for c in subtractive:
-        targets.discard(c["repo"])
-
-    return sorted(targets)
-
-
-def _device_matches(config_device: str, device_name: str) -> bool:
-    if config_device == "*":
-        return True
-    if not device_name:
-        return False
-    return config_device == device_name

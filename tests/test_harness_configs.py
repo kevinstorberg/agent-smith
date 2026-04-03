@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.db.harness import (
+from services.api.models.shared.harness import (
     create_item, get_item_by_id, update_content, delete_item,
 )
 from services.config import ALL_AGENTS
@@ -30,27 +30,27 @@ def _count_configs(item_id: int, item_type: str = "rule") -> int:
 
 class TestCreateItemAutoCreatesConfig:
     def test_creates_default_config_row(self):
-        from services.db.harness import list_configs
+        from services.api.models.harness_config import list_configs
         item_id = create_item("rule", "cfg_auto", content=CONTENT, agents=ALL_AGENTS)
         configs = list_configs(item_id, "rule")
         assert len(configs) == 1
 
     def test_default_config_has_wildcard_device_and_repo(self):
-        from services.db.harness import list_configs
+        from services.api.models.harness_config import list_configs
         item_id = create_item("rule", "cfg_defaults", content=CONTENT, agents=ALL_AGENTS)
         cfg = list_configs(item_id, "rule")[0]
         assert cfg["device"] == "*"
         assert cfg["repo"] == "*"
 
     def test_default_config_is_additive(self):
-        from services.db.harness import list_configs
+        from services.api.models.harness_config import list_configs
         item_id = create_item("rule", "cfg_additive", content=CONTENT, agents=ALL_AGENTS)
         cfg = list_configs(item_id, "rule")[0]
         assert cfg["exclude"] is False
         assert cfg["enabled"] is True
 
     def test_default_config_inherits_agents(self):
-        from services.db.harness import list_configs
+        from services.api.models.harness_config import list_configs
         item_id = create_item("rule", "cfg_agents", content=CONTENT, agents=["claude"])
         cfg = list_configs(item_id, "rule")[0]
         assert cfg["agents"] == ["claude"]
@@ -79,14 +79,14 @@ class TestGetItemIncludesConfigs:
 
 class TestConfigCRUD:
     def test_create_additional_config(self):
-        from services.db.harness import create_config, list_configs
+        from services.api.models.harness_config import create_config, list_configs
         item_id = create_item("rule", "cfg_multi", content=CONTENT, agents=ALL_AGENTS)
         create_config(item_id, "rule", device="work-laptop", repo="/Users/me/proj", agents=["claude"])
         configs = list_configs(item_id, "rule")
         assert len(configs) == 2
 
     def test_update_config(self):
-        from services.db.harness import create_config, list_configs, update_config
+        from services.api.models.harness_config import create_config, list_configs, update_config
         item_id = create_item("rule", "cfg_update", content=CONTENT, agents=ALL_AGENTS)
         cfg_id = create_config(item_id, "rule", device="old-device")
         update_config(cfg_id, device="new-device", repo="/new/path")
@@ -96,7 +96,7 @@ class TestConfigCRUD:
         assert updated["repo"] == "/new/path"
 
     def test_delete_config(self):
-        from services.db.harness import create_config, list_configs, delete_config
+        from services.api.models.harness_config import create_config, list_configs, delete_config
         item_id = create_item("rule", "cfg_delete", content=CONTENT, agents=ALL_AGENTS)
         cfg_id = create_config(item_id, "rule", device="temp")
         assert len(list_configs(item_id, "rule")) == 2
@@ -114,28 +114,32 @@ class TestMigrationPreservesData:
     """Verify seed data has config rows after migration."""
 
     def test_seed_rule_has_config(self):
-        from services.db.harness import get_item, list_configs
+        from services.api.models.shared.harness import get_item
+        from services.api.models.harness_config import list_configs
         item = get_item("rule", "test_rule")
         assert item is not None
         configs = list_configs(item["id"], "rule")
         assert len(configs) >= 1
 
     def test_seed_config_matches_legacy_agents(self):
-        from services.db.harness import get_item, list_configs
+        from services.api.models.shared.harness import get_item
+        from services.api.models.harness_config import list_configs
         item = get_item("rule", "test_rule")
         configs = list_configs(item["id"], "rule")
         cfg = configs[0]
         assert set(cfg["agents"]) == set(item["agents"])
 
     def test_seed_config_matches_legacy_enabled(self):
-        from services.db.harness import get_item, list_configs
+        from services.api.models.shared.harness import get_item
+        from services.api.models.harness_config import list_configs
         item = get_item("rule", "test_rule")
         configs = list_configs(item["id"], "rule")
         cfg = configs[0]
         assert cfg["enabled"] == item["enabled"]
 
     def test_seed_config_uses_wildcard_device_and_repo(self):
-        from services.db.harness import get_item, list_configs
+        from services.api.models.shared.harness import get_item
+        from services.api.models.harness_config import list_configs
         item = get_item("rule", "test_rule")
         configs = list_configs(item["id"], "rule")
         cfg = configs[0]
@@ -144,7 +148,8 @@ class TestMigrationPreservesData:
 
     def test_all_seed_items_have_wildcard_configs(self):
         """Verify every seeded item type gets wildcard config rows."""
-        from services.db.harness import get_item, list_configs
+        from services.api.models.shared.harness import get_item
+        from services.api.models.harness_config import list_configs
         for item_type, name in [("rule", "test_rule"), ("skill", "test_skill"), ("tool", "test_tool"), ("hook", "test_hook"), ("agent", "test_agent")]:
             item = get_item(item_type, name)
             assert item is not None, f"Seed {item_type} '{name}' not found"
@@ -175,7 +180,7 @@ class TestLegacyColumnsUntouched:
 
 class TestVersionBumpPreservesAllFields:
     def test_update_content_preserves_subagents(self):
-        from services.db.harness import update_metadata
+        from services.api.models.shared.harness import update_metadata
         item_id = create_item("rule", "cfg_vbump", content=CONTENT, agents=ALL_AGENTS)
         update_metadata("rule", item_id, subagents=["research"])
         new_id = update_content("rule", item_id, {"body": "## V2", "metadata": {}})
@@ -203,19 +208,19 @@ class TestResolveNoConfigs:
     """Items with no config rows do not sync — configs are the sole authority."""
 
     def test_resolve_no_configs_returns_empty(self):
-        from services.db.harness import resolve_sync_targets
+        from services.api.models.shared.sync import resolve_sync_targets
         item = {"agents": ALL_AGENTS, "enabled": True, "configs": []}
         targets = resolve_sync_targets(item, agent="claude", device_name="work")
         assert targets == []
 
     def test_resolve_no_configs_ignores_legacy_agent_field(self):
-        from services.db.harness import resolve_sync_targets
+        from services.api.models.shared.sync import resolve_sync_targets
         item = {"agents": ["gemini"], "enabled": True, "configs": []}
         targets = resolve_sync_targets(item, agent="claude", device_name="work")
         assert targets == []
 
     def test_resolve_no_configs_ignores_legacy_enabled_field(self):
-        from services.db.harness import resolve_sync_targets
+        from services.api.models.shared.sync import resolve_sync_targets
         item = {"agents": ALL_AGENTS, "enabled": False, "configs": []}
         targets = resolve_sync_targets(item, agent="claude", device_name="work")
         assert targets == []
@@ -223,7 +228,7 @@ class TestResolveNoConfigs:
 
 class TestResolveAdditiveWildcard:
     def test_wildcard_device_and_repo(self):
-        from services.db.harness import resolve_sync_targets
+        from services.api.models.shared.sync import resolve_sync_targets
         item = {"configs": [
             {"device": "*", "repo": "*", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": False},
         ], "agents": ALL_AGENTS, "enabled": True}
@@ -231,7 +236,7 @@ class TestResolveAdditiveWildcard:
         assert targets == ["*"]
 
     def test_wildcard_matches_when_no_device_set(self):
-        from services.db.harness import resolve_sync_targets
+        from services.api.models.shared.sync import resolve_sync_targets
         item = {"configs": [
             {"device": "*", "repo": "*", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": False},
         ], "agents": ALL_AGENTS, "enabled": True}
@@ -239,7 +244,7 @@ class TestResolveAdditiveWildcard:
         assert targets == ["*"]
 
     def test_specific_device_skipped_when_no_device_set(self):
-        from services.db.harness import resolve_sync_targets
+        from services.api.models.shared.sync import resolve_sync_targets
         item = {"configs": [
             {"device": "work-laptop", "repo": "/proj", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": False},
         ], "agents": ALL_AGENTS, "enabled": True}
@@ -250,7 +255,7 @@ class TestResolveAdditiveWildcard:
 
 class TestResolveAdditiveSpecificRepo:
     def test_specific_repo_returned(self):
-        from services.db.harness import resolve_sync_targets
+        from services.api.models.shared.sync import resolve_sync_targets
         item = {"configs": [
             {"device": "*", "repo": "/Users/me/proj", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": False},
         ], "agents": ALL_AGENTS, "enabled": True}
@@ -258,7 +263,7 @@ class TestResolveAdditiveSpecificRepo:
         assert targets == ["/Users/me/proj"]
 
     def test_multiple_repos(self):
-        from services.db.harness import resolve_sync_targets
+        from services.api.models.shared.sync import resolve_sync_targets
         item = {"configs": [
             {"device": "*", "repo": "/proj/a", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": False},
             {"device": "*", "repo": "/proj/b", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": False},
@@ -269,7 +274,7 @@ class TestResolveAdditiveSpecificRepo:
 
 class TestResolveSubtractive:
     def test_subtractive_removes_matching_target(self):
-        from services.db.harness import resolve_sync_targets
+        from services.api.models.shared.sync import resolve_sync_targets
         item = {"configs": [
             {"device": "*", "repo": "*", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": False},
             {"device": "work", "repo": "/Users/me/projX", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": True},
@@ -281,7 +286,7 @@ class TestResolveSubtractive:
         assert "*" in targets
 
     def test_subtractive_removes_specific_repo(self):
-        from services.db.harness import resolve_sync_targets
+        from services.api.models.shared.sync import resolve_sync_targets
         item = {"configs": [
             {"device": "*", "repo": "/proj/a", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": False},
             {"device": "*", "repo": "/proj/b", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": False},
@@ -291,7 +296,7 @@ class TestResolveSubtractive:
         assert targets == ["/proj/a"]
 
     def test_subtractive_removes_global(self):
-        from services.db.harness import resolve_sync_targets
+        from services.api.models.shared.sync import resolve_sync_targets
         item = {"configs": [
             {"device": "*", "repo": "*", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": False},
             {"device": "work", "repo": "*", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": True},
@@ -300,7 +305,7 @@ class TestResolveSubtractive:
         assert targets == []
 
     def test_subtractive_only_applies_on_matching_device(self):
-        from services.db.harness import resolve_sync_targets
+        from services.api.models.shared.sync import resolve_sync_targets
         item = {"configs": [
             {"device": "*", "repo": "*", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": False},
             {"device": "home", "repo": "*", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": True},
@@ -311,7 +316,7 @@ class TestResolveSubtractive:
 
 class TestResolveDeviceMismatch:
     def test_device_mismatch_excludes_config(self):
-        from services.db.harness import resolve_sync_targets
+        from services.api.models.shared.sync import resolve_sync_targets
         item = {"configs": [
             {"device": "home", "repo": "/proj", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": False},
         ], "agents": ALL_AGENTS, "enabled": True}
@@ -319,7 +324,7 @@ class TestResolveDeviceMismatch:
         assert targets == []
 
     def test_device_match_includes_config(self):
-        from services.db.harness import resolve_sync_targets
+        from services.api.models.shared.sync import resolve_sync_targets
         item = {"configs": [
             {"device": "work", "repo": "/proj", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": False},
         ], "agents": ALL_AGENTS, "enabled": True}
@@ -329,7 +334,7 @@ class TestResolveDeviceMismatch:
 
 class TestResolveAgentFilter:
     def test_config_for_wrong_agent_ignored(self):
-        from services.db.harness import resolve_sync_targets
+        from services.api.models.shared.sync import resolve_sync_targets
         item = {"configs": [
             {"device": "*", "repo": "*", "agents": ["gemini"], "subagents": [], "enabled": True, "exclude": False},
         ], "agents": ALL_AGENTS, "enabled": True}
@@ -337,7 +342,7 @@ class TestResolveAgentFilter:
         assert targets == []
 
     def test_config_for_correct_agent_included(self):
-        from services.db.harness import resolve_sync_targets
+        from services.api.models.shared.sync import resolve_sync_targets
         item = {"configs": [
             {"device": "*", "repo": "*", "agents": ["claude", "codex"], "subagents": [], "enabled": True, "exclude": False},
         ], "agents": ALL_AGENTS, "enabled": True}
@@ -347,7 +352,7 @@ class TestResolveAgentFilter:
 
 class TestResolveDisabledIgnored:
     def test_disabled_config_skipped(self):
-        from services.db.harness import resolve_sync_targets
+        from services.api.models.shared.sync import resolve_sync_targets
         item = {"configs": [
             {"device": "*", "repo": "*", "agents": ["claude"], "subagents": [], "enabled": False, "exclude": False},
         ], "agents": ALL_AGENTS, "enabled": True}
@@ -356,7 +361,7 @@ class TestResolveDisabledIgnored:
         assert targets == []
 
     def test_disabled_config_with_enabled_config(self):
-        from services.db.harness import resolve_sync_targets
+        from services.api.models.shared.sync import resolve_sync_targets
         item = {"configs": [
             {"device": "*", "repo": "*", "agents": ["claude"], "subagents": [], "enabled": False, "exclude": False},
             {"device": "*", "repo": "/proj", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": False},

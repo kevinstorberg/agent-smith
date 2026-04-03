@@ -11,7 +11,7 @@ docker compose run --rm --build test "$@"
 
 echo ""
 echo "=== Frontend install ==="
-cd services/dashboard/ui
+cd services/client
 npm ci
 
 echo ""

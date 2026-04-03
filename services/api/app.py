@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from scripts.shared.paths import bootstrap  # noqa: E402
 bootstrap()
 
@@ -16,7 +16,8 @@ from fastapi.staticfiles import StaticFiles
 
 from services.db import init_db
 from services.db.seed import seed_all
-from services.dashboard.routers import harness, memory, evals, plans, eval_configs
+from services.api.routers import harness_router
+from services.api.routers import memory, evals, plans, eval_suites as eval_configs
 from services.memory.server import mcp as mcp_server
 
 
@@ -37,7 +38,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(harness.router, prefix="/api/harness", tags=["harness"])
+app.include_router(harness_router, prefix="/api/harness", tags=["harness"])
 app.include_router(memory.router, prefix="/api/memory", tags=["memory"])
 app.include_router(evals.router, prefix="/api/evals", tags=["evals"])
 app.include_router(plans.router, prefix="/api/plans", tags=["plans"])
@@ -48,7 +49,7 @@ mcp_starlette = mcp_server.streamable_http_app()
 mcp_starlette.router.lifespan_context = None  # managed by FastAPI lifespan above
 app.mount("/mcp", mcp_starlette)
 
-dist_dir = Path(__file__).parent / "ui" / "dist"
+dist_dir = Path(__file__).resolve().parent.parent / "client" / "dist"
 if dist_dir.exists():
     app.mount("/assets", StaticFiles(directory=str(dist_dir / "assets")), name="assets")
 
@@ -67,4 +68,4 @@ if __name__ == "__main__":
     import uvicorn
     from services.config import DASHBOARD_PORT
     port = int(DASHBOARD_PORT)
-    uvicorn.run("services.dashboard.app:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("services.api.app:app", host="0.0.0.0", port=port, reload=True)

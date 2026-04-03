@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.db.plans import (
+from services.api.models.plan import (
     create_plan, get_plan, list_plans, search_plans,
     update_plan, delete_plan,
 )

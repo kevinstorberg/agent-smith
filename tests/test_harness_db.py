@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from services.db.harness import (
-    upsert_item, list_items, get_item, map_hook_event,
-)
+from services.api.models.shared.harness import upsert_item, list_items, get_item
+from services.api.models.hook import map_hook_event
 from services.config import ALL_AGENTS
 RULE_CONTENT = {"body": "## Test Rule\n* **The Rule:** Be good.", "metadata": {}}
 

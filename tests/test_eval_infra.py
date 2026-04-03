@@ -11,7 +11,7 @@ EXCLUDE_RULES = {"memory"}
 
 
 def test_exclude_rules_filters_memory():
-    from services.db.harness import collect_rules_from_db
+    from services.api.models.rule import collect_rules_from_db
     rule_names = [name for name, _ in collect_rules_from_db("claude") if name not in EXCLUDE_RULES]
     assert "memory" not in rule_names
     assert len(rule_names) > 0
@@ -82,7 +82,7 @@ def test_save_result_inserts_into_db():
 def test_save_result_with_suite_and_scenario_ids():
     from datetime import datetime, timezone
     from services.db import get_connection
-    from services.db.evals import get_suite_by_name, list_scenarios
+    from services.api.models.evals import get_suite_by_name, list_scenarios
 
     suite = get_suite_by_name("test_suite")
     assert suite, "test_suite must exist (seeded by conftest)"
@@ -122,7 +122,7 @@ def test_save_result_with_suite_and_scenario_ids():
 
 
 def test_resolve_items_harness():
-    from services.db.evals import resolve_items
+    from services.api.models.evals import resolve_items
     items = resolve_items({
         "source": "harness",
         "harness_type": "rule",
@@ -135,6 +135,6 @@ def test_resolve_items_harness():
 
 
 def test_resolve_extra_context_harness_is_none():
-    from services.db.evals import resolve_extra_context
+    from services.api.models.evals import resolve_extra_context
     ctx = resolve_extra_context({"source": "harness", "harness_type": "rule", "agent": "claude"})
     assert ctx is None

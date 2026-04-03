@@ -4,13 +4,13 @@ from __future__ import annotations
 def seed_test_data():
     """Seed minimal data for integration tests. Idempotent."""
     from services.config import ALL_AGENTS, MCP_URL
-    from services.db.harness import (
-        get_rule, upsert_rule, get_skill, upsert_skill,
-        get_tool, upsert_tool, get_hook, upsert_hook,
-        get_agent, upsert_agent,
-    )
-    from services.db.evals import get_suite_by_name, create_suite, create_scenario
-    from services.db.plans import create_plan
+    from services.api.models.rule import get_rule, upsert_rule
+    from services.api.models.skill import get_skill, upsert_skill
+    from services.api.models.tool import get_tool, upsert_tool
+    from services.api.models.hook import get_hook, upsert_hook
+    from services.api.models.agent import get_agent, upsert_agent
+    from services.api.models.evals import get_suite_by_name, create_suite, create_scenario
+    from services.api.models.plan import create_plan
     from services.db import get_connection
 
     if not get_rule("test_rule"):

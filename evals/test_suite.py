@@ -6,7 +6,7 @@ from evals.shared.runner import run_agent
 
 
 def test_compliance(suite_name: str, scenario: dict, eval_config: dict) -> None:
-    from services.db.evals import resolve_extra_context, resolve_items
+    from services.api.models.evals import resolve_extra_context, resolve_items
 
     model = eval_config["model"]
     extra_ctx = resolve_extra_context(scenario["items"])
