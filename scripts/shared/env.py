@@ -20,8 +20,9 @@ def _load_env_file(path: Path, override: bool = False) -> None:
 
 
 def load_dotenv(harness_root: Path) -> None:
-    _load_env_file(harness_root / ".env")
+    app_env = os.environ.get("APP_ENV", "development")
     _load_env_file(harness_root / ".env.default")
+    _load_env_file(harness_root / f".env.{app_env}", override=True)
 
 
 def expand_env(value):

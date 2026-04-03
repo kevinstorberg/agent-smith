@@ -47,7 +47,6 @@ class PlanModel(BaseModel):
                 return [cls.serialize_timestamps(r) for r in cur.fetchall()]
 
 
-# Backward compat aliases
 list_plans = PlanModel.list
 search_plans = PlanModel.search
 get_plan = PlanModel.read

@@ -118,7 +118,6 @@ class ScenarioModel(BaseModel):
         return cls.create(suite_id, name, prompt, enabled)
 
 
-# Backward compat aliases
 list_suites = SuiteModel.list
 get_suite = SuiteModel.read
 get_suite_by_name = SuiteModel.get_by_name

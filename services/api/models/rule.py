@@ -14,7 +14,6 @@ class RuleModel(BaseModel):
         return [(r["name"], r["content"]["body"]) for r in rows]
 
 
-# Backward compat aliases
 list_rules = lambda **kw: list_items("rule", **kw)  # noqa: E731
 get_rule = lambda name, **kw: get_item("rule", name, **kw)  # noqa: E731
 upsert_rule = lambda name, **kw: upsert_item("rule", name, **kw)  # noqa: E731

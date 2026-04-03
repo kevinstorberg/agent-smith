@@ -5,19 +5,17 @@ import argparse
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from scripts.shared.paths import bootstrap
+bootstrap()
+
 
 def main() -> int:
     import os
 
-    parser = argparse.ArgumentParser(prog="sync.py")
+    parser = argparse.ArgumentParser(prog="scripts/sync.py")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-
-    repo_root = Path(__file__).resolve().parent
-    sys.path.insert(0, str(repo_root))
-
-    from scripts.shared.env import load_dotenv
-    load_dotenv(repo_root)
 
     from services.db import init_db
     init_db()

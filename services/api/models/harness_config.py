@@ -56,7 +56,6 @@ class ConfigModel(BaseModel):
                 return result
 
 
-# Backward compat aliases
 list_configs = ConfigModel.list_for_item
 batch_list_configs = ConfigModel.batch_list
 create_config = ConfigModel.create

@@ -14,7 +14,6 @@ class ToolModel(BaseModel):
         return {r["name"]: content_metadata(r) for r in rows}
 
 
-# Backward compat aliases
 list_tools = lambda **kw: list_items("tool", **kw)  # noqa: E731
 get_tool = lambda name, **kw: get_item("tool", name, **kw)  # noqa: E731
 upsert_tool = lambda name, **kw: upsert_item("tool", name, **kw)  # noqa: E731

@@ -30,8 +30,10 @@ def main() -> None:
     repo_root = Path(__file__).resolve().parent.parent.parent
     sys.path.insert(0, str(repo_root))
 
-    from scripts.shared.env import load_dotenv
-    load_dotenv(repo_root)
+    from scripts.shared.env import _load_env_file
+    _load_env_file(repo_root / ".env.default")
+    for env in ("development", "test", "production"):
+        _load_env_file(repo_root / f".env.{env}", override=True)
 
     envs = [
         ("development", "DATABASE_URL_DEVELOPMENT"),

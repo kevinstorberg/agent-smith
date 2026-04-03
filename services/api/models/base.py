@@ -13,8 +13,6 @@ class BaseModel:
     table: str
     json_fields: set[str] = set()
 
-    # --- Validation ---
-
     @staticmethod
     def _validate_id(row_id: int) -> None:
         assert row_id > 0, "id must be positive."
@@ -24,8 +22,6 @@ class BaseModel:
         for field in required:
             assert fields.get(field), f"{field} must not be empty."
 
-    # --- Serialization ---
-
     @classmethod
     def serialize_timestamps(cls, row: dict) -> dict:
         result = dict(row)
@@ -33,8 +29,6 @@ class BaseModel:
             if result.get(field):
                 result[field] = result[field].isoformat()
         return result
-
-    # --- CRUD ---
 
     @classmethod
     def create(cls, **fields) -> int:
@@ -85,8 +79,8 @@ class BaseModel:
     ) -> tuple[list[dict], int]:
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(f"SELECT COUNT(*) FROM {cls.table} {where}", params)
-                total = cur.fetchone()[0]
+                cur.execute(f"SELECT COUNT(*) as cnt FROM {cls.table} {where}", params)
+                total = cur.fetchone()["cnt"]
                 cur.execute(
                     f"SELECT {columns} FROM {cls.table} {where} ORDER BY {order_by} LIMIT %s OFFSET %s",
                     (*params, limit, offset),
@@ -94,12 +88,8 @@ class BaseModel:
                 items = [cls.serialize_timestamps(r) for r in cur.fetchall()]
         return items, total
 
-    # --- Backward compat aliases ---
-
     find_by_id = read
     delete_by_id = destroy
-
-    # --- Helpers ---
 
     @classmethod
     def dynamic_update(

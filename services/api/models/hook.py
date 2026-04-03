@@ -51,7 +51,6 @@ class HookModel(BaseModel):
         return events
 
 
-# Backward compat aliases
 list_hooks = lambda **kw: list_items("hook", **kw)  # noqa: E731
 get_hook = lambda name, **kw: get_item("hook", name, **kw)  # noqa: E731
 upsert_hook = lambda name, **kw: upsert_item("hook", name, **kw)  # noqa: E731

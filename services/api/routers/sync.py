@@ -13,7 +13,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
 
 @router.post("/sync")
 def run_sync():
-    sync_script = _REPO_ROOT / "sync.py"
+    sync_script = _REPO_ROOT / "scripts" / "sync.py"
     if not sync_script.exists():
         raise HTTPException(500, f"sync.py not found at {sync_script}")
     result = subprocess.run(

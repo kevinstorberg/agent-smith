@@ -45,7 +45,6 @@ class AgentModel(BaseModel):
         return result
 
 
-# Backward compat aliases
 list_agents = lambda **kw: list_items("agent", **kw)  # noqa: E731
 get_agent = lambda name, **kw: get_item("agent", name, **kw)  # noqa: E731
 upsert_agent = lambda name, **kw: upsert_item("agent", name, **kw)  # noqa: E731

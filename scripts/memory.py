@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scripts.shared.paths import REPO_ROOT
 
 
 def _db():
-    """Lazy import so the CLI is usable before heavy deps are loaded."""
     sys.path.insert(0, str(REPO_ROOT))
     from services.memory import db
     return db
@@ -74,7 +75,7 @@ def cmd_show(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="memory.py",
+        prog="scripts/memory.py",
         description="Manage agent long-term memory",
     )
     sub = p.add_subparsers(dest="command", required=True)

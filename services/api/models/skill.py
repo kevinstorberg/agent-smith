@@ -21,7 +21,6 @@ class SkillModel(BaseModel):
         return result
 
 
-# Backward compat aliases
 list_skills = lambda **kw: list_items("skill", **kw)  # noqa: E731
 get_skill = lambda name, **kw: get_item("skill", name, **kw)  # noqa: E731
 upsert_skill = lambda name, **kw: upsert_item("skill", name, **kw)  # noqa: E731

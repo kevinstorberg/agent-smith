@@ -5,7 +5,7 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scripts.shared.paths import bootstrap
 bootstrap()
 
@@ -32,7 +32,7 @@ def cmd_init():
 
 
 def main():
-    parser = argparse.ArgumentParser(prog="plans.py")
+    parser = argparse.ArgumentParser(prog="scripts/plans.py")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("init")
     args = parser.parse_args()
