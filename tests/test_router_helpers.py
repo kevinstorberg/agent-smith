@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from fastapi import HTTPException
 
-from services.dashboard.routers.base import require_found, list_response
+from services.api.routers.base import require_found, list_response
 
 
 def test_require_found_returns_item_when_truthy():

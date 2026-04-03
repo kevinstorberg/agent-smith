@@ -1,7 +1,5 @@
-.env
-.env.production
-.env.development
-.env.test
+.env.*
+!.env.default
 .venv
 __pycache__/
 memory_store/

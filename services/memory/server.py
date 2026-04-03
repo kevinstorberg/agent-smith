@@ -121,7 +121,7 @@ def plan_save(title: str, body: str, project: str = "") -> str:
     Returns:
         Confirmation with the plan ID.
     """
-    from services.db.plans import create_plan
+    from services.api.models.plan import create_plan
     plan_id = create_plan(title, body, project=empty_to_none(project))
     return f"Plan saved (id={plan_id})"
 
@@ -138,7 +138,7 @@ def plan_get(plan_id: int = 0, query: str = "") -> dict | list[dict]:
     Returns:
         Single plan dict (if plan_id given) or list of matching plans (if query given).
     """
-    from services.db.plans import get_plan, search_plans
+    from services.api.models.plan import get_plan, search_plans
     if plan_id > 0:
         return get_plan(plan_id)
     if query:
@@ -146,10 +146,10 @@ def plan_get(plan_id: int = 0, query: str = "") -> dict | list[dict]:
     return []
 
 
-from services.db.harness import (
+from services.api.models.shared.harness import (
     VALID_TABLES, list_items, get_item, upsert_item,
-    list_configs, update_config,
 )
+from services.api.models.harness_config import list_configs, update_config
 
 
 @mcp.tool()
@@ -278,7 +278,7 @@ def eval_suite_list(enabled_only: bool = True) -> list[dict]:
         List of eval suites with id, name, eval_type, subcategory, enabled,
         and scenario_count.
     """
-    from services.db.evals import list_suites, list_scenarios
+    from services.api.models.evals import list_suites, list_scenarios
     items, _ = list_suites(enabled_only=enabled_only)
     for item in items:
         item["scenario_count"] = len(list_scenarios(item["id"], enabled_only=False))
@@ -296,7 +296,7 @@ def eval_suite_get(name: str = "", suite_id: int = 0) -> dict | None:
     Returns:
         Suite dict with scenarios list, or None if not found.
     """
-    from services.db.evals import get_suite, get_suite_by_name, list_scenarios
+    from services.api.models.evals import get_suite, get_suite_by_name, list_scenarios
     suite = None
     if name:
         suite = get_suite_by_name(name)
@@ -331,7 +331,7 @@ def eval_suite_save(
     Returns:
         Confirmation with the suite ID.
     """
-    from services.db.evals import upsert_suite
+    from services.api.models.evals import upsert_suite
     suite_id = upsert_suite(
         name, eval_type, subcategory, judge_prompt,
         items=items or {}, config=config or {}, enabled=enabled,
@@ -357,7 +357,7 @@ def eval_scenario_save(
     Returns:
         Confirmation with the scenario ID.
     """
-    from services.db.evals import get_suite_by_name, upsert_scenario
+    from services.api.models.evals import get_suite_by_name, upsert_scenario
     suite = get_suite_by_name(suite_name)
     assert suite, f"Suite not found: {suite_name}"
     scenario_id = upsert_scenario(suite["id"], name, prompt, enabled=enabled)

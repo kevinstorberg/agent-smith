@@ -22,7 +22,7 @@ def pytest_generate_tests(metafunc):
         return
 
     try:
-        from services.db.evals import (
+        from services.api.models.evals import (
             get_suite_by_name,
             list_enabled_scenarios_for_suite,
             list_suites,

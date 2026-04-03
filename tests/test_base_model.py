@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from services.db.base_model import BaseModel
+from services.api.models.base import BaseModel
 
 
 class TestSerializeTimestamps:
@@ -41,16 +41,16 @@ class TestSerializeTimestamps:
 
 class TestValidateId:
     def test_accepts_positive_id(self):
-        from services.db.plans import PlanModel
+        from services.api.models.plan import PlanModel
         PlanModel._validate_id(1)
 
     def test_rejects_zero(self):
-        from services.db.plans import PlanModel
+        from services.api.models.plan import PlanModel
         with pytest.raises(AssertionError):
             PlanModel._validate_id(0)
 
     def test_rejects_negative(self):
-        from services.db.plans import PlanModel
+        from services.api.models.plan import PlanModel
         with pytest.raises(AssertionError):
             PlanModel._validate_id(-1)
 
@@ -68,20 +68,20 @@ class TestFindByIdAndDelete:
                 cur.execute("DELETE FROM plans")
 
     def test_find_by_id_returns_dict(self):
-        from services.db.plans import create_plan
+        from services.api.models.plan import create_plan
         plan_id = create_plan("test", "body")
-        from services.db.plans import PlanModel
+        from services.api.models.plan import PlanModel
         result = PlanModel.find_by_id(plan_id)
         assert result is not None
         assert result["title"] == "test"
         assert isinstance(result["created_at"], str)
 
     def test_find_by_id_returns_none_for_missing(self):
-        from services.db.plans import PlanModel
+        from services.api.models.plan import PlanModel
         assert PlanModel.find_by_id(99999) is None
 
     def test_delete_by_id_removes_row(self):
-        from services.db.plans import create_plan, PlanModel
+        from services.api.models.plan import create_plan, PlanModel
         plan_id = create_plan("to delete", "body")
         PlanModel.delete_by_id(plan_id)
         assert PlanModel.find_by_id(plan_id) is None

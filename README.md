@@ -17,33 +17,18 @@ server. Use `./run.sh -nc` to force a no-cache rebuild. See `DASHBOARD_PORT` in
 
 Agents connect to the MCP endpoint at `http://localhost:<DASHBOARD_PORT>/mcp/`.
 
-## Manual Setup (development without Docker)
-
-```sh
-python3.13 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-brew install postgresql@17
-brew services start postgresql@17
-createdb agent_smith
-
-.venv/bin/uvicorn services.dashboard.app:app --port 7654
-```
-
-Migrations and data seeding run automatically on startup.
-
 ## Structure
 
 ```text
 assets/              # static assets (images, etc.)
 docs/                # generated artifacts (ERD, etc.)
 evals/               # LLM-as-judge evaluation framework (DeepEval + G-Eval)
-scripts/             # migration, sync, and generation utilities
+scripts/             # sync, generation, and shared utilities
 services/
+  api/               # FastAPI app, routers, models, validators
+  client/            # React dashboard (Vite + TypeScript)
   db/                # Postgres connection + Alembic migrations
   memory/            # vector memory + MCP tools (LanceDB + sentence-transformers)
-  dashboard/         # web UI (FastAPI + React) + MCP endpoint
 ```
 
 ## Harness
@@ -57,7 +42,7 @@ or MCP tools.
 ## Sync
 
 ```sh
-./sync.py
+./sync.sh
 ```
 
 Reads harness items from the database, resolves deployment configs, and writes to each
@@ -70,25 +55,13 @@ agent's config files — globally (`~/.claude/`, `~/.codex/`, `~/.gemini/`) or p
 - **agents** — syncs sub-agent definitions as markdown files with YAML frontmatter
 
 Supports Claude, Codex, and Gemini. Only writes when content has changed. Set
-`DEVICE_NAME` in `.env` to enable device-scoped filtering.
+`DEVICE_NAME` in your environment's `.env.*` file to enable device-scoped filtering.
 
 ## Memory
 
-A local vector memory system with time-weighted retrieval via LangChain's
-`TimeWeightedVectorStoreRetriever`. Served as MCP tools on the dashboard endpoint.
-
-**CLI interface:**
-
-```sh
-./memory.py list [--repo REPO]         # browse memories
-./memory.py search "QUERY" [--repo R]  # semantic search
-./memory.py add "CONTENT" [--repo R] [--tags t1 t2]
-./memory.py show ID
-./memory.py delete ID
-```
-
-Default backend is LanceDB (local, stored in `memory_store/`). Set `MEMORY_BACKEND=pinecone`
-in `.env` with a `PINECONE_API_KEY` to use Pinecone cloud instead.
+Vector memory with time-weighted retrieval, served as MCP tools on the dashboard endpoint.
+Defaults to LanceDB (local, stored in `memory_store/`). Set `MEMORY_BACKEND=pinecone` in
+`.env` with a `PINECONE_API_KEY` to use Pinecone instead.
 
 ## Tests
 
@@ -104,22 +77,16 @@ service container in CI.
 
 ## Evals
 
-LLM-as-judge evaluation using DeepEval's G-Eval metric. Eval suites and scenarios
-are stored entirely in Postgres (`eval_suites` + `eval_scenarios` tables) and
-discovered dynamically at test time. Results are stored in `eval_results`.
-
-A single test runner handles all suites — no per-suite test files needed. New suites
-added to the database are picked up automatically.
+LLM-as-judge evaluation using DeepEval's G-Eval metric. Suites are defined in Postgres
+and picked up automatically at test time.
 
 ```sh
-# Run a specific suite by name
-docker compose exec app python -m pytest evals/test_suite.py --suite rules_plans -v
-
-# Run all enabled suites
-docker compose exec app python -m pytest evals/test_suite.py -v
+./evals.sh                        # run all enabled suites
+./evals.sh --suite rules_plans    # run a specific suite
 ```
 
-Configure via `EVAL_MODEL`, `EVAL_JUDGE_MODEL`, and `EVAL_THRESHOLD` in `.env`.
+Requires the app container to be running (`./run.sh`). Configure via `EVAL_MODEL`,
+`EVAL_JUDGE_MODEL`, and `EVAL_THRESHOLD` in your environment's `.env.*` file.
 
 ## Database
 
@@ -134,11 +101,8 @@ Set `DATABASE_URL` in `.env` to override the default (`postgresql://localhost/ag
 
 ## Environment
 
-`.env.default` contains defaults and is committed. `.env` contains local overrides and is
-gitignored. Both are loaded automatically (`.env` first, then `.env.default` fills gaps).
+`.env.default` contains committed defaults. Each environment has its own override file
+(`.env.development`, `.env.test`, `.env.production`) — all gitignored. `.env.default` is
+loaded first; the environment-specific file overrides it based on `APP_ENV` (default: `development`).
 
 See `.env.default` for all available configuration options.
-
-## Planned Features
-- Additional agent model support (e.g. Mistral Code)
-- Conversion into an open source library

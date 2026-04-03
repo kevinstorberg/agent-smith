@@ -13,7 +13,7 @@ bootstrap()
 from scripts.shared.agents import AGENT_TARGETS, _read_config  # noqa: E402
 from services.config import ALL_AGENTS  # noqa: E402
 from services.db import init_db  # noqa: E402
-from services.db.harness import upsert_item  # noqa: E402
+from services.api.models.shared.harness import upsert_item  # noqa: E402
 
 
 def _slugify(heading: str) -> str:

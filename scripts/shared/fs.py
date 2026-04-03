@@ -63,7 +63,9 @@ def _resolve_and_partition(
     Fetches all items regardless of legacy agent/enabled columns — config rows
     are the sole authority for sync decisions.
     """
-    from services.db.harness import list_items_full, list_configs, resolve_sync_targets
+    from services.api.models.shared.harness import list_items_full
+    from services.api.models.harness_config import list_configs
+    from services.api.models.shared.sync import resolve_sync_targets
 
     rows = list_items_full(item_type)
     global_items: list[dict] = []
@@ -177,7 +179,7 @@ def _collect_skill_clones(
 
 def sync_skills(agent: str, dry_run: bool, device_name: str = "") -> None:
     from scripts.shared.agents import AGENT_TARGETS
-    from services.db.harness import content_metadata
+    from services.api.models.shared.harness import content_metadata
 
     cfg = AGENT_TARGETS[agent]
     global_rows, repo_rows = _resolve_and_partition("skill", agent, device_name)
@@ -224,7 +226,7 @@ def _compose_agent_file(body: str, metadata: dict, scoped_rules: list | None = N
 
 def sync_agents(agent: str, dry_run: bool, device_name: str = "") -> None:
     from scripts.shared.agents import AGENT_TARGETS
-    from services.db.harness import collect_agents_from_db
+    from services.api.models.agent import collect_agents_from_db
 
     cfg = AGENT_TARGETS[agent]
     agents_dir = cfg.get("agents_dir")

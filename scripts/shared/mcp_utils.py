@@ -11,7 +11,7 @@ from scripts.shared.fs import atomic_write
 
 
 def sync_mcp(agent: str, dry_run: bool) -> None:
-    from services.db.harness import collect_tools_from_db
+    from services.api.models.tool import collect_tools_from_db
 
     cfg = AGENT_TARGETS[agent]
     dest = Path(cfg["mcp_file"]).expanduser()

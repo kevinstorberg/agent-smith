@@ -4,7 +4,8 @@ from services.config import ALL_AGENTS, MCP_URL
 
 
 def seed_memory_tool() -> None:
-    from services.db.harness import get_tool, create_item
+    from services.api.models.tool import get_tool
+    from services.api.models.shared.harness import create_item
 
     if get_tool("memory"):
         return
@@ -17,7 +18,8 @@ def seed_memory_tool() -> None:
 
 
 def seed_plan_tools() -> None:
-    from services.db.harness import get_tool, create_item
+    from services.api.models.tool import get_tool
+    from services.api.models.shared.harness import create_item
 
     tools = [
         ("plan_save", "Save a finalized plan to the database"),
