@@ -1,4 +1,4 @@
-import { ALL_AGENTS, toggleArrayItem } from '../constants';
+import { ALL_AGENTS, toggleArrayItem, isValidRepo } from '../constants';
 import { harnessStyles as styles } from '../styles/harness';
 
 interface ConfigFormProps {
@@ -17,10 +17,6 @@ interface ConfigFormProps {
   onSave: () => void;
   onCancel: () => void;
   submitLabel?: string;
-}
-
-function isValidRepo(r: string): boolean {
-  return r === '*' || r.startsWith('/');
 }
 
 export function ConfigForm({

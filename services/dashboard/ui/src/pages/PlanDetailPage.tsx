@@ -5,7 +5,9 @@ import MDEditor from '@uiw/react-md-editor';
 import { api } from '../api';
 import type { Plan } from '../api';
 import { CopyButton } from '../components/CopyButton';
+import { FieldError } from '../components/FieldError';
 import { useNotification } from '../context/useNotification';
+import { MAX_TITLE_LENGTH } from '../constants';
 
 const styles = {
   header: {
@@ -115,6 +117,9 @@ export function PlanDetailPage() {
   };
 
   const save = async () => {
+    if (!editTitle.trim()) { notify('Title is required.', 'error'); return; }
+    if (editTitle.length > MAX_TITLE_LENGTH) { notify(`Title must be ${MAX_TITLE_LENGTH} characters or fewer.`, 'error'); return; }
+    if (!editBody.trim()) { notify('Body is required.', 'error'); return; }
     setSaving(true);
     try {
       if (isNew) {
@@ -174,11 +179,13 @@ export function PlanDetailPage() {
       {editing ? (
         <>
           <input
-            style={{ ...styles.input, marginBottom: 12 }}
+            style={{ ...styles.input, borderColor: editTitle && editTitle.length > MAX_TITLE_LENGTH ? 'var(--highlight)' : undefined }}
             value={editTitle}
             onChange={e => setEditTitle(e.target.value)}
             placeholder="Plan title"
+            maxLength={MAX_TITLE_LENGTH}
           />
+          <FieldError maxLength={MAX_TITLE_LENGTH} currentLength={editTitle.length} />
           <div style={{ marginBottom: 16 }}>
             <label style={styles.fieldLabel}>Project</label>
             <input

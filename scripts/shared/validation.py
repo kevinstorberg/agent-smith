@@ -6,6 +6,11 @@ import re
 _UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I
 )
+_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+MAX_NAME_LENGTH = 40
+MAX_TITLE_LENGTH = 200
+MAX_BODY_LENGTH = 100_000
 
 def assert_not_empty(value: str, field: str) -> None:
     assert value, f"{field} must not be empty."
@@ -33,6 +38,28 @@ def validate_postgres_url(url: str, label: str = "DATABASE_URL") -> None:
 
 def empty_to_none(value: str) -> str | None:
     return value or None
+
+
+def validate_item_name(name: str) -> str:
+    if not _NAME_RE.match(name):
+        raise ValueError(
+            "name must start with a lowercase letter and contain only "
+            "lowercase letters, digits, and underscores (e.g. 'my_rule')"
+        )
+    return name
+
+
+def validate_repo_format(repo: str) -> str:
+    if repo != "*" and not repo.startswith("/"):
+        raise ValueError("repo must be '*' or an absolute path")
+    return repo
+
+
+def validate_agents_list(agents: list[str], allowed: list[str]) -> list[str]:
+    invalid = set(agents) - set(allowed)
+    if invalid:
+        raise ValueError(f"Invalid agents: {invalid}. Must be from {allowed}")
+    return agents
 
 
 def extract_memory_metadata(row: dict) -> dict:

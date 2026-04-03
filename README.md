@@ -8,12 +8,12 @@ One source of truth, synced everywhere.
 ## Quick Start
 
 ```sh
-docker compose up
+./run.sh
 ```
 
-This starts Postgres, runs migrations, seeds default data, and launches the
-dashboard + MCP server. See `DASHBOARD_PORT` in `.env.default` for the port
-(default 7654).
+This builds the Docker image, generates the ERD, and starts the dashboard + MCP
+server. Use `./run.sh -nc` to force a no-cache rebuild. See `DASHBOARD_PORT` in
+`.env.default` for the port (default 7654).
 
 Agents connect to the MCP endpoint at `http://localhost:<DASHBOARD_PORT>/mcp/`.
 
@@ -37,8 +37,9 @@ Migrations and data seeding run automatically on startup.
 
 ```text
 assets/              # static assets (images, etc.)
+docs/                # generated artifacts (ERD, etc.)
 evals/               # LLM-as-judge evaluation framework (DeepEval + G-Eval)
-scripts/             # migration and sync utilities
+scripts/             # migration, sync, and generation utilities
 services/
   db/                # Postgres connection + Alembic migrations
   memory/            # vector memory + MCP tools (LanceDB + sentence-transformers)
@@ -47,9 +48,11 @@ services/
 
 ## Harness
 
-Rules, skills, tools, hooks, and sub-agents are stored in Postgres with versioning, project
-scoping, and per-agent assignment. Managed via the dashboard UI, MCP tools, or direct DB
-access. Enable/disable items in the UI — sync respects the DB `enabled` flag.
+Rules, skills, tools, hooks, and sub-agents are stored in Postgres with versioning and
+per-agent assignment. Each item has one or more **deployment configs** (`harness_configs`)
+that control where it syncs — scoped by device (`DEVICE_NAME`) and repo (absolute path).
+Configs can be additive (include) or subtractive (exclude). Managed via the dashboard UI
+or MCP tools.
 
 ## Sync
 
@@ -57,14 +60,17 @@ access. Enable/disable items in the UI — sync respects the DB `enabled` flag.
 ./sync.py
 ```
 
-Reads harness items from the database and writes them to each agent's config files:
+Reads harness items from the database, resolves deployment configs, and writes to each
+agent's config files — globally (`~/.claude/`, `~/.codex/`, `~/.gemini/`) or per-repo
+(e.g., `<repo>/.claude/rules/`).
 
 - **compose** — concatenates rules into a single markdown file
 - **copy** — syncs skill subdirectories to the agent's skills directory
 - **merge** — merges MCP server configs into the agent's settings file
 - **agents** — syncs sub-agent definitions as markdown files with YAML frontmatter
 
-Supports Claude, Codex, and Gemini. Only writes when content has changed.
+Supports Claude, Codex, and Gemini. Only writes when content has changed. Set
+`DEVICE_NAME` in `.env` to enable device-scoped filtering.
 
 ## Memory
 

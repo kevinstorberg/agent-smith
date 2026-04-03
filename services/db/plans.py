@@ -18,11 +18,7 @@ class PlanModel(BaseModel):
         body: str | None = None,
         project: str | None = "UNSET",
     ) -> None:
-        fields = {}
-        if title is not None:
-            fields["title"] = title
-        if body is not None:
-            fields["body"] = body
+        fields = cls._collect_fields(title=title, body=body)
         if project != "UNSET":
             fields["project"] = project or None
         cls.dynamic_update(plan_id, fields)

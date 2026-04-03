@@ -1,47 +1,49 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from scripts.shared.validation import MAX_NAME_LENGTH, MAX_BODY_LENGTH
 
 from services.db.evals import (
     list_suites, get_suite, create_suite, update_suite, delete_suite,
     list_scenarios, get_scenario, create_scenario, update_scenario, delete_scenario,
 )
-from services.dashboard.routers.base import require_found, list_response, delete_response
+from services.dashboard.routers.base import require_found, list_response, delete_response, update_fields
 
 router = APIRouter()
 
 
 
 class CreateSuiteRequest(BaseModel):
-    name: str
-    eval_type: str
-    subcategory: str
-    judge_prompt: str
+    name: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
+    eval_type: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
+    subcategory: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
+    judge_prompt: str = Field(min_length=1, max_length=MAX_BODY_LENGTH)
     items: dict = {}
     config: dict = {}
     enabled: bool = True
 
 
 class UpdateSuiteRequest(BaseModel):
-    name: str | None = None
-    eval_type: str | None = None
-    subcategory: str | None = None
-    judge_prompt: str | None = None
+    name: str | None = Field(None, min_length=1, max_length=MAX_NAME_LENGTH)
+    eval_type: str | None = Field(None, min_length=1, max_length=MAX_NAME_LENGTH)
+    subcategory: str | None = Field(None, min_length=1, max_length=MAX_NAME_LENGTH)
+    judge_prompt: str | None = Field(None, min_length=1, max_length=MAX_BODY_LENGTH)
     items: dict | None = None
     config: dict | None = None
     enabled: bool | None = None
 
 
 class CreateScenarioRequest(BaseModel):
-    name: str
-    prompt: str
+    name: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
+    prompt: str = Field(min_length=1, max_length=MAX_BODY_LENGTH)
     enabled: bool = True
 
 
 class UpdateScenarioRequest(BaseModel):
-    name: str | None = None
-    prompt: str | None = None
+    name: str | None = Field(None, min_length=1, max_length=MAX_NAME_LENGTH)
+    prompt: str | None = Field(None, min_length=1, max_length=MAX_BODY_LENGTH)
     enabled: bool | None = None
 
 
@@ -81,7 +83,7 @@ def create_suite_endpoint(body: CreateSuiteRequest):
 
 @router.put("/suites/{suite_id}")
 def update_suite_endpoint(suite_id: int, body: UpdateSuiteRequest):
-    kwargs = {k: v for k, v in body.model_dump().items() if v is not None}
+    kwargs = update_fields(body)
     if kwargs:
         update_suite(suite_id, **kwargs)
     return require_found(get_suite(suite_id), "Suite", suite_id)
@@ -120,7 +122,7 @@ def create_scenario_endpoint(suite_id: int, body: CreateScenarioRequest):
 
 @router.put("/scenarios/{scenario_id}")
 def update_scenario_endpoint(scenario_id: int, body: UpdateScenarioRequest):
-    kwargs = {k: v for k, v in body.model_dump().items() if v is not None}
+    kwargs = update_fields(body)
     if kwargs:
         update_scenario(scenario_id, **kwargs)
     return require_found(get_scenario(scenario_id), "Scenario", scenario_id)

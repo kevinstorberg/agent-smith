@@ -1,5 +1,17 @@
 const BASE = '/api';
 
+async function parseError(res: Response): Promise<never> {
+  const body = await res.json().catch(() => null);
+  const detail = body?.detail;
+  const message = typeof detail === 'string'
+    ? detail
+    : Array.isArray(detail)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ? detail.map((e: any) => `${e.loc?.slice(-1)[0] ?? 'field'}: ${e.msg}`).join('; ')
+      : `${res.status} ${res.statusText}`;
+  throw new Error(message);
+}
+
 async function get<T>(path: string, params?: Record<string, string>): Promise<T> {
   const url = new URL(path, window.location.origin);
   url.pathname = BASE + path;
@@ -9,7 +21,7 @@ async function get<T>(path: string, params?: Record<string, string>): Promise<T>
     });
   }
   const res = await fetch(url.toString());
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) await parseError(res);
   return res.json();
 }
 
@@ -19,7 +31,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) await parseError(res);
   return res.json();
 }
 
@@ -29,7 +41,7 @@ async function put<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) await parseError(res);
   return res.json();
 }
 
@@ -39,13 +51,13 @@ async function patch<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) await parseError(res);
   return res.json();
 }
 
 async function del<T = void>(path: string): Promise<T> {
   const res = await fetch(BASE + path, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) await parseError(res);
   const text = await res.text();
   return text ? JSON.parse(text) : (undefined as T);
 }
@@ -76,8 +88,9 @@ export interface HarnessItem {
   project: string | null;
   agents: string[];
   content: { body: string; metadata: Record<string, unknown> };
-  sort_key: string;
+  sort_key: number;
   enabled: boolean;
+  clone_as_skill?: boolean;
   version: number;
   created_at: string;
   updated_at: string;
@@ -158,7 +171,7 @@ export interface EvalScenario {
   name: string;
   prompt: string;
   enabled: boolean;
-  sort_key: string;
+  sort_key: number;
   created_at: string;
   updated_at: string;
 }

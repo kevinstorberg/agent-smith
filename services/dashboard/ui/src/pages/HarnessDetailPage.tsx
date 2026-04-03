@@ -7,7 +7,8 @@ import type { HarnessItem, HarnessConfig } from '../api';
 import { CopyButton } from '../components/CopyButton';
 import { ConfigForm } from '../components/ConfigForm';
 import { useNotification } from '../context/useNotification';
-import { ALL_AGENTS, TYPE_PATHS, isMarkdownType, toggleArrayItem, formatError } from '../constants';
+import { ALL_AGENTS, TYPE_PATHS, isMarkdownType, toggleArrayItem, formatError, MAX_NAME_LENGTH, nameError, isValidRepo } from '../constants';
+import { FieldError } from '../components/FieldError';
 import { harnessStyles as styles } from '../styles/harness';
 
 function formatBody(item: HarnessItem, type: string): string {
@@ -41,6 +42,7 @@ export function HarnessDetailPage() {
   const [editSortKey, setEditSortKey] = useState('');
   const [editAgents, setEditAgents] = useState<string[]>([]);
   const [editEnabled, setEditEnabled] = useState(true);
+  const [editCloneAsSkill, setEditCloneAsSkill] = useState(false);
   const [editBody, setEditBody] = useState('');
 
   const [history, setHistory] = useState<HarnessItem[]>([]);
@@ -62,9 +64,10 @@ export function HarnessDetailPage() {
       setItem(data);
       setEditName(data.name);
       setEditProject(data.project || '');
-      setEditSortKey(data.sort_key || '');
+      setEditSortKey(String(data.sort_key ?? 0));
       setEditAgents([...data.agents]);
       setEditEnabled(data.enabled);
+      setEditCloneAsSkill(!!data.clone_as_skill);
       setEditBody(formatBody(data, type));
     } finally {
       setLoading(false);
@@ -89,9 +92,10 @@ export function HarnessDetailPage() {
     if (!item) return;
     setEditName(item.name);
     setEditProject(item.project || '');
-    setEditSortKey(item.sort_key || '');
+    setEditSortKey(String(item.sort_key ?? 0));
     setEditAgents([...item.agents]);
     setEditEnabled(item.enabled);
+    setEditCloneAsSkill(!!item.clone_as_skill);
     setEditBody(formatBody(item, type));
     setPreviewVersion(null);
     setEditing(true);
@@ -103,14 +107,25 @@ export function HarnessDetailPage() {
 
   const save = async () => {
     if (!item) return;
+
+    const nameErr = nameError(editName.trim());
+    if (nameErr) { notify(nameErr, 'error'); return; }
+    if (editAgents.length === 0) { notify('At least one agent must be selected.', 'error'); return; }
+
+    if (!isMarkdownType(type)) {
+      try { JSON.parse(editBody); } catch { notify('Invalid JSON in metadata field.', 'error'); return; }
+    }
+
     setSaving(true);
     try {
       const originalBody = formatBody(item, type);
       const bodyChanged = editBody !== originalBody;
+      const editSortKeyNum = editSortKey ? parseInt(editSortKey, 10) : 0;
       const metadataChanged =
         editName !== item.name ||
         editEnabled !== item.enabled ||
-        editSortKey !== (item.sort_key || '') ||
+        editCloneAsSkill !== !!item.clone_as_skill ||
+        editSortKeyNum !== (item.sort_key || 0) ||
         (editProject || null) !== item.project ||
         JSON.stringify(editAgents.sort()) !== JSON.stringify([...item.agents].sort());
 
@@ -128,9 +143,10 @@ export function HarnessDetailPage() {
         await api.harness.items.updateMetadata(type, currentId, {
           name: editName,
           project: editProject || null,
-          sort_key: editSortKey || undefined,
+          sort_key: editSortKeyNum,
           agents: editAgents,
           enabled: editEnabled,
+          ...(type === 'rule' ? { clone_as_skill: editCloneAsSkill } : {}),
         });
       }
 
@@ -164,7 +180,6 @@ export function HarnessDetailPage() {
 
   const toggleAgent = (agent: string) => setEditAgents(prev => toggleArrayItem(prev, agent));
 
-  const isValidRepo = (r: string) => r === '*' || r.startsWith('/');
 
   const resetCfgForm = () => {
     setCfgDevice('*');
@@ -196,7 +211,11 @@ export function HarnessDetailPage() {
   };
 
   const saveConfig = async () => {
-    if (!item || !isValidRepo(cfgRepo)) return;
+    if (!item) return;
+    if (!isValidRepo(cfgRepo)) {
+      notify('Repo must be * or an absolute path.', 'error');
+      return;
+    }
     setCfgSaving(true);
     try {
       if (editingConfigId) {
@@ -264,11 +283,15 @@ export function HarnessDetailPage() {
       </div>
 
       {editing ? (
-        <input
-          style={{ ...styles.input, marginBottom: 12 }}
-          value={editName}
-          onChange={e => setEditName(e.target.value)}
-        />
+        <div style={{ marginBottom: 12 }}>
+          <input
+            style={{ ...styles.input, borderColor: editName && nameError(editName) ? 'var(--highlight)' : undefined }}
+            value={editName}
+            onChange={e => setEditName(e.target.value)}
+            maxLength={MAX_NAME_LENGTH}
+          />
+          <FieldError error={editName ? nameError(editName) : null} maxLength={MAX_NAME_LENGTH} currentLength={editName.length} />
+        </div>
       ) : (
         <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
           {displayItem.name}
@@ -286,6 +309,11 @@ export function HarnessDetailPage() {
         <span className="tag" style={{ background: displayItem.enabled ? 'var(--success)' : 'var(--text-muted)', color: '#1a1a2e' }}>
           {displayItem.enabled ? 'Enabled' : 'Disabled'}
         </span>
+        {displayItem.clone_as_skill && (
+          <span className="tag" style={{ background: 'rgba(255,100,100,0.15)', color: 'var(--highlight)' }}>
+            Skill Clone
+          </span>
+        )}
         {displayItem.project && (
           <span className="tag" style={{ background: 'rgba(91,141,239,0.15)', color: 'var(--info)', borderColor: 'rgba(91,141,239,0.3)' }}>
             {displayItem.project}
@@ -315,10 +343,12 @@ export function HarnessDetailPage() {
                 Sort Order
               </label>
               <input
+                type="number"
+                min={0}
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', padding: '6px 10px', fontSize: 13, fontFamily: 'var(--mono)', width: 120 }}
                 value={editSortKey}
                 onChange={e => setEditSortKey(e.target.value)}
-                placeholder="e.g. 005"
+                placeholder="e.g. 5"
               />
             </div>
           </div>
@@ -332,6 +362,17 @@ export function HarnessDetailPage() {
               />
               Enabled
             </label>
+            {type === 'rule' && (
+              <label style={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={editCloneAsSkill}
+                  onChange={() => setEditCloneAsSkill(!editCloneAsSkill)}
+                  style={{ accentColor: 'var(--highlight)', width: 16, height: 16 }}
+                />
+                Clone as Skill
+              </label>
+            )}
             <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>|</span>
             {ALL_AGENTS.map(agent => (
               <label key={agent} style={styles.checkboxLabel}>

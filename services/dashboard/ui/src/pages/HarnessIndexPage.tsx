@@ -58,6 +58,11 @@ export function HarnessIndexPage({ type }: { type: string }) {
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, enabled: !i.enabled } : i));
   };
 
+  const toggleCloneAsSkill = async (item: HarnessItem) => {
+    await api.harness.items.updateMetadata(type, item.id, { clone_as_skill: !item.clone_as_skill });
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, clone_as_skill: !i.clone_as_skill } : i));
+  };
+
   const onDragEnd = async (result: DropResult) => {
     if (!result.destination || result.source.index === result.destination.index) return;
 
@@ -112,6 +117,7 @@ export function HarnessIndexPage({ type }: { type: string }) {
                   <th>Name</th>
                   <th>Project</th>
                   <th>Enabled</th>
+                  {type === 'rule' && <th>Skill Clone</th>}
                   <th>Agents</th>
                   <th>Configs</th>
                   <th>Version</th>
@@ -161,6 +167,21 @@ export function HarnessIndexPage({ type }: { type: string }) {
                             </span>
                           </label>
                         </td>
+                        {type === 'rule' && (
+                          <td onClick={e => e.stopPropagation()}>
+                            <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <input
+                                type="checkbox"
+                                checked={!!item.clone_as_skill}
+                                onChange={() => toggleCloneAsSkill(item)}
+                                style={{ accentColor: 'var(--highlight)', width: 16, height: 16 }}
+                              />
+                              <span style={{ color: item.clone_as_skill ? 'var(--highlight)' : 'var(--text-muted)', fontSize: 12 }}>
+                                {item.clone_as_skill ? 'On' : 'Off'}
+                              </span>
+                            </label>
+                          </td>
+                        )}
                         <td>
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                             {item.agents.map(a => (
@@ -193,7 +214,7 @@ export function HarnessIndexPage({ type }: { type: string }) {
                 ))}
                 {provided.placeholder}
                 {items.length === 0 && (
-                  <tr><td colSpan={dragDisabled ? 7 : 8} className="loading">No {TYPE_LABELS[type]?.toLowerCase() || 'items'} found</td></tr>
+                  <tr><td colSpan={(dragDisabled ? 7 : 8) + (type === 'rule' ? 1 : 0)} className="loading">No {TYPE_LABELS[type]?.toLowerCase() || 'items'} found</td></tr>
                 )}
               </tbody>
             </table>

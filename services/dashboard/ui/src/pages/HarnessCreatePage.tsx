@@ -3,7 +3,8 @@ import { useNavigate, useLocation } from 'react-router';
 import MDEditor from '@uiw/react-md-editor';
 import { api } from '../api';
 import { useNotification } from '../context/useNotification';
-import { ALL_AGENTS, TYPE_PATHS, TYPE_LABELS, isMarkdownType, toggleArrayItem, formatError } from '../constants';
+import { ALL_AGENTS, TYPE_PATHS, TYPE_LABELS, isMarkdownType, toggleArrayItem, formatError, MAX_NAME_LENGTH, nameError, isValidRepo } from '../constants';
+import { FieldError } from '../components/FieldError';
 import { harnessStyles as styles } from '../styles/harness';
 
 function typeFromPath(pathname: string): string {
@@ -30,6 +31,7 @@ export function HarnessCreatePage() {
   const [sortKey, setSortKey] = useState('');
   const [agents, setAgents] = useState<string[]>([...ALL_AGENTS]);
   const [enabled, setEnabled] = useState(true);
+  const [cloneAsSkill, setCloneAsSkill] = useState(false);
   const [body, setBody] = useState('');
   const [metadataJson, setMetadataJson] = useState(PLACEHOLDER_METADATA[type] || '{}');
   const [saving, setSaving] = useState(false);
@@ -37,13 +39,12 @@ export function HarnessCreatePage() {
   const [repo, setRepo] = useState('*');
   const { notify } = useNotification();
 
-  const isValidRepo = (r: string) => r === '*' || r.startsWith('/');
-
   const toggleAgent = (agent: string) => setAgents(prev => toggleArrayItem(prev, agent));
 
   const save = async () => {
-    if (!name.trim()) {
-      notify('Name is required.', 'error');
+    const nameErr = nameError(name.trim());
+    if (nameErr) {
+      notify(nameErr, 'error');
       return;
     }
     if (agents.length === 0) {
@@ -73,13 +74,16 @@ export function HarnessCreatePage() {
       const created = await api.harness.items.create(type, {
         name: name.trim(),
         project: project.trim() || null,
-        sort_key: sortKey.trim() || undefined,
+        sort_key: sortKey ? parseInt(sortKey, 10) : undefined,
         content,
         agents,
         enabled,
         device: device.trim() || '*',
         repo: repo.trim() || '*',
       });
+      if (cloneAsSkill && type === 'rule') {
+        await api.harness.items.updateMetadata(type, created.id, { clone_as_skill: true });
+      }
       navigate(`/harness/${type}/${created.id}`);
     } catch (err) {
       notify(formatError(err), 'error');
@@ -105,11 +109,13 @@ export function HarnessCreatePage() {
       <div style={styles.field}>
         <label style={styles.label}>Name</label>
         <input
-          style={styles.input}
+          style={{ ...styles.input, borderColor: name && nameError(name) ? 'var(--highlight)' : undefined }}
           value={name}
           onChange={e => setName(e.target.value)}
-          placeholder={`e.g. ${type === 'tool' ? 'MyAPI' : type === 'hook' ? 'lint_on_save' : 'my_new_' + type}`}
+          placeholder={`e.g. ${type === 'tool' ? 'my_api' : type === 'hook' ? 'lint_on_save' : 'my_new_' + type}`}
+          maxLength={MAX_NAME_LENGTH}
         />
+        <FieldError error={name ? nameError(name) : null} maxLength={MAX_NAME_LENGTH} currentLength={name.length} />
       </div>
 
       <div style={{ ...styles.field, display: 'flex', gap: 16 }}>
@@ -125,10 +131,12 @@ export function HarnessCreatePage() {
         <div style={{ width: 140 }}>
           <label style={styles.label}>Sort Order</label>
           <input
+            type="number"
+            min={0}
             style={{ ...styles.input, fontFamily: 'var(--mono)' }}
             value={sortKey}
             onChange={e => setSortKey(e.target.value)}
-            placeholder="e.g. 005"
+            placeholder="e.g. 5"
           />
         </div>
       </div>
@@ -151,15 +159,28 @@ export function HarnessCreatePage() {
       </div>
 
       <div style={styles.field}>
-        <label style={styles.checkboxLabel}>
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={() => setEnabled(!enabled)}
-            style={{ accentColor: 'var(--success)', width: 16, height: 16 }}
-          />
-          Enabled
-        </label>
+        <div style={styles.checkboxRow}>
+          <label style={styles.checkboxLabel}>
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={() => setEnabled(!enabled)}
+              style={{ accentColor: 'var(--success)', width: 16, height: 16 }}
+            />
+            Enabled
+          </label>
+          {type === 'rule' && (
+            <label style={styles.checkboxLabel}>
+              <input
+                type="checkbox"
+                checked={cloneAsSkill}
+                onChange={() => setCloneAsSkill(!cloneAsSkill)}
+                style={{ accentColor: 'var(--highlight)', width: 16, height: 16 }}
+              />
+              Clone as Skill
+            </label>
+          )}
+        </div>
       </div>
 
       <div style={{ ...styles.field, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
