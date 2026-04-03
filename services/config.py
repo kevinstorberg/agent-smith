@@ -15,8 +15,8 @@ if not _env_file.is_file() and not os.environ.get(f"DATABASE_URL_{APP_ENV.upper(
 
 from scripts.shared.env import _load_env_file
 
+_load_env_file(_env_file)
 _load_env_file(_env_default)
-_load_env_file(_env_file, override=True)
 
 from scripts.shared.agents import AGENT_TARGETS
 
