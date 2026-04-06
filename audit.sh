@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 echo "=== Backend lint ==="
-.venv/bin/ruff check .
+ruff check .
 
 echo ""
 echo "=== Backend tests ==="
