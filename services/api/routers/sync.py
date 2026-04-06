@@ -2,23 +2,22 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
-router = APIRouter()
+from scripts.shared.paths import REPO_ROOT
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
+router = APIRouter()
 
 
 @router.post("/sync")
 def run_sync():
-    sync_script = _REPO_ROOT / "scripts" / "sync.py"
+    sync_script = REPO_ROOT / "scripts" / "sync.py"
     if not sync_script.exists():
         raise HTTPException(500, f"sync.py not found at {sync_script}")
     result = subprocess.run(
         [sys.executable, str(sync_script)],
-        capture_output=True, text=True, cwd=str(_REPO_ROOT), timeout=60,
+        capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=60,
     )
     return {
         "success": result.returncode == 0,

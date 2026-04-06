@@ -62,7 +62,7 @@ def main() -> int:
     if result.returncode != 0:
         print(f"dpkg failed:\n{result.stderr}", file=sys.stderr)
 
-    result = run("apt-get install -y -f")
+    result = run("apt-get install -y -f graphviz")
     if result.returncode != 0:
         print(f"apt-get fix failed:\n{result.stderr}", file=sys.stderr)
         return 1

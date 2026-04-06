@@ -3,25 +3,21 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 echo "=== Backend lint ==="
-ruff check .
+docker compose run --rm --build lint
 
 echo ""
 echo "=== Backend tests ==="
+docker compose --profile test down --volumes --remove-orphans
 docker compose run --rm --build test "$@"
 
 echo ""
-echo "=== Frontend install ==="
-cd services/client
-npm ci
-
-echo ""
 echo "=== Frontend lint ==="
-npm run lint
+docker compose run --rm --build frontend npm run lint
 
 echo ""
 echo "=== Frontend tests ==="
-npm test
+docker compose run --rm frontend npm test
 
 echo ""
 echo "=== Frontend build ==="
-npm run build
+docker compose run --rm frontend npm run build

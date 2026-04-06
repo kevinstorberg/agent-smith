@@ -49,6 +49,21 @@ services:
       timeout: 5s
       retries: 10
 
+  lint:
+    build: .
+    profiles: [lint]
+    entrypoint: ["ruff", "check", "."]
+
+  frontend:
+    build:
+      context: .
+      target: frontend
+    profiles: [frontend]
+    working_dir: /app/services/client
+    volumes:
+      - ./services/client:/app/services/client
+      - /app/services/client/node_modules
+
   test:
     build: .
     profiles: [test]
