@@ -112,7 +112,8 @@ def list_items(item_type: str, project: str | None = None, agent: str | None = N
 def list_items_summary(item_type: str, project: str | None = None, agent: str | None = None) -> list[dict]:
     table = _table(item_type)
     latest = _LATEST_VERSION_CLAUSE.format(table=table)
-    cols = "id, name, project, agents, sort_key, enabled, version, clone_as_skill, created_at, updated_at"
+    base_cols = "id, name, project, agents, sort_key, enabled, version, created_at, updated_at"
+    cols = f"{base_cols}, clone_as_skill" if item_type == "rule" else base_cols
 
     query = f"SELECT {cols} FROM {table}\n        WHERE {latest}\n          AND (project IS NULL OR project = %s)"
     params: list = [project]
