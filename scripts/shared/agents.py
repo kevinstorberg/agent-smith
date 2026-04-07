@@ -89,33 +89,26 @@ def _write_config(path: Path, data: dict, fmt: str) -> None:
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
+def _remove_path(cfg_value: str, removed: list[str], *, tree: bool = False) -> None:
+    p = Path(cfg_value).expanduser()
+    if not p.exists():
+        return
+    shutil.rmtree(p) if tree else p.unlink()
+    removed.append(str(p))
+
+
 def unsync_agent(agent: str) -> list[str]:
     if agent not in AGENT_TARGETS:
         raise ValueError(f"Unknown agent: {agent!r}. Must be one of {set(AGENT_TARGETS)}")
     cfg = AGENT_TARGETS[agent]
     removed: list[str] = []
 
-    rules_file = Path(cfg["rules_file"]).expanduser()
-    if rules_file.exists():
-        rules_file.unlink()
-        removed.append(str(rules_file))
-
+    _remove_path(cfg["rules_file"], removed)
     if "rules_dir" in cfg:
-        rules_dir = Path(cfg["rules_dir"]).expanduser()
-        if rules_dir.exists():
-            shutil.rmtree(rules_dir)
-            removed.append(str(rules_dir))
-
-    skills_dir = Path(cfg["skills_dir"]).expanduser()
-    if skills_dir.exists():
-        shutil.rmtree(skills_dir)
-        removed.append(str(skills_dir))
-
+        _remove_path(cfg["rules_dir"], removed, tree=True)
+    _remove_path(cfg["skills_dir"], removed, tree=True)
     if "agents_dir" in cfg:
-        agents_dir = Path(cfg["agents_dir"]).expanduser()
-        if agents_dir.exists():
-            shutil.rmtree(agents_dir)
-            removed.append(str(agents_dir))
+        _remove_path(cfg["agents_dir"], removed, tree=True)
 
     mcp_file = Path(cfg["mcp_file"]).expanduser()
     if mcp_file.exists():

@@ -5,14 +5,11 @@ import pytest
 from services.api.models.shared.harness import upsert_item, list_items, get_item
 from services.api.models.hook import map_hook_event
 from services.config import ALL_AGENTS
+from tests.conftest import harness_cleanup
+
 RULE_CONTENT = {"body": "## Test Rule\n* **The Rule:** Be good.", "metadata": {}}
 
-
-@pytest.fixture(autouse=True)
-def _clean_harness_tables():
-    yield
-    from tests.conftest import clean_harness_rows
-    clean_harness_rows("test_%")
+_clean = harness_cleanup("test_%")
 
 
 def test_upsert_rule_creates_new_row():

@@ -40,3 +40,11 @@ def clean_harness_rows(*patterns: str):
                         (item_type, pattern),
                     )
                     cur.execute(f"DELETE FROM {table} WHERE name LIKE %s", (pattern,))
+
+
+def harness_cleanup(*patterns: str):
+    @pytest.fixture(autouse=True)
+    def _clean():
+        yield
+        clean_harness_rows(*patterns)
+    return _clean

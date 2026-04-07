@@ -2,8 +2,6 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Source env files so host-level vars (e.g. RDS_CERT_PATH) are available
-# for docker-compose volume interpolation.
 set -a
 [[ -f .env.default ]] && source .env.default
 [[ -f .env.production ]] && source .env.production

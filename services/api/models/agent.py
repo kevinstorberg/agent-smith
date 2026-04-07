@@ -45,8 +45,8 @@ class AgentModel(BaseModel):
         return result
 
 
-list_agents = lambda **kw: list_items("agent", **kw)  # noqa: E731
-get_agent = lambda name, **kw: get_item("agent", name, **kw)  # noqa: E731
-upsert_agent = lambda name, **kw: upsert_item("agent", name, **kw)  # noqa: E731
+def list_agents(**kw): return list_items("agent", **kw)
+def get_agent(name, **kw): return get_item("agent", name, **kw)
+def upsert_agent(name, **kw): return upsert_item("agent", name, **kw)
 collect_agents_from_db = AgentModel.collect_from_db
 _collect_scoped_items = AgentModel._collect_scoped_items

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from scripts.shared.validation import MAX_TITLE_LENGTH, MAX_BODY_LENGTH
 
 from services.api.models.plan import list_plans, search_plans, get_plan, create_plan, update_plan, delete_plan
-from services.api.routers.base import require_found, list_response, delete_response, empty_to_none
+from services.api.routers.base import require_found, list_response, delete_response, empty_to_none, resolve_project
 
 router = APIRouter()
 
@@ -46,7 +46,7 @@ def create(body: CreateRequest):
 class UpdateRequest(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=MAX_TITLE_LENGTH)
     body: str | None = Field(None, min_length=1, max_length=MAX_BODY_LENGTH)
-    project: str | None = "UNSET"
+    project: str | None = None
 
 
 @router.put("/{plan_id}")
@@ -55,7 +55,7 @@ def update(plan_id: int, body: UpdateRequest):
         plan_id,
         title=body.title,
         body=body.body,
-        project=body.project if body.project != "UNSET" else "UNSET",
+        project=resolve_project(body.project),
     )
     return require_found(get_plan(plan_id), "Plan", plan_id)
 

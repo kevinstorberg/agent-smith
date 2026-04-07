@@ -22,4 +22,12 @@ def update_fields(body) -> dict:
     return {k: v for k, v in body.model_dump().items() if v is not None}
 
 
+def paginate(items: list, offset: int, limit: int) -> tuple[list, int]:
+    return items[offset:offset + limit], len(items)
+
+
+def resolve_project(value: str | None) -> str:
+    return value if value is not None else "UNSET"
+
+
 from scripts.shared.validation import empty_to_none  # noqa: F401

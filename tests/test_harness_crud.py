@@ -8,14 +8,11 @@ from services.api.models.shared.harness import (
     delete_item, reorder_items,
 )
 from services.config import ALL_AGENTS
+from tests.conftest import harness_cleanup
+
 CONTENT = {"body": "## Test", "metadata": {}}
 
-
-@pytest.fixture(autouse=True)
-def _clean():
-    yield
-    from tests.conftest import clean_harness_rows
-    clean_harness_rows("crud_%", "reorder_%", "to_delete", "clone_%")
+_clean = harness_cleanup("crud_%", "reorder_%", "to_delete", "clone_%")
 
 
 def test_create_item_inserts_with_version_1():
@@ -195,3 +192,97 @@ class TestCreateRequestValidation:
         from services.api.routers.shared.validators import CreateRequest
         with pytest.raises(ValidationError, match="content"):
             CreateRequest(name="valid", content={"other": "val"})
+
+
+class TestMetadataUpdateValidation:
+    def test_accepts_all_none(self):
+        from services.api.routers.shared.validators import MetadataUpdate
+        body = MetadataUpdate()
+        assert body.enabled is None
+        assert body.agents is None
+        assert body.name is None
+
+    def test_validates_name_format_when_provided(self):
+        from pydantic import ValidationError
+        from services.api.routers.shared.validators import MetadataUpdate
+        with pytest.raises(ValidationError, match="name"):
+            MetadataUpdate(name="Bad Name")
+
+    def test_accepts_valid_partial_update(self):
+        from services.api.routers.shared.validators import MetadataUpdate
+        body = MetadataUpdate(enabled=False, name="good_name")
+        assert body.enabled is False
+        assert body.name == "good_name"
+
+    def test_validates_agents_when_provided(self):
+        from pydantic import ValidationError
+        from services.api.routers.shared.validators import MetadataUpdate
+        with pytest.raises(ValidationError, match="agents"):
+            MetadataUpdate(agents=["nonexistent"])
+
+
+class TestConfigCreateValidation:
+    def test_accepts_defaults(self):
+        from services.api.routers.shared.validators import ConfigCreate
+        body = ConfigCreate()
+        assert body.device == "*"
+        assert body.repo == "*"
+        assert body.enabled is True
+        assert body.exclude is False
+
+    def test_rejects_relative_repo(self):
+        from pydantic import ValidationError
+        from services.api.routers.shared.validators import ConfigCreate
+        with pytest.raises(ValidationError, match="repo"):
+            ConfigCreate(repo="relative/path")
+
+    def test_rejects_invalid_agents(self):
+        from pydantic import ValidationError
+        from services.api.routers.shared.validators import ConfigCreate
+        with pytest.raises(ValidationError, match="agents"):
+            ConfigCreate(agents=["unknown_agent"])
+
+
+class TestConfigUpdateValidation:
+    def test_accepts_all_none(self):
+        from services.api.routers.shared.validators import ConfigUpdate
+        body = ConfigUpdate()
+        assert body.device is None
+        assert body.repo is None
+
+    def test_validates_repo_when_provided(self):
+        from pydantic import ValidationError
+        from services.api.routers.shared.validators import ConfigUpdate
+        with pytest.raises(ValidationError, match="repo"):
+            ConfigUpdate(repo="bad")
+
+    def test_validates_agents_when_provided(self):
+        from pydantic import ValidationError
+        from services.api.routers.shared.validators import ConfigUpdate
+        with pytest.raises(ValidationError, match="agents"):
+            ConfigUpdate(agents=["fake"])
+
+    def test_accepts_valid_partial(self):
+        from services.api.routers.shared.validators import ConfigUpdate
+        body = ConfigUpdate(device="work", enabled=False)
+        assert body.device == "work"
+        assert body.enabled is False
+
+
+class TestReorderRequestValidation:
+    def test_rejects_empty_ids(self):
+        from pydantic import ValidationError
+        from services.api.routers.shared.validators import ReorderRequest
+        with pytest.raises(ValidationError, match="ids"):
+            ReorderRequest(ids=[])
+
+    def test_rejects_non_positive_ids(self):
+        from pydantic import ValidationError
+        from services.api.routers.shared.validators import ReorderRequest
+        with pytest.raises(ValidationError, match="ids"):
+            ReorderRequest(ids=[1, 0, 3])
+
+    def test_accepts_valid_ids(self):
+        from services.api.routers.shared.validators import ReorderRequest
+        body = ReorderRequest(ids=[1, 2, 3])
+        assert body.ids == [1, 2, 3]

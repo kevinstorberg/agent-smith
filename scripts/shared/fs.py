@@ -4,6 +4,16 @@ import shutil
 from pathlib import Path
 
 
+def _remove_stale(dest_dir: Path, keep: set[str], *, match_dirs: bool = False) -> None:
+    iterator = dest_dir.iterdir() if match_dirs else dest_dir.glob("*.md")
+    for stale in iterator:
+        if match_dirs and not stale.is_dir():
+            continue
+        if stale.name not in keep:
+            shutil.rmtree(stale) if stale.is_dir() else stale.unlink()
+            print(f"  removed:   {stale}")
+
+
 def compose_strings(items: list[tuple[str, str]], transform=None) -> str:
     parts: list[str] = []
     for name, raw in items:
@@ -128,10 +138,7 @@ def _sync_rules_dir(items: list[tuple[str, str]], dest_dir: Path, dry_run: bool)
         _, msg = atomic_write(dest_dir / f"{name}.md", body)
         print(f"  {msg}")
 
-    for stale in dest_dir.glob("*.md"):
-        if stale.name not in source_names:
-            stale.unlink()
-            print(f"  removed:   {stale}")
+    _remove_stale(dest_dir, source_names)
 
 
 def _sync_skills_to_target(skills: dict[str, dict], dest_dir: Path, dry_run: bool) -> None:
@@ -151,10 +158,7 @@ def _sync_skills_to_target(skills: dict[str, dict], dest_dir: Path, dry_run: boo
             _, msg = atomic_write(dest_file, file_content)
             print(f"  {msg}")
 
-    for stale in dest_dir.iterdir():
-        if stale.is_dir() and stale.name not in skills:
-            shutil.rmtree(stale)
-            print(f"  removed:   {stale}")
+    _remove_stale(dest_dir, set(skills.keys()), match_dirs=True)
 
 
 def _collect_skill_clones(
@@ -248,7 +252,4 @@ def sync_agents(agent: str, dry_run: bool, device_name: str = "") -> None:
         _, msg = atomic_write(dest_dir / filename, content)
         print(f"  {msg}")
 
-    for stale in dest_dir.glob("*.md"):
-        if stale.name not in source_names:
-            stale.unlink()
-            print(f"  removed:   {stale}")
+    _remove_stale(dest_dir, source_names)
