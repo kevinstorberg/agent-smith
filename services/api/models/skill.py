@@ -21,7 +21,7 @@ class SkillModel(BaseModel):
         return result
 
 
-list_skills = lambda **kw: list_items("skill", **kw)  # noqa: E731
-get_skill = lambda name, **kw: get_item("skill", name, **kw)  # noqa: E731
-upsert_skill = lambda name, **kw: upsert_item("skill", name, **kw)  # noqa: E731
+def list_skills(**kw): return list_items("skill", **kw)
+def get_skill(name, **kw): return get_item("skill", name, **kw)
+def upsert_skill(name, **kw): return upsert_item("skill", name, **kw)
 collect_skills_from_db = SkillModel.collect_from_db

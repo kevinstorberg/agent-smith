@@ -14,7 +14,7 @@ class RuleModel(BaseModel):
         return [(r["name"], r["content"]["body"]) for r in rows]
 
 
-list_rules = lambda **kw: list_items("rule", **kw)  # noqa: E731
-get_rule = lambda name, **kw: get_item("rule", name, **kw)  # noqa: E731
-upsert_rule = lambda name, **kw: upsert_item("rule", name, **kw)  # noqa: E731
+def list_rules(**kw): return list_items("rule", **kw)
+def get_rule(name, **kw): return get_item("rule", name, **kw)
+def upsert_rule(name, **kw): return upsert_item("rule", name, **kw)
 collect_rules_from_db = RuleModel.collect_from_db

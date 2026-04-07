@@ -10,7 +10,7 @@ from services.api.models.shared.harness import (
 from services.api.models.harness_config import (
     batch_list_configs, list_configs, create_config, update_config, delete_config,
 )
-from services.api.routers.base import require_found, list_response, delete_response, empty_to_none, update_fields
+from services.api.routers.base import require_found, list_response, delete_response, empty_to_none, update_fields, resolve_project, paginate
 from services.api.routers.shared.validators import (
     CreateRequest, ContentUpdate, MetadataUpdate, ReorderRequest,
     ConfigCreate, ConfigUpdate,
@@ -19,6 +19,7 @@ from services.api.routers.shared.validators import (
 
 class BaseHarnessRouter:
     item_type: str
+    convenience_path: str | None = None
 
     def __init__(self):
         self.router = APIRouter()
@@ -26,6 +27,8 @@ class BaseHarnessRouter:
 
     def _register_routes(self):
         t = self.item_type
+        if self.convenience_path:
+            self.router.add_api_route(self.convenience_path, self.convenience_list, methods=["GET"])
         self.router.add_api_route(f"/items/{t}", self.list_items, methods=["GET"])
         self.router.add_api_route(f"/items/{t}/reorder", self.reorder, methods=["PUT"])
         self.router.add_api_route(f"/items/{t}/{{item_id}}", self.get_item, methods=["GET"])
@@ -41,6 +44,12 @@ class BaseHarnessRouter:
     def _list_for_convenience(self, project: str, agent: str) -> list[dict]:
         return list_items(self.item_type, project=empty_to_none(project), agent=empty_to_none(agent))
 
+    def convenience_list(self, project: str = Query(""), agent: str = Query("")):
+        return [self._format_convenience_row(r) for r in self._list_for_convenience(project, agent)]
+
+    def _format_convenience_row(self, row: dict) -> dict:
+        raise NotImplementedError
+
     def list_items(
         self,
         project: str = Query(""),
@@ -53,8 +62,7 @@ class BaseHarnessRouter:
         if name:
             name_lower = name.lower()
             all_items = [i for i in all_items if name_lower in i["name"].lower()]
-        total = len(all_items)
-        items = all_items[offset:offset + limit]
+        items, total = paginate(all_items, offset, limit)
         configs_map = batch_list_configs([i["id"] for i in items], self.item_type)
         for item in items:
             item["configs"] = configs_map.get(item["id"], [])
@@ -89,7 +97,7 @@ class BaseHarnessRouter:
             self.item_type, item_id,
             enabled=body.enabled, agents=body.agents,
             name=body.name, sort_key=body.sort_key,
-            project=body.project if body.project is not None else "UNSET",
+            project=resolve_project(body.project),
         )
         return get_item_by_id(self.item_type, item_id)
 

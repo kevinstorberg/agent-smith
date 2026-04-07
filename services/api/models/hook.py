@@ -51,7 +51,7 @@ class HookModel(BaseModel):
         return events
 
 
-list_hooks = lambda **kw: list_items("hook", **kw)  # noqa: E731
-get_hook = lambda name, **kw: get_item("hook", name, **kw)  # noqa: E731
-upsert_hook = lambda name, **kw: upsert_item("hook", name, **kw)  # noqa: E731
+def list_hooks(**kw): return list_items("hook", **kw)
+def get_hook(name, **kw): return get_item("hook", name, **kw)
+def upsert_hook(name, **kw): return upsert_item("hook", name, **kw)
 collect_hooks_from_db = HookModel.collect_from_db

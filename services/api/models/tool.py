@@ -14,7 +14,7 @@ class ToolModel(BaseModel):
         return {r["name"]: content_metadata(r) for r in rows}
 
 
-list_tools = lambda **kw: list_items("tool", **kw)  # noqa: E731
-get_tool = lambda name, **kw: get_item("tool", name, **kw)  # noqa: E731
-upsert_tool = lambda name, **kw: upsert_item("tool", name, **kw)  # noqa: E731
+def list_tools(**kw): return list_items("tool", **kw)
+def get_tool(name, **kw): return get_item("tool", name, **kw)
+def upsert_tool(name, **kw): return upsert_item("tool", name, **kw)
 collect_tools_from_db = ToolModel.collect_from_db

@@ -8,12 +8,15 @@ from scripts.shared.validation import (
 from services.config import ALL_AGENTS
 
 
+def _make_optional(fn):
+    return lambda v: fn(v) if v is not None else v
+
+
 def _check_name(v: str) -> str:
     return validate_item_name(v)
 
 
-def _check_name_optional(v: str | None) -> str | None:
-    return validate_item_name(v) if v is not None else v
+_check_name_optional = _make_optional(_check_name)
 
 
 def _check_content(v: dict) -> dict:
@@ -26,16 +29,14 @@ def _check_agents(v: list[str]) -> list[str]:
     return validate_agents_list(v, ALL_AGENTS)
 
 
-def _check_agents_optional(v: list[str] | None) -> list[str] | None:
-    return validate_agents_list(v, ALL_AGENTS) if v is not None else v
+_check_agents_optional = _make_optional(_check_agents)
 
 
 def _check_repo(v: str) -> str:
     return validate_repo_format(v)
 
 
-def _check_repo_optional(v: str | None) -> str | None:
-    return validate_repo_format(v) if v is not None else v
+_check_repo_optional = _make_optional(_check_repo)
 
 
 class CreateRequest(BaseModel):

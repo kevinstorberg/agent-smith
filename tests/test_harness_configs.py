@@ -1,20 +1,14 @@
 from __future__ import annotations
 
-import pytest
-
 from services.api.models.shared.harness import (
     create_item, get_item_by_id, update_content, delete_item,
 )
 from services.config import ALL_AGENTS
+from tests.conftest import harness_cleanup
 
 CONTENT = {"body": "## Test Config", "metadata": {}}
 
-
-@pytest.fixture(autouse=True)
-def _clean_config_test_data():
-    yield
-    from tests.conftest import clean_harness_rows
-    clean_harness_rows("cfg_%")
+_clean = harness_cleanup("cfg_%")
 
 
 def _count_configs(item_id: int, item_type: str = "rule") -> int:
