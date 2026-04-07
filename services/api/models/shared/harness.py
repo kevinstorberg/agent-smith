@@ -230,7 +230,7 @@ def update_metadata(
     project: str | None = "UNSET",
     clone_as_skill: bool | None = None,
 ) -> None:
-    _table(item_type)  # validate
+    _table(item_type)
 
     fields = BaseModel._collect_fields(
         enabled=enabled, name=name, sort_key=sort_key, clone_as_skill=clone_as_skill,
