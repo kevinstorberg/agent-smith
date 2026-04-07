@@ -148,10 +148,6 @@ def test_reorder_items_sets_sort_key():
     assert r3["sort_key"] < r1["sort_key"] < r2["sort_key"]
 
 
-# ---------------------------------------------------------------------------
-# Pydantic model validation tests
-# ---------------------------------------------------------------------------
-
 class TestCreateRequestValidation:
     def test_rejects_empty_name(self):
         from pydantic import ValidationError

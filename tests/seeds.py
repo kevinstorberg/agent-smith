@@ -2,7 +2,6 @@ from __future__ import annotations
 
 
 def seed_test_data():
-    """Seed minimal data for integration tests. Idempotent."""
     from services.config import ALL_AGENTS, MCP_URL
     from services.api.models.rule import get_rule, upsert_rule
     from services.api.models.skill import get_skill, upsert_skill

@@ -6,11 +6,6 @@ from services.db import get_connection
 
 
 class VersioningMixin:
-    """Mixin for models with version-bumping content updates.
-
-    Requires: cls.table, cls._validate_id, cls.serialize_timestamps
-    """
-
     @classmethod
     def update_content(cls, item_id: int, content: dict) -> int:
         cls._validate_id(item_id)
