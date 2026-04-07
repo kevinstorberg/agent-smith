@@ -25,7 +25,6 @@ DATABASE_URL: str = os.environ.get(_db_var, "")
 if not DATABASE_URL:
     raise SystemExit(f"{_db_var} is required for APP_ENV={APP_ENV}. Set it in .env.{APP_ENV}")
 
-# Tests must run in the test environment to avoid polluting non-test databases.
 if "pytest" in sys.modules and APP_ENV != "test":
     raise SystemExit(f"Tests can only run in APP_ENV=test, got APP_ENV={APP_ENV}.")
 

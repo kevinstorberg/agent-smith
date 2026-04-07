@@ -21,7 +21,6 @@ def run(cmd: str) -> subprocess.CompletedProcess:
 
 
 def extract_failed_packages(stderr: str) -> list[tuple[str, str]]:
-    """Parse apt-get output for failed fetches and return (name, url) pairs."""
     failed = []
     for match in re.finditer(r"Failed to fetch http://deb\.debian\.org/debian/pool/(\S+\.deb)", stderr):
         deb_path = match.group(1)

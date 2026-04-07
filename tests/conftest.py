@@ -30,7 +30,6 @@ HARNESS_TABLES = [
 
 
 def clean_harness_rows(*patterns: str):
-    """Delete harness rows (and their configs) matching any of the given SQL LIKE patterns."""
     from services.db import get_connection
     with get_connection() as conn:
         with conn.cursor() as cur:

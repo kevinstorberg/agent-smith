@@ -80,10 +80,6 @@ def test_compose_agent_file_no_scoped_rules():
     assert "# Rules" not in result
 
 
-# ---------------------------------------------------------------------------
-# repo_config tests
-# ---------------------------------------------------------------------------
-
 class TestRepoConfig:
     def test_claude_paths(self):
         from scripts.shared.agents import repo_config
@@ -116,13 +112,8 @@ class TestRepoConfig:
         assert paths == {}
 
 
-# ---------------------------------------------------------------------------
-# Repo-scoped sync tests
-# ---------------------------------------------------------------------------
-
 class TestSyncRulesRepoTarget:
     def test_repo_scoped_rule_writes_to_repo_dir(self, tmp_path: Path):
-        """A rule with repo=/some/path should write to <repo>/.claude/rules/, not home."""
         from scripts.shared.fs import _sync_rules_to_target
 
         items = [("test_rule", "## Test Rule\nBe good.")]
@@ -151,10 +142,6 @@ class TestSyncRulesRepoTarget:
         assert (tmp_path / "CLAUDE.md").exists()
         assert "Global" in (tmp_path / "CLAUDE.md").read_text()
 
-
-# ---------------------------------------------------------------------------
-# Skill clone tests
-# ---------------------------------------------------------------------------
 
 class TestSkillClone:
     def test_clone_writes_skill_directory(self, tmp_path: Path):

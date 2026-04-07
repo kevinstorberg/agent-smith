@@ -19,8 +19,6 @@ class RulesRouter(BaseHarnessRouter):
         return [{"name": r["name"], "content": r["content"]["body"]} for r in rows]
 
     def patch_metadata(self, item_id: int, body: MetadataUpdate):
-        if body.clone_as_skill is not None:
-            pass  # clone_as_skill is allowed for rules
         update_metadata(
             self.item_type, item_id,
             enabled=body.enabled, agents=body.agents,

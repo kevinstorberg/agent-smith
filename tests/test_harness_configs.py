@@ -111,7 +111,6 @@ class TestConfigCRUD:
 
 
 class TestMigrationPreservesData:
-    """Verify seed data has config rows after migration."""
 
     def test_seed_rule_has_config(self):
         from services.api.models.shared.harness import get_item
@@ -147,7 +146,6 @@ class TestMigrationPreservesData:
         assert cfg["repo"] == "*"
 
     def test_all_seed_items_have_wildcard_configs(self):
-        """Verify every seeded item type gets wildcard config rows."""
         from services.api.models.shared.harness import get_item
         from services.api.models.harness_config import list_configs
         for item_type, name in [("rule", "test_rule"), ("skill", "test_skill"), ("tool", "test_tool"), ("hook", "test_hook"), ("agent", "test_agent")]:
@@ -200,12 +198,7 @@ class TestVersionBumpPreservesAllFields:
         assert new_item["enabled"] is False
 
 
-# ---------------------------------------------------------------------------
-# Config resolution logic
-# ---------------------------------------------------------------------------
-
 class TestResolveNoConfigs:
-    """Items with no config rows do not sync — configs are the sole authority."""
 
     def test_resolve_no_configs_returns_empty(self):
         from services.api.models.shared.sync import resolve_sync_targets
@@ -249,7 +242,6 @@ class TestResolveAdditiveWildcard:
             {"device": "work-laptop", "repo": "/proj", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": False},
         ], "agents": ALL_AGENTS, "enabled": True}
         targets = resolve_sync_targets(item, agent="claude", device_name="")
-        # Item has explicit configs but none match (no device set) → don't sync
         assert targets == []
 
 
@@ -279,9 +271,6 @@ class TestResolveSubtractive:
             {"device": "*", "repo": "*", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": False},
             {"device": "work", "repo": "/Users/me/projX", "agents": ["claude"], "subagents": [], "enabled": True, "exclude": True},
         ], "agents": ALL_AGENTS, "enabled": True}
-        # The subtractive config removes /Users/me/projX on device=work,
-        # but the additive is repo=* (global), so the subtractive doesn't
-        # match a specific additive target — global still applies.
         targets = resolve_sync_targets(item, agent="claude", device_name="work")
         assert "*" in targets
 

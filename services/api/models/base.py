@@ -8,8 +8,6 @@ TIMESTAMP_FIELDS = ("created_at", "updated_at", "timestamp")
 
 
 class BaseModel:
-    """ActiveRecord-style base. Subclasses set `table` and inherit full CRUD."""
-
     table: str
     json_fields: set[str] = set()
 

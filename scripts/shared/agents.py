@@ -67,7 +67,6 @@ _REPO_SUBDIRS: dict[str, dict[str, str]] = {
 
 
 def repo_config(agent: str, repo_path: str) -> dict[str, str]:
-    """Resolve absolute config paths for a provider within a repo root."""
     assert Path(repo_path).is_absolute(), f"repo_path must be absolute: {repo_path}"
     base = _REPO_SUBDIRS.get(agent, {})
     return {k: str(Path(repo_path) / v) for k, v in base.items()}
@@ -96,7 +95,6 @@ def unsync_agent(agent: str) -> list[str]:
     cfg = AGENT_TARGETS[agent]
     removed: list[str] = []
 
-    # Clean global home dirs
     rules_file = Path(cfg["rules_file"]).expanduser()
     if rules_file.exists():
         rules_file.unlink()
@@ -127,14 +125,12 @@ def unsync_agent(agent: str) -> list[str]:
             _write_config(mcp_file, data, cfg["mcp_format"])
             removed.append(f"{mcp_file} (removed {cfg['mcp_key']})")
 
-    # Clean repo-scoped files
     removed.extend(_unsync_repo_targets(agent))
 
     return removed
 
 
 def _unsync_repo_targets(agent: str) -> list[str]:
-    """Remove synced files from repo-scoped config directories."""
     removed: list[str] = []
     try:
         from services.db import get_connection

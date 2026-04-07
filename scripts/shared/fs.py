@@ -33,7 +33,6 @@ def atomic_write(path: Path | str, content: str) -> tuple[bool, str]:
 
 
 def _sync_rules_to_target(items: list[tuple[str, str]], cfg: dict, dry_run: bool) -> None:
-    """Sync rule items to a target config (global home dir or repo-local dir)."""
     rules_file = Path(cfg["rules_file"]).expanduser()
     rules_dir = Path(cfg["rules_dir"]).expanduser() if "rules_dir" in cfg else None
 
@@ -90,7 +89,6 @@ def _sync_to_repo_targets(
     sync_fn,
     dry_run: bool,
 ) -> None:
-    """Iterate repo targets, resolve paths, and call the sync function for each."""
     from scripts.shared.agents import repo_config
 
     for repo_path, rows in repo_rows.items():
@@ -137,7 +135,6 @@ def _sync_rules_dir(items: list[tuple[str, str]], dest_dir: Path, dry_run: bool)
 
 
 def _sync_skills_to_target(skills: dict[str, dict], dest_dir: Path, dry_run: bool) -> None:
-    """Sync skill items to a target directory."""
     if dry_run:
         print(f"  would sync {len(skills)} skill(s) -> {dest_dir}")
         return
@@ -163,7 +160,6 @@ def _sync_skills_to_target(skills: dict[str, dict], dest_dir: Path, dry_run: boo
 def _collect_skill_clones(
     agent: str, device_name: str,
 ) -> tuple[dict[str, dict], dict[str, dict[str, dict]]]:
-    """Fetch rules with clone_as_skill=True and format them as skill maps."""
     global_rows, repo_rows = _resolve_and_partition("rule", agent, device_name)
 
     def to_skills(rows: list[dict]) -> dict[str, dict]:
