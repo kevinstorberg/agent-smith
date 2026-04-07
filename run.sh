@@ -19,6 +19,10 @@ echo "=== Stopping old containers ==="
 docker compose down
 
 echo ""
+echo "=== Pruning unused Docker resources ==="
+docker system prune -f
+
+echo ""
 echo "=== Building app ==="
 DOCKER_BUILDKIT=1 BUILDKIT_PROGRESS=plain docker compose build ${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"} 2>&1 | cat
 
