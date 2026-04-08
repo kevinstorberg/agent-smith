@@ -123,8 +123,7 @@ export function MemoryPage() {
 
         return (
           <div key={item.id} className="card">
-            <div style={{ position: 'relative' }}>
-              {!isEditing && <CopyButton text={item.content} style={{ position: 'absolute', top: 8, right: 8, zIndex: 10 }} />}
+            <div>
               {isEditing ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase' as const }}>Content</label>
@@ -175,7 +174,7 @@ export function MemoryPage() {
                   </div>
                 </div>
               ) : (
-                <div style={{ marginBottom: 8, fontSize: 13, lineHeight: 1.6, paddingRight: 60 }}>
+                <div style={{ marginBottom: 8, fontSize: 13, lineHeight: 1.6 }}>
                   {item.content}
                 </div>
               )}
@@ -191,6 +190,7 @@ export function MemoryPage() {
               )}
               {!isEditing && (
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                  <CopyButton text={item.content} style={{ fontSize: 11, padding: '3px 10px' }} />
                   <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }} onClick={e => { e.stopPropagation(); startEdit(item); }}>Edit</button>
                   {confirmDeleteId === item.id ? (
                     <>
