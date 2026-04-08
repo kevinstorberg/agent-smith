@@ -81,13 +81,11 @@ export function EvalSuiteDetailPage() {
     },
   });
 
-  // Scenario edit state
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [editingScenarioId, setEditingScenarioId] = useState<number | null>(null);
   const [editScenarioName, setEditScenarioName] = useState('');
   const [editScenarioPrompt, setEditScenarioPrompt] = useState('');
 
-  // Add scenario state
   const [addingScenario, setAddingScenario] = useState(false);
   const [newName, setNewName] = useState('');
   const [newPrompt, setNewPrompt] = useState('');
@@ -250,10 +248,11 @@ export function EvalSuiteDetailPage() {
           value={editValues.name ?? ''}
           onChange={e => setEditValue('name', e.target.value)}
           placeholder="Suite name"
-          style={{ width: '100%', fontSize: 18, fontWeight: 600, marginBottom: 16 }}
+          className="page-title"
+          style={{ width: '100%', marginBottom: 16 }}
         />
       ) : (
-        <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 16 }}>
+        <h2 className="page-title" style={{ marginBottom: 16 }}>
           {suite.name || 'New Suite'}
         </h2>
       )}

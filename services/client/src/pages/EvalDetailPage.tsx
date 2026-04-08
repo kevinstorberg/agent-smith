@@ -51,7 +51,7 @@ export function EvalDetailPage() {
         </button>
       </div>
 
-      <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>
+      <h2 className="page-title" style={{ marginBottom: 8 }}>
         {run.scenario}
       </h2>
       <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>

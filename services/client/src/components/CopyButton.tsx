@@ -3,13 +3,15 @@ import { useState } from 'react';
 interface CopyButtonProps {
   text: string;
   style?: React.CSSProperties;
+  className?: string;
 }
 
-export function CopyButton({ text, style }: CopyButtonProps) {
+export function CopyButton({ text, style, className }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
 
   return (
     <button
+      className={className}
       onClick={e => {
         e.stopPropagation();
         navigator.clipboard.writeText(text);

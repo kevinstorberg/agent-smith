@@ -193,7 +193,7 @@ export function PlanDetailPage() {
         </>
       ) : (
         <>
-          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
+          <h2 className="page-title" style={{ marginBottom: 8 }}>
             {plan!.title}
           </h2>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>

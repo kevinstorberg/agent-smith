@@ -102,7 +102,7 @@ export function HarnessCreatePage() {
         </button>
       </div>
 
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 20 }}>
+      <h2 className="page-title" style={{ marginBottom: 20 }}>
         New {TYPE_LABELS[type] || type}
       </h2>
 

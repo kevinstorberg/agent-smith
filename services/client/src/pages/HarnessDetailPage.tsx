@@ -327,7 +327,7 @@ export function HarnessDetailPage() {
           <FieldError error={editValues.name ? nameError(editValues.name) : null} maxLength={MAX_NAME_LENGTH} currentLength={editValues.name?.length ?? 0} />
         </div>
       ) : (
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
+        <h2 className="page-title" style={{ marginBottom: 8 }}>
           {displayItem.name}
           {previewVersion && (
             <span style={{ fontSize: 13, color: 'var(--warning)', marginLeft: 12 }}>
@@ -344,12 +344,12 @@ export function HarnessDetailPage() {
           {displayItem.enabled ? 'Enabled' : 'Disabled'}
         </span>
         {displayItem.clone_as_skill && (
-          <span className="tag" style={{ background: 'rgba(255,100,100,0.15)', color: 'var(--highlight)' }}>
+          <span className="tag tag-danger">
             Skill Clone
           </span>
         )}
         {displayItem.project && (
-          <span className="tag" style={{ background: 'rgba(91,141,239,0.15)', color: 'var(--info)', borderColor: 'rgba(91,141,239,0.3)' }}>
+          <span className="tag tag-info">
             {displayItem.project}
           </span>
         )}
@@ -362,7 +362,7 @@ export function HarnessDetailPage() {
         <>
           <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
             <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 6 }}>
+              <label className="form-label">
                 Project
               </label>
               <input
@@ -373,7 +373,7 @@ export function HarnessDetailPage() {
               />
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 6 }}>
+              <label className="form-label">
                 Sort Order
               </label>
               <input
@@ -503,13 +503,13 @@ export function HarnessDetailPage() {
               }}
             >
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span className="tag" style={{ background: cfg.exclude ? 'rgba(255,100,100,0.15)' : 'rgba(100,200,100,0.15)', color: cfg.exclude ? 'var(--highlight)' : 'var(--success)', fontWeight: 600, fontSize: 11 }}>
+                <span className={`tag tag-sm ${cfg.exclude ? 'tag-danger' : 'tag-success'}`} style={{ fontWeight: 600 }}>
                   {cfg.exclude ? 'Exclude' : 'Include'}
                 </span>
-                <span className="tag" style={{ background: 'rgba(255,165,0,0.15)', color: 'var(--warning)' }}>
+                <span className="tag tag-warning">
                   {cfg.device === '*' ? 'All devices' : cfg.device}
                 </span>
-                <span className="tag" style={{ background: 'rgba(100,200,100,0.15)', color: 'var(--success)', fontFamily: 'var(--mono)', fontSize: 11 }}>
+                <span className="tag tag-success tag-sm" style={{ fontFamily: 'var(--mono)' }}>
                   {cfg.repo === '*' ? 'Global' : cfg.repo}
                 </span>
                 {cfg.agents.map(a => (

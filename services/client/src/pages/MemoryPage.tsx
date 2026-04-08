@@ -95,7 +95,7 @@ export function MemoryPage() {
 
   return (
     <div>
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Memory</h2>
+      <h2 className="page-title" style={{ marginBottom: 16 }}>Memory</h2>
 
       <div className="search-bar">
         <input
@@ -181,7 +181,7 @@ export function MemoryPage() {
             </div>
 
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: isEditing ? 12 : 0 }}>
-              {item.repo && <span className="tag" style={{ background: 'rgba(91,141,239,0.15)', color: 'var(--info)', borderColor: 'rgba(91,141,239,0.3)' }}>{item.repo}</span>}
+              {item.repo && <span className="tag tag-info">{item.repo}</span>}
               {item.tags?.map(t => <span key={t} className="tag">{t}</span>)}
               {item.created_at && (
                 <span className="text-muted-sm">
@@ -190,18 +190,18 @@ export function MemoryPage() {
               )}
               {!isEditing && (
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-                  <CopyButton text={item.content} style={{ fontSize: 11, padding: '3px 10px' }} />
-                  <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }} onClick={e => { e.stopPropagation(); startEdit(item); }}>Edit</button>
+                  <CopyButton text={item.content} className="btn-sm" />
+                  <button className="btn btn-sm" onClick={e => { e.stopPropagation(); startEdit(item); }}>Edit</button>
                   {confirmDeleteId === item.id ? (
                     <>
                       <span style={{ color: 'var(--warning)', fontSize: 12, alignSelf: 'center' }}>Delete?</span>
-                      <button className="btn btn-danger" style={{ fontSize: 11, padding: '3px 10px' }} onClick={e => { e.stopPropagation(); deleteMemory(item.id); }} disabled={saving}>
+                      <button className="btn btn-danger btn-sm" onClick={e => { e.stopPropagation(); deleteMemory(item.id); }} disabled={saving}>
                         {saving ? '...' : 'Yes'}
                       </button>
-                      <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }} onClick={e => { e.stopPropagation(); setConfirmDeleteId(null); }}>No</button>
+                      <button className="btn btn-sm" onClick={e => { e.stopPropagation(); setConfirmDeleteId(null); }}>No</button>
                     </>
                   ) : (
-                    <button className="btn btn-danger" style={{ fontSize: 11, padding: '3px 10px' }} onClick={e => { e.stopPropagation(); setConfirmDeleteId(item.id); }}>Delete</button>
+                    <button className="btn btn-danger btn-sm" onClick={e => { e.stopPropagation(); setConfirmDeleteId(item.id); }}>Delete</button>
                   )}
                 </div>
               )}

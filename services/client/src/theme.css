@@ -326,6 +326,36 @@ body {
   border-color: rgba(91, 141, 239, 0.3);
 }
 
+.tag-info {
+  background: rgba(91, 141, 239, 0.15);
+  color: var(--info);
+  border-color: rgba(91, 141, 239, 0.3);
+}
+
+.tag-warning {
+  background: rgba(255, 165, 0, 0.15);
+  color: var(--warning);
+}
+
+.tag-success {
+  background: rgba(100, 200, 100, 0.15);
+  color: var(--success);
+}
+
+.tag-danger {
+  background: rgba(255, 100, 100, 0.15);
+  color: var(--highlight);
+}
+
+.tag-sm {
+  font-size: 11px;
+}
+
+.page-title {
+  font-size: 18px;
+  font-weight: 600;
+}
+
 .score {
   font-family: var(--mono);
   font-weight: 600;
@@ -587,6 +617,16 @@ pre {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 12px;
+}
+
+.form-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
 }
 
 .sub-tabs {

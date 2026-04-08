@@ -86,7 +86,7 @@ export function EvalsPage() {
 
   return (
     <div>
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Results</h2>
+      <h2 className="page-title" style={{ marginBottom: 16 }}>Results</h2>
 
       <div className="filters">
         <select

@@ -32,7 +32,7 @@ export function EvalSuitesPage() {
   return (
     <div>
       <div className="page-header">
-        <h2 style={{ fontSize: 18, fontWeight: 600 }}>Evals</h2>
+        <h2 className="page-title">Evals</h2>
         <button className="btn btn-primary" onClick={() => navigate('/eval-configs/new')}>
           + New Suite
         </button>

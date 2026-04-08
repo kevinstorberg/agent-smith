@@ -39,7 +39,6 @@ export function HarnessIndexPage({ type }: { type: string }) {
 
   const dragDisabled = hasFilters;
 
-  // Debounce name and project inputs
   useEffect(() => {
     const timeout = setTimeout(() => setNameFilter(nameInput), 300);
     return () => clearTimeout(timeout);
@@ -89,7 +88,7 @@ export function HarnessIndexPage({ type }: { type: string }) {
     <div>
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600 }}>{TYPE_LABELS[type] || type}</h2>
+          <h2 className="page-title">{TYPE_LABELS[type] || type}</h2>
         </div>
         <button className="btn btn-primary" onClick={() => navigate(`/harness/${type}/new`)}>
           + New {type.charAt(0).toUpperCase() + type.slice(1)}
@@ -183,16 +182,16 @@ export function HarnessIndexPage({ type }: { type: string }) {
                         <div>
                           {(item.configs ?? []).length > 0 ? (
                             <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
-                              <span className="tag" style={{ fontSize: 11 }}>{item.configs.length}</span>
+                              <span className="tag tag-sm">{item.configs.length}</span>
                               {item.configs.some(c => c.device !== '*') && (
-                                <span className="tag" style={{ background: 'rgba(255,165,0,0.15)', color: 'var(--warning)', fontSize: 10 }}>device</span>
+                                <span className="tag tag-warning" style={{ fontSize: 10 }}>device</span>
                               )}
                               {item.configs.some(c => c.repo !== '*') && (
-                                <span className="tag" style={{ background: 'rgba(100,200,100,0.15)', color: 'var(--success)', fontSize: 10 }}>repo</span>
+                                <span className="tag tag-success" style={{ fontSize: 10 }}>repo</span>
                               )}
                             </div>
                           ) : (
-                            <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>default</span>
+                            <span className="text-muted-sm">default</span>
                           )}
                         </div>
                         <VersionCell version={item.version} />

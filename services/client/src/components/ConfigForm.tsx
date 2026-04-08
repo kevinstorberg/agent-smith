@@ -35,17 +35,17 @@ export function ConfigForm({
       {title && <div style={{ fontSize: 'var(--font-base)', fontWeight: 600, marginBottom: 10 }}>{title}</div>}
       <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 180px' }}>
-          <label style={{ display: 'block', fontSize: 'var(--font-xs)', color: 'var(--text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4 }}>Device</label>
+          <label className="form-label">Device</label>
           <input style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', padding: '6px 10px', fontSize: 'var(--font-base)', fontFamily: 'var(--font)', width: '100%' }} value={device} onChange={e => onDeviceChange(e.target.value)} placeholder="* = all devices" />
         </div>
         <div style={{ flex: '2 1 280px' }}>
-          <label style={{ display: 'block', fontSize: 'var(--font-xs)', color: 'var(--text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4 }}>Repo</label>
+          <label className="form-label">Repo</label>
           <input style={{ background: 'var(--bg)', border: `1px solid ${isValidRepo(repo) ? 'var(--border)' : 'var(--highlight)'}`, borderRadius: 'var(--radius)', color: 'var(--text)', padding: '6px 10px', fontSize: 'var(--font-base)', fontFamily: 'var(--mono)', width: '100%' }} value={repo} onChange={e => onRepoChange(e.target.value)} placeholder="* = global, or /absolute/path" />
           {!isValidRepo(repo) && <span style={{ fontSize: 'var(--font-xs)', color: 'var(--highlight)', marginTop: 2, display: 'block' }}>Must be * or an absolute path</span>}
         </div>
       </div>
       <div style={{ marginBottom: 8 }}>
-        <label style={{ display: 'block', fontSize: 'var(--font-xs)', color: 'var(--text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 6 }}>Agents</label>
+        <label className="form-label">Agents</label>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
           {ALL_AGENTS.map(a => (
             <label key={a} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 'var(--font-base)' }}>
@@ -56,7 +56,7 @@ export function ConfigForm({
         </div>
       </div>
       <div style={{ marginBottom: 12 }}>
-        <label style={{ display: 'block', fontSize: 'var(--font-xs)', color: 'var(--text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 6 }}>Subagents (optional)</label>
+        <label className="form-label">Subagents (optional)</label>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
           {ALL_AGENTS.map(a => (
             <label key={a} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 'var(--font-base)' }}>

@@ -37,7 +37,7 @@ export function PlansIndexPage() {
   return (
     <div>
       <div className="page-header">
-        <h2 style={{ fontSize: 18, fontWeight: 600 }}>Plans</h2>
+        <h2 className="page-title">Plans</h2>
         <button className="btn btn-primary" onClick={() => navigate('/plans/new')}>
           + New Plan
         </button>
