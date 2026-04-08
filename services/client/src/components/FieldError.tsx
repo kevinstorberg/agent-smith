@@ -13,10 +13,10 @@ export function FieldError({ error, maxLength, currentLength }: Props) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
       {error ? (
-        <span style={{ fontSize: 11, color: 'var(--highlight)' }}>{error}</span>
+        <span style={{ fontSize: 'var(--font-xs)', color: 'var(--highlight)' }}>{error}</span>
       ) : <span />}
       {maxLength && currentLength !== undefined && nearLimit && (
-        <span style={{ fontSize: 11, color: overLimit ? 'var(--highlight)' : 'var(--text-muted)' }}>
+        <span style={{ fontSize: 'var(--font-xs)', color: overLimit ? 'var(--highlight)' : 'var(--text-muted)' }}>
           {currentLength} / {maxLength}
         </span>
       )}

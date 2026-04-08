@@ -3,7 +3,22 @@ import { useParams, useNavigate } from 'react-router';
 import { api } from '../api';
 import type { EvalSuite, EvalScenario } from '../api';
 import { CopyButton } from '../components/CopyButton';
+import { DetailPageHeader } from '../components/DetailPageHeader';
+import { useDetailPageEdit } from '../hooks/useDetailPageEdit';
+import { useApiMutation } from '../hooks/useApiMutation';
 import { useNotification } from '../context/useNotification';
+import { makeKeyboardClickable } from '../utils/a11y';
+import { validators } from '../utils/validation';
+
+interface SuiteEditValues {
+  name: string;
+  eval_type: string;
+  subcategory: string;
+  judge_prompt: string;
+  items_json: string;
+  config_json: string;
+  enabled: boolean;
+}
 
 export function EvalSuiteDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,25 +36,56 @@ export function EvalSuiteDetailPage() {
     enabled: true,
   });
   const [scenarios, setScenarios] = useState<EvalScenario[]>([]);
-  const [saving, setSaving] = useState(false);
 
-  // Suite edit state
-  const [editing, setEditing] = useState(isNew);
-  const [editName, setEditName] = useState('');
-  const [editEvalType, setEditEvalType] = useState('');
-  const [editSubcategory, setEditSubcategory] = useState('');
-  const [editJudgePrompt, setEditJudgePrompt] = useState('');
-  const [editItemsJson, setEditItemsJson] = useState('{}');
-  const [editConfigJson, setEditConfigJson] = useState('{}');
-  const [editEnabled, setEditEnabled] = useState(true);
+  const {
+    editing,
+    saving,
+    editValues,
+    setEditValue,
+    startEditing: startEdit,
+    cancelEditing: cancelEdit,
+    setSaving,
+  } = useDetailPageEdit<SuiteEditValues>({
+    initialData: {
+      name: suite.name || '',
+      eval_type: suite.eval_type || '',
+      subcategory: suite.subcategory || '',
+      judge_prompt: suite.judge_prompt || '',
+      items_json: JSON.stringify(suite.items || {}, null, 2),
+      config_json: JSON.stringify(suite.config || {}, null, 2),
+      enabled: suite.enabled ?? true,
+    },
+    isNew,
+    onCancel: () => navigate('/eval-configs'),
+  });
 
-  // Scenario edit state
+  const createMutation = useApiMutation({
+    mutationFn: api.evalConfigs.suites.create,
+    onSuccess: (created) => {
+      navigate(`/eval-configs/${created.id}`, { replace: true });
+    },
+  });
+
+  const updateMutation = useApiMutation({
+    mutationFn: (body: Partial<EvalSuite>) => api.evalConfigs.suites.update(Number(id), body),
+    onSuccess: async () => {
+      const updated = await api.evalConfigs.suites.get(Number(id));
+      setSuite(updated);
+    },
+  });
+
+  const deleteMutation = useApiMutation({
+    mutationFn: () => api.evalConfigs.suites.remove(Number(id)),
+    onSuccess: () => {
+      navigate('/eval-configs');
+    },
+  });
+
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [editingScenarioId, setEditingScenarioId] = useState<number | null>(null);
   const [editScenarioName, setEditScenarioName] = useState('');
   const [editScenarioPrompt, setEditScenarioPrompt] = useState('');
 
-  // Add scenario state
   const [addingScenario, setAddingScenario] = useState(false);
   const [newName, setNewName] = useState('');
   const [newPrompt, setNewPrompt] = useState('');
@@ -49,75 +95,72 @@ export function EvalSuiteDetailPage() {
     api.evalConfigs.suites.get(Number(id)).then(data => {
       setSuite(data);
       setScenarios(data.scenarios || []);
-      populateEditFields(data);
     });
-  };
-
-  const populateEditFields = (data: Partial<EvalSuite>) => {
-    setEditName(data.name || '');
-    setEditEvalType(data.eval_type || '');
-    setEditSubcategory(data.subcategory || '');
-    setEditJudgePrompt(data.judge_prompt || '');
-    setEditItemsJson(JSON.stringify(data.items || {}, null, 2));
-    setEditConfigJson(JSON.stringify(data.config || {}, null, 2));
-    setEditEnabled(data.enabled ?? true);
   };
 
   useEffect(() => { loadSuite(); }, [id, isNew]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startEditing = () => {
-    populateEditFields(suite);
-    setEditing(true);
-  };
-
-  const cancelEditing = () => {
-    if (isNew) { navigate('/eval-configs'); return; }
-    populateEditFields(suite);
-    setEditing(false);
+    startEdit({
+      name: suite.name || '',
+      eval_type: suite.eval_type || '',
+      subcategory: suite.subcategory || '',
+      judge_prompt: suite.judge_prompt || '',
+      items_json: JSON.stringify(suite.items || {}, null, 2),
+      config_json: JSON.stringify(suite.config || {}, null, 2),
+      enabled: suite.enabled ?? true,
+    });
   };
 
   const save = async () => {
-    if (!editName.trim()) { notify('Name is required.', 'error'); return; }
-    if (!editEvalType.trim()) { notify('Eval type is required.', 'error'); return; }
-    if (!editSubcategory.trim()) { notify('Subcategory is required.', 'error'); return; }
-    if (!editJudgePrompt.trim()) { notify('Judge prompt is required.', 'error'); return; }
+    const name = editValues.name?.trim() ?? '';
+    const evalType = editValues.eval_type?.trim() ?? '';
+    const subcategory = editValues.subcategory?.trim() ?? '';
+    const judgePrompt = editValues.judge_prompt?.trim() ?? '';
+    const itemsJson = editValues.items_json ?? '{}';
+    const configJson = editValues.config_json ?? '{}';
+    const enabled = editValues.enabled ?? true;
 
-    let parsedItems: Record<string, unknown>;
-    let parsedConfig: Record<string, unknown>;
-    try { parsedItems = JSON.parse(editItemsJson); } catch { notify('Invalid JSON in Items field', 'error'); return; }
-    try { parsedConfig = JSON.parse(editConfigJson); } catch { notify('Invalid JSON in Config field', 'error'); return; }
+    if (!name) { notify('Name is required.', 'error'); return; }
+    if (!evalType) { notify('Eval type is required.', 'error'); return; }
+    if (!subcategory) { notify('Subcategory is required.', 'error'); return; }
+    if (!judgePrompt) { notify('Judge prompt is required.', 'error'); return; }
+
+    const itemsError = validators.json(itemsJson);
+    if (itemsError) { notify('Invalid JSON in Items field', 'error'); return; }
+
+    const configError = validators.json(configJson);
+    if (configError) { notify('Invalid JSON in Config field', 'error'); return; }
+
+    const parsedItems: Record<string, unknown> = JSON.parse(itemsJson);
+    const parsedConfig: Record<string, unknown> = JSON.parse(configJson);
 
     setSaving(true);
     try {
-
       const body = {
-        name: editName,
-        eval_type: editEvalType,
-        subcategory: editSubcategory,
-        judge_prompt: editJudgePrompt,
+        name,
+        eval_type: evalType,
+        subcategory,
+        judge_prompt: judgePrompt,
         items: parsedItems,
         config: parsedConfig,
-        enabled: editEnabled,
+        enabled,
       };
 
       if (isNew) {
-        const created = await api.evalConfigs.suites.create(body);
-        navigate(`/eval-configs/${created.id}`, { replace: true });
+        await createMutation.mutateAsync(body);
       } else {
-        await api.evalConfigs.suites.update(Number(id), body);
-        const updated = await api.evalConfigs.suites.get(Number(id));
-        setSuite(updated);
-        setEditing(false);
+        await updateMutation.mutateAsync(body);
+        cancelEdit();
       }
     } finally {
       setSaving(false);
     }
   };
 
-  const deleteSuite = async () => {
-    if (!confirm(`Delete suite "${suite.name}" and all its scenarios?`)) return;
-    await api.evalConfigs.suites.remove(Number(id));
-    navigate('/eval-configs');
+  const handleDelete = async () => {
+    if (!suite.name) return;
+    await deleteMutation.mutateAsync();
   };
 
   const toggleScenario = async (sc: EvalScenario) => {
@@ -174,51 +217,42 @@ export function EvalSuiteDetailPage() {
 
   return (
     <div>
-      {/* Header */}
-      <div className="page-header">
-        <a
-          onClick={() => navigate('/eval-configs')}
-          style={{ color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}
-        >
-          &larr; Back to Evals
-        </a>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {!isNew && suite.eval_type && (
-            <a
-              onClick={() => navigate(`/evals?category=${suite.eval_type}&subcategory=${suite.subcategory}`)}
-              style={{ color: 'var(--info)', cursor: 'pointer', fontSize: 13, marginRight: 8 }}
-            >
-              View Results &rarr;
-            </a>
-          )}
-          {!editing && (
-            <button className="btn" onClick={startEditing}>Edit</button>
-          )}
-          {editing && (
-            <>
-              <button className="btn btn-primary" onClick={save} disabled={saving}>
-                {saving ? 'Saving...' : 'Save'}
-              </button>
-              <button className="btn" onClick={cancelEditing}>Cancel</button>
-            </>
-          )}
-          {!isNew && !editing && (
-            <button className="btn btn-danger" onClick={deleteSuite}>Delete</button>
-          )}
+      {/* View Results link */}
+      {!isNew && suite.eval_type && (
+        <div style={{ marginBottom: 12 }}>
+          <a
+            onClick={() => navigate(`/evals?category=${suite.eval_type}&subcategory=${suite.subcategory}`)}
+            style={{ color: 'var(--info)', cursor: 'pointer', fontSize: 13 }}
+          >
+            View Results &rarr;
+          </a>
         </div>
-      </div>
+      )}
+
+      <DetailPageHeader
+        backTo={{ label: 'Evals', path: '/eval-configs' }}
+        editing={editing}
+        saving={saving}
+        onEdit={startEditing}
+        onSave={save}
+        onCancel={cancelEdit}
+        onDelete={!isNew ? handleDelete : undefined}
+        onNavigateBack={() => navigate('/eval-configs')}
+        deleteConfirmMessage={`Delete suite "${suite.name}" and all its scenarios?`}
+      />
 
       {/* Suite title */}
       {editing ? (
         <input
           type="text"
-          value={editName}
-          onChange={e => setEditName(e.target.value)}
+          value={editValues.name ?? ''}
+          onChange={e => setEditValue('name', e.target.value)}
           placeholder="Suite name"
-          style={{ width: '100%', fontSize: 18, fontWeight: 600, marginBottom: 16 }}
+          className="page-title"
+          style={{ width: '100%', marginBottom: 16 }}
         />
       ) : (
-        <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 16 }}>
+        <h2 className="page-title" style={{ marginBottom: 16 }}>
           {suite.name || 'New Suite'}
         </h2>
       )}
@@ -230,11 +264,11 @@ export function EvalSuiteDetailPage() {
           <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
             <div style={{ flex: 1 }}>
               <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Eval Type</label>
-              <input type="text" value={editEvalType} onChange={e => setEditEvalType(e.target.value)} style={{ width: '100%', fontSize: 13 }} />
+              <input type="text" value={editValues.eval_type ?? ''} onChange={e => setEditValue('eval_type', e.target.value)} style={{ width: '100%', fontSize: 13 }} />
             </div>
             <div style={{ flex: 1 }}>
               <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Subcategory</label>
-              <input type="text" value={editSubcategory} onChange={e => setEditSubcategory(e.target.value)} style={{ width: '100%', fontSize: 13 }} />
+              <input type="text" value={editValues.subcategory ?? ''} onChange={e => setEditValue('subcategory', e.target.value)} style={{ width: '100%', fontSize: 13 }} />
             </div>
           </div>
         ) : (
@@ -251,8 +285,8 @@ export function EvalSuiteDetailPage() {
           <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Judge Prompt</label>
           {editing ? (
             <textarea
-              value={editJudgePrompt}
-              onChange={e => setEditJudgePrompt(e.target.value)}
+              value={editValues.judge_prompt ?? ''}
+              onChange={e => setEditValue('judge_prompt', e.target.value)}
               rows={10}
               style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)' }}
             />
@@ -283,8 +317,8 @@ export function EvalSuiteDetailPage() {
           <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Items (JSON)</label>
           {editing ? (
             <textarea
-              value={editItemsJson}
-              onChange={e => setEditItemsJson(e.target.value)}
+              value={editValues.items_json ?? '{}'}
+              onChange={e => setEditValue('items_json', e.target.value)}
               rows={6}
               style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text)' }}
             />
@@ -309,8 +343,8 @@ export function EvalSuiteDetailPage() {
           <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Config (JSON)</label>
           {editing ? (
             <textarea
-              value={editConfigJson}
-              onChange={e => setEditConfigJson(e.target.value)}
+              value={editValues.config_json ?? '{}'}
+              onChange={e => setEditValue('config_json', e.target.value)}
               rows={4}
               style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text)' }}
             />
@@ -335,8 +369,8 @@ export function EvalSuiteDetailPage() {
           <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
             <input
               type="checkbox"
-              checked={editEnabled}
-              onChange={e => setEditEnabled(e.target.checked)}
+              checked={editValues.enabled ?? true}
+              onChange={e => setEditValue('enabled', e.target.checked)}
               style={{ accentColor: 'var(--success)', width: 16, height: 16 }}
             />
             Enabled
@@ -430,15 +464,16 @@ export function EvalSuiteDetailPage() {
                       ) : (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span
+                            {...makeKeyboardClickable(() => setExpandedId(sc.id))}
                             style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
-                            onClick={() => setExpandedId(sc.id)}
                           >
                             {sc.prompt.slice(0, 120)}...
                           </span>
                           <span
-                            onClick={() => startScenarioEdit(sc)}
+                            {...makeKeyboardClickable(() => startScenarioEdit(sc))}
                             style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, flexShrink: 0 }}
                             title="Edit scenario"
+                            aria-label="Edit scenario"
                           >
                             &#9998;
                           </span>

@@ -218,8 +218,10 @@ describe('PlanDetailPage', () => {
 
       fireEvent.click(screen.getByText('Delete'));
 
-      expect(confirmSpy).toHaveBeenCalledWith('Delete plan "Test Plan"?');
-      expect(mockRemove).toHaveBeenCalledWith(42);
+      await waitFor(() => {
+        expect(confirmSpy).toHaveBeenCalledWith('Delete plan "Test Plan"?');
+        expect(mockRemove).toHaveBeenCalledWith(42);
+      });
 
       confirmSpy.mockRestore();
     });
