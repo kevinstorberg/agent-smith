@@ -6,35 +6,13 @@ import { api } from '../api';
 import type { Plan } from '../api';
 import { CopyButton } from '../components/CopyButton';
 import { FieldError } from '../components/FieldError';
+import { DetailPageHeader } from '../components/DetailPageHeader';
+import { useDetailPageEdit } from '../hooks/useDetailPageEdit';
+import { useApiMutation } from '../hooks/useApiMutation';
 import { useNotification } from '../context/useNotification';
 import { MAX_TITLE_LENGTH } from '../constants';
 
 const styles = {
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  } as React.CSSProperties,
-  backLink: {
-    color: 'var(--text-muted)',
-    cursor: 'pointer',
-    fontSize: 13,
-    background: 'none',
-    border: 'none',
-    fontFamily: 'var(--font)',
-    textDecoration: 'underline',
-  } as React.CSSProperties,
-  btn: {
-    background: 'var(--accent)',
-    color: 'var(--text)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius)',
-    padding: '6px 14px',
-    cursor: 'pointer',
-    fontSize: 13,
-    fontFamily: 'var(--font)',
-  } as React.CSSProperties,
   input: {
     background: 'var(--surface)',
     border: '1px solid var(--border)',
@@ -75,12 +53,41 @@ export function PlanDetailPage() {
 
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(!isNew);
-  const [editing, setEditing] = useState(isNew);
-  const [saving, setSaving] = useState(false);
 
-  const [editTitle, setEditTitle] = useState('');
-  const [editProject, setEditProject] = useState('');
-  const [editBody, setEditBody] = useState('');
+  const {
+    editing,
+    saving,
+    editValues,
+    setEditValue,
+    startEditing: startEdit,
+    cancelEditing: cancelEdit,
+    setSaving,
+  } = useDetailPageEdit<Plan>({
+    initialData: plan,
+    isNew,
+    onCancel: () => navigate('/plans'),
+  });
+
+  const createMutation = useApiMutation({
+    mutationFn: api.plans.create,
+    onSuccess: (created) => {
+      navigate(`/plans/${created.id}`, { replace: true });
+    },
+  });
+
+  const updateMutation = useApiMutation({
+    mutationFn: (data: Partial<Plan>) => api.plans.update(Number(id), data),
+    onSuccess: async () => {
+      await loadPlan();
+    },
+  });
+
+  const deleteMutation = useApiMutation({
+    mutationFn: () => api.plans.remove(Number(id)),
+    onSuccess: () => {
+      navigate('/plans');
+    },
+  });
 
   const loadPlan = useCallback(async () => {
     if (isNew) return;
@@ -88,9 +95,6 @@ export function PlanDetailPage() {
     try {
       const data = await api.plans.get(Number(id));
       setPlan(data);
-      setEditTitle(data.title);
-      setEditProject(data.project || '');
-      setEditBody(data.body);
     } finally {
       setLoading(false);
     }
@@ -102,47 +106,41 @@ export function PlanDetailPage() {
 
   const startEditing = () => {
     if (!plan) return;
-    setEditTitle(plan.title);
-    setEditProject(plan.project || '');
-    setEditBody(plan.body);
-    setEditing(true);
-  };
-
-  const cancelEditing = () => {
-    if (isNew) {
-      navigate('/plans');
-      return;
-    }
-    setEditing(false);
+    startEdit(plan);
   };
 
   const save = async () => {
-    if (!editTitle.trim()) { notify('Title is required.', 'error'); return; }
-    if (editTitle.length > MAX_TITLE_LENGTH) { notify(`Title must be ${MAX_TITLE_LENGTH} characters or fewer.`, 'error'); return; }
-    if (!editBody.trim()) { notify('Body is required.', 'error'); return; }
+    const title = editValues.title ?? '';
+    const body = editValues.body ?? '';
+    const project = editValues.project ?? '';
+
+    if (!title.trim()) { notify('Title is required.', 'error'); return; }
+    if (title.length > MAX_TITLE_LENGTH) { notify(`Title must be ${MAX_TITLE_LENGTH} characters or fewer.`, 'error'); return; }
+    if (!body.trim()) { notify('Body is required.', 'error'); return; }
+
     setSaving(true);
     try {
       if (isNew) {
-        const created = await api.plans.create({
-          title: editTitle,
-          body: editBody,
-          project: editProject || null,
+        await createMutation.mutateAsync({
+          title,
+          body,
+          project: project || null,
         });
-        navigate(`/plans/${created.id}`, { replace: true });
       } else {
-        await api.plans.update(Number(id), {
-          title: editTitle,
-          body: editBody,
-          project: editProject || null,
+        await updateMutation.mutateAsync({
+          title,
+          body,
+          project: project || null,
         });
-        setEditing(false);
-        await loadPlan();
       }
-    } catch (err) {
-      notify(`Save failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleDelete = async () => {
+    if (!plan) return;
+    await deleteMutation.mutateAsync();
   };
 
   if (loading) return <div className="loading">Loading...</div>;
@@ -150,55 +148,42 @@ export function PlanDetailPage() {
 
   return (
     <div>
-      <div style={styles.header}>
-        <button style={styles.backLink} onClick={() => navigate('/plans')}>
-          &larr; Back to plans
-        </button>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {!editing && plan && (
-            <>
-              <button style={styles.btn} onClick={startEditing}>Edit</button>
-              <button className="btn btn-danger" onClick={() => {
-                if (confirm(`Delete plan "${plan.title}"?`)) {
-                  api.plans.remove(plan.id).then(() => navigate('/plans'));
-                }
-              }}>Delete</button>
-            </>
-          )}
-          {editing && (
-            <>
-              <button style={{ ...styles.btn, opacity: saving ? 0.5 : 1 }} onClick={save} disabled={saving}>
-                {saving ? 'Saving...' : 'Save'}
-              </button>
-              <button style={styles.btn} onClick={cancelEditing}>Cancel</button>
-            </>
-          )}
-        </div>
-      </div>
+      <DetailPageHeader
+        backTo={{ label: 'plans', path: '/plans' }}
+        editing={editing}
+        saving={saving}
+        onEdit={startEditing}
+        onSave={save}
+        onCancel={cancelEdit}
+        onDelete={plan ? handleDelete : undefined}
+        onNavigateBack={() => navigate('/plans')}
+        deleteConfirmMessage={plan ? `Delete plan "${plan.title}"?` : undefined}
+        showActions={!isNew || editing}
+      />
 
       {editing ? (
         <>
           <input
-            style={{ ...styles.input, borderColor: editTitle && editTitle.length > MAX_TITLE_LENGTH ? 'var(--highlight)' : undefined }}
-            value={editTitle}
-            onChange={e => setEditTitle(e.target.value)}
+            style={{ ...styles.input, borderColor: editValues.title && editValues.title.length > MAX_TITLE_LENGTH ? 'var(--highlight)' : undefined }}
+            value={editValues.title ?? ''}
+            onChange={e => setEditValue('title', e.target.value)}
             placeholder="Plan title"
             maxLength={MAX_TITLE_LENGTH}
           />
-          <FieldError maxLength={MAX_TITLE_LENGTH} currentLength={editTitle.length} />
+          <FieldError maxLength={MAX_TITLE_LENGTH} currentLength={editValues.title?.length ?? 0} />
           <div style={{ marginBottom: 16 }}>
             <label style={styles.fieldLabel}>Project</label>
             <input
               style={styles.fieldInput}
-              value={editProject}
-              onChange={e => setEditProject(e.target.value)}
+              value={editValues.project ?? ''}
+              onChange={e => setEditValue('project', e.target.value)}
               placeholder="Empty = no project"
             />
           </div>
           <div data-color-mode="dark">
             <MDEditor
-              value={editBody}
-              onChange={val => setEditBody(val || '')}
+              value={editValues.body ?? ''}
+              onChange={val => setEditValue('body', val || '')}
               height={400}
             />
           </div>
@@ -217,7 +202,7 @@ export function PlanDetailPage() {
             </span>
           </div>
           <div className="card" style={{ position: 'relative' }}>
-            <CopyButton text={plan!.body} style={{ position: 'absolute', top: 12, right: 12, zIndex: 1 }} />
+            <CopyButton text={plan!.body} style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }} />
             <div className="markdown-content">
               <ReactMarkdown>{plan!.body}</ReactMarkdown>
             </div>

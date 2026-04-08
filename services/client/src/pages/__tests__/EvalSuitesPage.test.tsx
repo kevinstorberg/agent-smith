@@ -142,9 +142,15 @@ describe('EvalSuitesPage', () => {
   it('navigates to new suite on button click', async () => {
     renderWithProviders(<EvalSuitesPage />);
 
+    await waitFor(() => {
+      expect(screen.getByText('+ New Suite')).toBeInTheDocument();
+    });
+
     fireEvent.click(screen.getByText('+ New Suite'));
 
-    expect(mockNavigate).toHaveBeenCalledWith('/eval-configs/new');
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/eval-configs/new');
+    });
   });
 
   it('navigates to eval results on Results link click', async () => {

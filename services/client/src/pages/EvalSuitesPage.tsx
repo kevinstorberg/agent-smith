@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { api } from '../api';
 import type { EvalSuite } from '../api';
+import { EnabledToggleCell, DateCell } from '../components/table';
+import { makeRowClickable } from '../utils/a11y';
 
 export function EvalSuitesPage() {
   const navigate = useNavigate();
@@ -54,30 +56,21 @@ export function EvalSuitesPage() {
             {suites.map(suite => (
               <tr
                 key={suite.id}
+                {...makeRowClickable(() => navigate(`/eval-configs/${suite.id}`))}
                 style={{ cursor: 'pointer' }}
-                onClick={() => navigate(`/eval-configs/${suite.id}`)}
               >
                 <td style={{ fontWeight: 500 }}>{suite.name}</td>
                 <td>
                   <span className="tag">{suite.eval_type} / {suite.subcategory}</span>
                 </td>
                 <td>{suite.scenario_count ?? '—'}</td>
-                <td onClick={e => e.stopPropagation()}>
-                  <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <input
-                      type="checkbox"
-                      checked={suite.enabled}
-                      onChange={() => toggleEnabled(suite)}
-                      style={{ accentColor: 'var(--success)', width: 16, height: 16 }}
-                    />
-                    <span style={{ color: suite.enabled ? 'var(--success)' : 'var(--text-muted)', fontSize: 12 }}>
-                      {suite.enabled ? 'On' : 'Off'}
-                    </span>
-                  </label>
+                <td>
+                  <EnabledToggleCell
+                    enabled={suite.enabled}
+                    onChange={() => toggleEnabled(suite)}
+                  />
                 </td>
-                <td style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                  {new Date(suite.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                </td>
+                <td><DateCell date={suite.updated_at} /></td>
                 <td onClick={e => e.stopPropagation()}>
                   <a
                     onClick={() => navigate(`/evals?category=${suite.eval_type}&subcategory=${suite.subcategory}`)}

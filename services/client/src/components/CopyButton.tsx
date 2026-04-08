@@ -18,13 +18,21 @@ export function CopyButton({ text, style }: CopyButtonProps) {
       }}
       style={{
         padding: '4px 10px',
-        fontSize: 12,
+        fontSize: 'var(--font-sm)',
+        minWidth: 64,
         background: 'var(--surface-hover)',
         color: 'var(--text-muted)',
         border: '1px solid var(--surface-elevated)',
         borderRadius: 'var(--radius)',
         cursor: 'pointer',
         ...style,
+      }}
+      onFocus={e => {
+        e.currentTarget.style.outline = '2px solid var(--info)';
+        e.currentTarget.style.outlineOffset = '2px';
+      }}
+      onBlur={e => {
+        e.currentTarget.style.outline = 'none';
       }}
     >
       {copied ? 'Copied' : 'Copy'}

@@ -5,6 +5,7 @@ export const TYPE_PATHS: Record<string, string> = {
   skill: 'skills',
   tool: 'tools',
   hook: 'hooks',
+  agent: 'agents',
 };
 
 export const TYPE_LABELS: Record<string, string> = {
@@ -12,6 +13,7 @@ export const TYPE_LABELS: Record<string, string> = {
   skill: 'Skill',
   tool: 'Tool',
   hook: 'Hook',
+  agent: 'Agent',
 };
 
 export function isMarkdownType(type: string): boolean {

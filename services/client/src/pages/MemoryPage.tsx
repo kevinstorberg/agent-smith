@@ -175,7 +175,7 @@ export function MemoryPage() {
                 </div>
               ) : (
                 <div style={{ marginBottom: 8, fontSize: 13, lineHeight: 1.6, position: 'relative' }}>
-                  <CopyButton text={item.content} style={{ position: 'absolute', top: -4, right: 0 }} />
+                  <CopyButton text={item.content} style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }} />
                   <div style={{ paddingRight: 60 }}>
                     {item.content}
                   </div>

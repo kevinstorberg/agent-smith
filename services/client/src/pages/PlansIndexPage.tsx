@@ -3,7 +3,10 @@ import { useNavigate } from 'react-router';
 import { api } from '../api';
 import type { Plan } from '../api';
 import { Pagination } from '../components/Pagination';
+import { FilterBar } from '../components/FilterBar';
+import { DateCell } from '../components/table';
 import { usePagination } from '../hooks/usePagination';
+import { makeRowClickable } from '../utils/a11y';
 
 export function PlansIndexPage() {
   const [projectFilter, setProjectFilter] = useState('');
@@ -40,20 +43,13 @@ export function PlansIndexPage() {
         </button>
       </div>
 
-      <div className="filters" style={{ marginBottom: 12 }}>
-        <input
-          placeholder="Search by title..."
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          style={{ maxWidth: 260 }}
-        />
-        <input
-          placeholder="Filter by project..."
-          value={projectFilter}
-          onChange={e => { setProjectFilter(e.target.value); setOffset(0); }}
-          style={{ maxWidth: 220 }}
-        />
-      </div>
+      <FilterBar
+        nameValue={searchQuery}
+        projectValue={projectFilter}
+        onNameChange={setSearchQuery}
+        onProjectChange={val => { setProjectFilter(val); setOffset(0); }}
+        namePlaceholder="Search by title..."
+      />
 
       <table className="table">
         <thead>
@@ -67,19 +63,18 @@ export function PlansIndexPage() {
           {displayed.map(plan => (
             <tr
               key={plan.id}
-              onClick={() => navigate(`/plans/${plan.id}`)}
+              {...makeRowClickable(() => navigate(`/plans/${plan.id}`))}
               style={{ cursor: 'pointer' }}
             >
               <td>{plan.title}</td>
               <td>
-                {plan.project
-                  ? <span className="tag tag-project">{plan.project}</span>
-                  : <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>--</span>
-                }
+                {plan.project ? (
+                  <span className="tag tag-project">{plan.project}</span>
+                ) : (
+                  <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>--</span>
+                )}
               </td>
-              <td style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                {new Date(plan.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-              </td>
+              <td><DateCell date={plan.updated_at} /></td>
             </tr>
           ))}
           {displayed.length === 0 && (

@@ -4,6 +4,7 @@ import { api } from '../api';
 import type { EvalRun, ChartPoint, AverageChartPoint } from '../api';
 import { ScoreChart } from '../components/ScoreChart';
 import { Pagination } from '../components/Pagination';
+import { makeRowClickable } from '../utils/a11y';
 
 type ChartMode = 'average' | 'breakdown';
 
@@ -148,7 +149,7 @@ export function EvalsPage() {
             </thead>
             <tbody>
               {runs.map(run => (
-                <tr key={run.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/evals/${run.id}`)}>
+                <tr key={run.id} {...makeRowClickable(() => navigate(`/evals/${run.id}`))} style={{ cursor: 'pointer' }}>
                   <td>{new Date(run.timestamp).toLocaleString()}</td>
                   <td><span className="tag">{run.eval_type}{run.subcategory ? ` / ${run.subcategory}` : ''}</span></td>
                   <td>{run.scenario}</td>
