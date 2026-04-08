@@ -15,6 +15,7 @@ const TYPE_LABELS: Record<string, string> = {
   skill: 'Skills',
   tool: 'Tools',
   hook: 'Hooks',
+  agent: 'Agents',
 };
 
 export function HarnessIndexPage({ type }: { type: string }) {

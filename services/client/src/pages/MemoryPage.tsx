@@ -123,7 +123,8 @@ export function MemoryPage() {
 
         return (
           <div key={item.id} className="card">
-            <div>
+            <div style={{ position: 'relative' }}>
+              {!isEditing && <CopyButton text={item.content} style={{ position: 'absolute', top: 8, right: 8, zIndex: 10 }} />}
               {isEditing ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase' as const }}>Content</label>
@@ -174,11 +175,8 @@ export function MemoryPage() {
                   </div>
                 </div>
               ) : (
-                <div style={{ marginBottom: 8, fontSize: 13, lineHeight: 1.6, position: 'relative' }}>
-                  <CopyButton text={item.content} style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }} />
-                  <div style={{ paddingRight: 60 }}>
-                    {item.content}
-                  </div>
+                <div style={{ marginBottom: 8, fontSize: 13, lineHeight: 1.6, paddingRight: 60 }}>
+                  {item.content}
                 </div>
               )}
             </div>
