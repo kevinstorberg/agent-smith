@@ -6,6 +6,7 @@ import { useNotification } from '../context/useNotification';
 import { ALL_AGENTS, TYPE_PATHS, TYPE_LABELS, isMarkdownType, toggleArrayItem, formatError, MAX_NAME_LENGTH, nameError, isValidRepo } from '../constants';
 import { FieldError } from '../components/FieldError';
 import { harnessStyles as styles } from '../styles/harness';
+import { validators } from '../utils/validation';
 
 function typeFromPath(pathname: string): string {
   const match = pathname.match(/\/harness\/(\w+)\/new/);
@@ -60,13 +61,12 @@ export function HarnessCreatePage() {
     if (isMarkdownType(type)) {
       content = { body, metadata: type === 'skill' ? { description: '', files: {} } : {} };
     } else {
-      try {
-        const parsed = JSON.parse(metadataJson);
-        content = { body: '', metadata: parsed };
-      } catch {
+      const jsonError = validators.json(metadataJson);
+      if (jsonError) {
         notify('Invalid JSON in metadata field.', 'error');
         return;
       }
+      content = { body: '', metadata: JSON.parse(metadataJson) };
     }
 
     setSaving(true);

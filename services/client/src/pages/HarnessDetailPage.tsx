@@ -13,6 +13,7 @@ import { useNotification } from '../context/useNotification';
 import { ALL_AGENTS, TYPE_PATHS, isMarkdownType, toggleArrayItem, formatError, MAX_NAME_LENGTH, nameError, isValidRepo } from '../constants';
 import { FieldError } from '../components/FieldError';
 import { harnessStyles as styles } from '../styles/harness';
+import { validators } from '../utils/validation';
 
 function formatBody(item: HarnessItem, type: string): string {
   if (!item.content) return '';
@@ -93,6 +94,7 @@ export function HarnessDetailPage() {
   const [cfgDevice, setCfgDevice] = useState('*');
   const [cfgRepo, setCfgRepo] = useState('*');
   const [cfgAgents, setCfgAgents] = useState<string[]>([...ALL_AGENTS]);
+  const [cfgSubagents, setCfgSubagents] = useState<string[]>([]);
   const [cfgEnabled, setCfgEnabled] = useState(true);
   const [cfgExclude, setCfgExclude] = useState(false);
   const [cfgSaving, setCfgSaving] = useState(false);
@@ -151,7 +153,8 @@ export function HarnessDetailPage() {
     if (agents.length === 0) { notify('At least one agent must be selected.', 'error'); return; }
 
     if (!isMarkdownType(type)) {
-      try { JSON.parse(body); } catch { notify('Invalid JSON in metadata field.', 'error'); return; }
+      const jsonError = validators.json(body);
+      if (jsonError) { notify('Invalid JSON in metadata field.', 'error'); return; }
     }
 
     setSaving(true);
@@ -227,6 +230,7 @@ export function HarnessDetailPage() {
     setCfgDevice('*');
     setCfgRepo('*');
     setCfgAgents([...ALL_AGENTS]);
+    setCfgSubagents([]);
     setCfgEnabled(true);
     setCfgExclude(false);
   };
@@ -241,6 +245,7 @@ export function HarnessDetailPage() {
     setCfgDevice(cfg.device);
     setCfgRepo(cfg.repo);
     setCfgAgents([...cfg.agents]);
+    setCfgSubagents([...(cfg.subagents || [])]);
     setCfgEnabled(cfg.enabled);
     setCfgExclude(cfg.exclude);
     setEditingConfigId(cfg.id);
@@ -262,11 +267,11 @@ export function HarnessDetailPage() {
     try {
       if (editingConfigId) {
         await api.harness.items.configs.update(type, item.id, editingConfigId, {
-          device: cfgDevice, repo: cfgRepo, agents: cfgAgents, enabled: cfgEnabled, exclude: cfgExclude,
+          device: cfgDevice, repo: cfgRepo, agents: cfgAgents, subagents: cfgSubagents, enabled: cfgEnabled, exclude: cfgExclude,
         });
       } else {
         await api.harness.items.configs.add(type, item.id, {
-          device: cfgDevice, repo: cfgRepo, agents: cfgAgents, enabled: cfgEnabled, exclude: cfgExclude,
+          device: cfgDevice, repo: cfgRepo, agents: cfgAgents, subagents: cfgSubagents, enabled: cfgEnabled, exclude: cfgExclude,
         });
       }
       cancelConfigForm();
@@ -477,8 +482,8 @@ export function HarnessDetailPage() {
           editingConfigId === cfg.id ? (
             <ConfigForm
               key={cfg.id}
-              device={cfgDevice} repo={cfgRepo} agents={cfgAgents} enabled={cfgEnabled} exclude={cfgExclude} saving={cfgSaving}
-              onDeviceChange={setCfgDevice} onRepoChange={setCfgRepo} onAgentsChange={setCfgAgents} onEnabledChange={setCfgEnabled} onExcludeChange={setCfgExclude}
+              device={cfgDevice} repo={cfgRepo} agents={cfgAgents} subagents={cfgSubagents} enabled={cfgEnabled} exclude={cfgExclude} saving={cfgSaving}
+              onDeviceChange={setCfgDevice} onRepoChange={setCfgRepo} onAgentsChange={setCfgAgents} onSubagentsChange={setCfgSubagents} onEnabledChange={setCfgEnabled} onExcludeChange={setCfgExclude}
               onSave={saveConfig} onCancel={cancelConfigForm}
             />
           ) : (
@@ -545,8 +550,8 @@ export function HarnessDetailPage() {
         {addingConfig && (
           <ConfigForm
             title="New Configuration"
-            device={cfgDevice} repo={cfgRepo} agents={cfgAgents} enabled={cfgEnabled} exclude={cfgExclude} saving={cfgSaving}
-            onDeviceChange={setCfgDevice} onRepoChange={setCfgRepo} onAgentsChange={setCfgAgents} onEnabledChange={setCfgEnabled} onExcludeChange={setCfgExclude}
+            device={cfgDevice} repo={cfgRepo} agents={cfgAgents} subagents={cfgSubagents} enabled={cfgEnabled} exclude={cfgExclude} saving={cfgSaving}
+            onDeviceChange={setCfgDevice} onRepoChange={setCfgRepo} onAgentsChange={setCfgAgents} onSubagentsChange={setCfgSubagents} onEnabledChange={setCfgEnabled} onExcludeChange={setCfgExclude}
             onSave={saveConfig} onCancel={cancelConfigForm} submitLabel="Add"
           />
         )}

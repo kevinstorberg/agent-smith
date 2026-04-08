@@ -7,12 +7,14 @@ function defaultProps(overrides = {}) {
     device: '*',
     repo: '*',
     agents: ['claude'],
+    subagents: [],
     enabled: true,
     exclude: false,
     saving: false,
     onDeviceChange: vi.fn(),
     onRepoChange: vi.fn(),
     onAgentsChange: vi.fn(),
+    onSubagentsChange: vi.fn(),
     onEnabledChange: vi.fn(),
     onExcludeChange: vi.fn(),
     onSave: vi.fn(),
@@ -50,8 +52,8 @@ describe('ConfigForm', () => {
   it('calls onAgentsChange when agent checkbox toggled', () => {
     const onAgentsChange = vi.fn();
     render(<ConfigForm {...defaultProps({ agents: ['claude'], onAgentsChange })} />);
-    const codexCheckbox = screen.getByLabelText('codex');
-    fireEvent.click(codexCheckbox);
+    const codexCheckboxes = screen.getAllByLabelText('codex');
+    fireEvent.click(codexCheckboxes[0]); // First one is in Agents section
     expect(onAgentsChange).toHaveBeenCalledWith(['claude', 'codex']);
   });
 
@@ -65,5 +67,13 @@ describe('ConfigForm', () => {
   it('uses custom submitLabel', () => {
     render(<ConfigForm {...defaultProps({ submitLabel: 'Create' })} />);
     expect(screen.getByText('Create')).toBeInTheDocument();
+  });
+
+  it('calls onSubagentsChange when subagent checkbox toggled', () => {
+    const onSubagentsChange = vi.fn();
+    render(<ConfigForm {...defaultProps({ subagents: [], onSubagentsChange })} />);
+    const codexCheckboxes = screen.getAllByLabelText('codex');
+    fireEvent.click(codexCheckboxes[1]); // Second one is in Subagents section
+    expect(onSubagentsChange).toHaveBeenCalledWith(['codex']);
   });
 });

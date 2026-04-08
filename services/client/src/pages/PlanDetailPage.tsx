@@ -11,6 +11,7 @@ import { useDetailPageEdit } from '../hooks/useDetailPageEdit';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { useNotification } from '../context/useNotification';
 import { MAX_TITLE_LENGTH } from '../constants';
+import { validators } from '../utils/validation';
 
 const styles = {
   input: {
@@ -114,9 +115,11 @@ export function PlanDetailPage() {
     const body = editValues.body ?? '';
     const project = editValues.project ?? '';
 
-    if (!title.trim()) { notify('Title is required.', 'error'); return; }
-    if (title.length > MAX_TITLE_LENGTH) { notify(`Title must be ${MAX_TITLE_LENGTH} characters or fewer.`, 'error'); return; }
-    if (!body.trim()) { notify('Body is required.', 'error'); return; }
+    const titleError = validators.compose(validators.required, validators.maxLength(MAX_TITLE_LENGTH))(title);
+    if (titleError) { notify(titleError === 'Required' ? 'Title is required.' : `Title must be ${MAX_TITLE_LENGTH} characters or fewer.`, 'error'); return; }
+
+    const bodyError = validators.required(body);
+    if (bodyError) { notify('Body is required.', 'error'); return; }
 
     setSaving(true);
     try {

@@ -8,6 +8,7 @@ import { useDetailPageEdit } from '../hooks/useDetailPageEdit';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { useNotification } from '../context/useNotification';
 import { makeKeyboardClickable } from '../utils/a11y';
+import { validators } from '../utils/validation';
 
 interface SuiteEditValues {
   name: string;
@@ -127,10 +128,14 @@ export function EvalSuiteDetailPage() {
     if (!subcategory) { notify('Subcategory is required.', 'error'); return; }
     if (!judgePrompt) { notify('Judge prompt is required.', 'error'); return; }
 
-    let parsedItems: Record<string, unknown>;
-    let parsedConfig: Record<string, unknown>;
-    try { parsedItems = JSON.parse(itemsJson); } catch { notify('Invalid JSON in Items field', 'error'); return; }
-    try { parsedConfig = JSON.parse(configJson); } catch { notify('Invalid JSON in Config field', 'error'); return; }
+    const itemsError = validators.json(itemsJson);
+    if (itemsError) { notify('Invalid JSON in Items field', 'error'); return; }
+
+    const configError = validators.json(configJson);
+    if (configError) { notify('Invalid JSON in Config field', 'error'); return; }
+
+    const parsedItems: Record<string, unknown> = JSON.parse(itemsJson);
+    const parsedConfig: Record<string, unknown> = JSON.parse(configJson);
 
     setSaving(true);
     try {
