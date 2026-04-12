@@ -1,40 +1,28 @@
 from __future__ import annotations
 
-from services.config import ALL_AGENTS, MCP_URL
+from services.config import ALL_AGENTS, MCP_BASE
+
+MCP_SERVERS = [
+    ("memory", f"{MCP_BASE}/mcp/memory/", "Store and search observations, learnings, and context"),
+    ("plans", f"{MCP_BASE}/mcp/plans/", "Save and retrieve implementation plans and strategies"),
+    ("harness", f"{MCP_BASE}/mcp/harness/", "Manage rules, skills, tools, hooks, and agents"),
+    ("evals", f"{MCP_BASE}/mcp/evals/", "Manage evaluation suites and scenarios"),
+]
 
 
-def seed_memory_tool() -> None:
+def seed_mcp_servers() -> None:
     from services.api.models.tool import get_tool
     from services.api.models.shared.harness import create_item
 
-    if get_tool("memory"):
-        return
-
-    create_item(
-        "tool", "memory",
-        content={"body": "", "metadata": {"url": MCP_URL, "description": "Vector memory with semantic search"}},
-        agents=ALL_AGENTS,
-    )
-
-
-def seed_plan_tools() -> None:
-    from services.api.models.tool import get_tool
-    from services.api.models.shared.harness import create_item
-
-    tools = [
-        ("plan_save", "Save a finalized plan to the database"),
-        ("plan_get", "Retrieve a plan by ID or fuzzy search"),
-    ]
-    for name, desc in tools:
+    for name, url, description in MCP_SERVERS:
         if get_tool(name):
             continue
         create_item(
             "tool", name,
-            content={"body": "", "metadata": {"url": MCP_URL, "description": desc}},
+            content={"body": "", "metadata": {"url": url, "description": description}},
             agents=ALL_AGENTS,
         )
 
 
 def seed_all() -> None:
-    seed_memory_tool()
-    seed_plan_tools()
+    seed_mcp_servers()
