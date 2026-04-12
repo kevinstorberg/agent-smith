@@ -4,7 +4,7 @@ import importlib
 
 import pytest
 
-from services.config import ALL_AGENTS, DASHBOARD_PORT, MCP_URL
+from services.config import ALL_AGENTS, DASHBOARD_PORT, MCP_BASE
 import services.config
 
 
@@ -28,10 +28,9 @@ def test_dashboard_port_is_digit_string():
     assert DASHBOARD_PORT.isdigit()
 
 
-def test_mcp_url_format():
-    assert MCP_URL.startswith("http://localhost:")
-    assert MCP_URL.endswith("/mcp/")
-    assert DASHBOARD_PORT in MCP_URL
+def test_mcp_base_format():
+    assert MCP_BASE.startswith("http://localhost:")
+    assert DASHBOARD_PORT in MCP_BASE
 
 
 def test_crashes_if_not_test_env(monkeypatch):

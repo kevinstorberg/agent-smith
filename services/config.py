@@ -31,7 +31,7 @@ if "pytest" in sys.modules and APP_ENV != "test":
 ALL_AGENTS: list[str] = list(AGENT_TARGETS)
 DEVICE_NAME: str = os.environ.get("DEVICE_NAME", "my-space")
 DASHBOARD_PORT: str = os.environ.get("DASHBOARD_PORT", "7654")
-MCP_URL: str = f"http://localhost:{DASHBOARD_PORT}/mcp/"
+MCP_BASE: str = f"http://localhost:{DASHBOARD_PORT}"
 
 MEMORY_STORE_PATH: str = os.environ.get("MEMORY_STORE_PATH", str(_repo_root / "memory_store"))
 PINECONE_INDEX: str = os.environ.get("PINECONE_INDEX", "agent-smith-memories")

@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from scripts.shared.paths import bootstrap  # noqa: E402
 bootstrap()
 
+import contextlib
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -18,14 +19,21 @@ from services.db import init_db
 from services.db.seed import seed_all
 from services.api.routers import harness_router
 from services.api.routers import memory, evals, plans, eval_suites as eval_configs
-from services.memory.server import mcp as mcp_server
+from services.memory.server import mcp as memory_mcp
+from services.plans.server import mcp as plans_mcp
+from services.harness.server import mcp as harness_mcp
+from services.evals.server import mcp as evals_mcp
+
+MCP_SERVERS = [memory_mcp, plans_mcp, harness_mcp, evals_mcp]
 
 
 @asynccontextmanager
 async def lifespan(app):
     init_db()
     seed_all()
-    async with mcp_server.session_manager.run():
+    async with contextlib.AsyncExitStack() as stack:
+        for srv in MCP_SERVERS:
+            await stack.enter_async_context(srv.session_manager.run())
         yield
 
 
@@ -44,10 +52,11 @@ app.include_router(evals.router, prefix="/api/evals", tags=["evals"])
 app.include_router(plans.router, prefix="/api/plans", tags=["plans"])
 app.include_router(eval_configs.router, prefix="/api/eval-configs", tags=["eval-configs"])
 
-mcp_server.settings.streamable_http_path = "/"
-mcp_starlette = mcp_server.streamable_http_app()
-mcp_starlette.router.lifespan_context = None  # managed by FastAPI lifespan above
-app.mount("/mcp", mcp_starlette)
+for _srv in MCP_SERVERS:
+    _srv.settings.streamable_http_path = "/"
+    _app = _srv.streamable_http_app()
+    _app.router.lifespan_context = None
+    app.mount(f"/mcp/{_srv.name.split(' - ')[0]}", _app)
 
 dist_dir = Path(__file__).resolve().parent.parent / "client" / "dist"
 if dist_dir.exists():

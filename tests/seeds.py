@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 def seed_test_data():
-    from services.config import ALL_AGENTS, MCP_URL
+    from services.config import ALL_AGENTS, MCP_BASE
     from services.api.models.rule import get_rule, upsert_rule
     from services.api.models.skill import get_skill, upsert_skill
     from services.api.models.tool import get_tool, upsert_tool
@@ -41,7 +41,7 @@ def seed_test_data():
     if not get_tool("test_tool"):
         upsert_tool(
             "test_tool",
-            content={"body": "", "metadata": {"url": MCP_URL, "description": "Test tool"}},
+            content={"body": "", "metadata": {"url": f"{MCP_BASE}/mcp/harness/", "description": "Test tool"}},
             agents=ALL_AGENTS,
         )
 

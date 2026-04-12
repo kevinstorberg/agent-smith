@@ -13,21 +13,15 @@ bootstrap()
 def cmd_init():
     from services.db import init_db
     from services.api.models.shared.harness import upsert_item
-    from services.config import ALL_AGENTS, MCP_URL
+    from services.config import ALL_AGENTS, MCP_BASE
     init_db()
 
-    url = MCP_URL
-    tools = [
-        ("plan_save", "Save a finalized plan to the database"),
-        ("plan_get", "Retrieve a plan by ID or fuzzy search"),
-    ]
-    for name, desc in tools:
-        upsert_item(
-            "tool", name,
-            content={"body": "", "metadata": {"url": url, "description": desc}},
-            agents=ALL_AGENTS,
-        )
-        print(f"  registered: {name}")
+    upsert_item(
+        "tool", "plans",
+        content={"body": "", "metadata": {"url": f"{MCP_BASE}/mcp/plans/", "description": "Save and retrieve implementation plans"}},
+        agents=ALL_AGENTS,
+    )
+    print("  registered: plans")
     print("Plan tools initialized.")
 
 
