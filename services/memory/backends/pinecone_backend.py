@@ -89,7 +89,7 @@ def list_rows(repo: str | None = None, limit: int = 20) -> list[dict]:
     rows = load_all()
     if repo:
         rows = [r for r in rows if r.get("metadata", {}).get("repo") == repo]
-    return rows[:limit]
+    return rows[:int(limit)]
 
 
 def _fetch_vectors(result) -> dict:

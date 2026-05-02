@@ -50,10 +50,10 @@ def list_rows(repo: str | None = None, limit: int = 20) -> list[dict]:
     tbl = _get_table()
     if not tbl or tbl.count_rows() == 0:
         return []
-    rows = tbl.search().limit(limit * 5).to_list()
+    rows = tbl.search().limit(int(limit) * 5).to_list()
     if repo:
         rows = [r for r in rows if r.get("metadata", {}).get("repo") == repo]
-    return rows[:limit]
+    return rows[:int(limit)]
 
 
 def get_row(id: str) -> dict | None:

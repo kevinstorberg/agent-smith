@@ -130,7 +130,7 @@ def search(query: str, repo: str | None = None, limit: int = DEFAULT_LIMIT) -> l
     if not retriever.memory_stream:
         return []
 
-    retriever.k = limit
+    retriever.k = int(limit)
     docs = retriever.invoke(query)
 
     rows = []
@@ -139,15 +139,15 @@ def search(query: str, repo: str | None = None, limit: int = DEFAULT_LIMIT) -> l
             continue
         rows.append(_doc_to_row(doc))
 
-    return rows[:limit]
+    return rows[:int(limit)]
 
 
 def list_memories(repo: str | None = None, limit: int = DEFAULT_LIMIT) -> list[dict]:
     backend = get_backend()
-    rows = backend.list_rows(repo=repo, limit=limit)
+    rows = backend.list_rows(repo=repo, limit=int(limit))
     result = [_raw_to_row(r) for r in rows]
     result.sort(key=lambda r: r["created_at"] or "", reverse=True)
-    return result[:limit]
+    return result[:int(limit)]
 
 
 def get(id: str) -> dict | None:
