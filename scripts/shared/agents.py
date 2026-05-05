@@ -20,6 +20,9 @@ AGENT_TARGETS = {
             "type": "http", "url": srv["url"],
             **{k: srv[k] for k in ("headers", "oauth") if k in srv},
         },
+        "hooks_file": "~/.claude/settings.json",
+        "hooks_key": "hooks",
+        "hooks_format": "json",
     },
     "codex": {
         "rules_file": "~/.codex/AGENTS.md",
@@ -32,6 +35,9 @@ AGENT_TARGETS = {
             "url": srv["url"],
             **{k: srv[k] for k in ("headers",) if k in srv},
         },
+        "hooks_file": "~/.codex/config.toml",
+        "hooks_key": "hooks",
+        "hooks_format": "toml",
     },
     "gemini": {
         "rules_file": "~/.gemini/GEMINI.md",
@@ -44,6 +50,9 @@ AGENT_TARGETS = {
             "httpUrl": srv["url"],
             **{k: srv[k] for k in ("headers",) if k in srv},
         },
+        "hooks_file": "~/.gemini/settings.json",
+        "hooks_key": "hooks",
+        "hooks_format": "json",
     },
 }
 

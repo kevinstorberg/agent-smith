@@ -110,5 +110,15 @@ def test_map_hook_event_claude():
     assert map_hook_event("stop", "claude") == "Stop"
 
 
+def test_map_hook_event_codex():
+    assert map_hook_event("pre_tool_use", "codex") == "pre_tool_use"
+    assert map_hook_event("stop", "codex") == "stop"
+
+
+def test_map_hook_event_gemini():
+    assert map_hook_event("pre_tool_use", "gemini") == "preToolUse"
+    assert map_hook_event("stop", "gemini") == "stop"
+
+
 def test_map_hook_event_unsupported_agent():
-    assert map_hook_event("pre_tool_use", "codex") is None
+    assert map_hook_event("pre_tool_use", "unsupported_agent") is None
