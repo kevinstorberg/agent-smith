@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
@@ -52,12 +53,13 @@ def init() -> None:
 class _SafePineconeVectorStore(PineconeVectorStore):
 
     def add_documents(self, documents: list[Document], **kwargs: Any) -> list[str]:
-        for doc in documents:
+        sanitized = [deepcopy(d) for d in documents]
+        for doc in sanitized:
             for key, val in list(doc.metadata.items()):
                 if isinstance(val, datetime):
                     doc.metadata[key] = val.isoformat()
         kwargs.pop("current_time", None)
-        return super().add_documents(documents, **kwargs)
+        return super().add_documents(sanitized, **kwargs)
 
 
 def get_vectorstore(embeddings) -> VectorStore:
