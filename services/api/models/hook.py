@@ -20,6 +20,26 @@ HOOK_EVENT_MAP = {
         "permission_request": "PermissionRequest",
         "instructions_loaded": "InstructionsLoaded",
     },
+    "codex": {
+        "pre_tool_use": "pre_tool_use",
+        "post_tool_use": "post_tool_use",
+        "post_tool_use_failure": "post_tool_use_failure",
+        "stop": "stop",
+        "stop_failure": "stop_failure",
+        "user_prompt_submit": "user_prompt_submit",
+        "session_start": "session_start",
+        "session_end": "session_end",
+    },
+    "gemini": {
+        "pre_tool_use": "preToolUse",
+        "post_tool_use": "postToolUse",
+        "post_tool_use_failure": "postToolUseFailure",
+        "stop": "stop",
+        "stop_failure": "stopFailure",
+        "user_prompt_submit": "userPromptSubmit",
+        "session_start": "sessionStart",
+        "session_end": "sessionEnd",
+    },
 }
 
 

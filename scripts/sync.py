@@ -27,6 +27,7 @@ def main() -> int:
     from scripts.shared.agents import AGENT_TARGETS
     from scripts.shared.fs import sync_rules, sync_skills, sync_agents
     from scripts.shared.mcp_utils import sync_mcp
+    from scripts.shared.hook_utils import sync_hooks
 
     for agent in AGENT_TARGETS:
         print(f"[{agent}/rules]")
@@ -35,6 +36,8 @@ def main() -> int:
         sync_skills(agent, args.dry_run, device_name=device_name)
         print(f"[{agent}/mcp]")
         sync_mcp(agent, args.dry_run)
+        print(f"[{agent}/hooks]")
+        sync_hooks(agent, args.dry_run)
         print(f"[{agent}/agents]")
         sync_agents(agent, args.dry_run, device_name=device_name)
 
