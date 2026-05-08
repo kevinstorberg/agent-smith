@@ -90,6 +90,28 @@ def test_search_empty():
     assert db.search("anything") == []
 
 
+def test_search_resilient_to_float_buffer_idx(monkeypatch):
+    from langchain_core.documents import Document
+
+    id = db.add("the quick brown fox", repo="r")
+    retriever = db._get_retriever()
+
+    fake_hit = Document(
+        page_content="the quick brown fox",
+        metadata={"id": id, "buffer_idx": 0.0},
+    )
+    monkeypatch.setattr(
+        retriever.vectorstore,
+        "similarity_search_with_relevance_scores",
+        lambda *args, **kwargs: [(fake_hit, 0.9)],
+    )
+
+    results = db.search("fox")
+    assert len(results) == 1
+    assert results[0]["id"] == id
+    assert results[0]["content"] == "the quick brown fox"
+
+
 def test_time_weighting_prefers_recent():
     from datetime import datetime, timedelta
     from langchain_core.documents import Document

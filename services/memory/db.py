@@ -45,6 +45,22 @@ def _parse_datetime(val) -> datetime:
     return datetime.now()
 
 
+def _id_based_salient_docs(retriever: TimeWeightedVectorStoreRetriever, query: str) -> dict:
+    fetched = retriever.vectorstore.similarity_search_with_relevance_scores(
+        query, **retriever.search_kwargs
+    )
+    id_to_idx = {
+        d.metadata.get("id"): i
+        for i, d in enumerate(retriever.memory_stream)
+        if d.metadata.get("id")
+    }
+    return {
+        idx: (retriever.memory_stream[idx], score)
+        for doc, score in fetched
+        if (idx := id_to_idx.get(doc.metadata.get("id"))) is not None
+    }
+
+
 def _get_retriever() -> TimeWeightedVectorStoreRetriever:
     global _retriever
     if _retriever is not None:
@@ -72,6 +88,12 @@ def _get_retriever() -> TimeWeightedVectorStoreRetriever:
             },
         )
         _retriever.memory_stream.append(doc)
+
+    object.__setattr__(
+        _retriever,
+        "get_salient_docs",
+        lambda query: _id_based_salient_docs(_retriever, query),
+    )
 
     return _retriever
 

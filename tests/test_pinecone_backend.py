@@ -69,3 +69,32 @@ def test_delete_row_calls_delete(mock_pc, mock_index):
 
 def test_invalid_id_rejected(mock_pc):
     assert_invalid_id_rejected(pb)
+
+
+def test_safe_vectorstore_does_not_mutate_input_documents(mock_pc, mock_index):
+    from datetime import datetime as _dt
+    from langchain_core.documents import Document
+
+    captured = []
+
+    def _stub_parent_add(self, docs, **kwargs):
+        captured.extend(docs)
+        return [d.metadata.get("id", "") for d in docs]
+
+    vs = pb._SafePineconeVectorStore.__new__(pb._SafePineconeVectorStore)
+
+    now = _dt.now()
+    original = Document(
+        page_content="hello",
+        metadata={"id": "x", "last_accessed_at": now, "buffer_idx": 0},
+    )
+
+    with patch.object(pb.PineconeVectorStore, "add_documents", _stub_parent_add):
+        vs.add_documents([original])
+
+    assert isinstance(original.metadata["last_accessed_at"], _dt), (
+        "input doc must not be mutated; memory_stream relies on datetime persistence"
+    )
+    assert isinstance(captured[0].metadata["last_accessed_at"], str), (
+        "the doc sent to Pinecone must have stringified datetime"
+    )
