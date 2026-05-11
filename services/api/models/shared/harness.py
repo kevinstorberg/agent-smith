@@ -46,6 +46,19 @@ def _row_to_dict(row: dict) -> dict:
     return result
 
 
+def _copy_configs(cursor, source_item_id: int, target_item_id: int, item_type: str) -> None:
+    """Copy all harness_configs from source item to target item."""
+    cursor.execute(
+        """
+        INSERT INTO harness_configs (item_id, item_type, device, repo, agents, subagents, enabled, exclude)
+        SELECT %s, %s, device, repo, agents, subagents, enabled, exclude
+        FROM harness_configs
+        WHERE item_id = %s AND item_type = %s
+        """,
+        (target_item_id, item_type, source_item_id, item_type),
+    )
+
+
 def _get_model(item_type: str):
     from services.api.models.rule import RuleModel
     from services.api.models.skill import SkillModel
@@ -216,7 +229,9 @@ def update_content(item_type: str, item_id: int, content: dict) -> int:
                     source["enabled"], new_version,
                 ),
             )
-            return cur.fetchone()["id"]
+            new_id = cur.fetchone()["id"]
+            _copy_configs(cur, item_id, new_id, item_type)
+            return new_id
 
 
 def update_metadata(
