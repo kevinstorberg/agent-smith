@@ -191,6 +191,46 @@ class TestVersionBumpPreservesAllFields:
         new_item = get_item_by_id("rule", new_id)
         assert new_item["enabled"] is False
 
+    def test_update_content_preserves_configs(self):
+        from services.api.models.harness_config import list_configs, create_config
+
+        # Create item with default config
+        item_id = create_item("rule", "cfg_vbump_configs", content=CONTENT, agents=ALL_AGENTS)
+
+        # Add additional custom config
+        create_config(
+            item_id, "rule",
+            device="work-laptop", repo="/Users/test/project",
+            agents=["claude"], subagents=["research"],
+            enabled=True, exclude=False,
+        )
+
+        # Verify source has 2 configs
+        source_configs = list_configs(item_id, "rule")
+        assert len(source_configs) == 2
+
+        # Create new version
+        new_id = update_content("rule", item_id, {"body": "## V2", "metadata": {}})
+
+        # Verify new version has same 2 configs with same attributes
+        new_configs = list_configs(new_id, "rule")
+        assert len(new_configs) == 2
+
+        # Verify config details were copied exactly (sort to ensure order)
+        source_sorted = sorted(source_configs, key=lambda c: c["id"])
+        new_sorted = sorted(new_configs, key=lambda c: c["id"])
+
+        for i in range(2):
+            assert new_sorted[i]["device"] == source_sorted[i]["device"]
+            assert new_sorted[i]["repo"] == source_sorted[i]["repo"]
+            assert new_sorted[i]["agents"] == source_sorted[i]["agents"]
+            assert new_sorted[i]["subagents"] == source_sorted[i]["subagents"]
+            assert new_sorted[i]["enabled"] == source_sorted[i]["enabled"]
+            assert new_sorted[i]["exclude"] == source_sorted[i]["exclude"]
+            # item_id should be different (new version)
+            assert new_sorted[i]["item_id"] == new_id
+            assert source_sorted[i]["item_id"] == item_id
+
 
 class TestResolveNoConfigs:
 
