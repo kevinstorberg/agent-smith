@@ -70,6 +70,20 @@ describe('MemoryPage', () => {
     });
   });
 
+  it('shows filter-specific empty state when filters return zero', async () => {
+    mockList.mockResolvedValue({ items: [], total: 0 });
+
+    renderWithProviders(<MemoryPage />);
+
+    const repoInput = await screen.findByPlaceholderText('Filter by repo');
+    fireEvent.change(repoInput, { target: { value: 'no-such-repo' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('No memories match the current filters')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('No memories yet')).not.toBeInTheDocument();
+  });
+
   it('performs search and shows search empty state', async () => {
     mockSearch.mockResolvedValue({ items: [], total: 0 });
 
@@ -87,7 +101,70 @@ describe('MemoryPage', () => {
       expect(screen.getByText('No results found')).toBeInTheDocument();
     });
 
-    expect(mockSearch).toHaveBeenCalledWith('nonexistent', { limit: 10, offset: 0 });
+    expect(mockSearch).toHaveBeenCalledWith('nonexistent', expect.objectContaining({ limit: 10, offset: 0, sort: 'relevance' }));
+  });
+
+  it('renders repo, tags, and sort controls', async () => {
+    renderWithProviders(<MemoryPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('First memory content')).toBeInTheDocument();
+    });
+
+    expect(screen.getByPlaceholderText('Filter by repo')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Filter by tags (comma-separated)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Sort')).toBeInTheDocument();
+  });
+
+  it('typing in tags input refetches with tags param', async () => {
+    renderWithProviders(<MemoryPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('First memory content')).toBeInTheDocument();
+    });
+
+    const tagsInput = screen.getByPlaceholderText('Filter by tags (comma-separated)');
+    fireEvent.change(tagsInput, { target: { value: 'a, b' } });
+
+    await waitFor(() => {
+      expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ tags: ['a', 'b'], offset: 0 }));
+    });
+  });
+
+  it('changing sort dropdown refetches with sort and resets offset', async () => {
+    renderWithProviders(<MemoryPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('First memory content')).toBeInTheDocument();
+    });
+
+    const sortSelect = screen.getByLabelText('Sort');
+    fireEvent.change(sortSelect, { target: { value: 'created_at_asc' } });
+
+    await waitFor(() => {
+      expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ sort: 'created_at_asc', offset: 0 }));
+    });
+  });
+
+  it('shows Relevance sort option only in search mode', async () => {
+    renderWithProviders(<MemoryPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('First memory content')).toBeInTheDocument();
+    });
+
+    const sortSelect = screen.getByLabelText('Sort') as HTMLSelectElement;
+    const optionValues = Array.from(sortSelect.options).map(o => o.value);
+    expect(optionValues).not.toContain('relevance');
+
+    const searchInput = screen.getByPlaceholderText('Semantic search...');
+    fireEvent.change(searchInput, { target: { value: 'q' } });
+    fireEvent.click(screen.getByText('Search'));
+
+    await waitFor(() => {
+      const updated = Array.from((screen.getByLabelText('Sort') as HTMLSelectElement).options).map(o => o.value);
+      expect(updated).toContain('relevance');
+    });
   });
 
   it('triggers search on Enter key', async () => {

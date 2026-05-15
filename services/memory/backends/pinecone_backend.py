@@ -66,19 +66,10 @@ def get_vectorstore(embeddings) -> VectorStore:
     return _SafePineconeVectorStore(index=_get_index(), embedding=embeddings)
 
 
-def count() -> int:
-    stats = _get_index().describe_index_stats()
-    return stats.get("total_vector_count", 0)
-
-
 def load_all() -> list[dict]:
     index = _get_index()
-    total = count()
-    if total == 0:
-        return []
-
     dummy_vec = [0.0] * DIMENSION
-    results = index.query(vector=dummy_vec, top_k=min(total, 10000), include_metadata=True)
+    results = index.query(vector=dummy_vec, top_k=10000, include_metadata=True)
     rows = []
     for match in results.get("matches", []):
         meta = dict(match.get("metadata", {}))
