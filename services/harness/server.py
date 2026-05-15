@@ -131,3 +131,46 @@ def harness_disable(
     for cfg in configs:
         update_config(cfg["id"], enabled=False)
     return f"Disabled {item_type} '{name}' ({len(configs)} config(s) disabled)"
+
+
+@mcp.tool()
+def harness_sync_item(
+    item_type: str,
+    item_id: int = 0,
+    name: str = "",
+    project: str = "",
+) -> str:
+    """
+    Sync a single harness item to disk by ID or name.
+
+    Args:
+        item_type: Type of item (rule, skill, tool, hook, agent).
+        item_id:   Database ID (use 0 to lookup by name).
+        name:      Item name (used if item_id=0).
+        project:   Project scope for name lookup (empty = shared).
+
+    Returns:
+        Success message or error.
+    """
+    assert item_type in VALID_TABLES, f"item_type must be one of {VALID_TABLES}"
+
+    if item_id == 0:
+        if not name:
+            return "Error: Must provide either item_id or name"
+        item = get_item(item_type, name, project=empty_to_none(project))
+        if not item:
+            return f"Not found: {item_type} '{name}'"
+        item_id = item["id"]
+
+    from scripts.shared.sync_utils import run_sync_script
+
+    try:
+        result = run_sync_script(["--item-type", item_type, "--item-id", str(item_id)])
+        if result["success"]:
+            return f"Synced {item_type} (id={item_id})\n{result['stdout']}"
+        else:
+            return f"Sync failed:\n{result['stderr']}"
+    except FileNotFoundError as e:
+        return f"Error: {e}"
+    except Exception as e:
+        return f"Sync failed: {e}"

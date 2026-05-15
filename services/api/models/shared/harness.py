@@ -19,6 +19,8 @@ VALID_TABLES = {
     "agent": "harness_agents",
 }
 
+VALID_ITEM_TYPES = list(VALID_TABLES.keys())
+
 _LATEST_VERSION_CLAUSE = """
     version = (
         SELECT MAX(v.version) FROM {table} v
