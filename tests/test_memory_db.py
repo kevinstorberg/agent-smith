@@ -40,6 +40,75 @@ def test_list_memories_returns_added():
     assert "second memory" in contents
 
 
+def test_list_memories_returns_full_list_no_internal_slice():
+    count = db.DEFAULT_LIMIT + 5
+    for i in range(count):
+        db.add(f"memory {i}", repo="r")
+    memories = db.list_memories()
+    assert len(memories) == count
+
+
+def test_list_filters_by_tags_and():
+    db.add("both", tags=["a", "b"])
+    db.add("only a", tags=["a"])
+    db.add("b and c", tags=["b", "c"])
+    matches = db.list_memories(tags=["a", "b"])
+    assert len(matches) == 1
+    assert matches[0]["content"] == "both"
+
+
+def test_list_sorts_by_created_at_asc():
+    ids = [db.add(f"m{i}") for i in range(5)]
+    sorted_memories = db.list_memories(sort="created_at_asc")
+    assert [m["id"] for m in sorted_memories] == ids
+
+
+def test_list_sorts_by_updated_at_desc():
+    first = db.add("first")
+    second = db.add("second")
+    db.update(first, content="first edited")
+    sorted_memories = db.list_memories(sort="updated_at_desc")
+    assert sorted_memories[0]["id"] == first
+    assert sorted_memories[1]["id"] == second
+
+
+def test_list_unknown_sort_raises():
+    db.add("anything")
+    with pytest.raises(ValueError, match="Unknown sort"):
+        db.list_memories(sort="bogus")
+
+
+def test_search_can_sort_by_created_at():
+    ids = [db.add(f"keyword item {i}") for i in range(3)]
+    results = db.search("keyword", sort="created_at_asc")
+    returned = [r["id"] for r in results if r["id"] in ids]
+    assert returned == ids
+
+
+def test_search_default_sort_is_relevance():
+    db.add("Python programming language")
+    db.add("totally unrelated thing about cooking")
+    results = db.search("Python coding")
+    assert len(results) >= 1
+    assert "Python" in results[0]["content"]
+
+
+def test_search_with_date_sort_uses_retriever_not_load_all(monkeypatch):
+    db.add("alpha entry")
+    db.add("zebra entry")
+
+    calls: list[str] = []
+    original = lancedb_backend.load_all
+    monkeypatch.setattr(
+        lancedb_backend,
+        "load_all",
+        lambda: (calls.append("load_all"), original())[1],
+    )
+
+    db.search("anything", sort="created_at_desc")
+    assert calls == [], "search() must filter via retriever, not bypass to load_all()"
+
+
 def test_get_by_id():
     id = db.add("findable", repo="r")
     mem = db.get(id)

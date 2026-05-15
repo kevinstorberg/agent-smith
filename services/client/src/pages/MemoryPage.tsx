@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../api';
 import type { MemoryItem } from '../api';
 import { Pagination } from '../components/Pagination';
@@ -6,6 +6,18 @@ import { CopyButton } from '../components/CopyButton';
 import { useNotification } from '../context/useNotification';
 
 type Mode = 'list' | 'search';
+
+const LIST_SORT_OPTIONS = [
+  { value: 'created_at_desc', label: 'Newest first' },
+  { value: 'created_at_asc', label: 'Oldest first' },
+  { value: 'updated_at_desc', label: 'Recently updated' },
+  { value: 'updated_at_asc', label: 'Least recently updated' },
+];
+
+const SEARCH_SORT_OPTIONS = [
+  { value: 'relevance', label: 'Relevance' },
+  ...LIST_SORT_OPTIONS,
+];
 
 export function MemoryPage() {
   const { notify } = useNotification();
@@ -16,6 +28,9 @@ export function MemoryPage() {
   const [mode, setMode] = useState<Mode>('list');
   const [limit, setLimit] = useState(10);
   const [offset, setOffset] = useState(0);
+  const [filterRepo, setFilterRepo] = useState('');
+  const [filterTags, setFilterTags] = useState('');
+  const [sort, setSort] = useState('created_at_desc');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [editRepo, setEditRepo] = useState('');
@@ -23,12 +38,25 @@ export function MemoryPage() {
   const [saving, setSaving] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  const tagsArray = useMemo(
+    () => filterTags.split(',').map(t => t.trim()).filter(Boolean),
+    [filterTags],
+  );
+  const sortOptions = mode === 'search' ? SEARCH_SORT_OPTIONS : LIST_SORT_OPTIONS;
+
   const fetchData = useCallback(async () => {
     setLoading(true);
+    const opts = {
+      limit,
+      offset,
+      ...(filterRepo ? { repo: filterRepo } : {}),
+      ...(tagsArray.length ? { tags: tagsArray } : {}),
+      ...(sort ? { sort } : {}),
+    };
     try {
       const res = mode === 'search' && query.trim()
-        ? await api.memory.search(query, { limit, offset })
-        : await api.memory.list({ limit, offset });
+        ? await api.memory.search(query, opts)
+        : await api.memory.list(opts);
       setItems(res.items);
       setTotal(res.total);
     } catch {
@@ -36,19 +64,25 @@ export function MemoryPage() {
       setTotal(0);
     }
     setLoading(false);
-  }, [mode, query, limit, offset]);
+  }, [mode, query, limit, offset, filterRepo, tagsArray, sort]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const onFilterRepoChange = (v: string) => { setFilterRepo(v); setOffset(0); };
+  const onFilterTagsChange = (v: string) => { setFilterTags(v); setOffset(0); };
+  const onSortChange = (v: string) => { setSort(v); setOffset(0); };
 
   const doSearch = () => {
     if (!query.trim()) return;
     setMode('search');
+    setSort('relevance');
     setOffset(0);
   };
 
   const clearSearch = () => {
     setQuery('');
     setMode('list');
+    setSort('created_at_desc');
     setOffset(0);
   };
 
@@ -110,11 +144,48 @@ export function MemoryPage() {
         )}
       </div>
 
+      <div className="search-bar" style={{ marginTop: 8 }}>
+        <input
+          className="input"
+          placeholder="Filter by repo"
+          value={filterRepo}
+          onChange={e => onFilterRepoChange(e.target.value)}
+        />
+        <input
+          className="input"
+          placeholder="Filter by tags (comma-separated)"
+          value={filterTags}
+          onChange={e => onFilterTagsChange(e.target.value)}
+        />
+        <label htmlFor="memory-sort" style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sort</label>
+        <select
+          id="memory-sort"
+          aria-label="Sort"
+          className="pagination-select"
+          value={sort}
+          onChange={e => onSortChange(e.target.value)}
+        >
+          {sortOptions.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {tagsArray.length > 0 && (
+        <div className="text-muted-sm" style={{ marginTop: 4 }}>
+          Tag filter (AND): {tagsArray.join(' + ')}
+        </div>
+      )}
+
       {loading && <div className="loading">Loading...</div>}
 
       {!loading && items.length === 0 && (
         <div className="loading">
-          {mode === 'search' ? 'No results found' : 'No memories yet'}
+          {mode === 'search'
+            ? 'No results found'
+            : (filterRepo || tagsArray.length > 0)
+              ? 'No memories match the current filters'
+              : 'No memories yet'}
         </div>
       )}
 

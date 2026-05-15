@@ -12,12 +12,16 @@ async function parseError(res: Response): Promise<never> {
   throw new Error(message);
 }
 
-async function get<T>(path: string, params?: Record<string, string>): Promise<T> {
+async function get<T>(path: string, params?: Record<string, string | string[]>): Promise<T> {
   const url = new URL(path, window.location.origin);
   url.pathname = BASE + path;
   if (params) {
     Object.entries(params).forEach(([k, v]) => {
-      if (v) url.searchParams.set(k, v);
+      if (Array.isArray(v)) {
+        v.filter(Boolean).forEach(item => url.searchParams.append(k, item));
+      } else if (v) {
+        url.searchParams.set(k, v);
+      }
     });
   }
   const res = await fetch(url.toString());
@@ -231,16 +235,20 @@ export const api = {
     },
   },
   memory: {
-    search: (q: string, pagination?: PaginationParams & { repo?: string }) =>
+    search: (q: string, opts?: PaginationParams & { repo?: string; tags?: string[]; sort?: string }) =>
       get<Paginated<MemoryItem>>('/memory/search', {
         q,
-        ...(pagination?.repo ? { repo: pagination.repo } : {}),
-        ...paginationToParams(pagination),
+        ...(opts?.repo ? { repo: opts.repo } : {}),
+        ...(opts?.tags && opts.tags.length ? { tags: opts.tags } : {}),
+        ...(opts?.sort ? { sort: opts.sort } : {}),
+        ...paginationToParams(opts),
       }),
-    list: (pagination?: PaginationParams & { repo?: string }) =>
+    list: (opts?: PaginationParams & { repo?: string; tags?: string[]; sort?: string }) =>
       get<Paginated<MemoryItem>>('/memory/list', {
-        ...(pagination?.repo ? { repo: pagination.repo } : {}),
-        ...paginationToParams(pagination),
+        ...(opts?.repo ? { repo: opts.repo } : {}),
+        ...(opts?.tags && opts.tags.length ? { tags: opts.tags } : {}),
+        ...(opts?.sort ? { sort: opts.sort } : {}),
+        ...paginationToParams(opts),
       }),
     get: (id: string) => get<MemoryItem>(`/memory/${id}`),
     update: (id: string, body: { content?: string; repo?: string; tags?: string[] }) =>

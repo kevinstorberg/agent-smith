@@ -16,6 +16,7 @@ from services.memory.backends import get_backend
 MODEL_NAME = os.environ.get("MEMORY_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 DECAY_RATE = float(os.environ.get("MEMORY_DECAY_RATE", "0.01"))
 DEFAULT_LIMIT = int(os.environ.get("MEMORY_DEFAULT_LIMIT", "20"))
+SEARCH_FETCH_CEILING = int(os.environ.get("MEMORY_SEARCH_FETCH_CEILING", "200"))
 
 _embeddings: HuggingFaceEmbeddings | None = None
 _retriever: TimeWeightedVectorStoreRetriever | None = None
@@ -98,6 +99,42 @@ def _get_retriever() -> TimeWeightedVectorStoreRetriever:
     return _retriever
 
 
+_SORT_KEYS: dict[str, tuple[str, bool]] = {
+    "created_at_desc": ("created_at", True),
+    "created_at_asc": ("created_at", False),
+    "updated_at_desc": ("updated_at", True),
+    "updated_at_asc": ("updated_at", False),
+}
+
+
+def _validate_sort(sort: str | None) -> None:
+    if sort in (None, "", "relevance") or sort in _SORT_KEYS:
+        return
+    raise ValueError(
+        f"Unknown sort: {sort!r}, expected one of {list(_SORT_KEYS) + ['relevance']}"
+    )
+
+
+def _filter_and_sort(
+    rows: list[dict],
+    *,
+    repo: str | None,
+    tags: list[str] | None,
+    sort: str | None,
+) -> list[dict]:
+    _validate_sort(sort)
+    out = rows
+    if repo:
+        out = [r for r in out if r.get("repo") == repo]
+    if tags:
+        wanted = set(tags)
+        out = [r for r in out if wanted.issubset(set(r.get("tags") or []))]
+    if sort in _SORT_KEYS:
+        field, reverse = _SORT_KEYS[sort]
+        out = sorted(out, key=lambda r: r.get(field) or "", reverse=reverse)
+    return out
+
+
 def _to_row(*, content: str, id: str, meta: dict) -> dict:
     return {
         "id": id,
@@ -145,31 +182,36 @@ def add(content: str, repo: str | None = None, tags: list[str] | None = None) ->
     return id
 
 
-def search(query: str, repo: str | None = None, limit: int = DEFAULT_LIMIT) -> list[dict]:
+def search(
+    query: str,
+    repo: str | None = None,
+    tags: list[str] | None = None,
+    sort: str | None = None,
+    limit: int | None = None,
+) -> list[dict]:
     assert query and query.strip(), "Search query must not be empty."
-    retriever = _get_retriever()
+    _validate_sort(sort)
 
+    retriever = _get_retriever()
     if not retriever.memory_stream:
         return []
 
-    retriever.k = int(limit)
+    retriever.k = SEARCH_FETCH_CEILING
     docs = retriever.invoke(query)
-
-    rows = []
-    for doc in docs:
-        if repo and doc.metadata.get("repo") != repo:
-            continue
-        rows.append(_doc_to_row(doc))
-
-    return rows[:int(limit)]
+    rows = [_doc_to_row(doc) for doc in docs]
+    result = _filter_and_sort(rows, repo=repo, tags=tags, sort=sort)
+    return result[: int(limit)] if limit is not None else result
 
 
-def list_memories(repo: str | None = None, limit: int = DEFAULT_LIMIT) -> list[dict]:
-    backend = get_backend()
-    rows = backend.list_rows(repo=repo, limit=int(limit))
-    result = [_raw_to_row(r) for r in rows]
-    result.sort(key=lambda r: r["created_at"] or "", reverse=True)
-    return result[:int(limit)]
+def list_memories(
+    repo: str | None = None,
+    tags: list[str] | None = None,
+    sort: str = "created_at_desc",
+    limit: int | None = None,
+) -> list[dict]:
+    rows = [_raw_to_row(r) for r in get_backend().load_all()]
+    result = _filter_and_sort(rows, repo=repo, tags=tags, sort=sort)
+    return result[: int(limit)] if limit is not None else result
 
 
 def get(id: str) -> dict | None:
