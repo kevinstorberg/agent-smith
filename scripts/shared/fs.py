@@ -253,3 +253,71 @@ def sync_agents(agent: str, dry_run: bool, device_name: str = "") -> None:
         print(f"  {msg}")
 
     _remove_stale(dest_dir, source_names)
+
+
+def sync_item(item_type: str, item_id: int, device_name: str = "") -> dict:
+    from services.api.models.shared.harness import get_item_by_id, _table
+    from services.api.models.shared.sync import resolve_sync_targets
+    from services.api.models import shared
+    from scripts.shared.agents import AGENT_TARGETS
+    from scripts.shared.mcp_utils import sync_mcp
+    from scripts.shared.hook_utils import sync_hooks
+
+    _table(item_type)
+    item = get_item_by_id(item_type, item_id)
+
+    if not item:
+        return {
+            "success": False,
+            "item_name": None,
+            "agents_synced": [],
+            "message": f"{item_type} with id {item_id} not found",
+        }
+
+    agents_to_sync = []
+    item_agents = item.get("agents", [])
+
+    if item_agents:
+        agents_to_sync = [a for a in item_agents if a in AGENT_TARGETS]
+    else:
+        for agent in AGENT_TARGETS:
+            targets = resolve_sync_targets(item, agent=agent, device_name=device_name)
+            if targets:
+                agents_to_sync.append(agent)
+
+    if not agents_to_sync:
+        return {
+            "success": True,
+            "item_name": item["name"],
+            "agents_synced": [],
+            "message": "No agents to sync",
+        }
+
+    sync_dispatch = {
+        "rule": lambda a: sync_rules(a, False, device_name),
+        "skill": lambda a: sync_skills(a, False, device_name),
+        "tool": lambda a: sync_mcp(a, False),
+        "hook": lambda a: sync_hooks(a, False),
+        "agent": lambda a: sync_agents(a, False, device_name),
+    }
+
+    original = shared.harness.list_items_full
+    shared.harness.list_items_full = lambda t: [item] if t == item_type else original(t)
+
+    try:
+        for agent in agents_to_sync:
+            print(f"[{agent}/{item_type}]")
+            sync_dispatch[item_type](agent)
+
+            if item_type == "rule" and item.get("clone_as_skill"):
+                print(f"[{agent}/skills (clone)]")
+                sync_skills(agent, False, device_name)
+    finally:
+        shared.harness.list_items_full = original
+
+    return {
+        "success": True,
+        "item_name": item["name"],
+        "agents_synced": agents_to_sync,
+        "message": f"Synced to {len(agents_to_sync)} agent(s): {', '.join(agents_to_sync)}",
+    }
