@@ -57,7 +57,7 @@ export function Sidebar() {
   return (
     <nav className="sidebar">
       <div className="sidebar-header">
-        <img src="/agent_smith_logo.png" alt="Agent Smith" className="sidebar-logo" />
+        <img src="/agent_smith_logo.svg" alt="Agent Smith" className="sidebar-logo" />
         <div className="sidebar-title">Agent Smith</div>
       </div>
 
