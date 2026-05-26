@@ -70,13 +70,26 @@ body {
   z-index: 10;
 }
 
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-logo {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
 .sidebar-title {
   font-size: 18px;
   font-weight: 700;
   color: var(--text);
-  padding: 20px 20px 16px;
   letter-spacing: -0.02em;
-  border-bottom: 1px solid var(--border);
 }
 
 .sidebar-section {
