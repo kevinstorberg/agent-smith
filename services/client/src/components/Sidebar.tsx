@@ -56,7 +56,10 @@ export function Sidebar() {
 
   return (
     <nav className="sidebar">
-      <div className="sidebar-title">Agent Smith</div>
+      <div className="sidebar-header">
+        <img src="/agent_smith_logo.png" alt="Agent Smith" className="sidebar-logo" />
+        <div className="sidebar-title">Agent Smith</div>
+      </div>
 
       <div className="sidebar-section">
         {HARNESS_LINKS.map(link => (
