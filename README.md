@@ -1,6 +1,6 @@
-# agent-smith
+<img src="assets/agent_smith_logo_white_thick.png" alt="Cairn" width="120" align="left" style="margin-right: 20px; margin-bottom: 10px;"/>
 
-![agent-smith](assets/agent_smith.png)
+# agent-smith
 
 A single harness for managing rules, skills, and MCP servers across multiple AI coding agents.
 One source of truth, synced everywhere.
