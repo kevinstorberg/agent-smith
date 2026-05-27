@@ -1,4 +1,4 @@
-<img src="assets/agent_smith_logo_white_thick.png" alt="Cairn" width="120" align="left" style="margin-right: 20px; margin-bottom: 10px;"/>
+<img src="assets/agent_smith_logo_white_thick.svg" alt="AgentSmith" width="120" align="left" style="margin-right: 20px; margin-bottom: 10px;"/>
 
 # agent-smith
 
