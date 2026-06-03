@@ -11,3 +11,5 @@ harness/skills/local/
 tmp/*
 !tmp/.gitkeep
 evals/results/
+
+.claude
