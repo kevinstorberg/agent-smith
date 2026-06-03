@@ -27,57 +27,36 @@ def test_echo_round_trip():
     assert result == "hello"
 
 
-def test_summarize_with_mock_llm(monkeypatch):
-    from services.graphs.library import summarize
+def test_opinion_with_mock_llm(monkeypatch):
+    from services.graphs.library import opinion
+
+    captured = {}
 
     class _Reply:
-        content = "A short summary."
-
-    class _FakeLLM:
-        async def ainvoke(self, messages):
-            return _Reply()
-
-    monkeypatch.setattr(summarize, "init_chat_model", lambda **_: _FakeLLM())
-
-    result = asyncio.run(run_graph("summarize", {"text": "Some long text to summarize."}))
-    assert result == "A short summary."
-
-
-def test_review_diff_invokes_read_file(monkeypatch, tmp_path):
-    from services.graphs.library import review_diff
-
-    diff_text = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n"
-    diff_file = tmp_path / "test.diff"
-    diff_file.write_text(diff_text)
-
-    captured_user_msg = {}
-
-    class _Reply:
-        content = '{"summary": "Replaces old with new.", "observations": ["one-line edit"]}'
+        content = "Sound: clear scope. Risk: scope creep. Simplification: drop X. Assumption: Y holds."
 
     class _FakeLLM:
         async def ainvoke(self, messages):
             for role, content in messages:
                 if role == "user":
-                    captured_user_msg["text"] = content
+                    captured["user"] = content
             return _Reply()
 
-    monkeypatch.setattr(review_diff, "init_chat_model", lambda **_: _FakeLLM())
+    monkeypatch.setattr(opinion, "init_chat_model", lambda **_: _FakeLLM())
 
-    result = asyncio.run(run_graph("review_diff", {"diff_path": str(diff_file)}))
-    assert "summary" in result
-    assert "observations" in result
-    assert diff_text in captured_user_msg["text"], "review node must see the file content from the load node"
+    result = asyncio.run(run_graph("opinion", {"proposal": "Build a new microservice for X."}))
+    assert "Sound" in result and "Risk" in result
+    assert captured["user"] == "Build a new microservice for X."
 
 
-def test_summarize_propagates_llm_error(monkeypatch):
-    from services.graphs.library import summarize
+def test_opinion_propagates_llm_error(monkeypatch):
+    from services.graphs.library import opinion
 
     class _FakeLLM:
         async def ainvoke(self, messages):
             raise RuntimeError("upstream LLM exploded")
 
-    monkeypatch.setattr(summarize, "init_chat_model", lambda **_: _FakeLLM())
+    monkeypatch.setattr(opinion, "init_chat_model", lambda **_: _FakeLLM())
 
     with pytest.raises(RuntimeError, match="upstream LLM exploded"):
-        asyncio.run(run_graph("summarize", {"text": "input"}))
+        asyncio.run(run_graph("opinion", {"proposal": "anything"}))

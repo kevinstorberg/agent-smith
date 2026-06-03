@@ -19,41 +19,19 @@ def test_scan_library_includes_echo():
     assert hasattr(registry["echo"], "build_graph")
 
 
-def test_scan_library_includes_summarize():
+def test_scan_library_includes_opinion():
     registry = scan_library()
-    assert "summarize" in registry
-    assert registry["summarize"].MODEL == "gpt-4o-mini"
-    assert registry["summarize"].PROVIDER == "openai"
-
-
-def test_scan_library_includes_review_diff():
-    registry = scan_library()
-    assert "review_diff" in registry
-    assert registry["review_diff"].INPUT_SCHEMA == {"diff_path": "string"}
-
-
-def test_file_tools_read_file_round_trips(tmp_path):
-    from services.graphs.tools.file_tools import read_file
-
-    f = tmp_path / "hello.txt"
-    f.write_text("hello world\n")
-    assert read_file.invoke({"path": str(f)}) == "hello world\n"
-
-
-def test_file_tools_list_dir_round_trips(tmp_path):
-    from services.graphs.tools.file_tools import list_dir
-
-    (tmp_path / "a.txt").write_text("")
-    (tmp_path / "b.txt").write_text("")
-    assert list_dir.invoke({"path": str(tmp_path)}) == ["a.txt", "b.txt"]
+    assert "opinion" in registry
+    assert registry["opinion"].INPUT_SCHEMA == {"proposal": "string"}
+    assert registry["opinion"].MODEL == "gpt-4o-mini"
+    assert registry["opinion"].PROVIDER == "openai"
 
 
 def test_build_tool_description_names_available_types():
     description = build_tool_description()
     assert "echo" in description
-    assert "summarize" in description
-    assert "review_diff" in description
-    assert "diff_path" in description
+    assert "opinion" in description
+    assert "proposal" in description
 
 
 def test_dispatch_echo_round_trips():
