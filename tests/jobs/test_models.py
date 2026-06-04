@@ -7,28 +7,41 @@ from services.jobs.models.config import create_config, list_configs, update_conf
 from services.jobs.models.execution import (
     create_execution, get_execution, complete_execution, list_executions_for_job
 )
+from tests.conftest import jobs_cleanup
+
+_clean = jobs_cleanup("JOBTEST %")
 
 
 def test_create_job():
     """Test creating a background job."""
     job_id = create_job(
-        name="Test Job",
+        name="JOBTEST Create",
         schedule_config={"minutes": 5},
         input_params={"command": "echo test"}
     )
     assert job_id > 0
 
     job = get_job(job_id)
-    assert job["name"] == "Test Job"
+    assert job["name"] == "JOBTEST Create"
     assert job["schedule_config"] == {"minutes": 5}
     assert job["input_params"] == {"command": "echo test"}
     assert job["version"] == 1
 
 
+def test_create_job_rejects_empty_schedule():
+    """An empty schedule_config is invalid — interval scheduling is required."""
+    with pytest.raises(AssertionError):
+        create_job(
+            name="JOBTEST Empty Schedule",
+            schedule_config={},
+            input_params={"command": "echo nope"},
+        )
+
+
 def test_update_job():
     """Test updating a job."""
     job_id = create_job(
-        name="Update Test",
+        name="JOBTEST Update",
         schedule_config={"hours": 1},
         input_params={"command": "date"}
     )
@@ -42,19 +55,19 @@ def test_update_job():
 
 def test_list_jobs():
     """Test listing jobs."""
-    create_job(name="List Test 1", schedule_config={}, input_params={"command": "echo 1"})
-    create_job(name="List Test 2", schedule_config={}, input_params={"command": "echo 2"})
+    create_job(name="JOBTEST List 1", schedule_config={"minutes": 5}, input_params={"command": "echo 1"})
+    create_job(name="JOBTEST List 2", schedule_config={"minutes": 5}, input_params={"command": "echo 2"})
 
     jobs, total = list_jobs(limit=10, offset=0)
     assert total >= 2
-    assert any(j["name"] == "List Test 1" for j in jobs)
+    assert any(j["name"] == "JOBTEST List 1" for j in jobs)
 
 
 def test_delete_job():
     """Test deleting a job."""
     job_id = create_job(
-        name="Delete Test",
-        schedule_config={},
+        name="JOBTEST Delete",
+        schedule_config={"minutes": 5},
         input_params={"command": "echo delete"}
     )
 
@@ -67,8 +80,8 @@ def test_delete_job():
 def test_create_config():
     """Test creating a job config."""
     job_id = create_job(
-        name="Config Test Job",
-        schedule_config={},
+        name="JOBTEST Config",
+        schedule_config={"minutes": 5},
         input_params={"command": "echo config"}
     )
 
@@ -86,8 +99,8 @@ def test_create_config():
 def test_list_configs():
     """Test listing configs for a job."""
     job_id = create_job(
-        name="Multi Config Job",
-        schedule_config={},
+        name="JOBTEST Multi Config",
+        schedule_config={"minutes": 5},
         input_params={"command": "echo multi"}
     )
 
@@ -102,8 +115,8 @@ def test_list_configs():
 def test_update_config():
     """Test updating a config."""
     job_id = create_job(
-        name="Update Config Job",
-        schedule_config={},
+        name="JOBTEST Update Config",
+        schedule_config={"minutes": 5},
         input_params={"command": "echo update"}
     )
 
@@ -118,8 +131,8 @@ def test_update_config():
 def test_delete_config():
     """Test deleting a config."""
     job_id = create_job(
-        name="Delete Config Job",
-        schedule_config={},
+        name="JOBTEST Delete Config",
+        schedule_config={"minutes": 5},
         input_params={"command": "echo delete"}
     )
 
@@ -134,8 +147,8 @@ def test_delete_config():
 def test_create_execution():
     """Test creating a job execution."""
     job_id = create_job(
-        name="Execution Test Job",
-        schedule_config={},
+        name="JOBTEST Execution",
+        schedule_config={"minutes": 5},
         input_params={"command": "echo exec"}
     )
 
@@ -150,8 +163,8 @@ def test_create_execution():
 def test_complete_execution():
     """Test completing an execution."""
     job_id = create_job(
-        name="Complete Test Job",
-        schedule_config={},
+        name="JOBTEST Complete",
+        schedule_config={"minutes": 5},
         input_params={"command": "echo complete"}
     )
 
@@ -177,8 +190,8 @@ def test_complete_execution():
 def test_list_executions_for_job():
     """Test listing executions for a job."""
     job_id = create_job(
-        name="Multi Execution Job",
-        schedule_config={},
+        name="JOBTEST Multi Execution",
+        schedule_config={"minutes": 5},
         input_params={"command": "echo multi"}
     )
 

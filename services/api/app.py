@@ -18,23 +18,28 @@ from fastapi.staticfiles import StaticFiles
 from services.db import init_db
 from services.db.seed import seed_all
 from services.api.routers import harness_router
-from services.api.routers import memory, evals, plans, eval_suites as eval_configs
+from services.api.routers import memory, evals, plans, jobs, eval_suites as eval_configs
 from services.memory.server import mcp as memory_mcp
 from services.plans.server import mcp as plans_mcp
 from services.harness.server import mcp as harness_mcp
 from services.evals.server import mcp as evals_mcp
 from services.graphs.server import mcp as graphs_mcp
+from services.jobs.server import mcp as jobs_mcp
+from services.jobs.scheduler import JobScheduler
 
-MCP_SERVERS = [memory_mcp, plans_mcp, harness_mcp, evals_mcp, graphs_mcp]
+MCP_SERVERS = [memory_mcp, plans_mcp, harness_mcp, evals_mcp, graphs_mcp, jobs_mcp]
 
 
 @asynccontextmanager
 async def lifespan(app):
     init_db()
     seed_all()
+    scheduler = JobScheduler()
     async with contextlib.AsyncExitStack() as stack:
         for srv in MCP_SERVERS:
             await stack.enter_async_context(srv.session_manager.run())
+        await scheduler.start()
+        stack.push_async_callback(scheduler.stop)
         yield
 
 
@@ -51,6 +56,7 @@ app.include_router(harness_router, prefix="/api/harness", tags=["harness"])
 app.include_router(memory.router, prefix="/api/memory", tags=["memory"])
 app.include_router(evals.router, prefix="/api/evals", tags=["evals"])
 app.include_router(plans.router, prefix="/api/plans", tags=["plans"])
+app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
 app.include_router(eval_configs.router, prefix="/api/eval-configs", tags=["eval-configs"])
 
 for _srv in MCP_SERVERS:

@@ -1,7 +1,7 @@
 """Job execution model for tracking execution history."""
 from __future__ import annotations
 
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import Json, RealDictCursor
 
 from services.db import get_connection
 from services.api.models.base import BaseModel
@@ -34,10 +34,9 @@ class JobExecutionModel(BaseModel):
                     f"""UPDATE {cls.table} SET
                         status = %s,
                         completed_at = now(),
-                        result = %s,
-                        updated_at = now()
+                        result = %s
                     WHERE id = %s""",
-                    (status, result, execution_id),
+                    (status, Json(result), execution_id),
                 )
 
     @classmethod
@@ -63,9 +62,28 @@ class JobExecutionModel(BaseModel):
                 items = [cls.serialize_timestamps(dict(r)) for r in cur.fetchall()]
         return items, total
 
+    @classmethod
+    def mark_running_interrupted(cls) -> int:
+        """Mark executions stuck in 'running' as interrupted.
+
+        Called on startup: an execution left 'running' means the app stopped
+        mid-run, so its true outcome is unknown — reconcile it loudly rather
+        than leaving an ambiguous row forever. Returns the number reconciled.
+        """
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""UPDATE {cls.table}
+                    SET status = 'interrupted', completed_at = now()
+                    WHERE status = 'running'
+                    RETURNING id"""
+                )
+                return len(cur.fetchall())
+
 
 # Convenience exports
 create_execution = JobExecutionModel.create
 get_execution = JobExecutionModel.read
 complete_execution = JobExecutionModel.complete
 list_executions_for_job = JobExecutionModel.list_for_job
+reconcile_running_executions = JobExecutionModel.mark_running_interrupted

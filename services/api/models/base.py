@@ -4,7 +4,7 @@ from psycopg2.extras import Json, RealDictCursor
 
 from services.db import get_connection
 
-TIMESTAMP_FIELDS = ("created_at", "updated_at", "timestamp")
+TIMESTAMP_FIELDS = ("created_at", "updated_at", "timestamp", "started_at", "completed_at")
 
 
 class BaseModel:

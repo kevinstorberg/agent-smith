@@ -156,6 +156,46 @@ export interface Plan {
   updated_at: string;
 }
 
+export interface JobConfig {
+  id: number;
+  job_id: number;
+  device: string;
+  repo: string;
+  enabled: boolean;
+  exclude: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Job {
+  id: number;
+  name: string;
+  description: string | null;
+  schedule_config: Record<string, number>;
+  input_params: Record<string, unknown>;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  configs?: JobConfig[];
+}
+
+export interface JobExecution {
+  id: number;
+  job_id: number;
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+  result: Record<string, unknown>;
+}
+
+export interface JobRunResult {
+  success: boolean;
+  output: string;
+  error: string;
+  duration_seconds: number;
+  exit_code: number | null;
+}
+
 export interface EvalSuite {
   id: number;
   name: string;
@@ -281,6 +321,27 @@ export const api = {
     update: (id: number, body: { title?: string; body?: string; project?: string | null }) =>
       put<Plan>(`/plans/${id}`, body),
     remove: (id: number) => del(`/plans/${id}`),
+  },
+  jobs: {
+    list: (pagination?: PaginationParams) =>
+      get<Paginated<Job>>('/jobs', paginationToParams(pagination)),
+    get: (id: number) => get<Job>(`/jobs/${id}`),
+    create: (body: { name: string; schedule_config: Record<string, number>; input_params?: Record<string, unknown>; description?: string | null }) =>
+      post<Job>('/jobs', body),
+    update: (id: number, body: { name?: string; schedule_config?: Record<string, number>; input_params?: Record<string, unknown>; description?: string | null }) =>
+      put<Job>(`/jobs/${id}`, body),
+    remove: (id: number) => del(`/jobs/${id}`),
+    runNow: (id: number) => post<JobRunResult>(`/jobs/${id}/run-now`, {}),
+    executions: (id: number, pagination?: PaginationParams) =>
+      get<Paginated<JobExecution>>(`/jobs/${id}/executions`, paginationToParams(pagination)),
+    configs: {
+      add: (jobId: number, body: Partial<JobConfig>) =>
+        post<JobConfig[]>(`/jobs/${jobId}/configs`, body),
+      update: (jobId: number, configId: number, body: Partial<JobConfig>) =>
+        patch<JobConfig[]>(`/jobs/${jobId}/configs/${configId}`, body),
+      remove: (jobId: number, configId: number) =>
+        del(`/jobs/${jobId}/configs/${configId}`),
+    },
   },
   evalConfigs: {
     suites: {

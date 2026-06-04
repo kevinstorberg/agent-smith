@@ -1,10 +1,8 @@
 """Background job model."""
 from __future__ import annotations
 
-from psycopg2.extras import RealDictCursor
-
-from services.db import get_connection
 from services.api.models.base import BaseModel
+from services.jobs.schedule import parse_interval
 
 
 class BackgroundJobModel(BaseModel):
@@ -26,6 +24,7 @@ class BackgroundJobModel(BaseModel):
             {"name": name, "schedule_config": schedule_config},
             ["name", "schedule_config"],
         )
+        parse_interval(schedule_config)
         return super().create(
             name=name,
             description=description,
@@ -37,6 +36,8 @@ class BackgroundJobModel(BaseModel):
     def update(cls, job_id: int, **fields) -> None:
         """Update a background job."""
         clean = cls._collect_fields(**fields)
+        if "schedule_config" in clean:
+            parse_interval(clean["schedule_config"])
         if clean:
             cls.dynamic_update(job_id, clean)
 

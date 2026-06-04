@@ -7,6 +7,8 @@ import { EvalsPage } from './pages/EvalsPage';
 import { EvalDetailPage } from './pages/EvalDetailPage';
 import { PlansIndexPage } from './pages/PlansIndexPage';
 import { PlanDetailPage } from './pages/PlanDetailPage';
+import { JobsIndexPage } from './pages/JobsIndexPage';
+import { JobDetailPage } from './pages/JobDetailPage';
 import { EvalSuitesPage } from './pages/EvalSuitesPage';
 import { EvalSuiteDetailPage } from './pages/EvalSuiteDetailPage';
 import { Sidebar } from './components/Sidebar';
@@ -39,6 +41,9 @@ export default function App() {
           <Route path="/plans" element={<PlansIndexPage />} />
           <Route path="/plans/new" element={<PlanDetailPage />} />
           <Route path="/plans/:id" element={<PlanDetailPage />} />
+          <Route path="/jobs" element={<JobsIndexPage />} />
+          <Route path="/jobs/new" element={<JobDetailPage />} />
+          <Route path="/jobs/:id" element={<JobDetailPage />} />
           <Route path="/eval-configs" element={<EvalSuitesPage />} />
           <Route path="/eval-configs/new" element={<EvalSuiteDetailPage />} />
           <Route path="/eval-configs/:id" element={<EvalSuiteDetailPage />} />

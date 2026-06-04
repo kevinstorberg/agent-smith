@@ -63,6 +63,25 @@ Vector memory with time-weighted retrieval, served as MCP tools on the dashboard
 Defaults to LanceDB (local, stored in `memory_store/`). Set `MEMORY_BACKEND=pinecone` in
 `.env` with a `PINECONE_API_KEY` to use Pinecone instead.
 
+## Background Jobs
+
+Scheduled shell commands that run on a fixed interval, managed via the dashboard (the
+**Jobs** tab) or MCP tools. Each job stores a `schedule_config` interval (e.g.
+`{"minutes": 5}`) and an `input_params.command`. Like harness items, jobs carry
+**deployment configs** (`job_configs`) scoping them by device (`DEVICE_NAME`) and repo with
+additive (include) / subtractive (exclude) rules — a job only runs on a device its configs
+select.
+
+A pure-asyncio scheduler runs inside the dashboard process (started in the app lifespan): it
+polls for due jobs, executes each command in a subprocess with a timeout, and records every
+run in `job_executions` (status, timing, stdout/stderr, exit code). Executions left
+`running` when the app stops are reconciled to `interrupted` on the next startup. Trigger an
+immediate run with **Run Now** (or the `job_run_now` MCP tool), which ignores the schedule
+and scoping.
+
+Tune `JOB_POLL_INTERVAL`, `JOB_DEFAULT_TIMEOUT`, and `JOB_MAX_OUTPUT_BYTES` in your
+environment's `.env.*` file.
+
 ## Tests
 
 ```sh
