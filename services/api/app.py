@@ -23,8 +23,9 @@ from services.memory.server import mcp as memory_mcp
 from services.plans.server import mcp as plans_mcp
 from services.harness.server import mcp as harness_mcp
 from services.evals.server import mcp as evals_mcp
+from services.graphs.server import mcp as graphs_mcp
 
-MCP_SERVERS = [memory_mcp, plans_mcp, harness_mcp, evals_mcp]
+MCP_SERVERS = [memory_mcp, plans_mcp, harness_mcp, evals_mcp, graphs_mcp]
 
 
 @asynccontextmanager
