@@ -50,7 +50,35 @@ def test_create_attaches_default_config():
 
 def test_create_rejects_empty_schedule():
     with pytest.raises(ValidationError):
-        JobCreateRequest(name="JOBTEST R Bad", schedule_config={})
+        JobCreateRequest(name="JOBTEST R Bad", schedule_config={}, input_params={"command": "echo x"})
+
+
+def test_create_requires_command():
+    with pytest.raises(ValidationError):
+        JobCreateRequest(name="JOBTEST R NoCmd", schedule_config={"minutes": 5}, input_params={})
+
+
+def test_create_duplicate_name_conflicts():
+    _create("JOBTEST R Dup")
+    with pytest.raises(HTTPException) as exc:
+        _create("JOBTEST R Dup")
+    assert exc.value.status_code == 409
+
+
+def test_patch_config_foreign_is_404():
+    job_a = _create("JOBTEST R Owner A")
+    job_b = _create("JOBTEST R Owner B")
+    foreign_config_id = job_b["configs"][0]["id"]
+    with pytest.raises(HTTPException) as exc:
+        patch_config(job_a["id"], foreign_config_id, ConfigUpdateRequest(enabled=False))
+    assert exc.value.status_code == 404
+
+
+def test_remove_config_missing_is_404():
+    job = _create("JOBTEST R Owner C")
+    with pytest.raises(HTTPException) as exc:
+        remove_config(job["id"], 99_999_999)
+    assert exc.value.status_code == 404
 
 
 def test_list_returns_total():

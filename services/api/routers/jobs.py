@@ -1,14 +1,21 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+import psycopg2
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
-from services.jobs.models.config import create_config, delete_config, list_configs, update_config
+from services.jobs.models.config import (
+    create_config,
+    delete_config,
+    get_config,
+    list_configs,
+    update_config,
+)
 from services.jobs.models.execution import get_execution, list_executions_for_job
 from services.jobs.models.job import delete_job, get_job, list_jobs, update_job
 from services.jobs.schedule import parse_interval
 from services.jobs.scheduler import execute_job
-from services.jobs.service import create_job_with_default_config
+from services.jobs.service import create_job_with_default_config, require_command
 from services.api.routers.base import (
     delete_response,
     list_response,
@@ -39,7 +46,7 @@ def get_one(job_id: int):
 class JobCreateRequest(BaseModel):
     name: str = Field(min_length=1)
     schedule_config: dict
-    input_params: dict = Field(default_factory=dict)
+    input_params: dict
     description: str | None = None
 
     @field_validator("schedule_config")
@@ -48,12 +55,21 @@ class JobCreateRequest(BaseModel):
         parse_interval(value)  # raises ValueError -> 422
         return value
 
+    @field_validator("input_params")
+    @classmethod
+    def _require_command(cls, value):
+        require_command(value)  # raises ValueError -> 422
+        return value
+
 
 @router.post("", status_code=201)
 def create(body: JobCreateRequest):
-    job_id = create_job_with_default_config(
-        body.name, body.schedule_config, body.input_params, body.description
-    )
+    try:
+        job_id = create_job_with_default_config(
+            body.name, body.schedule_config, body.input_params, body.description
+        )
+    except psycopg2.IntegrityError:
+        raise HTTPException(status_code=409, detail=f"A job named '{body.name}' already exists")
     return _job_detail(job_id)
 
 
@@ -70,17 +86,27 @@ class JobUpdateRequest(BaseModel):
             parse_interval(value)
         return value
 
+    @field_validator("input_params")
+    @classmethod
+    def _require_command(cls, value):
+        if value is not None:
+            require_command(value)  # raises ValueError -> 422
+        return value
+
 
 @router.put("/{job_id}")
 def update(job_id: int, body: JobUpdateRequest):
     require_found(get_job(job_id), "Job", job_id)
-    update_job(
-        job_id,
-        name=body.name,
-        schedule_config=body.schedule_config,
-        input_params=body.input_params,
-        description=body.description,
-    )
+    try:
+        update_job(
+            job_id,
+            name=body.name,
+            schedule_config=body.schedule_config,
+            input_params=body.input_params,
+            description=body.description,
+        )
+    except psycopg2.IntegrityError:
+        raise HTTPException(status_code=409, detail=f"A job named '{body.name}' already exists")
     return _job_detail(job_id)
 
 
@@ -140,13 +166,22 @@ class ConfigUpdateRequest(BaseModel):
     exclude: bool | None = None
 
 
+def _require_config_of_job(job_id: int, config_id: int) -> dict:
+    config = require_found(get_config(config_id), "Config", config_id)
+    if config["job_id"] != job_id:
+        raise HTTPException(status_code=404, detail=f"Config {config_id} does not belong to job {job_id}")
+    return config
+
+
 @router.patch("/{job_id}/configs/{config_id}")
 def patch_config(job_id: int, config_id: int, body: ConfigUpdateRequest):
+    _require_config_of_job(job_id, config_id)
     update_config(config_id, **update_fields(body))
     return list_configs(job_id)
 
 
 @router.delete("/{job_id}/configs/{config_id}")
 def remove_config(job_id: int, config_id: int):
+    _require_config_of_job(job_id, config_id)
     delete_config(config_id)
     return delete_response(config_id)

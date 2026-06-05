@@ -195,6 +195,11 @@ export function JobDetailPage() {
               {INTERVAL_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
             </select>
           </div>
+          {Object.keys(editValues.schedule_config ?? {}).length > 1 && (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+              This job uses multiple time units; editing here collapses it to the single unit above.
+            </div>
+          )}
 
           <label style={styles.label}>Description</label>
           <textarea

@@ -20,10 +20,12 @@ class JobConfigModel(BaseModel):
         repo: str = "*",
         enabled: bool = True,
         exclude: bool = False,
+        conn=None,
     ) -> int:
         """Create a new job config."""
         cls._validate_id(job_id)
         return super().create(
+            conn=conn,
             job_id=job_id,
             device=device,
             repo=repo,
@@ -53,6 +55,7 @@ class JobConfigModel(BaseModel):
 
 # Convenience exports
 list_configs = JobConfigModel.list_for_job
+get_config = JobConfigModel.read
 create_config = JobConfigModel.create
 update_config = JobConfigModel.update
 delete_config = JobConfigModel.destroy

@@ -36,8 +36,9 @@ def job_create(
         The created job record.
     """
     from services.jobs.models.job import get_job
-    from services.jobs.service import create_job_with_default_config
+    from services.jobs.service import create_job_with_default_config, require_command
 
+    require_command(input_params)
     job_id = create_job_with_default_config(
         name, schedule_config, input_params or {}, empty_to_none(description)
     )
@@ -82,7 +83,10 @@ def job_update(
     Only non-empty / provided fields are changed.
     """
     from services.jobs.models.job import update_job
+    from services.jobs.service import require_command
 
+    if input_params is not None:
+        require_command(input_params)
     update_job(
         job_id,
         name=empty_to_none(name),

@@ -18,6 +18,7 @@ class BackgroundJobModel(BaseModel):
         schedule_config: dict,
         input_params: dict,
         description: str | None = None,
+        conn=None,
     ) -> int:
         """Create a new background job."""
         cls._validate_required(
@@ -26,6 +27,7 @@ class BackgroundJobModel(BaseModel):
         )
         parse_interval(schedule_config)
         return super().create(
+            conn=conn,
             name=name,
             description=description,
             schedule_config=schedule_config,

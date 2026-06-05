@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from psycopg2.extras import Json, RealDictCursor
 
+from services.config import DEVICE_NAME
 from services.db import get_connection
 from services.api.models.base import BaseModel
 
@@ -14,10 +15,10 @@ class JobExecutionModel(BaseModel):
     json_fields = {"result"}
 
     @classmethod
-    def create(cls, job_id: int, status: str = "running") -> int:
-        """Create a new job execution."""
+    def create(cls, job_id: int, status: str = "running", device: str | None = None) -> int:
+        """Create a new job execution, tagged with the device that ran it."""
         cls._validate_id(job_id)
-        return super().create(job_id=job_id, status=status)
+        return super().create(job_id=job_id, status=status, device=device or DEVICE_NAME)
 
     @classmethod
     def complete(
@@ -63,20 +64,24 @@ class JobExecutionModel(BaseModel):
         return items, total
 
     @classmethod
-    def mark_running_interrupted(cls) -> int:
-        """Mark executions stuck in 'running' as interrupted.
+    def mark_running_interrupted(cls, device: str | None = None) -> int:
+        """Mark this device's executions stuck in 'running' as interrupted.
 
         Called on startup: an execution left 'running' means the app stopped
         mid-run, so its true outcome is unknown — reconcile it loudly rather
-        than leaving an ambiguous row forever. Returns the number reconciled.
+        than leaving an ambiguous row forever. Scoped to the local device so a
+        second scheduler sharing the database never touches another device's
+        genuinely in-flight runs. Returns the number reconciled.
         """
+        dev = device or DEVICE_NAME
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""UPDATE {cls.table}
                     SET status = 'interrupted', completed_at = now()
-                    WHERE status = 'running'
-                    RETURNING id"""
+                    WHERE status = 'running' AND device = %s
+                    RETURNING id""",
+                    (dev,),
                 )
                 return len(cur.fetchall())
 
