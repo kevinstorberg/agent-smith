@@ -33,6 +33,10 @@ DEVICE_NAME: str = os.environ.get("DEVICE_NAME", "my-space")
 DASHBOARD_PORT: str = os.environ.get("DASHBOARD_PORT", "7654")
 MCP_BASE: str = f"http://localhost:{DASHBOARD_PORT}"
 
+JOB_POLL_INTERVAL: float = float(os.environ.get("JOB_POLL_INTERVAL", "5"))
+JOB_DEFAULT_TIMEOUT: float = float(os.environ.get("JOB_DEFAULT_TIMEOUT", "300"))
+JOB_MAX_OUTPUT_BYTES: int = int(os.environ.get("JOB_MAX_OUTPUT_BYTES", "65536"))
+
 MEMORY_STORE_PATH: str = os.environ.get("MEMORY_STORE_PATH", str(_repo_root / "memory_store"))
 PINECONE_INDEX: str = os.environ.get("PINECONE_INDEX", "agent-smith-memories")
 PINECONE_CLOUD: str = os.environ.get("PINECONE_CLOUD", "aws")

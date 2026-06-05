@@ -8,6 +8,7 @@ MCP_SERVERS = [
     ("harness", f"{MCP_BASE}/mcp/harness/", "Manage rules, skills, tools, hooks, and agents"),
     ("evals", f"{MCP_BASE}/mcp/evals/", "Manage evaluation suites and scenarios"),
     ("graphs", f"{MCP_BASE}/mcp/graphs/", "Run hardcoded LangGraph workflows by type"),
+    ("jobs", f"{MCP_BASE}/mcp/jobs/", "Manage background jobs, scheduling, and execution history"),
 ]
 
 

@@ -48,3 +48,19 @@ def harness_cleanup(*patterns: str):
         yield
         clean_harness_rows(*patterns)
     return _clean
+
+
+def clean_job_rows(*patterns: str):
+    from services.db import get_connection
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            for pattern in patterns:
+                cur.execute("DELETE FROM background_jobs WHERE name LIKE %s", (pattern,))
+
+
+def jobs_cleanup(*patterns: str):
+    @pytest.fixture(autouse=True)
+    def _clean():
+        yield
+        clean_job_rows(*patterns)
+    return _clean

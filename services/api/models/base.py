@@ -4,7 +4,7 @@ from psycopg2.extras import Json, RealDictCursor
 
 from services.db import get_connection
 
-TIMESTAMP_FIELDS = ("created_at", "updated_at", "timestamp")
+TIMESTAMP_FIELDS = ("created_at", "updated_at", "timestamp", "started_at", "completed_at")
 
 
 class BaseModel:
@@ -29,18 +29,21 @@ class BaseModel:
         return result
 
     @classmethod
-    def create(cls, **fields) -> int:
+    def create(cls, conn=None, **fields) -> int:
         jf = cls.json_fields
         cols = list(fields.keys())
         vals = [Json(v) if c in jf else v for c, v in fields.items()]
         placeholders = ", ".join(["%s"] * len(cols))
         col_names = ", ".join(cols)
-        with get_connection() as conn:
+        sql = f"INSERT INTO {cls.table} ({col_names}) VALUES ({placeholders}) RETURNING id"
+        if conn is not None:
+            # Caller-supplied connection: participate in their transaction (no commit here).
             with conn.cursor() as cur:
-                cur.execute(
-                    f"INSERT INTO {cls.table} ({col_names}) VALUES ({placeholders}) RETURNING id",
-                    vals,
-                )
+                cur.execute(sql, vals)
+                return cur.fetchone()[0]
+        with get_connection() as own_conn:
+            with own_conn.cursor() as cur:
+                cur.execute(sql, vals)
                 return cur.fetchone()[0]
 
     @classmethod
