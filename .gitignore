@@ -1,15 +1,48 @@
-.env.*
-!.env.default
-.venv
 __pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+
+.venv/
+venv/
+.env
+.env.local
+.env.production
+
+*.sqlite3
 memory_store/
-memory.pid
-memory.log
-harness/mcp/local/
-harness/rules/local/
-harness/skills/local/
+storage/
+
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+coverage.xml
+
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Claude Code
+.claude/
+
+# Local scratch files
 tmp/*
 !tmp/.gitkeep
-evals/results/
 
-.claude
+# Optional frontend
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/.vite/
+frontend/.env.local
+frontend/.env.production
+
+# Local runtime env files
+.env.development
+.env.test

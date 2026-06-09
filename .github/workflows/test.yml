@@ -1,77 +1,80 @@
-name: Tests
+name: Test
 
 on:
+  push:
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 jobs:
-  backend:
+  test:
     runs-on: ubuntu-latest
 
     services:
       postgres:
-        image: postgres:17
+        image: postgres:16-alpine
         env:
-          POSTGRES_DB: agent_smith_test
-          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_USER: cairn
+          POSTGRES_PASSWORD: cairn
+          POSTGRES_DB: cairn_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 2s
+          --health-cmd pg_isready
+          --health-interval 10s
           --health-timeout 5s
-          --health-retries 10
-
-    env:
-      APP_ENV: test
-      DATABASE_URL_TEST: postgresql://postgres@localhost/agent_smith_test
+          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Create test env file
-        run: echo "DATABASE_URL_TEST=postgresql://postgres@localhost/agent_smith_test" > .env.test
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Lint
-        run: ruff check .
-
-      - name: Run backend tests
-        run: pytest tests/ -v
-
-  frontend:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
+          python-version: "3.11"
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: "npm"
+          cache-dependency-path: "frontend/package-lock.json"
+
+      - name: Cache Poetry dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            .venv
+          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
+
+      - name: Install Poetry
+        run: pip install poetry
 
       - name: Install dependencies
-        run: cd services/client && npm ci
+        run: poetry install --no-interaction
 
       - name: Lint
-        run: cd services/client && npm run lint
+        run: poetry run ruff check .
 
-      - name: Run frontend tests
-        run: cd services/client && npm test
+      - name: Format check
+        run: poetry run ruff format --check .
 
-      - name: Build frontend
-        run: cd services/client && npm run build
+      - name: Run tests with coverage
+        env:
+          APP_ENV: test
+          DATABASE_URL_TEST: postgresql+asyncpg://cairn:cairn@localhost:5432/cairn_test
+        run: poetry run pytest tests/ -v --tb=short --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=85
 
-  docker:
-    runs-on: ubuntu-latest
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci
 
-    steps:
-      - uses: actions/checkout@v4
+      - name: Run frontend checks
+        run: npm --prefix frontend run check
 
-      - name: Validate Docker build
-        run: docker build -t agent-smith-test .
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false

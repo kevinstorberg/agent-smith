@@ -1,24 +1,42 @@
-# Stage 1: Build frontend
-FROM node:22-slim AS frontend
-WORKDIR /app/services/client
-COPY services/client/package*.json ./
-RUN npm ci
-COPY services/client/ ./
-RUN npm run build
+FROM python:3.11-slim AS builder
 
-# Stage 2: Python app
-FROM python:3.13-slim
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    POETRY_NO_INTERACTION=1 \
+    POETRY_VIRTUALENVS_CREATE=false \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:${PATH}"
+
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m venv /opt/venv && \
+    pip install --no-cache-dir poetry
 
+COPY pyproject.toml poetry.lock ./
+RUN poetry install --only main --no-root --no-ansi
+
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:${PATH}"
+
+WORKDIR /app
+
+RUN addgroup --system cairn && \
+    adduser --system --ingroup cairn --home /app cairn
+
+COPY --from=builder /opt/venv /opt/venv
 COPY . .
-COPY --from=frontend /app/services/client/dist services/client/dist/
 
-ENV APP_ENV=production
+RUN chown -R cairn:cairn /app
 
-COPY scripts/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+USER cairn
 
-ENTRYPOINT ["/entrypoint.sh"]
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()" || exit 1
+
+CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8000"]

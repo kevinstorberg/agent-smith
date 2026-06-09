@@ -1,82 +1,62 @@
-x-postgres-image: &postgres-image postgres:17
-
 services:
   app:
     build: .
     ports:
-      - "${DASHBOARD_PORT:-7654}:${DASHBOARD_PORT:-7654}"
-    environment:
-      APP_ENV: "${APP_ENV:-production}"
-      DASHBOARD_PORT: "${DASHBOARD_PORT:-7654}"
+      - "${APP_PORT:-8000}:8000"
     env_file:
       - .env.default
-      - path: .env.production
-        required: false
-    volumes:
-      - memory_store:/app/memory_store
-      - ${RDS_CERT_PATH:-/dev/null}:/certs/rds-global-bundle.pem:ro
-      - ${HOME}/.claude:/root/.claude
-      - ${HOME}/.claude.json:/root/.claude.json
-      - ${HOME}/.codex:/root/.codex
-      - ${HOME}/.gemini:/root/.gemini
-      - ${HOME}:${HOME}
-
-  postgres:
-    image: *postgres-image
-    profiles: [local-db]
+      - .env.development
     environment:
-      POSTGRES_DB: "${POSTGRES_DB:-agent_smith}"
-      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: cairn
+      POSTGRES_PASSWORD: cairn
+      POSTGRES_DB_DEVELOPMENT: cairn_dev
+      DATABASE_URL_DEVELOPMENT: ""
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - .:/app
+
+  db:
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cairn}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cairn}
+      POSTGRES_DB: ${POSTGRES_DB_DEVELOPMENT:-cairn_dev}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-agent_smith}"]
-      interval: 2s
+      test: ["CMD-SHELL", "pg_isready -U cairn"]
+      interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 5
 
-  test-db:
-    image: *postgres-image
-    profiles: [test]
-    environment:
-      POSTGRES_DB: agent_smith_test
-      POSTGRES_HOST_AUTH_METHOD: trust
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d agent_smith_test"]
-      interval: 2s
-      timeout: 5s
-      retries: 10
-
-  lint:
-    build: .
-    profiles: [lint]
-    entrypoint: ["ruff", "check", "."]
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
 
   frontend:
-    build:
-      context: .
-      target: frontend
-    profiles: [frontend]
-    working_dir: /app/services/client
-    volumes:
-      - ./services/client:/app/services/client
-      - /app/services/client/node_modules
-
-  test:
-    build: .
-    profiles: [test]
-    depends_on:
-      test-db:
-        condition: service_healthy
+    image: node:22-alpine
+    profiles:
+      - frontend
+    working_dir: /app/frontend
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
     environment:
-      APP_ENV: test
-    env_file:
-      - .env.default
-      - .env.test
-    entrypoint: ["python", "-m", "pytest", "tests/", "-v"]
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://127.0.0.1:${APP_PORT:-8000}}
+      VITE_BASE_PATH: ${VITE_BASE_PATH:-/ui/}
+    depends_on:
+      app:
+        condition: service_started
+    volumes:
+      - .:/app
 
 volumes:
   pgdata:
-  memory_store:

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import os
 
 import pytest
 
-from scripts.shared.paths import bootstrap
-bootstrap(__file__)
+from db.unit_of_work import unit_of_work
+from src.agent_smith.services.evals import EvalService
 
 
 def pytest_addoption(parser):
@@ -21,35 +22,10 @@ def pytest_generate_tests(metafunc):
     if "scenario" not in metafunc.fixturenames:
         return
 
-    try:
-        from services.api.models.evals import (
-            get_suite_by_name,
-            list_enabled_scenarios_for_suite,
-            list_suites,
-        )
-    except Exception:
-        pytest.skip("Database unavailable")
-        return
-
     suite_filter = metafunc.config.getoption("suite")
 
     try:
-        if suite_filter:
-            suite = get_suite_by_name(suite_filter)
-            if not suite:
-                pytest.fail(f"Suite '{suite_filter}' not found in database")
-            suite_names = [suite_filter]
-        else:
-            suites, _ = list_suites(enabled_only=True)
-            suite_names = [s["name"] for s in suites]
-
-        params = []
-        ids = []
-        for name in suite_names:
-            scenarios = list_enabled_scenarios_for_suite(name)
-            for s in scenarios:
-                params.append((name, s))
-                ids.append(f"{name}-{s['name']}")
+        params, ids = asyncio.run(_collect_eval_params(suite_filter))
     except Exception:
         pytest.skip("Database unavailable — skipping eval suite collection")
         return
@@ -72,5 +48,22 @@ def eval_config():
 
 @pytest.fixture(scope="session", autouse=True)
 def _init_db():
-    from services.db import init_db
-    init_db()
+    return None
+
+
+async def _collect_eval_params(suite_filter: str | None) -> tuple[list[tuple[str, dict]], list[str]]:
+    async with unit_of_work() as uow:
+        service = EvalService()
+        suites, _ = await service.list_suites(uow, enabled_only=not bool(suite_filter), limit=1000, offset=0)
+        if suite_filter:
+            suites = [suite for suite in suites if suite["name"] == suite_filter]
+            if not suites:
+                pytest.fail(f"Suite '{suite_filter}' not found in database")
+        params = []
+        ids = []
+        for suite in suites:
+            scenarios = await service.list_scenarios(uow, suite["id"], enabled_only=True)
+            for scenario in scenarios:
+                params.append((suite["name"], scenario))
+                ids.append(f"{suite['name']}-{scenario['name']}")
+        return params, ids

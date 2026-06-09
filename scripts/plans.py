@@ -5,37 +5,35 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from scripts.shared.paths import bootstrap
-bootstrap()
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(SCRIPT_DIR) in sys.path:
+    sys.path.remove(str(SCRIPT_DIR))
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+import asyncio
+
+from src.agent_smith.services.seed import seed_all
 
 
-def cmd_init():
-    from services.db import init_db
-    from services.api.models.shared.harness import upsert_item
-    from services.config import ALL_AGENTS, MCP_BASE
-    init_db()
-
-    upsert_item(
-        "tool", "plans",
-        content={"body": "", "metadata": {"url": f"{MCP_BASE}/mcp/plans/", "description": "Save and retrieve implementation plans"}},
-        agents=ALL_AGENTS,
-    )
-    print("  registered: plans")
+async def cmd_init() -> None:
+    await seed_all()
     print("Plan tools initialized.")
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(prog="scripts/plans.py")
-    sub = parser.add_subparsers(dest="command")
-    sub.add_parser("init")
+    subcommands = parser.add_subparsers(dest="command")
+    subcommands.add_parser("init")
     args = parser.parse_args()
 
     if args.command == "init":
-        cmd_init()
+        asyncio.run(cmd_init())
     else:
         parser.print_help()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

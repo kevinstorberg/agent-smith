@@ -1,11 +1,10 @@
+target-version = "py311"
+line-length = 120
+
 [lint]
-select = ["E", "F", "W"]
-ignore = [
-    "E402",  # module-level imports not at top — intentional for sys.path setup
-    "E501",  # line too long — not enforced
-]
+select = ["E", "F", "I", "W"]
+ignore = ["E402", "E501"]
 
 [lint.per-file-ignores]
+"db/migrations/*.py" = ["E402"]
 "scripts/*.py" = ["E402"]
-"services/db/migrations/*.py" = ["E402"]
-"evals/*.py" = ["E402"]

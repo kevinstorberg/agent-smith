@@ -1,0 +1,59 @@
+llm:
+  provider: anthropic
+  model: claude-sonnet-4-6
+  max_tokens: 4096
+
+database:
+  backend: postgresql
+  pool_size: 5
+
+memory:
+  backend: in_memory
+  embedding_model: all-MiniLM-L6-v2
+  embedding_dimension: 384
+
+cache:
+  backend: memory
+  default_ttl: 300
+
+storage:
+  backend: local
+  local_path: ./storage
+
+jobs:
+  enabled: true
+  auto_discover: true
+  scheduler_store: memory
+  status_store: memory
+  lock_backend: memory
+  require_distributed_lock: false
+
+admin_debug:
+  enabled: false
+  expose_config_values: false
+  require_admin: true
+
+frontend:
+  enabled: false
+  static_dir: frontend/dist
+  mount_path: /ui
+  spa_fallback: true
+
+security:
+  cors_origins:
+    - "http://127.0.0.1:18031"
+    - "http://localhost:18031"
+  trusted_hosts:
+    - "*"
+  rate_limit_enabled: true
+  rate_limit_requests: 120
+  rate_limit_window_seconds: 60
+  max_request_body_bytes: 10485760
+  headers:
+    enabled: true
+    content_type_options: nosniff
+    frame_options: DENY
+    referrer_policy: no-referrer
+    permissions_policy: "geolocation=(), microphone=(), camera=()"
+    content_security_policy: ""
+    hsts_max_age_seconds: 31536000

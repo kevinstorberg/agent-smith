@@ -1,19 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 
-from psycopg2.extras import Json
-
-from services.db import get_connection
-
-INSERT_SQL = """
-INSERT INTO eval_results
-    (timestamp, eval_type, subcategory, scenario, test_model, judge_model, threshold,
-     prompt, output, results, eval_suite_id, eval_scenario_id)
-VALUES
-    (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-RETURNING id
-"""
+from db.unit_of_work import unit_of_work
+from src.agent_smith.services.evals import EvalService
 
 
 def save_result(
@@ -30,20 +21,22 @@ def save_result(
     eval_suite_id: int | None = None,
     eval_scenario_id: int | None = None,
 ) -> int:
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(INSERT_SQL, (
-                timestamp,
-                eval_type,
-                subcategory,
-                scenario,
-                test_model,
-                judge_model,
-                threshold,
-                prompt,
-                Json(output),
-                Json(results),
-                eval_suite_id,
-                eval_scenario_id,
-            ))
-            return cur.fetchone()[0]
+    async def _save() -> int:
+        async with unit_of_work() as uow:
+            return await EvalService().save_result(
+                uow,
+                timestamp=timestamp,
+                eval_type=eval_type,
+                scenario=scenario,
+                test_model=test_model,
+                judge_model=judge_model,
+                threshold=threshold,
+                output=output,
+                results=results,
+                subcategory=subcategory,
+                prompt=prompt,
+                eval_suite_id=eval_suite_id,
+                eval_scenario_id=eval_scenario_id,
+            )
+
+    return asyncio.run(_save())
