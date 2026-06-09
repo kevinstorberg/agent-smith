@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Protocol
 
 import lancedb
-from langchain_community.vectorstores import LanceDB as LanceDBVectorStore
 from langchain_core.vectorstores import VectorStore
 
 from src.agent_smith.validation import validate_memory_id
@@ -32,6 +31,15 @@ def build_row(memory_id: str, text: str, metadata: dict) -> dict:
     return {"id": memory_id, "text": text, "metadata": dict(metadata)}
 
 
+def _lancedb_vectorstore_class():
+    try:
+        from langchain_lancedb import LanceDB
+    except ImportError:
+        from langchain_community.vectorstores import LanceDB
+
+    return LanceDB
+
+
 class LanceDBMemoryBackend:
     def __init__(self, store_path: str) -> None:
         self.store_path = Path(store_path)
@@ -41,7 +49,8 @@ class LanceDBMemoryBackend:
         self._db()
 
     def get_vectorstore(self, embeddings) -> VectorStore:
-        return LanceDBVectorStore(
+        vectorstore_cls = _lancedb_vectorstore_class()
+        return vectorstore_cls(
             connection=self._db(),
             embedding=embeddings,
             table_name=TABLE_NAME,

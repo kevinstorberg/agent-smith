@@ -55,6 +55,10 @@ class JobScheduler:
     def get_job(self, job_id: str):
         return self._scheduler.get_job(job_id)
 
+    def remove_job(self, job_id: str) -> None:
+        if self._scheduler.get_job(job_id) is not None:
+            self._scheduler.remove_job(job_id)
+
     def scheduled_jobs(self):
         return self._scheduler.get_jobs()
 

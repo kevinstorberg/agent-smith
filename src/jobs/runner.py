@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import logging
+from dataclasses import replace
 
 from src.jobs.base import BaseJob
 from src.jobs.context import JobContext
@@ -58,7 +59,7 @@ class JobRunner:
             record = await self._status_store.start_run(definition, source=source, attempt=attempt)
             try:
                 job = definition.create_job()
-                await self._execute_job(job, definition)
+                await self._execute_job(job, definition, source=source, attempt=attempt)
             except asyncio.TimeoutError:
                 last_record = await self._status_store.finish_run(
                     record.run_id,
@@ -83,13 +84,23 @@ class JobRunner:
             raise RuntimeError(f"Job {definition.name!r} did not record a terminal run")
         return last_record
 
-    async def _execute_job(self, job: BaseJob, definition: JobDefinition) -> None:
+    async def _execute_job(self, job: BaseJob, definition: JobDefinition, *, source: str, attempt: int) -> None:
         timeout = definition.timeout_seconds
         if timeout is None:
             timeout = getattr(job, "timeout_seconds", None)
+        context = replace(
+            self._context,
+            metadata={
+                **self._context.metadata,
+                **definition.metadata,
+                "job_name": definition.name,
+                "source": source,
+                "attempt": attempt,
+            },
+        )
 
         async def execute() -> None:
-            await _call_job_execute(job, self._context)
+            await _call_job_execute(job, context)
 
         if timeout:
             await asyncio.wait_for(execute(), timeout=timeout)

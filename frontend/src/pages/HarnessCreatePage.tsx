@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router';
-import MDEditor from '@uiw/react-md-editor';
 import { api } from '../api';
 import { useNotification } from '../context/useNotification';
 import { ALL_AGENTS, TYPE_PATHS, TYPE_LABELS, isMarkdownType, toggleArrayItem, formatError, MAX_NAME_LENGTH, nameError, isValidRepo } from '../constants';
 import { FieldError } from '../components/FieldError';
+import { MarkdownEditor } from '../components/MarkdownEditor';
 import { harnessStyles as styles } from '../styles/harness';
 import { validators } from '../utils/validation';
 
@@ -214,7 +214,7 @@ export function HarnessCreatePage() {
         </label>
         {isMarkdownType(type) ? (
           <div data-color-mode="dark">
-            <MDEditor
+            <MarkdownEditor
               value={body}
               onChange={val => setBody(val || '')}
               height={400}

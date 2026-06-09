@@ -132,7 +132,7 @@ describe('EvalDetailPage', () => {
 
     fireEvent.click(screen.getByText('Agent Output'));
 
-    expect(screen.getByTestId('markdown')).toHaveTextContent('# Agent output markdown');
+    expect(await screen.findByTestId('markdown')).toHaveTextContent('# Agent output markdown');
   });
 
   it('switches to Raw JSON tab', async () => {

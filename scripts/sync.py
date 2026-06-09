@@ -35,7 +35,7 @@ async def _run() -> int:
         if not args.item_type:
             print("Error: --item-id requires --item-type")
             return 1
-        message = await service.sync_item(item_type=args.item_type, item_id=args.item_id)
+        message = await service.sync_item(item_type=args.item_type, item_id=args.item_id, dry_run=args.dry_run)
         if message.startswith("Not found:"):
             print(f"\n✗ {message}")
             return 1

@@ -146,7 +146,13 @@ async def harness_disable(name: str, item_type: str, project: str = "") -> str:
 
 
 @harness_mcp.tool()
-async def harness_sync_item(item_type: str, item_id: int = 0, name: str = "", project: str = "") -> str:
+async def harness_sync_item(
+    item_type: str,
+    item_id: int = 0,
+    name: str = "",
+    project: str = "",
+    dry_run: bool = False,
+) -> str:
     """Sync a single harness item to disk by ID or name."""
     validate_item_type(item_type)
     from src.agent_smith.services.sync import AgentSmithSyncService
@@ -156,6 +162,7 @@ async def harness_sync_item(item_type: str, item_id: int = 0, name: str = "", pr
         item_id=item_id or None,
         name=name or None,
         project=empty_to_none(project),
+        dry_run=dry_run,
     )
 
 

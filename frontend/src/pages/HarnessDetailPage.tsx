@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import ReactMarkdown from 'react-markdown';
-import MDEditor from '@uiw/react-md-editor';
 import { api } from '../api';
 import type { HarnessItem, HarnessConfig } from '../api';
 import { CopyButton } from '../components/CopyButton';
 import { ConfigForm } from '../components/ConfigForm';
 import { DetailPageHeader } from '../components/DetailPageHeader';
+import { MarkdownEditor } from '../components/MarkdownEditor';
+import { MarkdownPreview } from '../components/MarkdownPreview';
 import { useDetailPageEdit } from '../hooks/useDetailPageEdit';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { useNotification } from '../context/useNotification';
@@ -427,7 +427,7 @@ export function HarnessDetailPage() {
         {editing ? (
           isMarkdownType(type) ? (
             <div data-color-mode="dark">
-              <MDEditor
+              <MarkdownEditor
                 value={editValues.body ?? ''}
                 onChange={val => setEditValue('body', val || '')}
                 height={400}
@@ -446,7 +446,7 @@ export function HarnessDetailPage() {
             <CopyButton text={displayBody} style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }} />
             {isMarkdownType(type) ? (
               <div className="markdown-content">
-                <ReactMarkdown>{displayBody}</ReactMarkdown>
+                <MarkdownPreview>{displayBody}</MarkdownPreview>
               </div>
             ) : (
               <pre>{displayBody}</pre>

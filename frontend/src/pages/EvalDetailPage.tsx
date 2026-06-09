@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { api } from '../api';
 import type { EvalRunDetail } from '../api';
 import { CopyButton } from '../components/CopyButton';
+import { MarkdownPreview } from '../components/MarkdownPreview';
 
 type Tab = 'overview' | 'output' | 'raw';
 
@@ -132,7 +131,7 @@ export function EvalDetailPage() {
         <div style={{ position: 'relative' }}>
           <CopyButton text={run.output} style={{ position: 'absolute', top: 12, right: 12, zIndex: 1 }} />
           <div className="card markdown-content" style={{ fontSize: 13, lineHeight: 1.7 }}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{run.output}</ReactMarkdown>
+            <MarkdownPreview>{run.output}</MarkdownPreview>
           </div>
         </div>
       )}

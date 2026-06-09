@@ -143,7 +143,7 @@ describe('HarnessDetailPage', () => {
 
     fireEvent.click(screen.getByText('Edit'));
 
-    expect(screen.getByTestId('md-editor')).toBeInTheDocument();
+    expect(await screen.findByTestId('md-editor')).toBeInTheDocument();
     expect(screen.getByText('Save')).toBeInTheDocument();
     expect(screen.getByText('Cancel')).toBeInTheDocument();
   });

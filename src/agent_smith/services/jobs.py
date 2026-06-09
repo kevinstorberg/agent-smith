@@ -5,7 +5,6 @@ import logging
 import os
 import signal
 import time
-from datetime import datetime, timezone
 
 from db.models.agent_smith import BackgroundJob, JobConfig
 from db.unit_of_work import UnitOfWork, unit_of_work
@@ -215,93 +214,3 @@ async def execute_job(job: dict) -> dict:
         }
         await _complete_execution(execution_id, status="failed", result=result)
         return result
-
-
-class AgentSmithJobScheduler:
-    def __init__(self, *, poll_interval: float | None = None, device_name: str | None = None) -> None:
-        settings = get_settings()
-        self.poll_interval = float(poll_interval if poll_interval is not None else settings.JOB_POLL_INTERVAL)
-        self.device_name = device_name or settings.DEVICE_NAME
-        self._next_run: dict[int, datetime] = {}
-        self._task: asyncio.Task | None = None
-        self._stopped = asyncio.Event()
-        self._running: set[int] = set()
-        self._inflight: set[asyncio.Task] = set()
-
-    async def start(self) -> None:
-        self._stopped.clear()
-        async with unit_of_work() as uow:
-            interrupted = await JobExecutionRepository(uow.session).reconcile_running(device=self.device_name)
-        if interrupted:
-            log.warning("reconciled %d execution(s) left running at startup", interrupted)
-        await self._seed_schedule()
-        self._task = asyncio.create_task(self._run(), name="agent-smith-job-scheduler")
-
-    async def stop(self) -> None:
-        self._stopped.set()
-        if self._task:
-            await self._task
-            self._task = None
-        for task in list(self._inflight):
-            task.cancel()
-        if self._inflight:
-            await asyncio.gather(*self._inflight, return_exceptions=True)
-
-    async def _eligible_jobs(self) -> list[dict]:
-        async with unit_of_work() as uow:
-            jobs, _ = await JobService().list_jobs(uow, limit=1000, offset=0)
-            detailed = []
-            for job in jobs:
-                detail = await JobService().get_job(uow, job["id"], detail=True)
-                if detail and job_runs_on_device(detail, self.device_name):
-                    detailed.append(detail)
-            return detailed
-
-    async def _seed_schedule(self) -> None:
-        now = datetime.now(timezone.utc)
-        for job in await self._eligible_jobs():
-            try:
-                self._next_run[job["id"]] = now + parse_interval(job["schedule_config"])
-            except ValueError:
-                log.error("skipping job %s: invalid schedule_config", job.get("id"))
-
-    def _dispatch(self, job: dict) -> None:
-        job_id = job["id"]
-        if job_id in self._running:
-            log.warning("job %s still running; skipping this interval", job_id)
-            return
-        self._running.add(job_id)
-        task = asyncio.create_task(execute_job(job), name=f"agent-smith-job-{job_id}")
-        self._inflight.add(task)
-
-        def _done(done_task: asyncio.Task) -> None:
-            self._inflight.discard(done_task)
-            self._running.discard(job_id)
-
-        task.add_done_callback(_done)
-
-    async def _run(self) -> None:
-        while not self._stopped.is_set():
-            try:
-                await self._tick()
-            except Exception:  # noqa: BLE001
-                log.exception("scheduler tick failed")
-            try:
-                await asyncio.wait_for(self._stopped.wait(), timeout=self.poll_interval)
-            except asyncio.TimeoutError:
-                pass
-
-    async def _tick(self) -> None:
-        now = datetime.now(timezone.utc)
-        for job in await self._eligible_jobs():
-            try:
-                interval = parse_interval(job["schedule_config"])
-            except ValueError:
-                continue
-            next_run = self._next_run.get(job["id"])
-            if next_run is None:
-                self._next_run[job["id"]] = now + interval
-                continue
-            if next_run <= now:
-                self._next_run[job["id"]] = now + interval
-                self._dispatch(job)

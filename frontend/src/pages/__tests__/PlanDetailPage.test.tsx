@@ -73,11 +73,11 @@ describe('PlanDetailPage', () => {
       mockParams = { id: 'new' };
     });
 
-    it('starts in editing mode for new plans', () => {
+    it('starts in editing mode for new plans', async () => {
       renderWithProviders(<PlanDetailPage />);
 
       expect(screen.getByPlaceholderText('Plan title')).toBeInTheDocument();
-      expect(screen.getByTestId('md-editor')).toBeInTheDocument();
+      expect(await screen.findByTestId('md-editor')).toBeInTheDocument();
       expect(screen.getByText('Save')).toBeInTheDocument();
       expect(screen.getByText('Cancel')).toBeInTheDocument();
     });
@@ -147,7 +147,7 @@ describe('PlanDetailPage', () => {
         expect(screen.getByText('Test Plan')).toBeInTheDocument();
       });
 
-      expect(screen.getByTestId('markdown')).toHaveTextContent('# Hello');
+      expect(await screen.findByTestId('markdown')).toHaveTextContent('# Hello');
       expect(screen.getByText('my-project')).toBeInTheDocument();
       expect(screen.getByText('Edit')).toBeInTheDocument();
       expect(screen.getByText('Delete')).toBeInTheDocument();

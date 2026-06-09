@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import ReactMarkdown from 'react-markdown';
-import MDEditor from '@uiw/react-md-editor';
 import { api } from '../api';
 import type { Plan } from '../api';
 import { CopyButton } from '../components/CopyButton';
 import { FieldError } from '../components/FieldError';
 import { DetailPageHeader } from '../components/DetailPageHeader';
+import { MarkdownEditor } from '../components/MarkdownEditor';
+import { MarkdownPreview } from '../components/MarkdownPreview';
 import { useDetailPageEdit } from '../hooks/useDetailPageEdit';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { useNotification } from '../context/useNotification';
@@ -184,7 +184,7 @@ export function PlanDetailPage() {
             />
           </div>
           <div data-color-mode="dark">
-            <MDEditor
+            <MarkdownEditor
               value={editValues.body ?? ''}
               onChange={val => setEditValue('body', val || '')}
               height={400}
@@ -207,7 +207,7 @@ export function PlanDetailPage() {
           <div className="card" style={{ position: 'relative' }}>
             <CopyButton text={plan!.body} style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }} />
             <div className="markdown-content">
-              <ReactMarkdown>{plan!.body}</ReactMarkdown>
+              <MarkdownPreview>{plan!.body}</MarkdownPreview>
             </div>
           </div>
         </>

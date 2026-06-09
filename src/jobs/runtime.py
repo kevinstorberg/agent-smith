@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any
 
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
@@ -73,17 +74,7 @@ class JobRuntime:
 
         persistent_scheduler = self.config.jobs.scheduler_store == "postgres"
         for definition in self.definitions.values():
-            if not definition.enabled:
-                continue
-            if persistent_scheduler:
-                definition.validate_for_persistent_store()
-            self.scheduler.add_job(
-                run_registered_job,
-                job_id=definition.name,
-                trigger=definition.trigger,
-                args=[definition.name],
-                **definition.trigger_kwargs,
-            )
+            self._schedule_definition(definition, persistent_scheduler=persistent_scheduler)
 
         await self.scheduler.start()
         self._started = True
@@ -102,6 +93,29 @@ class JobRuntime:
         if definition is None:
             raise KeyError(f"Unknown job: {job_name}")
         return await self._runner.run(definition, source=source)
+
+    def sync_namespace(self, namespace: str, definitions: Mapping[str, JobDefinition]) -> None:
+        if not namespace.strip():
+            raise ValueError("Job definition namespace is required")
+
+        next_definitions = {
+            name: _definition_with_namespace(definition, namespace) for name, definition in definitions.items()
+        }
+        stale_names = [
+            name
+            for name, definition in self.definitions.items()
+            if definition.metadata.get("namespace") == namespace and name not in next_definitions
+        ]
+        for name in stale_names:
+            self.definitions.pop(name, None)
+            self.scheduler.remove_job(name)
+
+        persistent_scheduler = self.config.jobs.scheduler_store == "postgres"
+        for name, definition in next_definitions.items():
+            self.definitions[name] = definition
+            if self._started:
+                self.scheduler.remove_job(name)
+                self._schedule_definition(definition, persistent_scheduler=persistent_scheduler)
 
     async def list_runs(self, job_name: str | None = None, *, limit: int = 50):
         return await self.status_store.list_runs(job_name, limit=limit)
@@ -122,6 +136,7 @@ class JobRuntime:
                     "max_attempts": definition.retry_policy.max_attempts,
                     "lock_enabled": definition.lock_policy.enabled,
                     "lock_key": definition.lock_key,
+                    "metadata": definition.metadata,
                 }
             )
         return jobs
@@ -135,6 +150,25 @@ class JobRuntime:
             "status_store": self.config.jobs.status_store,
             "lock_backend": self.config.jobs.lock_backend,
         }
+
+    def _schedule_definition(self, definition: JobDefinition, *, persistent_scheduler: bool) -> None:
+        if not definition.enabled:
+            return
+        if persistent_scheduler:
+            definition.validate_for_persistent_store()
+        self.scheduler.add_job(
+            run_registered_job,
+            job_id=definition.name,
+            trigger=definition.trigger,
+            args=[definition.name],
+            **definition.trigger_kwargs,
+        )
+
+
+def _definition_with_namespace(definition: JobDefinition, namespace: str) -> JobDefinition:
+    if definition.name.strip() == "":
+        raise ValueError("Job definition name is required")
+    return replace(definition, metadata={**definition.metadata, "namespace": namespace})
 
 
 async def run_registered_job(job_name: str) -> None:

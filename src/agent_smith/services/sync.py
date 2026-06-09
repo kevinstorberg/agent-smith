@@ -47,6 +47,7 @@ class AgentSmithSyncService:
         item_id: int | None = None,
         name: str | None = None,
         project: str | None = None,
+        dry_run: bool = False,
     ) -> str:
         validate_item_type(item_type)
         async with unit_of_work() as uow:
@@ -66,10 +67,10 @@ class AgentSmithSyncService:
         logs: list[str] = []
         for agent in agents:
             logs.append(f"[{agent}/{item_type}]")
-            await self._sync_single_type(agent, item_type, dry_run=False, logs=logs, single_item=item)
+            await self._sync_single_type(agent, item_type, dry_run=dry_run, logs=logs, single_item=item)
             if item_type == "rule" and item.get("clone_as_skill"):
                 logs.append(f"[{agent}/skills (clone)]")
-                await self.sync_skills(agent, dry_run=False, logs=logs, single_item=item)
+                await self.sync_skills(agent, dry_run=dry_run, logs=logs, single_item=item)
         return f"Synced to {len(agents)} agent(s): {', '.join(agents)}\n" + "\n".join(logs)
 
     async def unsync_all(self) -> list[str]:

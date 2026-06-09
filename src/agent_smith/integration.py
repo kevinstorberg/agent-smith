@@ -43,20 +43,20 @@ async def start_agent_smith_runtime(app: FastAPI) -> None:
     app.state.agent_smith_mcp_stack = stack
 
     if _enabled("AGENT_SMITH_LEGACY_SCHEDULER_ENABLED", default=settings.APP_ENV != "production"):
-        from src.agent_smith.services.jobs import AgentSmithJobScheduler
+        from src.agent_smith.job_runtime import AgentSmithJobRuntimeAdapter
 
-        scheduler = AgentSmithJobScheduler()
-        await scheduler.start()
-        app.state.agent_smith_scheduler = scheduler
+        adapter = AgentSmithJobRuntimeAdapter(app.state.job_runtime)
+        await adapter.start()
+        app.state.agent_smith_job_adapter = adapter
     else:
-        logger.info("Agent Smith legacy scheduler disabled")
+        logger.info("Agent Smith job adapter disabled")
 
 
 async def stop_agent_smith_runtime(app: FastAPI) -> None:
-    scheduler = getattr(app.state, "agent_smith_scheduler", None)
-    if scheduler is not None:
-        await scheduler.stop()
-        app.state.agent_smith_scheduler = None
+    adapter = getattr(app.state, "agent_smith_job_adapter", None)
+    if adapter is not None:
+        await adapter.stop()
+        app.state.agent_smith_job_adapter = None
 
     stack = getattr(app.state, "agent_smith_mcp_stack", None)
     if stack is not None:

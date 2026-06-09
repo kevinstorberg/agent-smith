@@ -37,6 +37,7 @@ class JobDefinition:
     timeout_seconds: float | None = None
     retry_policy: RetryPolicy = field(default_factory=RetryPolicy)
     lock_policy: LockPolicy = field(default_factory=LockPolicy)
+    metadata: dict[str, Any] = field(default_factory=dict)
     enabled: bool = True
 
     def __post_init__(self) -> None:
@@ -48,6 +49,8 @@ class JobDefinition:
             raise ValueError("JobDefinition.timeout_seconds must be positive when set")
         if not isinstance(self.trigger_kwargs, dict):
             raise ValueError("JobDefinition.trigger_kwargs must be a dictionary")
+        if not isinstance(self.metadata, dict):
+            raise ValueError("JobDefinition.metadata must be a dictionary")
 
     @property
     def lock_key(self) -> str:
