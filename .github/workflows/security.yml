@@ -1,10 +1,8 @@
 name: Security
 
-on:
-  push:
-    branches: [master]
-  pull_request:
-    branches: [master]
+"on":
+  push: {}
+  pull_request: {}
   schedule:
     - cron: "17 9 * * 1"
   workflow_dispatch:

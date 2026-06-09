@@ -5,6 +5,11 @@ import pytest
 import yaml
 
 
+def _workflow(name: str) -> dict:
+    workflow_path = Path(__file__).parents[1] / ".github" / "workflows" / name
+    return yaml.safe_load(workflow_path.read_text())
+
+
 @pytest.mark.unit
 def test_framework_loads():
     """Verify pytest discovers and runs tests."""
@@ -129,9 +134,17 @@ def test_dockerignore_excludes_local_state_from_production_context():
 
 
 @pytest.mark.unit
+def test_ci_workflows_run_on_push_and_pull_request_for_all_branches():
+    for workflow_name in ("test.yml", "pre-commit.yml", "security.yml"):
+        triggers = _workflow(workflow_name)["on"]
+
+        assert triggers["push"] == {}
+        assert triggers["pull_request"] == {}
+
+
+@pytest.mark.unit
 def test_ci_enforces_coverage_threshold():
-    workflow_path = Path(__file__).parents[1] / ".github" / "workflows" / "test.yml"
-    workflow = yaml.safe_load(workflow_path.read_text())
+    workflow = _workflow("test.yml")
     steps = workflow["jobs"]["test"]["steps"]
     test_step = next(step for step in steps if step.get("name") == "Run tests with coverage")
 
@@ -140,8 +153,7 @@ def test_ci_enforces_coverage_threshold():
 
 @pytest.mark.unit
 def test_ci_runs_frontend_checks():
-    workflow_path = Path(__file__).parents[1] / ".github" / "workflows" / "test.yml"
-    workflow = yaml.safe_load(workflow_path.read_text())
+    workflow = _workflow("test.yml")
     steps = workflow["jobs"]["test"]["steps"]
     commands = [step.get("run", "") for step in steps]
     setup_node = next(step for step in steps if step.get("uses") == "actions/setup-node@v4")
@@ -175,8 +187,7 @@ def test_dependabot_updates_python_dependencies_and_actions():
 
 @pytest.mark.unit
 def test_security_workflow_checks_lockfile_vulnerabilities_and_secrets():
-    workflow_path = Path(__file__).parents[1] / ".github" / "workflows" / "security.yml"
-    workflow = yaml.safe_load(workflow_path.read_text())
+    workflow = _workflow("security.yml")
     jobs = workflow["jobs"]
 
     assert {"lockfile-freshness", "dependency-vulnerability-scan", "secret-scan"} <= set(jobs)
@@ -209,8 +220,7 @@ def test_pre_commit_checks_for_private_keys():
 
 @pytest.mark.unit
 def test_pre_commit_workflow_uses_poetry_managed_tooling():
-    workflow_path = Path(__file__).parents[1] / ".github" / "workflows" / "pre-commit.yml"
-    workflow = yaml.safe_load(workflow_path.read_text())
+    workflow = _workflow("pre-commit.yml")
     commands = [step.get("run", "") for step in workflow["jobs"]["pre-commit"]["steps"]]
 
     assert "poetry install --no-interaction" in commands
