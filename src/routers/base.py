@@ -1,8 +1,7 @@
-"""Router factory for template users.
+"""Shared router factory for Agent Smith API modules.
 
-NOTE: This utility is intentionally unused by the template's example routes.
-When building your application, you can use this to create routers with
-consistent configuration, or just use FastAPI's APIRouter directly.
+Use this to create routers with consistent configuration, or use FastAPI's
+APIRouter directly when a module needs custom setup.
 
 Example usage:
     from src.routers.base import create_router
@@ -20,7 +19,6 @@ from fastapi import APIRouter
 def create_router(*, prefix: str = "", tags: list[str] | None = None) -> APIRouter:
     """Create a FastAPI router with consistent configuration.
 
-    Template utility: Simple wrapper around APIRouter for consistency.
     You can extend this with common middleware, dependencies, or configuration.
 
     Args:

@@ -1,6 +1,5 @@
-"""Storage backend factory for template users.
+"""Storage backend factory for Agent Smith assets.
 
-TEMPLATE INFRASTRUCTURE: Entry point for accessing file storage.
 Configure which backend to use in config/default.yaml:
     storage:
       backend: local  # or "s3"

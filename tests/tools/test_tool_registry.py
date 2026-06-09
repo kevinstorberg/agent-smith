@@ -11,7 +11,7 @@ from src.tools.context import ToolContext
 
 @pytest.mark.unit
 class TestToolRegistry:
-    def test_template_does_not_register_demo_tools(self):
+    def test_agent_smith_does_not_register_demo_tools(self):
         assert "test_auto" not in TOOL_FACTORY
 
     def test_should_auto_import_skips_private_and_context_modules(self):

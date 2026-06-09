@@ -1,140 +1,127 @@
-<img src="assets/static/logo.svg" alt="Cairn" width="120" align="left" style="margin-right: 20px; margin-bottom: 10px;"/>
+<img src="assets/agent_smith_logo_white_thick.svg" alt="AgentSmith" width="120" align="left" style="margin-right: 20px; margin-bottom: 10px;"/>
 
-# Cairn
+# agent-smith
 
-FastAPI template for agentic Python applications with LangGraph, async SQLAlchemy,
-vector memory, caching, tools, jobs, WebSockets, eval helpers, and local Docker
-development.
-
-This repository is a starting point. Clone it, keep the conventions that help,
-and replace the application-specific parts with your own domain.
-
-<br clear="left"/>
+A single harness for managing rules, skills, and MCP servers across multiple AI coding agents.
+One source of truth, synced everywhere.
 
 ## Quick Start
 
-```bash
-poetry install
-cp .env.default .env.development
-docker compose up -d db redis
-poetry run alembic upgrade head
-poetry run uvicorn src.app:app --reload
+```sh
+./run.sh
 ```
 
-If local ports are busy:
+This builds the Docker image, generates the ERD, and starts the dashboard + MCP
+server. Use `./run.sh -nc` to force a no-cache rebuild. See `DASHBOARD_PORT` in
+`.env.default` for the port (default 7654).
 
-```bash
-POSTGRES_PORT=55432 REDIS_PORT=56379 docker compose up -d db redis
-APP_PORT=18011 docker compose up app
+Agents connect to the MCP endpoint at `http://localhost:<DASHBOARD_PORT>/mcp/`.
+
+## Structure
+
+```text
+assets/              # static assets (images, etc.)
+docs/                # generated artifacts (ERD, etc.)
+evals/               # LLM-as-judge evaluation framework (DeepEval + G-Eval)
+scripts/             # sync, generation, and shared utilities
+services/
+  api/               # FastAPI app, routers, models, validators
+  client/            # React dashboard (Vite + TypeScript)
+  db/                # Postgres connection + Alembic migrations
+  memory/            # vector memory + MCP tools (LanceDB + sentence-transformers)
 ```
 
-## Source Of Truth
+## Harness
 
-Avoid duplicating these values in docs or app code:
+Rules, skills, tools, hooks, and sub-agents are stored in Postgres with versioning and
+per-agent assignment. Each item has one or more **deployment configs** (`harness_configs`)
+that control where it syncs — scoped by device (`DEVICE_NAME`) and repo (absolute path).
+Configs can be additive (include) or subtractive (exclude). Managed via the dashboard UI
+or MCP tools.
 
-| Concern | Authoritative location |
-| --- | --- |
-| Runtime environment and secrets | [.env.default](.env.default), [src/settings.py](src/settings.py) |
-| Structural YAML config | [config/default.yaml](config/default.yaml), [config/models.py](config/models.py) |
-| Graph-specific config | `config/graphs/*.yaml`, [config/loader.py](config/loader.py) |
-| Database sessions and engines | [db/connection.py](db/connection.py) |
-| Database model base classes | [db/base.py](db/base.py) |
-| Repositories, services, and unit of work | [db/repository.py](db/repository.py), [db/unit_of_work.py](db/unit_of_work.py), [docs/REPOSITORIES_SERVICES.md](docs/REPOSITORIES_SERVICES.md) |
-| Backend protocols and factories | `memory/`, `cache/`, `assets/` |
-| HTTP routes | [src/routers/](src/routers) |
-| Graph runtime and endpoints | [src/graphs/base.py](src/graphs/base.py), [src/graphs/endpoints.py](src/graphs/endpoints.py), [docs/GRAPHS.md](docs/GRAPHS.md) |
-| Job runtime and scheduling | [src/jobs/](src/jobs), [docs/JOBS.md](docs/JOBS.md) |
-| Admin/debug diagnostics | [src/diagnostics/](src/diagnostics), [scripts/inspect.py](scripts/inspect.py), [docs/ADMIN_DEBUG.md](docs/ADMIN_DEBUG.md) |
-| Resource generation | [lib/cairn/generator/](lib/cairn/generator), [scripts/generate.py](scripts/generate.py), [src/routers/registry.py](src/routers/registry.py), [docs/GENERATOR.md](docs/GENERATOR.md) |
-| Optional frontend | [frontend/package.json](frontend/package.json), [frontend/src/shared/config/](frontend/src/shared/config/), [frontend/src/shared/api/](frontend/src/shared/api/), [src/frontend/static.py](src/frontend/static.py), [docs/FRONTEND.md](docs/FRONTEND.md) |
-| Agent Smith port and cutover | [src/agent_smith/](src/agent_smith), [scripts/agent_smith_preflight.py](scripts/agent_smith_preflight.py), [docs/AGENT_SMITH_CUTOVER.md](docs/AGENT_SMITH_CUTOVER.md) |
-| JWT auth | [src/security/auth.py](src/security/auth.py) |
-| Production security middleware | [src/security/middleware.py](src/security/middleware.py), [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
-| Authorization policies | [src/policies/](src/policies), [docs/AUTHORIZATION.md](docs/AUTHORIZATION.md) |
-| FastAPI policy dependencies | [src/policies/dependencies.py](src/policies/dependencies.py) |
-| API error envelope and request IDs | [src/api/errors.py](src/api/errors.py), [docs/API_ERRORS.md](docs/API_ERRORS.md) |
-| Test commands and markers | [Makefile](Makefile), [pyproject.toml](pyproject.toml) |
-| Bootstrap checks | [scripts/doctor.py](scripts/doctor.py), [Makefile](Makefile) |
-| Security automation | [Makefile](Makefile), [.github/dependabot.yml](.github/dependabot.yml), [.github/workflows/security.yml](.github/workflows/security.yml) |
+## Sync
 
-## Commands
-
-```bash
-make test
-make test-unit
-make test-e2e
-make test-cov
-make lint
-make format
-make format-check
-make lock-check
-make audit
-make pre-commit
-make security
-make doctor
-make frontend-check
-make check
+```sh
+./sync.sh
 ```
 
-The Makefile is the command reference. Keep new quality gates there instead of
-adding parallel command lists elsewhere.
+Reads harness items from the database, resolves deployment configs, and writes to each
+agent's config files — globally (`~/.claude/`, `~/.codex/`, `~/.gemini/`) or per-repo
+(e.g., `<repo>/.claude/rules/`).
 
-Test targets run with `APP_ENV=test` by default so local `.env.development`
-settings do not affect deterministic checks.
+- **compose** — concatenates rules into a single markdown file
+- **copy** — syncs skill subdirectories to the agent's skills directory
+- **merge** — merges MCP server configs into the agent's settings file
+- **agents** — syncs sub-agent definitions as markdown files with YAML frontmatter
 
-## Conventions
+Supports Claude, Codex, and Gemini. Only writes when content has changed. Set
+`DEVICE_NAME` in your environment's `.env.*` file to enable device-scoped filtering.
 
-- Put application models under `db/models/`, schemas under `src/models/`, and
-  route handlers under `src/routers/`.
-- Keep routers thin. Route handlers should validate transport concerns and call
-  services, repositories, tools, or graph builders for real work.
-- Prefer `get_unit_of_work()` for write workflows and services. Use
-  `get_session()` only when a route intentionally owns raw session access.
-- Use backend protocols plus factories instead of importing concrete backends
-  throughout application code.
-- Put public tools in `src/tools/`. Every public module in that package is
-  production auto-discovered, so keep examples in docs or tests.
-- Use `require_permission()` from `src.policies.dependencies` for FastAPI routes.
-  Keep pure authorization rules in `src.policies`.
-- Use `build_graph_from_config()` or the built-in graph endpoints for
-  config-driven ReAct graphs. Use `build_config_summary_graph()` for
-  credential-free config smoke checks.
-- Register app background jobs with `@register_job()` and keep job work inside
-  services called through `JobContext`.
-- Register generated or app-owned routers with `register_router()` when you want
-  startup discovery without editing `src/app.py`.
-- Keep optional frontend screens under `frontend/src/features/` and share
-  backend calls through the frontend API client.
+## Memory
 
-## Configuration
+Vector memory with time-weighted retrieval, served as MCP tools on the dashboard endpoint.
+Defaults to LanceDB (local, stored in `memory_store/`). Set `MEMORY_BACKEND=pinecone` in
+`.env` with a `PINECONE_API_KEY` to use Pinecone instead.
 
-Runtime and secret values come from `.env.default`, `.env.{APP_ENV}`, and real
-environment variables. Structural settings such as backend selection and model
-defaults come from YAML.
+## Background Jobs
 
-Use explicit `DATABASE_URL_DEVELOPMENT`, `DATABASE_URL_TEST`, or
-`DATABASE_URL_PRODUCTION` only when the component `POSTGRES_*` fields are not
-enough. Otherwise, `Settings.database_url_for(env)` assembles the URL.
+Scheduled shell commands that run on a fixed interval, managed via the dashboard (the
+**Jobs** tab) or MCP tools. Each job stores a `schedule_config` interval (e.g.
+`{"minutes": 5}`) and an `input_params.command`. Like harness items, jobs carry
+**deployment configs** (`job_configs`) scoping them by device (`DEVICE_NAME`) and repo with
+additive (include) / subtractive (exclude) rules — a job only runs on a device its configs
+select.
 
-## Documentation
+A pure-asyncio scheduler runs inside the dashboard process (started in the app lifespan): it
+polls for due jobs, executes each command in a subprocess with a timeout, and records every
+run in `job_executions` (status, timing, stdout/stderr, exit code). Executions left
+`running` when the app stops are reconciled to `interrupted` on the next startup. Trigger an
+immediate run with **Run Now** (or the `job_run_now` MCP tool), which ignores the schedule
+and scoping.
 
-- [Testing](docs/TESTING.md): fixture usage, test boundaries, and state cleanup.
-- [Repositories And Services](docs/REPOSITORIES_SERVICES.md): DB layer, unit-of-work, and application service conventions.
-- [Tools](docs/TOOLS.md): LangChain tool registration and async tool patterns.
-- [Backends](docs/BACKENDS.md): memory, cache, and storage backend switching.
-- [Graphs](docs/GRAPHS.md): graph builder conventions and config flow.
-- [Jobs](docs/JOBS.md): job registration, runtime, retries, locks, status, and endpoints.
-- [Admin Debug](docs/ADMIN_DEBUG.md): optional diagnostics endpoints and local inspection script.
-- [Generator](docs/GENERATOR.md): CRUD resource scaffold command and generated-layer conventions.
-- [Frontend](docs/FRONTEND.md): optional React + TypeScript app, static serving, and feature conventions.
-- [Agent Smith Cutover](docs/AGENT_SMITH_CUTOVER.md): production preflight, cutover gates, and rollback boundary.
-- [Deployment](docs/DEPLOYMENT.md): environment, migration, and runtime checklist.
-- [Doctor Command](docs/DOCTOR.md): bootstrap checks for local and provider setup.
-- [Security Automation](docs/SECURITY_AUTOMATION.md): dependency updates, audit scans, and secret scanning.
-- [API Errors](docs/API_ERRORS.md): error envelope, request IDs, and debug error disclosure.
-- [Authorization](docs/AUTHORIZATION.md): RBAC, scoped authorization, ownership checks, and audit sinks.
-- [Database Patterns](db/PATTERNS.md): SQLAlchemy pitfalls worth keeping explicit.
+Tune `JOB_POLL_INTERVAL`, `JOB_DEFAULT_TIMEOUT`, and `JOB_MAX_OUTPUT_BYTES` in your
+environment's `.env.*` file.
 
-Prefer updating the source-of-truth file over repeating details in documentation.
-Add docs only when they explain a convention, tradeoff, or workflow that the code
-does not make obvious.
+## Tests
+
+```sh
+./audit.sh
+```
+
+Runs backend tests (pytest) and frontend tests (Vitest). Pytest flags are forwarded:
+`./audit.sh -x` stops on first failure, `./audit.sh -k test_plans` filters by name.
+
+CI runs both suites plus a Docker build validation. DB-dependent tests use a Postgres
+service container in CI.
+
+## Evals
+
+LLM-as-judge evaluation using DeepEval's G-Eval metric. Suites are defined in Postgres
+and picked up automatically at test time.
+
+```sh
+./evals.sh                        # run all enabled suites
+./evals.sh --suite rules_plans    # run a specific suite
+```
+
+Requires the app container to be running (`./run.sh`). Configure via `EVAL_MODEL`,
+`EVAL_JUDGE_MODEL`, and `EVAL_THRESHOLD` in your environment's `.env.*` file.
+
+## Database
+
+Postgres stores harness items, eval configs, eval results, plans, and memory metadata.
+Schema is managed by Alembic. Migrations run automatically on app startup, or manually:
+
+```sh
+.venv/bin/alembic upgrade head
+```
+
+Set `DATABASE_URL` in `.env` to override the default (`postgresql://localhost/agent_smith`).
+
+## Environment
+
+`.env.default` contains committed defaults. Each environment has its own override file
+(`.env.development`, `.env.test`, `.env.production`) — all gitignored. `.env.default` is
+loaded first; the environment-specific file overrides it based on `APP_ENV` (default: `development`).
+
+See `.env.default` for all available configuration options.

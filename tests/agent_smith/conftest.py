@@ -29,9 +29,8 @@ AGENT_SMITH_TABLES = (
 
 AGENT_SMITH_ENV_OVERRIDES = {
     "APP_ENV": "test",
-    "AGENT_SMITH_ENABLED": "true",
     "AGENT_SMITH_AUTO_SEED": "false",
-    "AGENT_SMITH_LEGACY_SCHEDULER_ENABLED": "false",
+    "AGENT_SMITH_JOBS_ENABLED": "false",
     "MEMORY_BACKEND": "lancedb",
 }
 

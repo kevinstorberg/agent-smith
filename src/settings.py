@@ -3,7 +3,7 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings
 
-from lib.cairn.paths import get_repo_root
+from lib.agent_smith_core.paths import get_repo_root
 
 _repo_root = get_repo_root(__file__)
 _env_default = _repo_root / ".env.default"
@@ -20,18 +20,18 @@ class Settings(BaseSettings):
     """
 
     APP_ENV: str = "development"
-    APP_NAME: str = "cairn"
+    APP_NAME: str = "agent-smith"
     APP_PORT: int = 8000
     DEBUG_ERRORS: bool = False
 
     POSTGRES_HOST: str = "localhost"
     POSTGRES_IMAGE: str = "pgvector/pgvector:pg16"
     POSTGRES_PORT: int = 5432
-    POSTGRES_USER: str = "cairn"
-    POSTGRES_PASSWORD: str = "cairn"
-    POSTGRES_DB_DEVELOPMENT: str = "cairn_dev"
-    POSTGRES_DB_TEST: str = "cairn_test"
-    POSTGRES_DB_PRODUCTION: str = "cairn_prod"
+    POSTGRES_USER: str = "agent_smith"
+    POSTGRES_PASSWORD: str = "agent_smith"
+    POSTGRES_DB_DEVELOPMENT: str = "agent_smith_dev"
+    POSTGRES_DB_TEST: str = "agent_smith_test"
+    POSTGRES_DB_PRODUCTION: str = "agent_smith_prod"
 
     DATABASE_URL_DEVELOPMENT: str = ""
     DATABASE_URL_TEST: str = ""
@@ -71,9 +71,9 @@ class Settings(BaseSettings):
     PINECONE_INDEX: str = "agent-smith-memories"
     PINECONE_CLOUD: str = "aws"
     PINECONE_REGION: str = "us-east-1"
-    AGENT_SMITH_ENABLED: bool = False
-    AGENT_SMITH_AUTO_SEED: bool = True
-    AGENT_SMITH_LEGACY_SCHEDULER_ENABLED: bool = True
+    PINECONE_ALLOW_CREATE_INDEX: bool | None = None
+    AGENT_SMITH_AUTO_SEED: bool | None = None
+    AGENT_SMITH_JOBS_ENABLED: bool | None = None
     AGENT_SMITH_SYNC_ROOT: str = "./tmp/agent-smith-sync-sandbox"
     AGENT_SMITH_SYNC_ALLOW_REAL_TARGETS: bool = False
     AGENT_SMITH_PROD_DATABASE_URL_READONLY: str = ""

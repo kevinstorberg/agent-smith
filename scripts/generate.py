@@ -2,14 +2,14 @@ import argparse
 import sys
 from pathlib import Path
 
-from lib.cairn.generator import ResourceGenerator, parse_resource_spec
-from lib.cairn.paths import get_repo_root
+from lib.agent_smith_core.generator import ResourceGenerator, parse_resource_spec
+from lib.agent_smith_core.paths import get_repo_root
 from scripts.base import BaseScript
 
 
 class GenerateScript(BaseScript):
     name = "generate"
-    description = "Generate Cairn application resources."
+    description = "Generate Agent Smith application resources."
 
     def configure_args(self, parser: argparse.ArgumentParser) -> None:
         subcommands = parser.add_subparsers(dest="command", required=True)

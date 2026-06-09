@@ -3,7 +3,7 @@ from functools import lru_cache
 import yaml
 
 from config.models import DefaultConfig, GraphConfig
-from lib.cairn.paths import get_module_dir
+from lib.agent_smith_core.paths import get_module_dir
 
 _CONFIG_DIR = get_module_dir(__file__)
 

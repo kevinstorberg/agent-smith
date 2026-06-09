@@ -99,11 +99,15 @@ class PineconeMemoryBackend:
         cloud: str,
         region: str,
         api_key: str | None = None,
+        namespace: str = "",
+        allow_create_index: bool = True,
     ) -> None:
         self.index_name = index_name
         self.cloud = cloud
         self.region = region
         self.api_key = api_key or os.environ.get("PINECONE_API_KEY", "")
+        self.namespace = namespace
+        self.allow_create_index = allow_create_index
         self._pc = None
         self._index = None
 
@@ -128,10 +132,15 @@ class PineconeMemoryBackend:
                 kwargs.pop("current_time", None)
                 return super().add_documents(sanitized, **kwargs)
 
-        return SafePineconeVectorStore(index=self._get_index(), embedding=embeddings)
+        return SafePineconeVectorStore(index=self._get_index(), embedding=embeddings, namespace=self.namespace or None)
 
     def load_all(self) -> list[dict]:
-        results = self._get_index().query(vector=[0.0] * DIMENSION, top_k=10000, include_metadata=True)
+        results = self._get_index().query(
+            vector=[0.0] * DIMENSION,
+            top_k=10000,
+            include_metadata=True,
+            **self._namespace_kwargs(),
+        )
         rows = []
         for match in results.get("matches", []):
             metadata = dict(match.get("metadata", {}))
@@ -141,7 +150,7 @@ class PineconeMemoryBackend:
 
     def get_row(self, memory_id: str) -> dict | None:
         validate_memory_id(memory_id)
-        vectors = self._fetch_vectors(self._get_index().fetch(ids=[memory_id]))
+        vectors = self._fetch_vectors(self._get_index().fetch(ids=[memory_id], **self._namespace_kwargs()))
         if memory_id not in vectors:
             return None
         vector_data = vectors[memory_id]
@@ -151,10 +160,10 @@ class PineconeMemoryBackend:
 
     def delete_row(self, memory_id: str) -> None:
         validate_memory_id(memory_id)
-        vectors = self._fetch_vectors(self._get_index().fetch(ids=[memory_id]))
+        vectors = self._fetch_vectors(self._get_index().fetch(ids=[memory_id], **self._namespace_kwargs()))
         if memory_id not in vectors:
             raise KeyError(f"Memory not found: {memory_id}")
-        self._get_index().delete(ids=[memory_id])
+        self._get_index().delete(ids=[memory_id], **self._namespace_kwargs())
 
     def _get_pc(self):
         from pinecone import Pinecone
@@ -171,6 +180,11 @@ class PineconeMemoryBackend:
         if self._index is None:
             pc = self._get_pc()
             if not pc.has_index(self.index_name):
+                if not self.allow_create_index:
+                    raise RuntimeError(
+                        f"Pinecone index {self.index_name!r} does not exist. "
+                        "Create it explicitly or set PINECONE_ALLOW_CREATE_INDEX=true."
+                    )
                 pc.create_index(
                     name=self.index_name,
                     dimension=DIMENSION,
@@ -181,6 +195,9 @@ class PineconeMemoryBackend:
                     time.sleep(1)
             self._index = pc.Index(self.index_name)
         return self._index
+
+    def _namespace_kwargs(self) -> dict[str, str]:
+        return {"namespace": self.namespace} if self.namespace else {}
 
     @staticmethod
     def _fetch_vectors(result) -> dict:
@@ -199,5 +216,11 @@ def build_memory_backend(settings: Settings) -> MemoryVectorBackend:
             cloud=settings.PINECONE_CLOUD,
             region=settings.PINECONE_REGION,
             api_key=settings.PINECONE_API_KEY,
+            namespace=settings.PINECONE_NAMESPACE,
+            allow_create_index=(
+                settings.PINECONE_ALLOW_CREATE_INDEX
+                if settings.PINECONE_ALLOW_CREATE_INDEX is not None
+                else settings.APP_ENV != "production"
+            ),
         )
     raise ValueError("Unknown Agent Smith memory backend: " f"{settings.MEMORY_BACKEND!r}")

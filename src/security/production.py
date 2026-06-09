@@ -21,7 +21,7 @@ def validate_production_settings(settings: Settings, config: DefaultConfig) -> l
 
     errors: list[str] = []
     if settings.SECRET_KEY == DEFAULT_SECRET_KEY:
-        errors.append("SECRET_KEY must be changed from the template default in production")
+        errors.append("SECRET_KEY must be changed from the application default in production")
     if len(settings.SECRET_KEY) < MIN_SECRET_KEY_LENGTH:
         errors.append(f"SECRET_KEY must be at least {MIN_SECRET_KEY_LENGTH} characters in production")
 

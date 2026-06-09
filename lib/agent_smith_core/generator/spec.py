@@ -44,7 +44,7 @@ def _parse_field(spec: str) -> FieldSpec:
     name = name_part[:-1] if optional else name_part
     _validate_identifier(name, "field name")
     if name in {"id", "created_at", "updated_at"}:
-        raise ValueError(f"Field {name!r} is managed by Cairn base models")
+        raise ValueError(f"Field {name!r} is managed by Agent Smith base models")
 
     kind = type_part.strip()
     if kind.startswith("enum[") and kind.endswith("]"):

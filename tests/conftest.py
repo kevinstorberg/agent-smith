@@ -1,9 +1,7 @@
-"""Pytest fixtures for template users.
+"""Shared pytest fixtures for Agent Smith.
 
-NOTE: These fixtures are intentionally unused by the template's own tests.
-The template tests demonstrate patterns by creating their own local fixtures.
-When you clone this template and build your application, USE THESE FIXTURES
-instead of duplicating test setup code.
+Use these fixtures for integration tests that need an app instance, test
+database session, or HTTP client.
 
 Example usage in your tests:
     def test_my_feature(client):
@@ -27,7 +25,7 @@ from src.settings import get_settings
 
 
 def get_test_database_url() -> str:
-    """Resolve the template's test database URL through runtime settings."""
+    """Resolve the test database URL through runtime settings."""
     return get_settings().database_url_for("test")
 
 
@@ -35,7 +33,7 @@ def get_test_database_url() -> str:
 def app():
     """Create FastAPI app instance.
 
-    Template fixture: Use this when you need a basic app without database setup.
+    Use this when you need a basic app without database setup.
     """
     return create_app()
 
@@ -44,7 +42,6 @@ def app():
 def test_engine():
     """Create test database engine with no connection pooling.
 
-    Template fixture: Provides a test database engine for your integration tests.
     Uses NullPool to avoid connection sharing issues in tests.
     """
     engine = create_async_engine(
@@ -61,7 +58,6 @@ def test_engine():
 async def test_session(test_engine):
     """Create test session with rollback after each test.
 
-    Template fixture: Use this when you need direct database access in tests.
     Automatically rolls back changes after each test to keep tests isolated.
     """
     from db.connection import create_session_maker
@@ -78,7 +74,6 @@ async def test_session(test_engine):
 def app_with_test_db(test_engine):
     """Create app with overridden database dependency.
 
-    Template fixture: Use this when testing API endpoints that need database access.
     Overrides the production database with the test database automatically.
     """
     from db.connection import create_session_maker
@@ -101,7 +96,6 @@ def app_with_test_db(test_engine):
 async def client(app_with_test_db):
     """Create async HTTP client for testing.
 
-    Template fixture: The primary fixture for API integration tests.
     Provides an httpx AsyncClient configured with the test database.
 
     Example:
@@ -117,7 +111,6 @@ async def client(app_with_test_db):
 async def clean_db(test_session):
     """Clean database before and after each test.
 
-    Template fixture: Use this to ensure database isolation between tests.
     Automatically truncates all tables registered in Base.metadata.
 
     Example:

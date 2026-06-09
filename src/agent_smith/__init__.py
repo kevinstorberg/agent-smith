@@ -1,1 +1,1 @@
-"""Agent Smith application port hosted inside Cairn."""
+"""Agent Smith application port hosted inside Agent Smith."""

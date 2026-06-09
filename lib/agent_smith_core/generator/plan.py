@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from lib.cairn.generator.render import (
+from lib.agent_smith_core.generator.render import (
     render_frontend_feature,
     render_migration,
     render_model,
@@ -15,7 +15,7 @@ from lib.cairn.generator.render import (
     render_schema_test,
     render_service,
 )
-from lib.cairn.generator.spec import ResourceSpec
+from lib.agent_smith_core.generator.spec import ResourceSpec
 
 _SHARED_PACKAGE_FILES = {
     Path("db") / "models" / "__init__.py",

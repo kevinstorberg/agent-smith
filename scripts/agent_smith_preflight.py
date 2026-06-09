@@ -42,7 +42,7 @@ AGENT_SMITH_TABLES = (
 
 class AgentSmithPreflightScript(BaseScript):
     name = "scripts/agent_smith_preflight.py"
-    description = "Validate Agent Smith Cairn production cutover prerequisites without mutating stores."
+    description = "Validate Agent Smith production cutover prerequisites without mutating stores."
 
     def configure_args(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("--production", action="store_true", help="Use read-only production DB settings.")

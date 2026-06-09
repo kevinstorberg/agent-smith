@@ -105,7 +105,7 @@ class PostgresJobStatusStore:
             await connection.execute(
                 text(
                     """
-                    CREATE TABLE IF NOT EXISTS cairn_job_runs (
+                    CREATE TABLE IF NOT EXISTS agent_smith_job_runs (
                         run_id TEXT PRIMARY KEY,
                         job_name TEXT NOT NULL,
                         status TEXT NOT NULL,
@@ -135,7 +135,7 @@ class PostgresJobStatusStore:
             await connection.execute(
                 text(
                     """
-                    INSERT INTO cairn_job_runs (
+                    INSERT INTO agent_smith_job_runs (
                         run_id, job_name, status, source, attempt, max_attempts, started_at
                     )
                     VALUES (
@@ -166,7 +166,7 @@ class PostgresJobStatusStore:
         engine = self._engine or get_engine()
         async with engine.begin() as connection:
             existing = await connection.execute(
-                text("SELECT started_at FROM cairn_job_runs WHERE run_id = :run_id"),
+                text("SELECT started_at FROM agent_smith_job_runs WHERE run_id = :run_id"),
                 {"run_id": run_id},
             )
             started_at = existing.scalar_one()
@@ -174,7 +174,7 @@ class PostgresJobStatusStore:
             await connection.execute(
                 text(
                     """
-                    UPDATE cairn_job_runs
+                    UPDATE agent_smith_job_runs
                     SET status = :status,
                         finished_at = :finished_at,
                         duration_ms = :duration_ms,
@@ -195,7 +195,7 @@ class PostgresJobStatusStore:
                     """
                     SELECT run_id, job_name, status, source, attempt, max_attempts,
                            started_at, finished_at, duration_ms, error
-                    FROM cairn_job_runs
+                    FROM agent_smith_job_runs
                     WHERE run_id = :run_id
                     """
                 ),
@@ -213,7 +213,7 @@ class PostgresJobStatusStore:
                     f"""
                     SELECT run_id, job_name, status, source, attempt, max_attempts,
                            started_at, finished_at, duration_ms, error
-                    FROM cairn_job_runs
+                    FROM agent_smith_job_runs
                     {where}
                     ORDER BY started_at DESC
                     LIMIT :limit

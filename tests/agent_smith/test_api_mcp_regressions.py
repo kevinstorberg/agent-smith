@@ -9,13 +9,13 @@ from src.agent_smith import mcp_servers
 async def test_plans_api_and_mcp_share_persistence(agent_smith_client):
     response = await agent_smith_client.post(
         "/api/plans",
-        json={"title": "Port Plan", "body": "Ship the Cairn port.", "project": "agent-smith"},
+        json={"title": "Port Plan", "body": "Ship the Agent Smith port.", "project": "agent-smith"},
     )
 
     assert response.status_code == 201
     created = response.json()
     fetched = await mcp_servers.get(plan_id=created["id"])
-    searched = await mcp_servers.get(query="Cairn port")
+    searched = await mcp_servers.get(query="Agent Smith port")
 
     assert fetched["title"] == "Port Plan"
     assert searched[0]["id"] == created["id"]
@@ -29,7 +29,7 @@ async def test_harness_api_and_mcp_share_persistence(agent_smith_client):
             "name": "port_rule",
             "project": "agent-smith",
             "agents": ["codex"],
-            "content": {"body": "Use the Cairn service layer."},
+            "content": {"body": "Use the Agent Smith service layer."},
         },
     )
 
@@ -76,7 +76,7 @@ class FakeMemoryService:
         self.rows = {
             "11111111-1111-1111-1111-111111111111": {
                 "id": "11111111-1111-1111-1111-111111111111",
-                "content": "remember the Cairn port",
+                "content": "remember the Agent Smith port",
                 "repo": "agent-smith",
                 "tags": ["port"],
             }
@@ -119,7 +119,7 @@ async def test_memory_api_uses_agent_smith_memory_service(agent_smith_client, mo
     deleted = await agent_smith_client.delete("/api/memory/11111111-1111-1111-1111-111111111111")
 
     assert listed.status_code == 200
-    assert listed.json()["items"][0]["content"] == "remember the Cairn port"
+    assert listed.json()["items"][0]["content"] == "remember the Agent Smith port"
     assert updated.status_code == 200
     assert updated.json()["content"] == "updated"
     assert deleted.status_code == 200

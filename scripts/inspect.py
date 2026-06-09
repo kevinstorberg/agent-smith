@@ -10,7 +10,7 @@ from src.settings import get_settings
 
 class InspectScript(BaseScript):
     name = "inspect"
-    description = "Inspect Cairn runtime configuration and registries."
+    description = "Inspect Agent Smith runtime configuration and registries."
 
     def configure_args(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("target", choices=["config", "registries", "migrations", "backends"])

@@ -22,6 +22,6 @@ def test_configure_logging_uses_json_renderer_when_requested():
 def test_get_logger_returns_named_structlog_logger():
     configure_logging()
 
-    logger = get_logger("cairn-test")
+    logger = get_logger("agent_smith-test")
 
     assert logger is not None

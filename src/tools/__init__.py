@@ -4,7 +4,7 @@ import pkgutil
 from pathlib import Path
 from typing import Any, Callable
 
-from lib.cairn.paths import get_module_dir
+from lib.agent_smith_core.paths import get_module_dir
 from src.tools.context import ToolContext
 
 logger = logging.getLogger(__name__)

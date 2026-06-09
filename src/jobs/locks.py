@@ -82,7 +82,7 @@ class RedisJobLockBackend:
             raise RuntimeError("Install the redis optional dependency group to use Redis job locking") from e
 
         client = redis_async.from_url(self._redis_url)
-        lock = client.lock(f"cairn:{key}", timeout=ttl_seconds)
+        lock = client.lock(f"agent_smith:{key}", timeout=ttl_seconds)
         acquired = await lock.acquire(blocking=False)
         if not acquired:
             await client.aclose()

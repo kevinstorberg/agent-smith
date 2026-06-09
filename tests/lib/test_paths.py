@@ -1,6 +1,6 @@
 import pytest
 
-from lib.cairn.paths import get_repo_root
+from lib.agent_smith_core.paths import get_repo_root
 
 
 def test_get_repo_root_finds_marker_from_nested_file(tmp_path):

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from lib.cairn.generator import ResourceGenerator, parse_resource_spec
+from lib.agent_smith_core.generator import ResourceGenerator, parse_resource_spec
 
 
 def _project_spec():
@@ -57,7 +57,7 @@ def test_resource_generator_frontend_opt_in_adds_feature_file(tmp_path):
 
 
 @pytest.mark.unit
-def test_resource_generator_writes_conventional_cairn_layers(tmp_path):
+def test_resource_generator_writes_conventional_agent_smith_layers(tmp_path):
     generator = ResourceGenerator(tmp_path, revision_factory=lambda: "202606041234")
 
     result = generator.generate(_project_spec())
@@ -195,11 +195,3 @@ def test_generated_python_files_pass_ruff_checks(tmp_path):
         check=False,
     )
     assert format_check.returncode == 0, format_check.stdout + format_check.stderr
-
-
-@pytest.mark.unit
-def test_generator_docs_quote_shell_sensitive_examples():
-    doc = Path("docs/GENERATOR.md").read_text()
-
-    assert "project name:string 'status:enum[planned,active,done]' 'due_date?:date'" in doc
-    assert "Quote enum and optional field specs" in doc

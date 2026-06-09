@@ -19,7 +19,7 @@ def test_resolve_trusted_hosts_prefers_runtime_env():
 
 
 @pytest.mark.unit
-def test_non_production_settings_allow_template_defaults():
+def test_non_production_settings_allow_application_defaults():
     settings = Settings(APP_ENV="development", SECRET_KEY=DEFAULT_SECRET_KEY)
     config = DefaultConfig()
 
@@ -33,7 +33,7 @@ def test_production_settings_reject_default_secret_and_wildcards():
 
     errors = validate_production_settings(settings, config)
 
-    assert "SECRET_KEY must be changed from the template default in production" in errors
+    assert "SECRET_KEY must be changed from the application default in production" in errors
     assert "TRUSTED_HOSTS or security.trusted_hosts must list explicit production hosts" in errors
     assert "security.cors_origins must list explicit production origins" in errors
 

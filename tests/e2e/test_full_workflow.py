@@ -31,7 +31,7 @@ class TestE2EFullWorkflow:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "ok"
-        assert data["app"] == "cairn"
+        assert data["app"] == "agent-smith"
 
     def test_security_validation(self):
         assert validate_name("test_item") == "test_item"

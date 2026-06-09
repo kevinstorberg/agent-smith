@@ -2,7 +2,7 @@ import logging
 
 from config.loader import load_default_config
 from config.models import MemoryConfig
-from lib.cairn.singleton import singleton
+from lib.agent_smith_core.singleton import singleton
 from memory.base import MemoryBackend
 
 logger = logging.getLogger(__name__)

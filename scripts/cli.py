@@ -5,9 +5,9 @@ from scripts.generate import GenerateScript
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="cairn")
+    parser = argparse.ArgumentParser(prog="agent-smith")
     subcommands = parser.add_subparsers(dest="command", required=True)
-    subcommands.add_parser("generate", help="Generate Cairn application artifacts", add_help=False)
+    subcommands.add_parser("generate", help="Generate Agent Smith application artifacts", add_help=False)
     args, remainder = parser.parse_known_args(argv if argv is not None else sys.argv[1:])
 
     if args.command == "generate":

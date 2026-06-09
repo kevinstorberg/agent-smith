@@ -23,7 +23,7 @@ async def test_health_status_ok(client):
     response = await client.get("/health")
     data = response.json()
     assert data["status"] == "ok"
-    assert data["app"] == "cairn"
+    assert data["app"] == "agent-smith"
 
 
 @pytest.mark.integration

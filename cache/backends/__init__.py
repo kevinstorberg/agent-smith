@@ -1,7 +1,7 @@
 from cache.base import CacheBackend
 from config.loader import load_default_config
 from config.models import CacheConfig
-from lib.cairn.singleton import singleton
+from lib.agent_smith_core.singleton import singleton
 
 
 def create_cache_backend(config: CacheConfig) -> CacheBackend:

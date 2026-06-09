@@ -8,7 +8,7 @@ from src.settings import get_settings
 router = APIRouter()
 
 try:
-    _VERSION = pkg_version("cairn")
+    _VERSION = pkg_version("agent_smith")
 except PackageNotFoundError:
     _VERSION = "0.1.0"
 

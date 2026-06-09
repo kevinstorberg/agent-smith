@@ -46,15 +46,13 @@ async def lifespan(app: FastAPI):
     import src.services  # noqa: F401
 
     await start_job_runtime(app)
-    if app.state.settings.AGENT_SMITH_ENABLED:
-        await start_agent_smith_runtime(app)
+    await start_agent_smith_runtime(app)
     logger.info("App startup complete")
 
     yield
 
     # Shutdown
-    if app.state.settings.AGENT_SMITH_ENABLED:
-        await stop_agent_smith_runtime(app)
+    await stop_agent_smith_runtime(app)
     await shutdown_job_runtime(app)
 
     if hasattr(app.state, "memory_backend"):
@@ -78,7 +76,7 @@ def create_app() -> FastAPI:
         joined_errors = "; ".join(production_errors)
         raise RuntimeError(f"Production security settings are invalid: {joined_errors}")
 
-    application = FastAPI(title="Cairn", version=_VERSION, lifespan=lifespan)
+    application = FastAPI(title="Agent Smith", version=_VERSION, lifespan=lifespan)
     application.state.config = config
     application.state.settings = settings
     register_error_handlers(application)
@@ -115,14 +113,12 @@ def create_app() -> FastAPI:
     application.include_router(create_graph_router())
     application.include_router(create_jobs_router())
     include_registered_routers(application)
-    if settings.AGENT_SMITH_ENABLED:
-        include_agent_smith_routes(application)
+    include_agent_smith_routes(application)
     if config.admin_debug.enabled:
         application.include_router(create_diagnostics_router(config=config, settings=settings))
     mount_frontend(application, config.frontend)
     application.include_router(ws_router)
-    if settings.AGENT_SMITH_ENABLED:
-        mount_agent_smith_frontend(application)
+    mount_agent_smith_frontend(application)
     return application
 
 

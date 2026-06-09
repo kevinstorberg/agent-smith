@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from lib.cairn.generator.naming import ResourceNames, names_for
-from lib.cairn.generator.spec import FieldSpec, ResourceSpec
+from lib.agent_smith_core.generator.naming import ResourceNames, names_for
+from lib.agent_smith_core.generator.spec import FieldSpec, ResourceSpec
 
 
 def render_model(spec: ResourceSpec) -> str:
@@ -280,7 +280,7 @@ def render_resource_doc(spec: ResourceSpec, *, frontend: bool = False) -> str:
     frontend_line = f"- Frontend feature: `frontend/src/features/{spec.name}/feature.tsx`\n" if frontend else ""
     return f"""# {names.class_name} Resource
 
-Generated Cairn resource scaffold.
+Generated Agent Smith resource scaffold.
 
 Source of truth:
 

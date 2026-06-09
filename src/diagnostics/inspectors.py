@@ -7,7 +7,7 @@ from assets.backends import get_storage_backend
 from cache.backends import get_cache_backend
 from config.loader import load_default_config
 from config.models import DefaultConfig
-from lib.cairn.paths import get_repo_root
+from lib.agent_smith_core.paths import get_repo_root
 from memory.backends import get_backend
 from src.diagnostics.models import DiagnosticReport, DiagnosticResult
 from src.diagnostics.redaction import redact_mapping
@@ -101,7 +101,7 @@ async def inspect_health(app: Any | None = None) -> DiagnosticReport:
 async def _inspect_cache(cache_backend: Any | None) -> DiagnosticResult:
     try:
         backend = cache_backend or get_cache_backend()
-        key = "cairn:diagnostics:cache"
+        key = "agent_smith:diagnostics:cache"
         await backend.set(key, "ok", ttl=5)
         value = await backend.get(key)
         await backend.delete(key)

@@ -24,15 +24,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN addgroup --system cairn && \
-    adduser --system --ingroup cairn --home /app cairn
+RUN addgroup --system agent_smith && \
+    adduser --system --ingroup agent_smith --home /app agent_smith
 
 COPY --from=builder /opt/venv /opt/venv
 COPY . .
 
-RUN chown -R cairn:cairn /app
+RUN chown -R agent_smith:agent_smith /app
 
-USER cairn
+USER agent_smith
 
 EXPOSE 8000
 

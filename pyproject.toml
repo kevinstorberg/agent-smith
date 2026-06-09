@@ -1,13 +1,13 @@
 [project]
-name = "cairn"
+name = "agent_smith"
 version = "0.1.0"
-description = "Reusable FastAPI framework for agentic Python applications with LangGraph"
+description = "Agent Smith local control plane for agent configuration, memory, evals, plans, jobs, and sync workflows"
 authors = [{name = "SonderMind Engineering"}]
 requires-python = ">=3.11,<3.14"
 dynamic = ["dependencies"]
 
 [project.scripts]
-cairn = "scripts.cli:main"
+agent-smith = "scripts.cli:main"
 
 [tool.poetry]
 packages = [

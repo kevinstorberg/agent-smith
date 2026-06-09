@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from config.loader import load_default_config
 from config.models import DefaultConfig
-from lib.cairn.paths import get_repo_root
+from lib.agent_smith_core.paths import get_repo_root
 from scripts.base import BaseScript
 from src.security.production import validate_production_settings
 from src.settings import Settings, get_settings
@@ -415,7 +415,7 @@ async def check_migrations_current(repo_root: Path, database_url: str) -> CheckR
 
 class DoctorScript(BaseScript):
     name = "doctor"
-    description = "Verify local Cairn bootstrap requirements"
+    description = "Verify local Agent Smith bootstrap requirements"
 
     def configure_args(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("--skip-db", action="store_true", help="Skip DB connectivity and migration checks")

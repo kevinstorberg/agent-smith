@@ -250,7 +250,7 @@ async def test_doctor_fails_unsafe_production_security_settings(tmp_path):
     assert any(
         result.name == "Production security"
         and result.status == "fail"
-        and "SECRET_KEY must be changed from the template default" in result.message
+        and "SECRET_KEY must be changed from the application default" in result.message
         for result in results
     )
 

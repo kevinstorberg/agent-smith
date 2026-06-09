@@ -12,9 +12,9 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: cairn
-          POSTGRES_PASSWORD: cairn
-          POSTGRES_DB: cairn_test
+          POSTGRES_USER: agent_smith
+          POSTGRES_PASSWORD: agent_smith
+          POSTGRES_DB: agent_smith_test
         ports:
           - 5432:5432
         options: >-
@@ -61,7 +61,7 @@ jobs:
       - name: Run tests with coverage
         env:
           APP_ENV: test
-          DATABASE_URL_TEST: postgresql+asyncpg://cairn:cairn@localhost:5432/cairn_test
+          DATABASE_URL_TEST: postgresql+asyncpg://agent_smith:agent_smith@localhost:5432/agent_smith_test
         run: poetry run pytest tests/ -v --tb=short --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=70
 
       - name: Install frontend dependencies

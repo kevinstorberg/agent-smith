@@ -14,7 +14,7 @@ class NoopAuditSink:
 
 
 class LoggingAuditSink:
-    def __init__(self, *, logger_name: str = "cairn.audit") -> None:
+    def __init__(self, *, logger_name: str = "agent_smith.audit") -> None:
         self.logger = get_logger(logger_name)
 
     async def record(self, decision: PolicyDecision, context: PolicyContext) -> None:

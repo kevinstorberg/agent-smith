@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.cli import main as cairn_main
+from scripts.cli import main as agent_smith_main
 from scripts.generate import GenerateScript
 
 
@@ -48,7 +48,7 @@ def test_generate_script_reports_invalid_specs_without_traceback(tmp_path, capsy
     output = capsys.readouterr()
 
     assert status == 1
-    assert "generate: Field 'id' is managed by Cairn base models" in output.err
+    assert "generate: Field 'id' is managed by Agent Smith base models" in output.err
 
 
 @pytest.mark.unit
@@ -67,8 +67,10 @@ def test_generate_script_reports_conflicts_without_overwriting(tmp_path, capsys)
 
 
 @pytest.mark.unit
-def test_cairn_cli_dispatches_generate_resource(tmp_path, capsys):
-    status = cairn_main(["generate", "resource", "project", "name:string", "--dry-run", "--repo-root", str(tmp_path)])
+def test_agent_smith_cli_dispatches_generate_resource(tmp_path, capsys):
+    status = agent_smith_main(
+        ["generate", "resource", "project", "name:string", "--dry-run", "--repo-root", str(tmp_path)]
+    )
 
     output = capsys.readouterr()
 
@@ -77,7 +79,7 @@ def test_cairn_cli_dispatches_generate_resource(tmp_path, capsys):
 
 
 @pytest.mark.unit
-def test_pyproject_exposes_cairn_console_command():
+def test_pyproject_exposes_agent_smith_console_command():
     pyproject = tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text())
 
-    assert pyproject["project"]["scripts"]["cairn"] == "scripts.cli:main"
+    assert pyproject["project"]["scripts"]["agent-smith"] == "scripts.cli:main"

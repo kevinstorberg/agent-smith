@@ -50,7 +50,7 @@ class DeterministicFakeChatModel(BaseChatModel):
 
     @property
     def _llm_type(self) -> str:
-        return "cairn_fake"
+        return "agent_smith_fake"
 
     def bind_tools(
         self,

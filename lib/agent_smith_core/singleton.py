@@ -1,4 +1,4 @@
-"""Singleton pattern implementation for Cairn template.
+"""Singleton helper for Agent Smith backend factories.
 
 This module provides a decorator for implementing the singleton pattern consistently
 across all backend factories and service instances.

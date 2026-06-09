@@ -5,7 +5,7 @@ from starlette.exceptions import HTTPException
 from starlette.staticfiles import StaticFiles
 
 from config.models import FrontendConfig
-from lib.cairn.paths import get_repo_root
+from lib.agent_smith_core.paths import get_repo_root
 
 
 class SPAStaticFiles(StaticFiles):

@@ -48,7 +48,7 @@ async def _execution_statuses(job_id: int) -> list[str]:
 
 
 @pytest.mark.asyncio
-async def test_agent_smith_job_definitions_run_through_cairn_runtime(clean_agent_smith_db):
+async def test_agent_smith_job_definitions_run_through_agent_smith_runtime(clean_agent_smith_db):
     job = await _create_job(command=_command("print('agent smith job ok')"))
     definitions = await load_agent_smith_job_definitions()
     runtime = create_job_runtime(

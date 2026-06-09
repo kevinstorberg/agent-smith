@@ -125,7 +125,7 @@ class TestSettings:
 
         s = Settings(_env_file=None)
 
-        assert s.APP_NAME == "cairn"
+        assert s.APP_NAME == "agent-smith"
         assert s.APP_PORT == 8000
         assert s.POSTGRES_IMAGE == "pgvector/pgvector:pg16"
         assert s.POSTGRES_PORT == 5432
@@ -156,11 +156,14 @@ class TestSettings:
             DATABASE_URL_TEST="",
             POSTGRES_HOST="localhost",
             POSTGRES_PORT=55432,
-            POSTGRES_USER="cairn",
-            POSTGRES_PASSWORD="cairn",
-            POSTGRES_DB_TEST="cairn_test",
+            POSTGRES_USER="agent_smith",
+            POSTGRES_PASSWORD="agent_smith",
+            POSTGRES_DB_TEST="agent_smith_test",
         )
-        assert s.database_url_for("test") == "postgresql+asyncpg://cairn:cairn@localhost:55432/cairn_test"
+        assert (
+            s.database_url_for("test")
+            == "postgresql+asyncpg://agent_smith:agent_smith@localhost:55432/agent_smith_test"
+        )
 
     def test_database_url_for_explicit_url_overrides_components(self):
         from src.settings import Settings

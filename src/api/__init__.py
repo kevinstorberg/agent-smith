@@ -1,1 +1,1 @@
-"""API transport conventions for Cairn applications."""
+"""API transport conventions for Agent Smith applications."""

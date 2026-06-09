@@ -27,9 +27,9 @@ async def test_graph_dispatch_validates_inputs_and_returns_result(monkeypatch):
     service = AgentSmithGraphService()
     monkeypatch.setattr(service, "scan_library", lambda: {"hello": module})
 
-    result = await service.dispatch("hello", {"name": "Cairn"})
+    result = await service.dispatch("hello", {"name": "Agent Smith"})
 
-    assert result == "hello Cairn"
+    assert result == "hello Agent Smith"
 
 
 @pytest.mark.asyncio

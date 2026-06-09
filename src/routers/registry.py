@@ -4,7 +4,7 @@ import pkgutil
 
 from fastapi import APIRouter, FastAPI
 
-from lib.cairn.paths import get_module_dir
+from lib.agent_smith_core.paths import get_module_dir
 
 logger = logging.getLogger(__name__)
 

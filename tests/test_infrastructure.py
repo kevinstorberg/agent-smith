@@ -1,3 +1,4 @@
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -116,7 +117,7 @@ def test_dockerfile_defines_production_runtime_contract():
     assert "FROM python:3.11-slim AS builder" in dockerfile
     assert "FROM python:3.11-slim AS runtime" in dockerfile
     assert "COPY --from=builder /opt/venv /opt/venv" in dockerfile
-    assert "USER cairn" in runtime_stage
+    assert "USER agent_smith" in runtime_stage
     assert "HEALTHCHECK" in runtime_stage
     assert "/health" in runtime_stage
     assert '"uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8000"' in runtime_stage
@@ -267,89 +268,18 @@ def test_local_security_tools_are_poetry_dev_dependencies():
 
 
 @pytest.mark.unit
-def test_readme_links_repository_service_and_graph_runtime_docs():
-    readme = (Path(__file__).parents[1] / "README.md").read_text()
+def test_port_ships_only_original_readme_documentation():
+    root = Path(__file__).parents[1]
+    result = subprocess.run(
+        ["git", "ls-files", "*.md"],
+        cwd=root,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    markdown_files = {path for path in result.stdout.splitlines() if (root / path).exists()}
 
-    assert "docs/REPOSITORIES_SERVICES.md" in readme
-    assert "docs/AUTHORIZATION.md" in readme
-    assert "docs/JOBS.md" in readme
-    assert "docs/ADMIN_DEBUG.md" in readme
-    assert "docs/GENERATOR.md" in readme
-    assert "src/graphs/endpoints.py" in readme
-    assert "src/jobs/" in readme
-    assert "src/diagnostics/" in readme
-    assert "lib/cairn/generator" in readme
-    assert "docs/FRONTEND.md" in readme
-    assert "frontend/src/shared/api/" in readme
-    assert "src/frontend/static.py" in readme
-    assert "build_config_summary_graph()" in readme
-
-
-@pytest.mark.unit
-def test_admin_debug_docs_reference_source_of_truth_modules():
-    docs = (Path(__file__).parents[1] / "docs" / "ADMIN_DEBUG.md").read_text()
-
-    assert "src/diagnostics/" in docs
-    assert "src/diagnostics/router.py" in docs
-    assert "scripts/inspect.py" in docs
-    assert "config/default.yaml" in docs
-
-
-@pytest.mark.unit
-def test_generator_docs_reference_source_of_truth_modules():
-    docs = (Path(__file__).parents[1] / "docs" / "GENERATOR.md").read_text()
-
-    assert "scripts/cli.py" in docs
-    assert "scripts/generate.py" in docs
-    assert "lib/cairn/generator/" in docs
-    assert "src/routers/registry.py" in docs
-    assert "--frontend" in docs
-
-
-@pytest.mark.unit
-def test_frontend_docs_reference_source_of_truth_modules():
-    docs = (Path(__file__).parents[1] / "docs" / "FRONTEND.md").read_text()
-
-    assert "frontend/package.json" in docs
-    assert "frontend/src/shared/config/" in docs
-    assert "frontend/src/shared/api/" in docs
-    assert "frontend/src/features/registry.ts" in docs
-    assert "src/frontend/static.py" in docs
-
-
-@pytest.mark.unit
-def test_jobs_docs_reference_runtime_source_of_truth():
-    jobs_doc = (Path(__file__).parents[1] / "docs" / "JOBS.md").read_text()
-
-    assert "src/jobs/definitions.py" in jobs_doc
-    assert "src/jobs/runner.py" in jobs_doc
-    assert "src/jobs/stores.py" in jobs_doc
-    assert "src/jobs/locks.py" in jobs_doc
-    assert "GET /jobs/health" in jobs_doc
-
-
-@pytest.mark.unit
-def test_deployment_docs_describe_production_security_controls():
-    deployment = (Path(__file__).parents[1] / "docs" / "DEPLOYMENT.md").read_text()
-
-    assert ".env.default" in deployment
-    assert "src/settings.py" in deployment
-    assert "config/default.yaml" in deployment
-    assert "config/models.py" in deployment
-    assert "request body size limits" in deployment
-    assert "edge or WAF rate limiting" in deployment
-
-
-@pytest.mark.unit
-def test_deployment_docs_distinguish_production_dockerfile_from_local_compose():
-    deployment = (Path(__file__).parents[1] / "docs" / "DEPLOYMENT.md").read_text()
-
-    assert "[Dockerfile](../Dockerfile)" in deployment
-    assert "production image source of" in deployment
-    assert "truth" in deployment
-    assert "[docker-compose.yml](../docker-compose.yml) for local development" in deployment
-    assert "docker build -t cairn-app ." in deployment
-    assert "docker run --rm -p 8000:8000 --env-file <runtime-env-file> cairn-app" in deployment
+    assert markdown_files == {"README.md"}
 
 
 @pytest.mark.unit

@@ -1,8 +1,7 @@
-"""Storage backend protocol for template users.
+"""Storage backend protocol for Agent Smith file handling.
 
-TEMPLATE INFRASTRUCTURE: This module provides file storage abstraction.
-It's intentionally unused by the template itself but ready for you to use
-when your application needs to store files (user uploads, generated assets, etc.).
+This module provides the storage abstraction used for local files and S3-backed
+assets.
 
 The storage backend follows the same pattern as memory and cache backends:
 - Configure in config/default.yaml (storage.backend: "local" or "s3")
@@ -25,8 +24,7 @@ from typing import Protocol, runtime_checkable
 class StorageBackend(Protocol):
     """Protocol defining the interface all storage backends must implement.
 
-    Template infrastructure: Provides consistent API across different storage
-    implementations (local filesystem, S3, etc.).
+    Provides a consistent API across storage implementations.
     """
 
     async def upload(self, key: str, content: bytes, content_type: str = "") -> str:

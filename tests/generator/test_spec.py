@@ -1,7 +1,7 @@
 import pytest
 
-from lib.cairn.generator.naming import names_for
-from lib.cairn.generator.spec import parse_resource_spec
+from lib.agent_smith_core.generator.naming import names_for
+from lib.agent_smith_core.generator.spec import parse_resource_spec
 
 
 @pytest.mark.unit
@@ -25,7 +25,7 @@ def test_parse_resource_spec_accepts_supported_fields():
         ("Project", ["name:string"], "Invalid resource name"),
         ("project", [], "At least one field is required"),
         ("project", ["name"], "name:type"),
-        ("project", ["id:uuid"], "managed by Cairn"),
+        ("project", ["id:uuid"], "managed by Agent Smith"),
         ("project", ["name:string", "name:text"], "Duplicate fields"),
         ("project", ["status:enum[]"], "must define at least one value"),
         ("project", ["status:unknown"], "Unsupported field type"),
