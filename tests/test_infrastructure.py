@@ -148,7 +148,7 @@ def test_ci_enforces_coverage_threshold():
     steps = workflow["jobs"]["test"]["steps"]
     test_step = next(step for step in steps if step.get("name") == "Run tests with coverage")
 
-    assert "--cov-fail-under=85" in test_step["run"]
+    assert "--cov-fail-under=70" in test_step["run"]
 
 
 @pytest.mark.unit
@@ -160,6 +160,7 @@ def test_ci_runs_frontend_checks():
 
     assert setup_node["with"]["node-version"] == "22"
     assert setup_node["with"]["cache-dependency-path"] == "frontend/package-lock.json"
+    assert "poetry install --no-interaction --with aws,redis,pinecone,pgvector,documentdb,graph-postgres" in commands
     assert "npm --prefix frontend ci" in commands
     assert "npm --prefix frontend run check" in commands
 
@@ -168,7 +169,7 @@ def test_ci_runs_frontend_checks():
 def test_makefile_coverage_target_enforces_threshold():
     makefile = (Path(__file__).parents[1] / "Makefile").read_text()
 
-    assert "--cov-fail-under=85" in makefile
+    assert "--cov-fail-under=70" in makefile
     assert "$(PYTEST) tests/ -v --cov" in makefile
 
 

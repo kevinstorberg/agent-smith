@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "audit": "npm audit --audit-level=high",
     "bundle:report": "node scripts/bundle-report.mjs",
     "bundle-check": "node scripts/bundle-report.mjs --check",
     "check": "npm run lint && npm run test && npm run build && npm run bundle-check"

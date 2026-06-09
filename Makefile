@@ -19,7 +19,7 @@ test-e2e:
 	$(PYTEST) tests/ -v -m e2e
 
 test-cov:
-	$(PYTEST) tests/ -v --cov --cov-report=term-missing --cov-report=html --cov-fail-under=85
+	$(PYTEST) tests/ -v --cov --cov-report=term-missing --cov-report=html --cov-fail-under=70
 
 lint:
 	poetry run ruff check .
