@@ -13,3 +13,4 @@ tmp/*
 evals/results/
 
 .claude
+.worktrees/

@@ -74,6 +74,12 @@ def _get_model(item_type: str):
     return registry[item_type]
 
 
+def _project_filter(project: str | None) -> tuple[str, list]:
+    if project is None:
+        return "", []
+    return "\n          AND (project IS NULL OR project = %s)", [project]
+
+
 def _project_clause(project: str | None) -> tuple[str, list]:
     if project is None:
         return "AND project IS NULL", []
@@ -89,8 +95,8 @@ def _list_items_internal(
     table = _table(item_type)
     latest = _LATEST_VERSION_CLAUSE.format(table=table)
 
-    query = f"SELECT * FROM {table}\n        WHERE {latest}\n          AND (project IS NULL OR project = %s)"
-    params: list = [project]
+    project_clause, params = _project_filter(project)
+    query = f"SELECT * FROM {table}\n        WHERE {latest}{project_clause}"
 
     if enabled_only:
         query += "\n          AND enabled = true"
@@ -130,8 +136,8 @@ def list_items_summary(item_type: str, project: str | None = None, agent: str | 
     base_cols = "id, name, project, agents, sort_key, enabled, version, created_at, updated_at"
     cols = f"{base_cols}, clone_as_skill" if item_type == "rule" else base_cols
 
-    query = f"SELECT {cols} FROM {table}\n        WHERE {latest}\n          AND (project IS NULL OR project = %s)"
-    params: list = [project]
+    project_clause, params = _project_filter(project)
+    query = f"SELECT {cols} FROM {table}\n        WHERE {latest}{project_clause}"
 
     if agent:
         query += "\n          AND %s = ANY(agents)"

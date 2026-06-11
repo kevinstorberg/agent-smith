@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.api.models.shared.harness import upsert_item, list_items, get_item
+from services.api.models.shared.harness import upsert_item, list_items, list_items_summary, get_item
 from services.api.models.hook import map_hook_event
 from services.config import ALL_AGENTS
 from tests.conftest import harness_cleanup
@@ -51,6 +51,41 @@ def test_list_rules_project_overrides_shared_by_name():
     match = [r for r in rows if r["name"] == "test_override"]
     assert len(match) == 1
     assert match[0]["content"]["body"] == "## Project version"
+
+
+def test_list_rules_without_project_filter_includes_project_scoped_rows():
+    upsert_item("rule", "test_global_visible", content=RULE_CONTENT, agents=ALL_AGENTS)
+    upsert_item("rule", "test_project_visible", content=RULE_CONTENT, agents=ALL_AGENTS, project="project-a")
+
+    rows = list_items("rule")
+    rows_by_name = {r["name"]: r for r in rows}
+
+    assert rows_by_name["test_global_visible"]["project"] is None
+    assert rows_by_name["test_project_visible"]["project"] == "project-a"
+
+
+def test_list_rules_project_filter_excludes_other_projects():
+    upsert_item("rule", "test_global_scoped", content=RULE_CONTENT, agents=ALL_AGENTS)
+    upsert_item("rule", "test_project_a", content=RULE_CONTENT, agents=ALL_AGENTS, project="project-a")
+    upsert_item("rule", "test_project_b", content=RULE_CONTENT, agents=ALL_AGENTS, project="project-b")
+
+    rows = list_items("rule", project="project-a")
+    names = {r["name"] for r in rows}
+
+    assert "test_global_scoped" in names
+    assert "test_project_a" in names
+    assert "test_project_b" not in names
+
+
+def test_list_items_summary_without_project_filter_includes_project_scoped_rows():
+    upsert_item("rule", "test_summary_global", content=RULE_CONTENT, agents=ALL_AGENTS)
+    upsert_item("rule", "test_summary_project", content=RULE_CONTENT, agents=ALL_AGENTS, project="project-a")
+
+    rows = list_items_summary("rule")
+    rows_by_name = {r["name"]: r for r in rows}
+
+    assert rows_by_name["test_summary_global"]["project"] is None
+    assert rows_by_name["test_summary_project"]["project"] == "project-a"
 
 
 def test_list_rules_excludes_disabled():
