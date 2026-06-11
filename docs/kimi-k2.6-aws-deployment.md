@@ -1,9 +1,13 @@
 # Deploy Kimi K2.6 for the Opinion Graph on AWS
 
-This runbook deploys `moonshotai/Kimi-K2.6` behind an OpenAI-compatible endpoint
-for the Agent Smith `opinion` graph. The graph expects the endpoint at
-`OPINION_MODEL_BASE_URL` and uses thinking mode for both the worker and rubric
-grader models.
+This runbook deploys `moonshotai/Kimi-K2.6` on AWS GPU infrastructure for the
+Agent Smith `opinion` graph. Agent Smith should point at the AWS Kimi server via
+`OPINION_MODEL_SERVER_URL`.
+
+The graph does not call OpenAI. SGLang exposes a `/v1/chat/completions` HTTP
+route because that is a common chat-completions wire format for self-hosted
+model servers. Requests go to the AWS host or tunnel configured by
+`OPINION_MODEL_SERVER_URL`.
 
 Kimi K2.6 is a very large MoE model. Do not start with a small single-GPU
 instance. Use `p5e.48xlarge` or `p5en.48xlarge` when available; use
@@ -83,7 +87,7 @@ Authenticate Hugging Face:
 export HF_TOKEN=<token>
 ```
 
-Start the OpenAI-compatible SGLang server:
+Start the AWS Kimi model server:
 
 ```sh
 docker run --gpus all --shm-size 32g --ipc=host \
@@ -116,8 +120,8 @@ Expected result: HTTP 200 with a chat completion that reasons correctly that
 
 If SGLang rejects the nested `extra_body` shape for direct curl requests, retry
 with `chat_template_kwargs` as a top-level request field. Keep Agent Smith's
-LangChain config unchanged; LangChain passes provider-specific parameters
-through `extra_body`.
+config unchanged; the graph model factory passes provider-specific request
+options through its transport adapter.
 
 ## 7. Tunnel the Endpoint to Local Agent Smith
 
@@ -134,9 +138,11 @@ Leave the tunnel open while testing the graph.
 Set these values in `.env.development` or the active environment file:
 
 ```sh
-OPINION_MODEL=moonshotai/Kimi-K2.6
-OPINION_MODEL_BASE_URL=http://localhost:30000/v1
-OPINION_MODEL_API_KEY=local-kimi
+OPINION_MODEL_PROVIDER=aws_kimi
+OPINION_MODEL_ID=moonshotai/Kimi-K2.6
+OPINION_MODEL_SERVER_URL=http://localhost:30000/v1
+OPINION_MODEL_SERVER_API_KEY=local-kimi
+OPINION_MODEL_THINKING=true
 OPINION_RULE_AGENT=codex
 OPINION_RULE_INCLUDE=DRY,Easier To Change,Design by Contract,No Broken Windows,Tracer Bullets
 OPINION_RUBRIC_MAX_ITERATIONS=3

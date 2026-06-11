@@ -7,16 +7,12 @@ from typing import Any, TypedDict
 from uuid import uuid4
 
 from langchain_core.messages import HumanMessage
-from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 
+from services.graphs.agents import create_rubric_agent
 from scripts.shared.paths import REPO_ROOT
 from services.rubric import rules_to_prompt_context, rules_to_rubric
 
-MODEL = os.environ.get("OPINION_MODEL", "moonshotai/Kimi-K2.6")
-PROVIDER = "openai-compatible"
-MODEL_BASE_URL = os.environ.get("OPINION_MODEL_BASE_URL", "http://localhost:30000/v1")
-MODEL_API_KEY = os.environ.get("OPINION_MODEL_API_KEY", "local-kimi")
 RULE_AGENT = os.environ.get("OPINION_RULE_AGENT", "codex")
 RULE_INCLUDE = os.environ.get(
     "OPINION_RULE_INCLUDE",
@@ -57,9 +53,11 @@ def build_graph():
     rules = _load_selected_rules()
     prompt_context = rules_to_prompt_context(rules)
     rubric = rules_to_rubric(rules)
-    agent = _create_opinion_agent(
+    agent = create_rubric_agent(
         system_prompt=f"{_SYSTEM_PROMPT}\n\n{prompt_context}",
+        grader_prompt=_GRADER_PROMPT,
         max_iterations=_configured_max_iterations(),
+        model_role="opinion",
     )
 
     async def _opine(state: State) -> State:
@@ -87,51 +85,6 @@ def build_graph():
     g.add_edge(START, "opine")
     g.add_edge("opine", END)
     return g.compile()
-
-
-def _build_kimi_model() -> ChatOpenAI:
-    model = os.environ.get("OPINION_MODEL", MODEL)
-    base_url = os.environ.get("OPINION_MODEL_BASE_URL", MODEL_BASE_URL)
-    api_key = os.environ.get("OPINION_MODEL_API_KEY", MODEL_API_KEY)
-
-    assert model.strip(), "OPINION_MODEL must be set"
-    assert base_url.strip(), "OPINION_MODEL_BASE_URL must be set"
-    assert api_key.strip(), "OPINION_MODEL_API_KEY must be set"
-
-    return ChatOpenAI(
-        model=model,
-        base_url=base_url,
-        api_key=api_key,
-        temperature=1.0,
-        top_p=0.95,
-        extra_body={"chat_template_kwargs": {"thinking": True}},
-    )
-
-
-def _create_opinion_agent(system_prompt: str, max_iterations: int):
-    try:
-        from deepagents import RubricMiddleware, create_deep_agent
-        from langgraph.checkpoint.memory import InMemorySaver
-    except ImportError as exc:
-        raise RuntimeError(
-            "deepagents>=0.6.5 is required for the Opinion rubric loop. "
-            "Install requirements.txt before running the opinion graph."
-        ) from exc
-
-    worker_model = _build_kimi_model()
-    grader_model = _build_kimi_model()
-    return create_deep_agent(
-        model=worker_model,
-        system_prompt=system_prompt,
-        middleware=[
-            RubricMiddleware(
-                model=grader_model,
-                system_prompt=_GRADER_PROMPT,
-                max_iterations=max_iterations,
-            ),
-        ],
-        checkpointer=InMemorySaver(),
-    )
 
 
 def _configured_max_iterations() -> int:

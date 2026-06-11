@@ -23,8 +23,8 @@ def test_scan_library_includes_opinion():
     registry = scan_library()
     assert "opinion" in registry
     assert registry["opinion"].INPUT_SCHEMA == {"proposal": "string"}
-    assert registry["opinion"].MODEL == "moonshotai/Kimi-K2.6"
-    assert registry["opinion"].PROVIDER == "openai-compatible"
+    assert not hasattr(registry["opinion"], "MODEL")
+    assert not hasattr(registry["opinion"], "PROVIDER")
 
 
 def test_build_tool_description_names_available_types():

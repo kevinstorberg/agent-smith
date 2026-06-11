@@ -28,29 +28,46 @@ def test_echo_round_trip():
     assert result == "hello"
 
 
-def test_opinion_model_builder_uses_kimi_openai_compatible_config(monkeypatch):
-    from services.graphs.library import opinion
+def test_model_factory_uses_aws_kimi_server_config(monkeypatch):
+    from services.graphs import model_factory
 
     captured = {}
 
-    class _FakeChatOpenAI:
+    class _FakeTransportAdapter:
         def __init__(self, **kwargs):
             captured.update(kwargs)
 
-    monkeypatch.setenv("OPINION_MODEL", "moonshotai/Kimi-K2.6")
-    monkeypatch.setenv("OPINION_MODEL_BASE_URL", "https://kimi.example/v1")
-    monkeypatch.setenv("OPINION_MODEL_API_KEY", "test-key")
-    monkeypatch.setattr(opinion, "ChatOpenAI", _FakeChatOpenAI)
+    monkeypatch.setenv("OPINION_MODEL_PROVIDER", "aws_kimi")
+    monkeypatch.setenv("OPINION_MODEL_ID", "moonshotai/Kimi-K2.6")
+    monkeypatch.setenv("OPINION_MODEL_SERVER_URL", "https://kimi.aws.example/v1")
+    monkeypatch.setenv("OPINION_MODEL_SERVER_API_KEY", "test-key")
+    monkeypatch.setattr(model_factory, "ChatCompletionsTransportAdapter", _FakeTransportAdapter)
 
-    model = opinion._build_kimi_model()
+    model = model_factory.build_chat_model("opinion")
 
-    assert isinstance(model, _FakeChatOpenAI)
+    assert isinstance(model, _FakeTransportAdapter)
     assert captured["model"] == "moonshotai/Kimi-K2.6"
-    assert captured["base_url"] == "https://kimi.example/v1"
+    assert captured["base_url"] == "https://kimi.aws.example/v1"
     assert captured["api_key"] == "test-key"
     assert captured["temperature"] == 1.0
     assert captured["top_p"] == 0.95
     assert captured["extra_body"] == {"chat_template_kwargs": {"thinking": True}}
+
+
+def test_model_factory_grader_role_falls_back_to_opinion_config(monkeypatch):
+    from services.graphs.model_factory import load_model_config
+
+    monkeypatch.setenv("OPINION_MODEL_PROVIDER", "aws_kimi")
+    monkeypatch.setenv("OPINION_MODEL_ID", "moonshotai/Kimi-K2.6")
+    monkeypatch.setenv("OPINION_MODEL_SERVER_URL", "https://kimi.aws.example/v1")
+    monkeypatch.setenv("OPINION_MODEL_SERVER_API_KEY", "test-key")
+
+    config = load_model_config("opinion_grader", fallback_role="opinion")
+
+    assert config.provider == "aws_kimi"
+    assert config.model_id == "moonshotai/Kimi-K2.6"
+    assert config.server_url == "https://kimi.aws.example/v1"
+    assert config.server_api_key == "test-key"
 
 
 def test_opinion_with_mock_deep_agent(monkeypatch):
@@ -82,7 +99,7 @@ def test_opinion_with_mock_deep_agent(monkeypatch):
     )
     monkeypatch.setattr(
         opinion,
-        "_create_opinion_agent",
+        "create_rubric_agent",
         lambda **_: _FakeAgent(),
     )
 
@@ -120,7 +137,7 @@ def test_opinion_raises_graph_contract_error_for_terminal_rubric_failures(
     )
     monkeypatch.setattr(
         opinion,
-        "_create_opinion_agent",
+        "create_rubric_agent",
         lambda **_: _FakeAgent(),
     )
 
@@ -144,7 +161,7 @@ def test_opinion_propagates_agent_error(monkeypatch):
     )
     monkeypatch.setattr(
         opinion,
-        "_create_opinion_agent",
+        "create_rubric_agent",
         lambda **_: _FakeAgent(),
     )
 
