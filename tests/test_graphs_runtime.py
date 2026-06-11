@@ -23,8 +23,8 @@ def test_scan_library_includes_opinion():
     registry = scan_library()
     assert "opinion" in registry
     assert registry["opinion"].INPUT_SCHEMA == {"proposal": "string"}
-    assert registry["opinion"].MODEL == "gpt-4o-mini"
-    assert registry["opinion"].PROVIDER == "openai"
+    assert registry["opinion"].MODEL == "moonshotai/Kimi-K2.6"
+    assert registry["opinion"].PROVIDER == "openai-compatible"
 
 
 def test_build_tool_description_names_available_types():
@@ -81,3 +81,41 @@ def test_skipped_module_does_not_break_scan(tmp_path, monkeypatch):
 
 def test_graph_contract_error_is_runtime_error():
     assert issubclass(GraphContractError, RuntimeError)
+
+
+def test_opinion_rule_filter_matches_configured_pragmatic_names():
+    from services.graphs.library import opinion
+
+    rules = [
+        ("dry", "## DRY\n* **Your Process:**\n    1. Reuse existing logic."),
+        ("memory", "## Memory\n* **Your Process:**\n    1. Search memory."),
+        (
+            "design_by_contract",
+            "## Design by Contract & Crash Early\n* **Your Process:**\n    1. Validate inputs.",
+        ),
+    ]
+
+    selected = opinion._filter_rules(rules, ["DRY", "Design by Contract"])
+
+    assert [name for name, _ in selected] == ["dry", "design_by_contract"]
+
+
+def test_opinion_rule_filter_fails_when_no_rules_match():
+    from services.graphs.library import opinion
+
+    with pytest.raises(ValueError, match="no enabled harness rules matching"):
+        opinion._filter_rules([("memory", "Search memory.")], ["DRY"])
+
+
+def test_rubric_formatting_includes_rule_titles_and_numbered_steps():
+    from services.rubric import rules_to_rubric
+
+    rubric = rules_to_rubric([
+        (
+            "DRY",
+            "## DRY\n* **Your Process:**\n    1. Search for existing code.\n    2. Extend it.",
+        )
+    ])
+
+    assert "- DRY: Search for existing code" in rubric
+    assert "- DRY: Extend it" in rubric
