@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from services.api.models.shared.harness import upsert_item
+from services.api.routers.agents import AgentsRouter
 from services.api.routers.tools import ToolsRouter
 from services.config import ALL_AGENTS
 from tests.conftest import harness_cleanup
@@ -50,3 +51,11 @@ def test_tools_endpoint_project_filter_excludes_other_projects():
     assert "api_filter_global" in names
     assert "api_filter_review" in names
     assert "api_filter_other" not in names
+
+
+def test_assignable_agents_endpoint_groups_virtual_agents():
+    response = AgentsRouter().list_assignable_agents()
+
+    assert response["agents"] == ALL_AGENTS
+    assert "opinion" in response["virtual_agents"]
+    assert "opinion" not in response["agents"]
