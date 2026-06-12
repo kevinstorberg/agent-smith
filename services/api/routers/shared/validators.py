@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, field_validator
 from scripts.shared.validation import (
     MAX_NAME_LENGTH, validate_item_name, validate_repo_format, validate_agents_list,
 )
-from services.config import ALL_AGENTS
+from services.config import ASSIGNABLE_AGENTS
 
 
 def _make_optional(fn):
@@ -26,7 +26,7 @@ def _check_content(v: dict) -> dict:
 
 
 def _check_agents(v: list[str]) -> list[str]:
-    return validate_agents_list(v, ALL_AGENTS)
+    return validate_agents_list(v, ASSIGNABLE_AGENTS)
 
 
 _check_agents_optional = _make_optional(_check_agents)

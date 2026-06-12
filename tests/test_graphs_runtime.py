@@ -83,28 +83,34 @@ def test_graph_contract_error_is_runtime_error():
     assert issubclass(GraphContractError, RuntimeError)
 
 
-def test_opinion_rule_filter_matches_configured_pragmatic_names():
+def test_opinion_loads_rules_for_opinion_agent(monkeypatch):
     from services.graphs.library import opinion
 
-    rules = [
-        ("dry", "## DRY\n* **Your Process:**\n    1. Reuse existing logic."),
-        ("memory", "## Memory\n* **Your Process:**\n    1. Search memory."),
-        (
-            "design_by_contract",
-            "## Design by Contract & Crash Early\n* **Your Process:**\n    1. Validate inputs.",
-        ),
-    ]
+    captured = {}
 
-    selected = opinion._filter_rules(rules, ["DRY", "Design by Contract"])
+    def _fake_collect(agent, project=None):
+        captured["agent"] = agent
+        return [("dry", "## DRY\n* **Your Process:**\n    1. Reuse existing logic.")]
 
-    assert [name for name, _ in selected] == ["dry", "design_by_contract"]
+    monkeypatch.setattr(
+        "services.api.models.rule.collect_rules_from_db", _fake_collect
+    )
+
+    rules = opinion._load_selected_rules()
+
+    assert captured["agent"] == "opinion"
+    assert [name for name, _ in rules] == ["dry"]
 
 
-def test_opinion_rule_filter_fails_when_no_rules_match():
+def test_opinion_fails_when_no_rules_assigned_to_opinion_agent(monkeypatch):
     from services.graphs.library import opinion
 
-    with pytest.raises(ValueError, match="no enabled harness rules matching"):
-        opinion._filter_rules([("memory", "Search memory.")], ["DRY"])
+    monkeypatch.setattr(
+        "services.api.models.rule.collect_rules_from_db", lambda agent, project=None: []
+    )
+
+    with pytest.raises(ValueError, match="assigned to agent 'opinion'"):
+        opinion._load_selected_rules()
 
 
 def test_rubric_formatting_includes_rule_titles_and_numbered_steps():

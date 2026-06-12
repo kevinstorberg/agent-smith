@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import re
 from typing import Any, TypedDict
 from uuid import uuid4
 
@@ -13,11 +12,7 @@ from services.graphs.agents import create_rubric_agent
 from scripts.shared.paths import REPO_ROOT
 from services.rubric import rules_to_prompt_context, rules_to_rubric
 
-RULE_AGENT = os.environ.get("OPINION_RULE_AGENT", "codex")
-RULE_INCLUDE = os.environ.get(
-    "OPINION_RULE_INCLUDE",
-    "DRY,Easier To Change,Design by Contract,No Broken Windows,Tracer Bullets",
-)
+RULE_AGENT = "opinion"
 RUBRIC_MAX_ITERATIONS = os.environ.get("OPINION_RUBRIC_MAX_ITERATIONS", "3")
 INPUT_SCHEMA = {"proposal": "string"}
 
@@ -33,12 +28,15 @@ _SYSTEM_PROMPT = (
 )
 
 _GRADER_PROMPT = (
-    "You are grading a senior engineering opinion against the supplied pragmatic "
-    "engineering rubric. Mark satisfied only when the final opinion materially applies "
-    "the rubric to the user's proposal. If the opinion is vague, flattering, avoids the "
-    "biggest risk, duplicates logic, builds on a known bad foundation, omits boundary "
-    "checks, or fails to recommend tracer-bullet verification when useful, return "
-    "needs_revision with concrete feedback."
+    "You are grading a senior engineer's candid opinion on a proposal. The opinion is "
+    "a short critique, not an implementation plan, code review, or design document. "
+    "Mark satisfied when the opinion is specific and honest, names the single biggest "
+    "risk, offers concrete simplifications, surfaces unstated assumptions, and applies "
+    "the intent of the rubric principles where they are relevant to the proposal. Do "
+    "not require implementation-plan artifacts: no named function boundaries, file "
+    "lists, code snippets, or step-by-step tracer-bullet plans. Return needs_revision "
+    "only when the opinion is vague, flattering, dodges the biggest risk, or ignores a "
+    "rubric principle that is clearly relevant to this proposal."
 )
 
 _TERMINAL_FAILURES = {"max_iterations_reached", "failed", "grader_error"}
@@ -52,18 +50,27 @@ class State(TypedDict):
 def build_graph():
     rules = _load_selected_rules()
     prompt_context = rules_to_prompt_context(rules)
-    rubric = rules_to_rubric(rules)
+    rubric = (
+        "Judge whether the opinion applies the intent of these principles to the "
+        "proposal. It is a critique, not an implementation plan — principles count "
+        "as applied when the opinion uses them to evaluate the proposal:\n"
+        f"{rules_to_rubric(rules)}"
+    )
+    max_iterations = _configured_max_iterations()
+    evaluations: list[dict] = []
     agent = create_rubric_agent(
         system_prompt=f"{_SYSTEM_PROMPT}\n\n{prompt_context}",
         grader_prompt=_GRADER_PROMPT,
-        max_iterations=_configured_max_iterations(),
+        max_iterations=max_iterations,
         model_role="opinion",
+        on_evaluation=lambda evaluation: evaluations.append(dict(evaluation)),
     )
 
     async def _opine(state: State) -> State:
         proposal = state["proposal"]
         assert isinstance(proposal, str) and proposal.strip(), "proposal must be a non-empty string"
 
+        seen = len(evaluations)
         result = await agent.ainvoke(
             {
                 "messages": [HumanMessage(content=proposal)],
@@ -71,9 +78,12 @@ def build_graph():
             },
             config={"configurable": {"thread_id": f"opinion-{uuid4()}"}},
         )
-        status = _rubric_status(result)
+        run_evaluations = evaluations[seen:]
+        status = _rubric_status(run_evaluations)
+        if status == "needs_revision" and len(run_evaluations) >= max_iterations:
+            status = "max_iterations_reached"
         if status != "satisfied":
-            _raise_contract_error(status, _rubric_explanation(result))
+            _raise_contract_error(status, _rubric_explanation(run_evaluations))
 
         text = _extract_result_text(result)
         if not text.strip():
@@ -101,72 +111,33 @@ def _configured_max_iterations() -> int:
 def _load_selected_rules() -> list[tuple[str, str]]:
     from services.api.models.rule import collect_rules_from_db
 
-    agent = os.environ.get("OPINION_RULE_AGENT", RULE_AGENT)
-    include = _configured_rule_include()
-    rules = collect_rules_from_db(agent, project=str(REPO_ROOT))
-    return _filter_rules(rules, include)
-
-
-def _configured_rule_include() -> list[str]:
-    raw = os.environ.get("OPINION_RULE_INCLUDE", RULE_INCLUDE)
-    return [name.strip() for name in raw.split(",") if name.strip()]
-
-
-def _filter_rules(
-    rules: list[tuple[str, str]],
-    include: list[str] | None,
-) -> list[tuple[str, str]]:
-    if not include:
-        if not rules:
-            raise ValueError("Opinion graph found no enabled harness rules.")
-        return rules
-
-    include_keys = [_normalize_rule_label(name) for name in include]
-    selected = [
-        (name, body)
-        for name, body in rules
-        if _rule_matches_include(name, body, include_keys)
-    ]
-    if not selected:
+    rules = collect_rules_from_db(RULE_AGENT, project=str(REPO_ROOT))
+    if not rules:
         raise ValueError(
-            "Opinion graph found no enabled harness rules matching "
-            f"OPINION_RULE_INCLUDE={','.join(include)}"
+            f"Opinion graph found no enabled harness rules assigned to agent "
+            f"'{RULE_AGENT}'. Assign rules to the '{RULE_AGENT}' agent in the harness."
         )
-    return selected
+    return rules
 
 
-def _rule_matches_include(name: str, body: str, include_keys: list[str]) -> bool:
-    candidate = _normalize_rule_label(f"{name}\n{body[:500]}")
-    return any(key and key in candidate for key in include_keys)
-
-
-def _normalize_rule_label(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", value.lower())
-
-
-def _rubric_status(result: Any) -> str:
-    if isinstance(result, dict):
-        status = result.get("_rubric_status")
-        if isinstance(status, str):
-            return status
-        evaluations = result.get("_rubric_evaluations")
-        if isinstance(evaluations, list) and evaluations:
-            last = evaluations[-1]
-            if isinstance(last, dict) and isinstance(last.get("result"), str):
-                return last["result"]
+def _rubric_status(evaluations: list[dict]) -> str:
+    """The middleware reports rubric state only via the on_evaluation callback
+    (its state keys are private and suppressed inside a parent graph). The last
+    evaluation carries the terminal status, including middleware-synthesized
+    ones like max_iterations_reached and grader_error."""
+    if evaluations:
+        result = evaluations[-1].get("result")
+        if isinstance(result, str):
+            return result
     return "missing_rubric_status"
 
 
-def _rubric_explanation(result: Any) -> str:
-    if not isinstance(result, dict):
-        return "DeepAgents returned a non-dict result."
-    evaluations = result.get("_rubric_evaluations")
-    if isinstance(evaluations, list) and evaluations:
-        last = evaluations[-1]
-        if isinstance(last, dict) and isinstance(last.get("explanation"), str):
-            return last["explanation"]
-    status = result.get("_rubric_status", "missing_rubric_status")
-    return f"Rubric ended with status {status}."
+def _rubric_explanation(evaluations: list[dict]) -> str:
+    for evaluation in reversed(evaluations):
+        explanation = evaluation.get("explanation")
+        if isinstance(explanation, str) and explanation:
+            return explanation
+    return "Rubric middleware produced no evaluations."
 
 
 def _extract_result_text(result: Any) -> str:
