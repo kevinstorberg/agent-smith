@@ -45,7 +45,8 @@ vi.mock('../../context/useNotification', async () => {
   };
 });
 
-const { mockGet, mockUpdateContent, mockUpdateMetadata, mockHistory, mockRemove, mockConfigsAdd, mockConfigsUpdate, mockConfigsRemove } = vi.hoisted(() => ({
+const { mockGet, mockUpdateContent, mockUpdateMetadata, mockHistory, mockRemove, mockConfigsAdd, mockConfigsUpdate, mockConfigsRemove, mockAssignableAgents } = vi.hoisted(() => ({
+  mockAssignableAgents: vi.fn(),
   mockGet: vi.fn(),
   mockUpdateContent: vi.fn(),
   mockUpdateMetadata: vi.fn(),
@@ -59,6 +60,7 @@ const { mockGet, mockUpdateContent, mockUpdateMetadata, mockHistory, mockRemove,
 vi.mock('../../api', () => ({
   api: {
     harness: {
+      assignableAgents: mockAssignableAgents,
       items: {
         get: mockGet,
         updateContent: mockUpdateContent,
@@ -116,6 +118,10 @@ beforeEach(() => {
   mockParams.id = '1';
   mockGet.mockResolvedValue(makeItem());
   mockHistory.mockResolvedValue(makeHistory());
+  mockAssignableAgents.mockResolvedValue({
+    agents: ['claude', 'codex', 'gemini'],
+    virtual_agents: ['opinion'],
+  });
   mockUpdateContent.mockResolvedValue(makeItem({ id: 2, version: 4 }));
   mockUpdateMetadata.mockResolvedValue(makeItem());
   mockConfigsAdd.mockResolvedValue({ id: 50 });

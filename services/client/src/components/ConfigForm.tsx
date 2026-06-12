@@ -1,4 +1,5 @@
 import { ALL_AGENTS, toggleArrayItem, isValidRepo } from '../constants';
+import { AgentCheckboxes } from './AgentCheckboxes';
 
 interface ConfigFormProps {
   title?: string;
@@ -47,12 +48,12 @@ export function ConfigForm({
       <div style={{ marginBottom: 8 }}>
         <label className="form-label">Agents</label>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-          {ALL_AGENTS.map(a => (
-            <label key={a} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 'var(--font-base)' }}>
-              <input type="checkbox" checked={agents.includes(a)} onChange={() => toggleAgent(a)} style={{ accentColor: 'var(--highlight)', width: 14, height: 14 }} />
-              {a}
-            </label>
-          ))}
+          <AgentCheckboxes
+            selected={agents}
+            onToggle={toggleAgent}
+            labelStyle={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 'var(--font-base)' }}
+            checkboxStyle={{ accentColor: 'var(--highlight)', width: 14, height: 14 }}
+          />
         </div>
       </div>
       <div style={{ marginBottom: 12 }}>

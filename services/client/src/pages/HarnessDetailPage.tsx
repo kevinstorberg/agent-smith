@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import MDEditor from '@uiw/react-md-editor';
 import { api } from '../api';
 import type { HarnessItem, HarnessConfig } from '../api';
+import { AgentCheckboxes } from '../components/AgentCheckboxes';
 import { CopyButton } from '../components/CopyButton';
 import { ConfigForm } from '../components/ConfigForm';
 import { DetailPageHeader } from '../components/DetailPageHeader';
@@ -408,17 +409,12 @@ export function HarnessDetailPage() {
               </label>
             )}
             <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>|</span>
-            {ALL_AGENTS.map(agent => (
-              <label key={agent} style={styles.checkboxLabel}>
-                <input
-                  type="checkbox"
-                  checked={(editValues.agents ?? []).includes(agent)}
-                  onChange={() => toggleAgent(agent)}
-                  style={{ accentColor: 'var(--highlight)', width: 16, height: 16 }}
-                />
-                {agent}
-              </label>
-            ))}
+            <AgentCheckboxes
+              selected={editValues.agents ?? []}
+              onToggle={toggleAgent}
+              labelStyle={styles.checkboxLabel}
+              checkboxStyle={{ accentColor: 'var(--highlight)', width: 16, height: 16 }}
+            />
           </div>
         </>
       )}
