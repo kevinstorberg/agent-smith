@@ -76,6 +76,11 @@ export interface PaginationParams {
   offset?: number;
 }
 
+export interface AssignableAgents {
+  agents: string[];
+  virtual_agents: string[];
+}
+
 export interface HarnessConfig {
   id: number;
   device: string;
@@ -243,6 +248,7 @@ function paginationToParams(p?: PaginationParams): Record<string, string> {
 
 export const api = {
   harness: {
+    assignableAgents: () => get<AssignableAgents>('/harness/agents/assignable'),
     rules: () => get<Rule[]>('/harness/rules'),
     skills: () => get<Skill[]>('/harness/skills'),
     mcp: () => get<McpServer[]>('/harness/mcp'),

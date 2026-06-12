@@ -7,6 +7,10 @@ from pathlib import Path
 
 import tomli_w
 
+# Harness consumers that run in-process (e.g. the opinion graph) rather than
+# syncing config files to disk. Assignable to items, never sync/unsync targets.
+VIRTUAL_AGENTS: tuple[str, ...] = ("opinion",)
+
 AGENT_TARGETS = {
     "claude": {
         "rules_file": "~/.claude/CLAUDE.md",

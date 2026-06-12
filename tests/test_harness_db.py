@@ -35,6 +35,31 @@ def test_upsert_rule_rejects_empty_name():
         upsert_item("rule", "", content=RULE_CONTENT, agents=ALL_AGENTS)
 
 
+def test_upsert_preserves_virtual_agent_assignments():
+    upsert_item("rule", "test_virtual", content=RULE_CONTENT, agents=[*ALL_AGENTS, "opinion"])
+    upsert_item("rule", "test_virtual", content=RULE_CONTENT, agents=ALL_AGENTS)
+    row = get_item("rule", "test_virtual")
+    assert row["version"] == 2
+    assert "opinion" in row["agents"]
+    assert set(ALL_AGENTS) <= set(row["agents"])
+
+
+def test_upsert_does_not_add_virtual_agents_to_new_items():
+    upsert_item("rule", "test_no_virtual", content=RULE_CONTENT, agents=ALL_AGENTS)
+    row = get_item("rule", "test_no_virtual")
+    assert "opinion" not in row["agents"]
+
+
+def test_update_metadata_still_removes_virtual_agents():
+    from services.api.models.shared.harness import update_metadata
+
+    upsert_item("rule", "test_virtual_rm", content=RULE_CONTENT, agents=[*ALL_AGENTS, "opinion"])
+    row = get_item("rule", "test_virtual_rm")
+    update_metadata("rule", row["id"], agents=ALL_AGENTS)
+    row = get_item("rule", "test_virtual_rm")
+    assert "opinion" not in row["agents"]
+
+
 def test_list_rules_ordered_by_sort_key():
     upsert_item("rule", "test_zz", content=RULE_CONTENT, agents=ALL_AGENTS, sort_key=20)
     upsert_item("rule", "test_aa", content=RULE_CONTENT, agents=ALL_AGENTS, sort_key=10)

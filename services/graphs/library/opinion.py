@@ -1,13 +1,19 @@
 """Opinion: returns a critical opinion on a proposed plan or architecture."""
 from __future__ import annotations
 
-from typing import TypedDict
+import os
+from typing import Any, TypedDict
+from uuid import uuid4
 
-from langchain.chat_models import init_chat_model
+from langchain_core.messages import HumanMessage
 from langgraph.graph import END, START, StateGraph
 
-MODEL = "gpt-4o-mini"
-PROVIDER = "openai"
+from services.graphs.agents import create_rubric_agent
+from scripts.shared.paths import REPO_ROOT
+from services.rubric import rules_to_prompt_context, rules_to_rubric
+
+RULE_AGENT = "opinion"
+RUBRIC_MAX_ITERATIONS = os.environ.get("OPINION_RUBRIC_MAX_ITERATIONS", "3")
 INPUT_SCHEMA = {"proposal": "string"}
 
 _SYSTEM_PROMPT = (
@@ -17,9 +23,23 @@ _SYSTEM_PROMPT = (
     "  2. The single biggest risk or weakness you see.\n"
     "  3. One or two concrete simplifications or alternatives worth considering.\n"
     "  4. Any unstated assumptions the author should verify.\n"
-    "Keep the response tight — prioritize signal over breadth. Do not flatter; do not "
+    "Keep the response tight - prioritize signal over breadth. Do not flatter; do not "
     "hedge."
 )
+
+_GRADER_PROMPT = (
+    "You are grading a senior engineer's candid opinion on a proposal. The opinion is "
+    "a short critique, not an implementation plan, code review, or design document. "
+    "Mark satisfied when the opinion is specific and honest, names the single biggest "
+    "risk, offers concrete simplifications, surfaces unstated assumptions, and applies "
+    "the intent of the rubric principles where they are relevant to the proposal. Do "
+    "not require implementation-plan artifacts: no named function boundaries, file "
+    "lists, code snippets, or step-by-step tracer-bullet plans. Return needs_revision "
+    "only when the opinion is vague, flattering, dodges the biggest risk, or ignores a "
+    "rubric principle that is clearly relevant to this proposal."
+)
+
+_TERMINAL_FAILURES = {"max_iterations_reached", "failed", "grader_error"}
 
 
 class State(TypedDict):
@@ -28,14 +48,47 @@ class State(TypedDict):
 
 
 def build_graph():
-    llm = init_chat_model(model=MODEL, model_provider=PROVIDER)
+    rules = _load_selected_rules()
+    prompt_context = rules_to_prompt_context(rules)
+    rubric = (
+        "Judge whether the opinion applies the intent of these principles to the "
+        "proposal. It is a critique, not an implementation plan — principles count "
+        "as applied when the opinion uses them to evaluate the proposal:\n"
+        f"{rules_to_rubric(rules)}"
+    )
+    max_iterations = _configured_max_iterations()
+    evaluations: list[dict] = []
+    agent = create_rubric_agent(
+        system_prompt=f"{_SYSTEM_PROMPT}\n\n{prompt_context}",
+        grader_prompt=_GRADER_PROMPT,
+        max_iterations=max_iterations,
+        model_role="opinion",
+        on_evaluation=lambda evaluation: evaluations.append(dict(evaluation)),
+    )
 
     async def _opine(state: State) -> State:
-        msg = await llm.ainvoke([
-            ("system", _SYSTEM_PROMPT),
-            ("user", state["proposal"]),
-        ])
-        return {"proposal": state["proposal"], "result": _extract_text(msg)}
+        proposal = state["proposal"]
+        assert isinstance(proposal, str) and proposal.strip(), "proposal must be a non-empty string"
+
+        seen = len(evaluations)
+        result = await agent.ainvoke(
+            {
+                "messages": [HumanMessage(content=proposal)],
+                "rubric": rubric,
+            },
+            config={"configurable": {"thread_id": f"opinion-{uuid4()}"}},
+        )
+        run_evaluations = evaluations[seen:]
+        status = _rubric_status(run_evaluations)
+        if status == "needs_revision" and len(run_evaluations) >= max_iterations:
+            status = "max_iterations_reached"
+        if status != "satisfied":
+            _raise_contract_error(status, _rubric_explanation(run_evaluations))
+
+        text = _extract_result_text(result)
+        if not text.strip():
+            _raise_contract_error("empty_result", "Opinion graph returned an empty response.")
+        return {"proposal": proposal, "result": text}
 
     g = StateGraph(State)
     g.add_node("opine", _opine)
@@ -44,7 +97,69 @@ def build_graph():
     return g.compile()
 
 
-def _extract_text(msg) -> str:
+def _configured_max_iterations() -> int:
+    raw = os.environ.get("OPINION_RUBRIC_MAX_ITERATIONS", RUBRIC_MAX_ITERATIONS)
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError("OPINION_RUBRIC_MAX_ITERATIONS must be an integer") from exc
+    if not 1 <= value <= 20:
+        raise ValueError("OPINION_RUBRIC_MAX_ITERATIONS must be between 1 and 20")
+    return value
+
+
+def _load_selected_rules() -> list[tuple[str, str]]:
+    from services.api.models.rule import collect_rules_from_db
+
+    rules = collect_rules_from_db(RULE_AGENT, project=str(REPO_ROOT))
+    if not rules:
+        raise ValueError(
+            f"Opinion graph found no enabled harness rules assigned to agent "
+            f"'{RULE_AGENT}'. Assign rules to the '{RULE_AGENT}' agent in the harness."
+        )
+    return rules
+
+
+def _rubric_status(evaluations: list[dict]) -> str:
+    """The middleware reports rubric state only via the on_evaluation callback
+    (its state keys are private and suppressed inside a parent graph). The last
+    evaluation carries the terminal status, including middleware-synthesized
+    ones like max_iterations_reached and grader_error."""
+    if evaluations:
+        result = evaluations[-1].get("result")
+        if isinstance(result, str):
+            return result
+    return "missing_rubric_status"
+
+
+def _rubric_explanation(evaluations: list[dict]) -> str:
+    for evaluation in reversed(evaluations):
+        explanation = evaluation.get("explanation")
+        if isinstance(explanation, str) and explanation:
+            return explanation
+    return "Rubric middleware produced no evaluations."
+
+
+def _extract_result_text(result: Any) -> str:
+    if isinstance(result, dict):
+        messages = result.get("messages")
+        if isinstance(messages, list) and messages:
+            return _extract_text(messages[-1])
+        output = result.get("output") or result.get("result")
+        if output is not None:
+            return _extract_text(output)
+    return _extract_text(result)
+
+
+def _extract_text(msg: Any) -> str:
+    text = getattr(msg, "text", None)
+    if isinstance(text, str):
+        return text
+    if callable(text):
+        value = text()
+        if isinstance(value, str):
+            return value
+
     content = getattr(msg, "content", msg)
     if isinstance(content, str):
         return content
@@ -52,3 +167,13 @@ def _extract_text(msg) -> str:
         parts = [p.get("text", "") if isinstance(p, dict) else str(p) for p in content]
         return "".join(parts)
     return str(content)
+
+
+def _raise_contract_error(status: str, explanation: str) -> None:
+    from services.graphs.runtime import GraphContractError
+
+    if status in _TERMINAL_FAILURES:
+        raise GraphContractError(
+            f"Opinion rubric did not pass: {status}. {explanation}"
+        )
+    raise GraphContractError(f"Opinion graph contract failed: {status}. {explanation}")

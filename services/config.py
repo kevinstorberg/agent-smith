@@ -18,7 +18,7 @@ from scripts.shared.env import _load_env_file
 _load_env_file(_env_file)
 _load_env_file(_env_default)
 
-from scripts.shared.agents import AGENT_TARGETS
+from scripts.shared.agents import AGENT_TARGETS, VIRTUAL_AGENTS
 
 _db_var = f"DATABASE_URL_{APP_ENV.upper()}"
 DATABASE_URL: str = os.environ.get(_db_var, "")
@@ -29,6 +29,7 @@ if "pytest" in sys.modules and APP_ENV != "test":
     raise SystemExit(f"Tests can only run in APP_ENV=test, got APP_ENV={APP_ENV}.")
 
 ALL_AGENTS: list[str] = list(AGENT_TARGETS)
+ASSIGNABLE_AGENTS: list[str] = [*ALL_AGENTS, *VIRTUAL_AGENTS]
 DEVICE_NAME: str = os.environ.get("DEVICE_NAME", "my-space")
 DASHBOARD_PORT: str = os.environ.get("DASHBOARD_PORT", "7654")
 MCP_BASE: str = f"http://localhost:{DASHBOARD_PORT}"

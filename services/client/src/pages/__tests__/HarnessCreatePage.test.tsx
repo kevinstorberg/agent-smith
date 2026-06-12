@@ -39,14 +39,16 @@ vi.mock('../../context/useNotification', async () => {
   };
 });
 
-const { mockCreate, mockUpdateMetadata } = vi.hoisted(() => ({
+const { mockCreate, mockUpdateMetadata, mockAssignableAgents } = vi.hoisted(() => ({
   mockCreate: vi.fn(),
   mockUpdateMetadata: vi.fn(),
+  mockAssignableAgents: vi.fn(),
 }));
 
 vi.mock('../../api', () => ({
   api: {
     harness: {
+      assignableAgents: mockAssignableAgents,
       items: {
         create: mockCreate,
         updateMetadata: mockUpdateMetadata,
@@ -60,6 +62,10 @@ beforeEach(() => {
   mockLocation.pathname = '/harness/rule/new';
   mockCreate.mockResolvedValue({ id: 99 });
   mockUpdateMetadata.mockResolvedValue({});
+  mockAssignableAgents.mockResolvedValue({
+    agents: ['claude', 'codex', 'gemini'],
+    virtual_agents: ['opinion'],
+  });
 });
 
 describe('HarnessCreatePage', () => {
@@ -67,6 +73,13 @@ describe('HarnessCreatePage', () => {
     mockLocation.pathname = '/harness/rule/new';
     renderWithProviders(<HarnessCreatePage />);
     expect(screen.getByText('New Rule')).toBeInTheDocument();
+  });
+
+  it('renders virtual agents from the API, unchecked by default', async () => {
+    renderWithProviders(<HarnessCreatePage />);
+    const opinionCheckbox = await screen.findByLabelText(/opinion/);
+    expect(opinionCheckbox).not.toBeChecked();
+    expect(screen.getByLabelText('claude')).toBeChecked();
   });
 
   it('derives type from URL path - tool', () => {

@@ -1,28 +1,17 @@
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
 
 from deepeval.metrics import GEval
 from deepeval.test_case import LLMTestCase, LLMTestCaseParams
+from services.rubric import rule_to_eval_steps
 
 JUDGE_MODEL = os.environ.get("EVAL_JUDGE_MODEL", "gpt-5.4")
 
 
-def _strip_code_blocks(text: str) -> str:
-    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
-    text = re.sub(r"```.*", "", text, flags=re.DOTALL)
-    return text
-
-
 def _rule_to_steps(rule_content: str) -> list[str]:
-    stripped = _strip_code_blocks(rule_content)
-    steps = []
-    for match in re.finditer(r"^\s*\d+\.\s+(.+)", stripped, re.MULTILINE):
-        statement = match.group(1).rstrip(".")
-        steps.append(f"Does the output demonstrate: {statement}?")
-    return steps
+    return rule_to_eval_steps(rule_content)
 
 
 def evaluate(

@@ -23,8 +23,8 @@ def test_scan_library_includes_opinion():
     registry = scan_library()
     assert "opinion" in registry
     assert registry["opinion"].INPUT_SCHEMA == {"proposal": "string"}
-    assert registry["opinion"].MODEL == "gpt-4o-mini"
-    assert registry["opinion"].PROVIDER == "openai"
+    assert not hasattr(registry["opinion"], "MODEL")
+    assert not hasattr(registry["opinion"], "PROVIDER")
 
 
 def test_build_tool_description_names_available_types():
@@ -81,3 +81,47 @@ def test_skipped_module_does_not_break_scan(tmp_path, monkeypatch):
 
 def test_graph_contract_error_is_runtime_error():
     assert issubclass(GraphContractError, RuntimeError)
+
+
+def test_opinion_loads_rules_for_opinion_agent(monkeypatch):
+    from services.graphs.library import opinion
+
+    captured = {}
+
+    def _fake_collect(agent, project=None):
+        captured["agent"] = agent
+        return [("dry", "## DRY\n* **Your Process:**\n    1. Reuse existing logic.")]
+
+    monkeypatch.setattr(
+        "services.api.models.rule.collect_rules_from_db", _fake_collect
+    )
+
+    rules = opinion._load_selected_rules()
+
+    assert captured["agent"] == "opinion"
+    assert [name for name, _ in rules] == ["dry"]
+
+
+def test_opinion_fails_when_no_rules_assigned_to_opinion_agent(monkeypatch):
+    from services.graphs.library import opinion
+
+    monkeypatch.setattr(
+        "services.api.models.rule.collect_rules_from_db", lambda agent, project=None: []
+    )
+
+    with pytest.raises(ValueError, match="assigned to agent 'opinion'"):
+        opinion._load_selected_rules()
+
+
+def test_rubric_formatting_includes_rule_titles_and_numbered_steps():
+    from services.rubric import rules_to_rubric
+
+    rubric = rules_to_rubric([
+        (
+            "DRY",
+            "## DRY\n* **Your Process:**\n    1. Search for existing code.\n    2. Extend it.",
+        )
+    ])
+
+    assert "- DRY: Search for existing code" in rubric
+    assert "- DRY: Extend it" in rubric

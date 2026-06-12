@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from psycopg2.extras import Json, RealDictCursor
 
+from scripts.shared.agents import VIRTUAL_AGENTS
 from scripts.shared.validation import assert_not_empty
 from services.db import get_connection
 from services.api.models.base import BaseModel
@@ -354,6 +355,12 @@ def upsert_item(
     existing = get_item(item_type, name, project=project)
     if existing:
         new_version = existing["version"] + 1
+        # Virtual agents (e.g. the opinion graph) have no synced config files,
+        # so file-derived upserts like reverse_sync can never legitimately
+        # remove them. Explicit removal goes through update_metadata instead.
+        preserved = set(existing.get("agents") or []) & set(VIRTUAL_AGENTS)
+        if preserved:
+            agents = sorted(set(agents or []) | preserved)
     else:
         new_version = 1
 

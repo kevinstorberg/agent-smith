@@ -4,6 +4,7 @@ import MDEditor from '@uiw/react-md-editor';
 import { api } from '../api';
 import { useNotification } from '../context/useNotification';
 import { ALL_AGENTS, TYPE_PATHS, TYPE_LABELS, isMarkdownType, toggleArrayItem, formatError, MAX_NAME_LENGTH, nameError, isValidRepo } from '../constants';
+import { AgentCheckboxes } from '../components/AgentCheckboxes';
 import { FieldError } from '../components/FieldError';
 import { harnessStyles as styles } from '../styles/harness';
 import { validators } from '../utils/validation';
@@ -144,17 +145,12 @@ export function HarnessCreatePage() {
       <div style={styles.field}>
         <label style={styles.label}>Agents</label>
         <div style={styles.checkboxRow}>
-          {ALL_AGENTS.map(agent => (
-            <label key={agent} style={styles.checkboxLabel}>
-              <input
-                type="checkbox"
-                checked={agents.includes(agent)}
-                onChange={() => toggleAgent(agent)}
-                style={{ accentColor: 'var(--highlight)', width: 16, height: 16 }}
-              />
-              {agent}
-            </label>
-          ))}
+          <AgentCheckboxes
+            selected={agents}
+            onToggle={toggleAgent}
+            labelStyle={styles.checkboxLabel}
+            checkboxStyle={{ accentColor: 'var(--highlight)', width: 16, height: 16 }}
+          />
         </div>
       </div>
 

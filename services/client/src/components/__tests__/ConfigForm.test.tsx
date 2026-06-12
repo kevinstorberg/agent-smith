@@ -2,6 +2,13 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ConfigForm } from '../ConfigForm';
 
+vi.mock('../../hooks/useAssignableAgents', () => ({
+  useAssignableAgents: () => ({
+    agents: ['claude', 'codex', 'gemini'],
+    virtual_agents: ['opinion'],
+  }),
+}));
+
 function defaultProps(overrides = {}) {
   return {
     device: '*',
@@ -47,6 +54,19 @@ describe('ConfigForm', () => {
   it('disables save when repo is invalid', () => {
     render(<ConfigForm {...defaultProps({ repo: 'invalid' })} />);
     expect(screen.getByText('Save')).toBeDisabled();
+  });
+
+  it('renders virtual agents with a graph marker', () => {
+    render(<ConfigForm {...defaultProps()} />);
+    expect(screen.getByLabelText(/opinion/)).toBeInTheDocument();
+    expect(screen.getByText('(graph)')).toBeInTheDocument();
+  });
+
+  it('calls onAgentsChange when virtual agent checkbox toggled', () => {
+    const onAgentsChange = vi.fn();
+    render(<ConfigForm {...defaultProps({ agents: ['claude'], onAgentsChange })} />);
+    fireEvent.click(screen.getByLabelText(/opinion/));
+    expect(onAgentsChange).toHaveBeenCalledWith(['claude', 'opinion']);
   });
 
   it('calls onAgentsChange when agent checkbox toggled', () => {
