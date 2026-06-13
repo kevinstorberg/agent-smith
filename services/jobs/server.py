@@ -20,7 +20,7 @@ def job_create(
     input_params: dict | None = None,
     description: str = "",
 ) -> dict:
-    """Create a background job that runs a shell command on a fixed interval.
+    """Create a background job that runs a shell command or an in-process graph on a fixed interval.
 
     The job runs everywhere by default (a '*'/'*' config is created); narrow
     scope with job_add_config.
@@ -111,7 +111,7 @@ def job_delete(job_id: int) -> str:
 
 @mcp.tool()
 async def job_run_now(job_id: int) -> dict:
-    """Run a job's command immediately, ignoring its schedule and scoping.
+    """Run a job immediately, ignoring its schedule and scoping.
 
     Returns the execution result {success, output, error, duration_seconds, exit_code}.
     """

@@ -1,4 +1,4 @@
-"""Background job scheduler: a pure-asyncio interval loop + subprocess executor.
+"""Background job scheduler: a pure-asyncio interval loop that runs shell-command or in-process graph jobs.
 
 The scheduler is a single long-lived asyncio task started from the FastAPI
 lifespan. Because it is created with ``asyncio.create_task`` inside the running

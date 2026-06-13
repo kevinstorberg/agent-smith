@@ -22,7 +22,6 @@ class JobConfigModel(BaseModel):
         exclude: bool = False,
         conn=None,
     ) -> int:
-        """Create a new job config."""
         cls._validate_id(job_id)
         return super().create(
             conn=conn,
@@ -35,14 +34,12 @@ class JobConfigModel(BaseModel):
 
     @classmethod
     def update(cls, config_id: int, **fields) -> None:
-        """Update a job config."""
         clean = cls._collect_fields(**fields)
         if clean:
             cls.dynamic_update(config_id, clean)
 
     @classmethod
     def list_for_job(cls, job_id: int) -> list[dict]:
-        """List all configs for a specific job."""
         cls._validate_id(job_id)
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:

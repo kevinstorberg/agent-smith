@@ -44,7 +44,6 @@ class JobExecutionModel(BaseModel):
     def list_for_job(
         cls, job_id: int, limit: int = 50, offset: int = 0
     ) -> tuple[list[dict], int]:
-        """Get execution history for a specific job."""
         cls._validate_id(job_id)
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:

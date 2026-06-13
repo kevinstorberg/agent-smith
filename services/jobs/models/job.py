@@ -41,7 +41,6 @@ class BackgroundJobModel(BaseModel):
         description: str | None = None,
         conn=None,
     ) -> int:
-        """Create a new background job."""
         cls._validate_required(
             {"name": name, "schedule_config": schedule_config},
             ["name", "schedule_config"],

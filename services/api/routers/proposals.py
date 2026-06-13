@@ -28,8 +28,7 @@ log = logging.getLogger("proposals.router")
 
 router = APIRouter()
 
-# The seeded background job the "Generate now" button triggers (see docs in
-# the improve graph / plan §8: job_create(name="improvement-proposals", ...)).
+# Name of the background job the "Generate now" button (and the scheduler) runs.
 GENERATE_JOB_NAME = "improvement-proposals"
 
 
