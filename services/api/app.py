@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from services.db import init_db
 from services.db.seed import seed_all
 from services.api.routers import harness_router
-from services.api.routers import memory, evals, plans, jobs, eval_suites as eval_configs
+from services.api.routers import memory, evals, plans, jobs, proposals, eval_suites as eval_configs
 from services.memory.server import mcp as memory_mcp
 from services.plans.server import mcp as plans_mcp
 from services.harness.server import mcp as harness_mcp
@@ -57,6 +57,7 @@ app.include_router(memory.router, prefix="/api/memory", tags=["memory"])
 app.include_router(evals.router, prefix="/api/evals", tags=["evals"])
 app.include_router(plans.router, prefix="/api/plans", tags=["plans"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
+app.include_router(proposals.router, prefix="/api/proposals", tags=["proposals"])
 app.include_router(eval_configs.router, prefix="/api/eval-configs", tags=["eval-configs"])
 
 for _srv in MCP_SERVERS:

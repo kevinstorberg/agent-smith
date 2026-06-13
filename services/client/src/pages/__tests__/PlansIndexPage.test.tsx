@@ -33,8 +33,8 @@ const mockUsePagination = usePagination as ReturnType<typeof vi.fn>;
 const mockSearch = api.plans.search as ReturnType<typeof vi.fn>;
 
 const fakePlans = [
-  { id: 1, title: 'Plan Alpha', project: 'proj-a', updated_at: '2026-01-15T10:00:00Z' },
-  { id: 2, title: 'Plan Beta', project: null, updated_at: '2026-02-20T14:30:00Z' },
+  { id: 1, title: 'Plan Alpha', project: 'proj-a', status: 'final', updated_at: '2026-01-15T10:00:00Z' },
+  { id: 2, title: 'Plan Beta', project: null, status: 'draft', updated_at: '2026-02-20T14:30:00Z' },
 ];
 
 beforeEach(() => {
@@ -160,6 +160,19 @@ describe('PlansIndexPage', () => {
     const filterInput = screen.getByPlaceholderText('Filter by project...');
     fireEvent.change(filterInput, { target: { value: 'proj-a' } });
 
+    expect(mockSetOffset).toHaveBeenCalledWith(0);
+  });
+
+  it('renders status badges and the status filter', () => {
+    renderWithProviders(<PlansIndexPage />);
+
+    ['all', 'draft', 'final'].forEach(s =>
+      expect(screen.getByRole('button', { name: s })).toBeInTheDocument(),
+    );
+    // 'draft' appears as both a filter button and Plan Beta's row badge.
+    expect(screen.getAllByText('draft').length).toBeGreaterThanOrEqual(2);
+
+    fireEvent.click(screen.getByRole('button', { name: 'draft' }));
     expect(mockSetOffset).toHaveBeenCalledWith(0);
   });
 });

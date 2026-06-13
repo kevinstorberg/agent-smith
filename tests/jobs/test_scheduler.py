@@ -170,6 +170,22 @@ async def test_execute_job_timeout_status():
 
 
 @pytest.mark.asyncio
+async def test_execute_job_timeout_captures_partial_output():
+    """A killed job reports what the subprocess emitted before the deadline,
+    so timeouts are never silent."""
+    command = "echo progress-before-hang; sleep 30"
+    job_id = create_job(
+        name="JOBTEST Timeout Partial",
+        schedule_config={"minutes": 5},
+        input_params={"command": command, "timeout": 2.0},
+    )
+    result = await execute_job({"id": job_id, "input_params": {"command": command, "timeout": 2.0}})
+    assert result["success"] is False
+    assert "progress-before-hang" in result["output"]
+    assert "timed out after" in result["error"]
+
+
+@pytest.mark.asyncio
 async def test_stop_is_prompt_with_long_running_job():
     """A long-running job must not block shutdown; stop() cancels it promptly."""
     job_id = create_job(

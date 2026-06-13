@@ -36,6 +36,7 @@ def _clear_model_env(monkeypatch):
         "MODEL_PROVIDER", "MODEL_ID", "MODEL", "MODEL_SERVER_URL", "MODEL_BASE_URL",
         "MODEL_SERVER_API_KEY", "MODEL_API_KEY", "MODEL_REGION",
         "MODEL_TEMPERATURE", "MODEL_TOP_P", "MODEL_THINKING",
+        "MODEL_MAX_RETRIES", "MODEL_REQUEST_TIMEOUT",
     )
     for prefix in ("OPINION", "OPINION_GRADER", "GRAPH"):
         for suffix in suffixes:
@@ -70,7 +71,39 @@ def test_model_factory_bedrock_builds_mantle_adapter(monkeypatch):
     assert captured["api_key"] == _FAKE_BEDROCK_API_KEY
     assert captured["temperature"] == 1.0
     assert captured["top_p"] == 0.95
+    assert captured["max_retries"] == 6
+    assert captured["timeout"] == 300.0
     assert "extra_body" not in captured
+
+
+def test_model_factory_retry_settings_overridable(monkeypatch):
+    from services.graphs import model_factory
+
+    _clear_model_env(monkeypatch)
+    captured, _ = _patch_fake_adapter(monkeypatch)
+    monkeypatch.setenv("OPINION_MODEL_SERVER_API_KEY", _FAKE_BEDROCK_API_KEY)
+    monkeypatch.setenv("GRAPH_MODEL_MAX_RETRIES", "3")
+    monkeypatch.setenv("OPINION_MODEL_REQUEST_TIMEOUT", "30")
+
+    model_factory.build_chat_model("opinion")
+
+    assert captured["max_retries"] == 3
+    assert captured["timeout"] == 30.0
+
+
+@pytest.mark.parametrize(
+    ("suffix", "value"),
+    [("MODEL_MAX_RETRIES", "-1"), ("MODEL_REQUEST_TIMEOUT", "0")],
+)
+def test_model_factory_rejects_invalid_retry_settings(monkeypatch, suffix, value):
+    from services.graphs.model_factory import load_model_config
+
+    _clear_model_env(monkeypatch)
+    monkeypatch.setenv("OPINION_MODEL_SERVER_API_KEY", _FAKE_BEDROCK_API_KEY)
+    monkeypatch.setenv(f"OPINION_{suffix}", value)
+
+    with pytest.raises(ValueError, match=suffix):
+        load_model_config("opinion")
 
 
 def test_model_factory_bedrock_derives_url_from_region(monkeypatch):
@@ -211,6 +244,76 @@ def test_opinion_with_mock_deep_agent(monkeypatch):
     assert captured["payload"]["messages"][0].content == "Build a new microservice for X."
     assert "- DRY: Search existing code" in captured["payload"]["rubric"]
     assert captured["config"]["configurable"]["thread_id"].startswith("opinion-")
+
+
+def _fake_opinion(monkeypatch, critique="Sound: ok. Risk: none."):
+    from services.graphs.library import opinion
+
+    class _Reply:
+        content = critique
+
+    class _FakeAgent:
+        async def ainvoke(self, payload, config=None):
+            self_on_eval = holder["on_evaluation"]
+            self_on_eval({"result": "satisfied", "explanation": "pass"})
+            return {"messages": [_Reply()]}
+
+    holder = {}
+
+    def _fake_create(**kwargs):
+        holder["on_evaluation"] = kwargs["on_evaluation"]
+        return _FakeAgent()
+
+    monkeypatch.setattr(
+        opinion, "_load_selected_rules",
+        lambda: [("DRY", "## DRY\n* **Your Process:**\n    1. Search existing code.")],
+    )
+    monkeypatch.setattr(opinion, "create_rubric_agent", _fake_create)
+
+
+def test_opinion_persists_draft_and_feedback(monkeypatch):
+    from services.api.models.plan import list_plans
+    from services.api.models.plan_feedback import list_feedback_for_plan
+    from services.db import get_connection
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM plan_feedback")
+            cur.execute("DELETE FROM plans")
+
+    critique = "Sound: clear. Risk: scope creep. Simplification: drop X."
+    _fake_opinion(monkeypatch, critique=critique)
+    proposal = "# Build service X\n\nFull untruncated proposal body."
+
+    result = asyncio.run(run_graph("opinion", {"proposal": proposal}))
+    assert result == critique
+
+    drafts, total = list_plans(status="draft")
+    assert total == 1
+    draft = drafts[0]
+    assert draft["title"] == "Build service X"
+    feedback = list_feedback_for_plan(draft["id"])
+    assert len(feedback) == 1 and feedback[0]["body"] == critique
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM plan_feedback")
+            cur.execute("DELETE FROM plans")
+
+
+def test_opinion_persistence_is_best_effort(monkeypatch):
+    """A persistence failure must not block the critique from being returned."""
+    _fake_opinion(monkeypatch, critique="Critique body")
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(
+        "services.api.models.plan_feedback.record_opinion_review", _boom
+    )
+
+    result = asyncio.run(run_graph("opinion", {"proposal": "anything"}))
+    assert result == "Critique body"
 
 
 @pytest.mark.parametrize("status", ["max_iterations_reached", "grader_error"])

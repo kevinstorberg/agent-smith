@@ -26,6 +26,8 @@ class GraphModelConfig:
     temperature: float
     top_p: float
     max_tokens: int
+    max_retries: int
+    request_timeout: float
 
 
 def build_chat_model(role: str, fallback_role: str | None = None) -> BaseChatModel:
@@ -71,6 +73,8 @@ def load_model_config(role: str, fallback_role: str | None = None) -> GraphModel
         temperature=_float_setting(role, "MODEL_TEMPERATURE", 1.0, fallback_role),
         top_p=_float_setting(role, "MODEL_TOP_P", 0.95, fallback_role),
         max_tokens=_int_setting(role, "MODEL_MAX_TOKENS", 8192, fallback_role),
+        max_retries=_int_setting(role, "MODEL_MAX_RETRIES", 6, fallback_role),
+        request_timeout=_float_setting(role, "MODEL_REQUEST_TIMEOUT", 300.0, fallback_role),
     )
     _validate_config(role, config)
     return config
@@ -84,6 +88,8 @@ def _build_bedrock(config: GraphModelConfig) -> BaseChatModel:
         temperature=config.temperature,
         top_p=config.top_p,
         max_tokens=config.max_tokens,
+        max_retries=config.max_retries,
+        timeout=config.request_timeout,
     )
 
 
@@ -103,6 +109,10 @@ def _validate_config(role: str, config: GraphModelConfig) -> None:
         raise ValueError(f"{prefix}_MODEL_TOP_P must be in (0, 1]")
     if config.max_tokens <= 0:
         raise ValueError(f"{prefix}_MODEL_MAX_TOKENS must be positive")
+    if config.max_retries < 0:
+        raise ValueError(f"{prefix}_MODEL_MAX_RETRIES must be non-negative")
+    if config.request_timeout <= 0:
+        raise ValueError(f"{prefix}_MODEL_REQUEST_TIMEOUT must be positive")
 
 
 def _validate_bedrock_config(prefix: str, config: GraphModelConfig) -> None:
@@ -123,7 +133,7 @@ def _validate_bedrock_config(prefix: str, config: GraphModelConfig) -> None:
         raise ValueError(
             f"{prefix}_MODEL_SERVER_API_KEY must be a real Amazon Bedrock API key "
             "(Bedrock console -> API keys -> create long-term key). "
-            "See docs/kimi-bedrock.md."
+            "See the model settings comments in .env.default."
         )
 
 
@@ -140,7 +150,7 @@ def _reject_obsolete_settings(role: str, fallback_role: str | None) -> None:
                     f"{name} is obsolete: the SGLang 'thinking' toggle was removed "
                     "with the self-hosted aws_kimi provider. Remove the variable; "
                     "Bedrock manages Kimi reasoning server-side. "
-                    "See docs/kimi-bedrock.md."
+                    "See the model settings comments in .env.default."
                 )
 
 

@@ -152,13 +152,24 @@ export interface EvalRunDetail extends EvalRun {
   output: string;
 }
 
+export interface PlanFeedback {
+  id: number;
+  plan_id: number;
+  source: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Plan {
   id: number;
   title: string;
   body: string;
   project: string | null;
+  status: 'draft' | 'final';
   created_at: string;
   updated_at: string;
+  feedback?: PlanFeedback[];
 }
 
 export interface JobConfig {
@@ -199,6 +210,39 @@ export interface JobRunResult {
   error: string;
   duration_seconds: number;
   exit_code: number | null;
+}
+
+export interface ProposalEvidence {
+  source: 'plan' | 'memory';
+  id: string;
+  note: string;
+}
+
+export interface Proposal {
+  id: number;
+  target_kind: 'rule' | 'skill' | 'hook' | 'job';
+  action: 'create' | 'update';
+  proposed_item_id: number;
+  target_name: string;
+  project: string | null;
+  target_id: number | null;
+  base_version: number | null;
+  title: string;
+  rationale: string;
+  evidence: ProposalEvidence[];
+  status: 'pending' | 'approved' | 'rejected';
+  applied_ref: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+  // Present on GET /proposals/{id}: the proposed row and the live target for diffing.
+  proposed_item?: (Partial<HarnessItem> & Partial<Job>) | null;
+  current_target?: (Partial<HarnessItem> & Partial<Job>) | null;
+}
+
+export interface ProposalCounts {
+  pending: number;
+  approved: number;
+  rejected: number;
 }
 
 export interface EvalSuite {
@@ -315,9 +359,10 @@ export const api = {
     remove: (id: number) => del<{ deleted: number }>(`/evals/${id}`),
   },
   plans: {
-    list: (pagination?: PaginationParams & { project?: string }) =>
+    list: (pagination?: PaginationParams & { project?: string; status?: string }) =>
       get<Paginated<Plan>>('/plans', {
         ...(pagination?.project ? { project: pagination.project } : {}),
+        ...(pagination?.status ? { status: pagination.status } : {}),
         ...paginationToParams(pagination),
       }),
     search: (q: string) => get<Plan[]>('/plans/search', { q }),
@@ -348,6 +393,19 @@ export const api = {
       remove: (jobId: number, configId: number) =>
         del(`/jobs/${jobId}/configs/${configId}`),
     },
+  },
+  proposals: {
+    list: (status?: string, pagination?: PaginationParams) => {
+      const params = paginationToParams(pagination);
+      if (status) params.status = status;
+      return get<Paginated<Proposal>>('/proposals', params);
+    },
+    counts: () => get<ProposalCounts>('/proposals/counts'),
+    get: (id: number) => get<Proposal>(`/proposals/${id}`),
+    approve: (id: number) => post<Proposal>(`/proposals/${id}/approve`, {}),
+    reject: (id: number) => post<Proposal>(`/proposals/${id}/reject`, {}),
+    remove: (id: number) => del(`/proposals/${id}`),
+    generate: () => post<{ started: boolean; job_id: number }>('/proposals/generate', {}),
   },
   evalConfigs: {
     suites: {

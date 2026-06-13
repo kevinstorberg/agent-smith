@@ -16,13 +16,41 @@ from services.jobs.models.config import JobConfigModel
 from services.jobs.models.job import BackgroundJobModel
 
 
-def require_command(input_params: dict | None) -> None:
-    """Every job is a shell command, so a command is mandatory at creation.
+def validate_input_params(input_params: dict | None) -> None:
+    """A job runs exactly one of: a shell command or an in-process graph.
 
-    Raises ValueError (which the REST layer surfaces as 422) if missing.
+    Shapes:
+      - ``{"command": "<shell>", ...}``
+      - ``{"graph_type": "<graph>", "graph_inputs": {...}}``
+
+    Graph inputs are checked against the graph's INPUT_SCHEMA here so a bad
+    graph job fails at creation time, never at its first scheduled run.
+    Raises ValueError (which the REST layer surfaces as 422).
     """
-    if not (input_params or {}).get("command"):
-        raise ValueError("input_params.command is required")
+    params = input_params or {}
+    command = params.get("command")
+    graph_type = params.get("graph_type")
+
+    if bool(command) == bool(graph_type):
+        raise ValueError("input_params requires exactly one of 'command' or 'graph_type'")
+    if command:
+        if not isinstance(command, str):
+            raise ValueError("input_params.command must be a string")
+        return
+
+    if not isinstance(graph_type, str):
+        raise ValueError("input_params.graph_type must be a string")
+    graph_inputs = params.get("graph_inputs", {})
+    if not isinstance(graph_inputs, dict):
+        raise ValueError("input_params.graph_inputs must be an object")
+
+    # Lazy import: services.jobs must stay importable without the graphs stack.
+    from services.graphs.runtime import validate_inputs
+
+    try:
+        validate_inputs(graph_type, graph_inputs)
+    except KeyError as exc:
+        raise ValueError(exc.args[0]) from exc
 
 
 def create_job_with_default_config(

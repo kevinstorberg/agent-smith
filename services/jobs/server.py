@@ -20,7 +20,7 @@ def job_create(
     input_params: dict | None = None,
     description: str = "",
 ) -> dict:
-    """Create a background job that runs a shell command on a fixed interval.
+    """Create a background job that runs a shell command or an in-process graph on a fixed interval.
 
     The job runs everywhere by default (a '*'/'*' config is created); narrow
     scope with job_add_config.
@@ -29,16 +29,19 @@ def job_create(
         name: Unique job name.
         schedule_config: Interval dict, e.g. {"minutes": 5} or {"hours": 1}.
             Keys: seconds/minutes/hours/days, each a positive number.
-        input_params: Execution params; must include {"command": "<shell command>"}.
+        input_params: Execution params; exactly one of
+            {"command": "<shell command>"} or
+            {"graph_type": "<graph>", "graph_inputs": {...}} (runs a LangGraph
+            workflow in-process; inputs are validated against the graph's schema).
         description: Optional human description.
 
     Returns:
         The created job record.
     """
     from services.jobs.models.job import get_job
-    from services.jobs.service import create_job_with_default_config, require_command
+    from services.jobs.service import create_job_with_default_config, validate_input_params
 
-    require_command(input_params)
+    validate_input_params(input_params)
     job_id = create_job_with_default_config(
         name, schedule_config, input_params or {}, empty_to_none(description)
     )
@@ -83,10 +86,10 @@ def job_update(
     Only non-empty / provided fields are changed.
     """
     from services.jobs.models.job import update_job
-    from services.jobs.service import require_command
+    from services.jobs.service import validate_input_params
 
     if input_params is not None:
-        require_command(input_params)
+        validate_input_params(input_params)
     update_job(
         job_id,
         name=empty_to_none(name),
@@ -108,7 +111,7 @@ def job_delete(job_id: int) -> str:
 
 @mcp.tool()
 async def job_run_now(job_id: int) -> dict:
-    """Run a job's command immediately, ignoring its schedule and scoping.
+    """Run a job immediately, ignoring its schedule and scoping.
 
     Returns the execution result {success, output, error, duration_seconds, exit_code}.
     """

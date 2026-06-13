@@ -1,4 +1,4 @@
-"""Background job scheduler: a pure-asyncio interval loop + subprocess executor.
+"""Background job scheduler: a pure-asyncio interval loop that runs shell-command or in-process graph jobs.
 
 The scheduler is a single long-lived asyncio task started from the FastAPI
 lifespan. Because it is created with ``asyncio.create_task`` inside the running
@@ -11,13 +11,15 @@ loop or other jobs, and a job already in flight is skipped rather than run
 concurrently with itself. Blocking psycopg2 calls are pushed off the event loop
 with ``asyncio.to_thread``.
 
-V1 scope: interval scheduling only, one shell command per job
-(``input_params.command``), no retry. Jobs are gated by their job_configs
-device/repo scoping (see ``services.jobs.scoping``).
+Scope: interval scheduling only, no retry. A job runs exactly one of a shell
+command (``input_params.command``) or an in-process LangGraph workflow
+(``input_params.graph_type`` + ``graph_inputs``). Jobs are gated by their
+job_configs device/repo scoping (see ``services.jobs.scoping``).
 """
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import signal
@@ -62,32 +64,79 @@ def _kill_process_group(proc: asyncio.subprocess.Process) -> None:
         pass
 
 
-async def execute_job(job: dict) -> dict:
-    """Run a job's script once, recording a ``job_executions`` row.
+async def _pump(stream: asyncio.StreamReader | None, buf: bytearray) -> None:
+    """Accumulate a stream into ``buf`` as it arrives, so output captured so far
+    survives a kill — unlike communicate(), which discards partial reads on cancel."""
+    if stream is None:
+        return
+    while True:
+        chunk = await stream.read(8192)
+        if not chunk:
+            return
+        buf.extend(chunk)
 
-    Never raises for a bad command/timeout/error — those are recorded as a
-    failed/timeout execution so the scheduler loop is never crashed. Cancellation
-    (scheduler shutdown) is recorded as 'interrupted' and re-raised after killing
-    the subprocess. Returns the result dict.
+
+# The single home for the job_executions result contract. Any new runner must
+# record through _record_failure / _record_cancelled, not re-inline this dict.
+def _job_result(start: float, *, success: bool, output: str = "", error: str = "", exit_code: int | None = None) -> dict:
+    return {
+        "success": success,
+        "output": output,
+        "error": error,
+        "duration_seconds": round(time.monotonic() - start, 3),
+        "exit_code": exit_code,
+    }
+
+
+async def _record_failure(exec_id: int, job_id: int, start: float, exc: Exception, kind: str) -> dict:
+    """Record the (identical across runners) generic-failure path."""
+    log.exception("job %s %s raised", job_id, kind)
+    result = _job_result(start, success=False, error=f"{type(exc).__name__}: {exc}")
+    await asyncio.to_thread(complete_execution, exec_id, status="failed", result=result)
+    return result
+
+
+def _record_cancelled(exec_id: int, start: float, output: str = "") -> None:
+    """Record a scheduler-shutdown cancellation. Synchronous on purpose: the row
+    must be finalized before the CancelledError re-propagates, and an ``await``
+    here could itself be cancelled (``complete_execution`` is a sync DB write)."""
+    result = _job_result(start, success=False, output=output, error="cancelled (scheduler shutdown)")
+    complete_execution(exec_id, status="interrupted", result=result)
+
+
+async def execute_job(job: dict) -> dict:
+    """Run a job once, recording a ``job_executions`` row.
+
+    A job is either a shell command or an in-process graph run (see module
+    docstring). Never raises for a bad definition/timeout/error — those are
+    recorded as a failed/timeout execution so the scheduler loop is never
+    crashed. Cancellation (scheduler shutdown) is recorded as 'interrupted'
+    and re-raised. Returns the result dict.
     """
     job_id = job["id"]
     params = job.get("input_params") or {}
     command = params.get("command")
+    graph_type = params.get("graph_type")
     exec_id = await asyncio.to_thread(create_execution, job_id=job_id, status="running")
 
-    if not command:
-        result = {
-            "success": False,
-            "output": "",
-            "error": "input_params.command is required",
-            "duration_seconds": 0.0,
-            "exit_code": None,
-        }
+    # Defense in depth for rows created before validate_input_params existed.
+    if bool(command) == bool(graph_type):
+        result = _job_result(
+            time.monotonic(), success=False,
+            error="input_params requires exactly one of 'command' or 'graph_type'",
+        )
         await asyncio.to_thread(complete_execution, exec_id, status="failed", result=result)
         return result
 
+    if command:
+        return await _run_command_job(exec_id, job_id, command, params)
+    return await _run_graph_job(exec_id, job_id, graph_type, params)
+
+
+async def _run_command_job(exec_id: int, job_id: int, command: str, params: dict) -> dict:
     start = time.monotonic()
     proc: asyncio.subprocess.Process | None = None
+    out_buf, err_buf = bytearray(), bytearray()
     try:
         timeout = float(params.get("timeout", JOB_DEFAULT_TIMEOUT))
         proc = await asyncio.create_subprocess_shell(
@@ -96,29 +145,31 @@ async def execute_job(job: dict) -> dict:
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
         )
+        pumps = asyncio.gather(_pump(proc.stdout, out_buf), _pump(proc.stderr, err_buf))
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            await asyncio.wait_for(proc.wait(), timeout=timeout)
+            await pumps
         except asyncio.TimeoutError:
             _kill_process_group(proc)
-            await proc.wait()
-            result = {
-                "success": False,
-                "output": "",
-                "error": f"timed out after {timeout}s",
-                "duration_seconds": round(time.monotonic() - start, 3),
-                "exit_code": None,
-            }
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(pumps, timeout=5)
+            error = f"timed out after {timeout}s"
+            if err_buf.strip():
+                error += "\n--- partial stderr ---\n" + _truncate(bytes(err_buf), JOB_MAX_OUTPUT_BYTES)
+            result = _job_result(
+                start, success=False, output=_truncate(bytes(out_buf), JOB_MAX_OUTPUT_BYTES), error=error,
+            )
             await asyncio.to_thread(complete_execution, exec_id, status="timeout", result=result)
             return result
 
         exit_code = proc.returncode
-        result = {
-            "success": exit_code == 0,
-            "output": _truncate(stdout, JOB_MAX_OUTPUT_BYTES),
-            "error": _truncate(stderr, JOB_MAX_OUTPUT_BYTES),
-            "duration_seconds": round(time.monotonic() - start, 3),
-            "exit_code": exit_code,
-        }
+        result = _job_result(
+            start,
+            success=exit_code == 0,
+            output=_truncate(bytes(out_buf), JOB_MAX_OUTPUT_BYTES),
+            error=_truncate(bytes(err_buf), JOB_MAX_OUTPUT_BYTES),
+            exit_code=exit_code,
+        )
         await asyncio.to_thread(
             complete_execution, exec_id, status="success" if exit_code == 0 else "failed", result=result
         )
@@ -126,27 +177,38 @@ async def execute_job(job: dict) -> dict:
     except asyncio.CancelledError:
         if proc is not None:
             _kill_process_group(proc)
-        result = {
-            "success": False,
-            "output": "",
-            "error": "cancelled (scheduler shutdown)",
-            "duration_seconds": round(time.monotonic() - start, 3),
-            "exit_code": None,
-        }
-        # Synchronous so the row is finalized before the cancellation propagates.
-        complete_execution(exec_id, status="interrupted", result=result)
+        _record_cancelled(exec_id, start, output=_truncate(bytes(out_buf), JOB_MAX_OUTPUT_BYTES))
         raise
     except Exception as exc:  # noqa: BLE001 - job failures must not crash the scheduler
-        log.exception("job %s execution raised", job_id)
-        result = {
-            "success": False,
-            "output": "",
-            "error": f"{type(exc).__name__}: {exc}",
-            "duration_seconds": round(time.monotonic() - start, 3),
-            "exit_code": None,
-        }
-        await asyncio.to_thread(complete_execution, exec_id, status="failed", result=result)
+        return await _record_failure(exec_id, job_id, start, exc, "execution")
+
+
+async def _run_graph_job(exec_id: int, job_id: int, graph_type: str, params: dict) -> dict:
+    """Run a LangGraph workflow in-process, mirroring the subprocess result contract."""
+    # Lazy import: the scheduler must stay usable without the graphs/LLM stack loaded.
+    from services.graphs.runtime import dispatch
+
+    graph_inputs = params.get("graph_inputs") or {}
+    start = time.monotonic()
+    try:
+        timeout = float(params.get("timeout", JOB_DEFAULT_TIMEOUT))
+        try:
+            output = await asyncio.wait_for(dispatch(graph_type, graph_inputs), timeout=timeout)
+        except asyncio.TimeoutError:
+            result = _job_result(start, success=False, error=f"timed out after {timeout}s")
+            await asyncio.to_thread(complete_execution, exec_id, status="timeout", result=result)
+            return result
+
+        result = _job_result(
+            start, success=True, output=_truncate(output.encode("utf-8"), JOB_MAX_OUTPUT_BYTES),
+        )
+        await asyncio.to_thread(complete_execution, exec_id, status="success", result=result)
         return result
+    except asyncio.CancelledError:
+        _record_cancelled(exec_id, start)
+        raise
+    except Exception as exc:  # noqa: BLE001 - graph failures must not crash the scheduler
+        return await _record_failure(exec_id, job_id, start, exc, "graph execution")
 
 
 class JobScheduler:

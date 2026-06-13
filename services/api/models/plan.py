@@ -11,16 +11,29 @@ class PlanModel(BaseModel):
     table = "plans"
 
     @classmethod
-    def create(cls, title: str, body: str, project: str | None = None) -> int:
+    def create(cls, title: str, body: str, project: str | None = None, status: str = "final", conn=None) -> int:
         cls._validate_required({"title": title, "body": body}, ["title", "body"])
-        return super().create(title=title, body=body, project=project)
+        return super().create(conn=conn, title=title, body=body, project=project, status=status)
 
     @classmethod
-    def list(cls, project: str | None = None, limit: int = 10, offset: int = 0) -> tuple[list[dict], int]:
-        where, params = ("WHERE project = %s", (project,)) if project else ("", ())
+    def list(
+        cls,
+        project: str | None = None,
+        status: str | None = None,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        clauses, params = [], []
+        if project:
+            clauses.append("project = %s")
+            params.append(project)
+        if status:
+            clauses.append("status = %s")
+            params.append(status)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         return super().list(
-            columns="id, title, project, created_at, updated_at",
-            where=where, params=params, limit=limit, offset=offset,
+            columns="id, title, project, status, created_at, updated_at",
+            where=where, params=tuple(params), limit=limit, offset=offset,
         )
 
     @classmethod
