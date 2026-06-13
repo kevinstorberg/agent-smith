@@ -3,14 +3,9 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { api } from '../api';
 import type { Proposal } from '../api';
 import { useNotification } from '../context/useNotification';
+import { StatusBadge } from '../components/StatusBadge';
 
 const JOB_FIELDS = ['schedule_config', 'input_params', 'description'] as const;
-
-const STATUS_COLOR: Record<string, string> = {
-  pending: 'var(--info, #3498db)',
-  approved: 'var(--success, #2ecc71)',
-  rejected: 'var(--text-muted)',
-};
 
 function bodyOf(item: Proposal['proposed_item']): string {
   return (item?.content as { body?: string } | undefined)?.body ?? '';
@@ -125,12 +120,7 @@ export function ProposalDetailPage() {
 
       <div className="card">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-          <span
-            className="tag"
-            style={{ color: STATUS_COLOR[proposal.status], borderColor: STATUS_COLOR[proposal.status] }}
-          >
-            {proposal.status}
-          </span>
+          <StatusBadge status={proposal.status} kind="proposal" />
           <span className="tag">{proposal.target_kind}</span>
           <span style={{ color: 'var(--text-muted)' }}>
             {proposal.action} <strong style={{ color: 'var(--text)' }}>{proposal.target_name}</strong>

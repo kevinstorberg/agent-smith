@@ -7,6 +7,7 @@ import type { Plan } from '../api';
 import { CopyButton } from '../components/CopyButton';
 import { FieldError } from '../components/FieldError';
 import { DetailPageHeader } from '../components/DetailPageHeader';
+import { StatusBadge } from '../components/StatusBadge';
 import { useDetailPageEdit } from '../hooks/useDetailPageEdit';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { useNotification } from '../context/useNotification';
@@ -197,14 +198,7 @@ export function PlanDetailPage() {
             {plan!.title}
           </h2>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
-            <span
-              className="tag"
-              style={plan!.status === 'draft'
-                ? { color: 'var(--info, #3498db)', borderColor: 'var(--info, #3498db)' }
-                : undefined}
-            >
-              {plan!.status}
-            </span>
+            <StatusBadge status={plan!.status} kind="plan" />
             {plan!.project && (
               <span className="tag tag-project">{plan!.project}</span>
             )}

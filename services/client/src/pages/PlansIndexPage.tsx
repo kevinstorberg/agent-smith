@@ -5,6 +5,7 @@ import type { Plan } from '../api';
 import { Pagination } from '../components/Pagination';
 import { FilterBar } from '../components/FilterBar';
 import { DateCell } from '../components/table';
+import { StatusBadge } from '../components/StatusBadge';
 import { usePagination } from '../hooks/usePagination';
 import { makeRowClickable } from '../utils/a11y';
 
@@ -90,16 +91,7 @@ export function PlansIndexPage() {
               style={{ cursor: 'pointer' }}
             >
               <td>{plan.title}</td>
-              <td>
-                <span
-                  className="tag"
-                  style={plan.status === 'draft'
-                    ? { color: 'var(--info, #3498db)', borderColor: 'var(--info, #3498db)' }
-                    : undefined}
-                >
-                  {plan.status}
-                </span>
-              </td>
+              <td><StatusBadge status={plan.status} kind="plan" /></td>
               <td>
                 {plan.project ? (
                   <span className="tag tag-project">{plan.project}</span>

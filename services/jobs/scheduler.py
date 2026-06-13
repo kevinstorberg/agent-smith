@@ -76,6 +76,34 @@ async def _pump(stream: asyncio.StreamReader | None, buf: bytearray) -> None:
         buf.extend(chunk)
 
 
+# The single home for the job_executions result contract. Any new runner must
+# record through _record_failure / _record_cancelled, not re-inline this dict.
+def _job_result(start: float, *, success: bool, output: str = "", error: str = "", exit_code: int | None = None) -> dict:
+    return {
+        "success": success,
+        "output": output,
+        "error": error,
+        "duration_seconds": round(time.monotonic() - start, 3),
+        "exit_code": exit_code,
+    }
+
+
+async def _record_failure(exec_id: int, job_id: int, start: float, exc: Exception, kind: str) -> dict:
+    """Record the (identical across runners) generic-failure path."""
+    log.exception("job %s %s raised", job_id, kind)
+    result = _job_result(start, success=False, error=f"{type(exc).__name__}: {exc}")
+    await asyncio.to_thread(complete_execution, exec_id, status="failed", result=result)
+    return result
+
+
+def _record_cancelled(exec_id: int, start: float, output: str = "") -> None:
+    """Record a scheduler-shutdown cancellation. Synchronous on purpose: the row
+    must be finalized before the CancelledError re-propagates, and an ``await``
+    here could itself be cancelled (``complete_execution`` is a sync DB write)."""
+    result = _job_result(start, success=False, output=output, error="cancelled (scheduler shutdown)")
+    complete_execution(exec_id, status="interrupted", result=result)
+
+
 async def execute_job(job: dict) -> dict:
     """Run a job once, recording a ``job_executions`` row.
 
@@ -93,13 +121,10 @@ async def execute_job(job: dict) -> dict:
 
     # Defense in depth for rows created before validate_input_params existed.
     if bool(command) == bool(graph_type):
-        result = {
-            "success": False,
-            "output": "",
-            "error": "input_params requires exactly one of 'command' or 'graph_type'",
-            "duration_seconds": 0.0,
-            "exit_code": None,
-        }
+        result = _job_result(
+            time.monotonic(), success=False,
+            error="input_params requires exactly one of 'command' or 'graph_type'",
+        )
         await asyncio.to_thread(complete_execution, exec_id, status="failed", result=result)
         return result
 
@@ -131,24 +156,20 @@ async def _run_command_job(exec_id: int, job_id: int, command: str, params: dict
             error = f"timed out after {timeout}s"
             if err_buf.strip():
                 error += "\n--- partial stderr ---\n" + _truncate(bytes(err_buf), JOB_MAX_OUTPUT_BYTES)
-            result = {
-                "success": False,
-                "output": _truncate(bytes(out_buf), JOB_MAX_OUTPUT_BYTES),
-                "error": error,
-                "duration_seconds": round(time.monotonic() - start, 3),
-                "exit_code": None,
-            }
+            result = _job_result(
+                start, success=False, output=_truncate(bytes(out_buf), JOB_MAX_OUTPUT_BYTES), error=error,
+            )
             await asyncio.to_thread(complete_execution, exec_id, status="timeout", result=result)
             return result
 
         exit_code = proc.returncode
-        result = {
-            "success": exit_code == 0,
-            "output": _truncate(bytes(out_buf), JOB_MAX_OUTPUT_BYTES),
-            "error": _truncate(bytes(err_buf), JOB_MAX_OUTPUT_BYTES),
-            "duration_seconds": round(time.monotonic() - start, 3),
-            "exit_code": exit_code,
-        }
+        result = _job_result(
+            start,
+            success=exit_code == 0,
+            output=_truncate(bytes(out_buf), JOB_MAX_OUTPUT_BYTES),
+            error=_truncate(bytes(err_buf), JOB_MAX_OUTPUT_BYTES),
+            exit_code=exit_code,
+        )
         await asyncio.to_thread(
             complete_execution, exec_id, status="success" if exit_code == 0 else "failed", result=result
         )
@@ -156,27 +177,10 @@ async def _run_command_job(exec_id: int, job_id: int, command: str, params: dict
     except asyncio.CancelledError:
         if proc is not None:
             _kill_process_group(proc)
-        result = {
-            "success": False,
-            "output": _truncate(bytes(out_buf), JOB_MAX_OUTPUT_BYTES),
-            "error": "cancelled (scheduler shutdown)",
-            "duration_seconds": round(time.monotonic() - start, 3),
-            "exit_code": None,
-        }
-        # Synchronous so the row is finalized before the cancellation propagates.
-        complete_execution(exec_id, status="interrupted", result=result)
+        _record_cancelled(exec_id, start, output=_truncate(bytes(out_buf), JOB_MAX_OUTPUT_BYTES))
         raise
     except Exception as exc:  # noqa: BLE001 - job failures must not crash the scheduler
-        log.exception("job %s execution raised", job_id)
-        result = {
-            "success": False,
-            "output": "",
-            "error": f"{type(exc).__name__}: {exc}",
-            "duration_seconds": round(time.monotonic() - start, 3),
-            "exit_code": None,
-        }
-        await asyncio.to_thread(complete_execution, exec_id, status="failed", result=result)
-        return result
+        return await _record_failure(exec_id, job_id, start, exc, "execution")
 
 
 async def _run_graph_job(exec_id: int, job_id: int, graph_type: str, params: dict) -> dict:
@@ -191,47 +195,20 @@ async def _run_graph_job(exec_id: int, job_id: int, graph_type: str, params: dic
         try:
             output = await asyncio.wait_for(dispatch(graph_type, graph_inputs), timeout=timeout)
         except asyncio.TimeoutError:
-            result = {
-                "success": False,
-                "output": "",
-                "error": f"timed out after {timeout}s",
-                "duration_seconds": round(time.monotonic() - start, 3),
-                "exit_code": None,
-            }
+            result = _job_result(start, success=False, error=f"timed out after {timeout}s")
             await asyncio.to_thread(complete_execution, exec_id, status="timeout", result=result)
             return result
 
-        result = {
-            "success": True,
-            "output": _truncate(output.encode("utf-8"), JOB_MAX_OUTPUT_BYTES),
-            "error": "",
-            "duration_seconds": round(time.monotonic() - start, 3),
-            "exit_code": None,
-        }
+        result = _job_result(
+            start, success=True, output=_truncate(output.encode("utf-8"), JOB_MAX_OUTPUT_BYTES),
+        )
         await asyncio.to_thread(complete_execution, exec_id, status="success", result=result)
         return result
     except asyncio.CancelledError:
-        result = {
-            "success": False,
-            "output": "",
-            "error": "cancelled (scheduler shutdown)",
-            "duration_seconds": round(time.monotonic() - start, 3),
-            "exit_code": None,
-        }
-        # Synchronous so the row is finalized before the cancellation propagates.
-        complete_execution(exec_id, status="interrupted", result=result)
+        _record_cancelled(exec_id, start)
         raise
     except Exception as exc:  # noqa: BLE001 - graph failures must not crash the scheduler
-        log.exception("job %s graph execution raised", job_id)
-        result = {
-            "success": False,
-            "output": "",
-            "error": f"{type(exc).__name__}: {exc}",
-            "duration_seconds": round(time.monotonic() - start, 3),
-            "exit_code": None,
-        }
-        await asyncio.to_thread(complete_execution, exec_id, status="failed", result=result)
-        return result
+        return await _record_failure(exec_id, job_id, start, exc, "graph execution")
 
 
 class JobScheduler:
