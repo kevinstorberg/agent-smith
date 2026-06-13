@@ -9,7 +9,7 @@ import tomli_w
 
 # Harness consumers that run in-process (e.g. the opinion graph) rather than
 # syncing config files to disk. Assignable to items, never sync/unsync targets.
-VIRTUAL_AGENTS: tuple[str, ...] = ("opinion",)
+VIRTUAL_AGENTS: tuple[str, ...] = ("opinion", "curator")
 
 AGENT_TARGETS = {
     "claude": {

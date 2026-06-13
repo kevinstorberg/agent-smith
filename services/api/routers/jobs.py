@@ -15,7 +15,7 @@ from services.jobs.models.execution import get_execution, list_executions_for_jo
 from services.jobs.models.job import delete_job, get_job, list_jobs, update_job
 from services.jobs.schedule import parse_interval
 from services.jobs.scheduler import execute_job
-from services.jobs.service import create_job_with_default_config, require_command
+from services.jobs.service import create_job_with_default_config, validate_input_params
 from services.api.routers.base import (
     delete_response,
     list_response,
@@ -57,8 +57,8 @@ class JobCreateRequest(BaseModel):
 
     @field_validator("input_params")
     @classmethod
-    def _require_command(cls, value):
-        require_command(value)  # raises ValueError -> 422
+    def _valid_input_params(cls, value):
+        validate_input_params(value)  # raises ValueError -> 422
         return value
 
 
@@ -88,9 +88,9 @@ class JobUpdateRequest(BaseModel):
 
     @field_validator("input_params")
     @classmethod
-    def _require_command(cls, value):
+    def _valid_input_params(cls, value):
         if value is not None:
-            require_command(value)  # raises ValueError -> 422
+            validate_input_params(value)  # raises ValueError -> 422
         return value
 
 

@@ -73,6 +73,7 @@ export function Sidebar() {
         <NavLink to="/memory" className={navClass}>Memory</NavLink>
         <NavLink to="/plans" className={navClass}>Plans</NavLink>
         <NavLink to="/jobs" className={navClass}>Jobs</NavLink>
+        <NavLink to="/proposals" className={navClass}>Proposals</NavLink>
       </div>
 
       <div className="sidebar-section">

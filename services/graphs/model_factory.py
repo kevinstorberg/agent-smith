@@ -123,7 +123,7 @@ def _validate_bedrock_config(prefix: str, config: GraphModelConfig) -> None:
         raise ValueError(
             f"{prefix}_MODEL_SERVER_API_KEY must be a real Amazon Bedrock API key "
             "(Bedrock console -> API keys -> create long-term key). "
-            "See docs/kimi-bedrock.md."
+            "See the model settings comments in .env.default."
         )
 
 
@@ -140,7 +140,7 @@ def _reject_obsolete_settings(role: str, fallback_role: str | None) -> None:
                     f"{name} is obsolete: the SGLang 'thinking' toggle was removed "
                     "with the self-hosted aws_kimi provider. Remove the variable; "
                     "Bedrock manages Kimi reasoning server-side. "
-                    "See docs/kimi-bedrock.md."
+                    "See the model settings comments in .env.default."
                 )
 
 

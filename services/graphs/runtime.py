@@ -67,12 +67,17 @@ def build_tool_description(registry: dict[str, ModuleType] | None = None) -> str
     return "\n".join(lines)
 
 
-async def dispatch(graph_type: str, inputs: dict[str, Any]) -> str:
-    """Validate inputs, run the graph, and return a string-serialized result."""
-    assert isinstance(graph_type, str) and graph_type, "graph type must be a non-empty string"
-    assert isinstance(inputs, dict), "inputs must be a dict"
+def validate_inputs(
+    graph_type: str, inputs: dict[str, Any], registry: dict[str, ModuleType] | None = None
+) -> None:
+    """Validate inputs against a graph's INPUT_SCHEMA without running it.
 
-    registry = scan_library()
+    Shared by ``dispatch`` and job-creation validation so a graph job with bad
+    inputs is rejected when it is created, not at its first scheduled run.
+    Raises KeyError for an unknown graph type, ValueError for bad inputs.
+    """
+    if registry is None:
+        registry = scan_library()
     if graph_type not in registry:
         raise KeyError(f"unknown graph type: '{graph_type}'")
 
@@ -88,7 +93,16 @@ async def dispatch(graph_type: str, inputs: dict[str, Any]) -> str:
                 f"graph '{graph_type}' input '{field}' missing or wrong type"
             )
 
-    graph = mod.build_graph()
+
+async def dispatch(graph_type: str, inputs: dict[str, Any]) -> str:
+    """Validate inputs, run the graph, and return a string-serialized result."""
+    assert isinstance(graph_type, str) and graph_type, "graph type must be a non-empty string"
+    assert isinstance(inputs, dict), "inputs must be a dict"
+
+    registry = scan_library()
+    validate_inputs(graph_type, inputs, registry)
+
+    graph = registry[graph_type].build_graph()
     result = await graph.ainvoke(inputs)
     if not result:
         raise GraphContractError(f"graph '{graph_type}' returned no result")

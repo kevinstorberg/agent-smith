@@ -2,13 +2,19 @@
 from __future__ import annotations
 
 import os
-from typing import Any, TypedDict
+from typing import TypedDict
 from uuid import uuid4
 
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, START, StateGraph
 
-from services.graphs.agents import create_rubric_agent
+from services.graphs.agents import (
+    TERMINAL_FAILURES,
+    create_rubric_agent,
+    rubric_explanation,
+    rubric_status,
+)
+from services.graphs.messages import extract_result_text
 from scripts.shared.paths import REPO_ROOT
 from services.rubric import rules_to_prompt_context, rules_to_rubric
 
@@ -38,9 +44,6 @@ _GRADER_PROMPT = (
     "only when the opinion is vague, flattering, dodges the biggest risk, or ignores a "
     "rubric principle that is clearly relevant to this proposal."
 )
-
-_TERMINAL_FAILURES = {"max_iterations_reached", "failed", "grader_error"}
-
 
 class State(TypedDict):
     proposal: str
@@ -79,13 +82,13 @@ def build_graph():
             config={"configurable": {"thread_id": f"opinion-{uuid4()}"}},
         )
         run_evaluations = evaluations[seen:]
-        status = _rubric_status(run_evaluations)
+        status = rubric_status(run_evaluations)
         if status == "needs_revision" and len(run_evaluations) >= max_iterations:
             status = "max_iterations_reached"
         if status != "satisfied":
-            _raise_contract_error(status, _rubric_explanation(run_evaluations))
+            _raise_contract_error(status, rubric_explanation(run_evaluations))
 
-        text = _extract_result_text(result)
+        text = extract_result_text(result)
         if not text.strip():
             _raise_contract_error("empty_result", "Opinion graph returned an empty response.")
         return {"proposal": proposal, "result": text}
@@ -120,59 +123,10 @@ def _load_selected_rules() -> list[tuple[str, str]]:
     return rules
 
 
-def _rubric_status(evaluations: list[dict]) -> str:
-    """The middleware reports rubric state only via the on_evaluation callback
-    (its state keys are private and suppressed inside a parent graph). The last
-    evaluation carries the terminal status, including middleware-synthesized
-    ones like max_iterations_reached and grader_error."""
-    if evaluations:
-        result = evaluations[-1].get("result")
-        if isinstance(result, str):
-            return result
-    return "missing_rubric_status"
-
-
-def _rubric_explanation(evaluations: list[dict]) -> str:
-    for evaluation in reversed(evaluations):
-        explanation = evaluation.get("explanation")
-        if isinstance(explanation, str) and explanation:
-            return explanation
-    return "Rubric middleware produced no evaluations."
-
-
-def _extract_result_text(result: Any) -> str:
-    if isinstance(result, dict):
-        messages = result.get("messages")
-        if isinstance(messages, list) and messages:
-            return _extract_text(messages[-1])
-        output = result.get("output") or result.get("result")
-        if output is not None:
-            return _extract_text(output)
-    return _extract_text(result)
-
-
-def _extract_text(msg: Any) -> str:
-    text = getattr(msg, "text", None)
-    if isinstance(text, str):
-        return text
-    if callable(text):
-        value = text()
-        if isinstance(value, str):
-            return value
-
-    content = getattr(msg, "content", msg)
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = [p.get("text", "") if isinstance(p, dict) else str(p) for p in content]
-        return "".join(parts)
-    return str(content)
-
-
 def _raise_contract_error(status: str, explanation: str) -> None:
     from services.graphs.runtime import GraphContractError
 
-    if status in _TERMINAL_FAILURES:
+    if status in TERMINAL_FAILURES:
         raise GraphContractError(
             f"Opinion rubric did not pass: {status}. {explanation}"
         )

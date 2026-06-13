@@ -11,9 +11,10 @@ loop or other jobs, and a job already in flight is skipped rather than run
 concurrently with itself. Blocking psycopg2 calls are pushed off the event loop
 with ``asyncio.to_thread``.
 
-V1 scope: interval scheduling only, one shell command per job
-(``input_params.command``), no retry. Jobs are gated by their job_configs
-device/repo scoping (see ``services.jobs.scoping``).
+Scope: interval scheduling only, no retry. A job runs exactly one of a shell
+command (``input_params.command``) or an in-process LangGraph workflow
+(``input_params.graph_type`` + ``graph_inputs``). Jobs are gated by their
+job_configs device/repo scoping (see ``services.jobs.scoping``).
 """
 from __future__ import annotations
 
@@ -63,29 +64,38 @@ def _kill_process_group(proc: asyncio.subprocess.Process) -> None:
 
 
 async def execute_job(job: dict) -> dict:
-    """Run a job's script once, recording a ``job_executions`` row.
+    """Run a job once, recording a ``job_executions`` row.
 
-    Never raises for a bad command/timeout/error — those are recorded as a
-    failed/timeout execution so the scheduler loop is never crashed. Cancellation
-    (scheduler shutdown) is recorded as 'interrupted' and re-raised after killing
-    the subprocess. Returns the result dict.
+    A job is either a shell command or an in-process graph run (see module
+    docstring). Never raises for a bad definition/timeout/error — those are
+    recorded as a failed/timeout execution so the scheduler loop is never
+    crashed. Cancellation (scheduler shutdown) is recorded as 'interrupted'
+    and re-raised. Returns the result dict.
     """
     job_id = job["id"]
     params = job.get("input_params") or {}
     command = params.get("command")
+    graph_type = params.get("graph_type")
     exec_id = await asyncio.to_thread(create_execution, job_id=job_id, status="running")
 
-    if not command:
+    # Defense in depth for rows created before validate_input_params existed.
+    if bool(command) == bool(graph_type):
         result = {
             "success": False,
             "output": "",
-            "error": "input_params.command is required",
+            "error": "input_params requires exactly one of 'command' or 'graph_type'",
             "duration_seconds": 0.0,
             "exit_code": None,
         }
         await asyncio.to_thread(complete_execution, exec_id, status="failed", result=result)
         return result
 
+    if command:
+        return await _run_command_job(exec_id, job_id, command, params)
+    return await _run_graph_job(exec_id, job_id, graph_type, params)
+
+
+async def _run_command_job(exec_id: int, job_id: int, command: str, params: dict) -> dict:
     start = time.monotonic()
     proc: asyncio.subprocess.Process | None = None
     try:
@@ -138,6 +148,61 @@ async def execute_job(job: dict) -> dict:
         raise
     except Exception as exc:  # noqa: BLE001 - job failures must not crash the scheduler
         log.exception("job %s execution raised", job_id)
+        result = {
+            "success": False,
+            "output": "",
+            "error": f"{type(exc).__name__}: {exc}",
+            "duration_seconds": round(time.monotonic() - start, 3),
+            "exit_code": None,
+        }
+        await asyncio.to_thread(complete_execution, exec_id, status="failed", result=result)
+        return result
+
+
+async def _run_graph_job(exec_id: int, job_id: int, graph_type: str, params: dict) -> dict:
+    """Run a LangGraph workflow in-process, mirroring the subprocess result contract."""
+    # Lazy import: the scheduler must stay usable without the graphs/LLM stack loaded.
+    from services.graphs.runtime import dispatch
+
+    graph_inputs = params.get("graph_inputs") or {}
+    start = time.monotonic()
+    try:
+        timeout = float(params.get("timeout", JOB_DEFAULT_TIMEOUT))
+        try:
+            output = await asyncio.wait_for(dispatch(graph_type, graph_inputs), timeout=timeout)
+        except asyncio.TimeoutError:
+            result = {
+                "success": False,
+                "output": "",
+                "error": f"timed out after {timeout}s",
+                "duration_seconds": round(time.monotonic() - start, 3),
+                "exit_code": None,
+            }
+            await asyncio.to_thread(complete_execution, exec_id, status="timeout", result=result)
+            return result
+
+        result = {
+            "success": True,
+            "output": _truncate(output.encode("utf-8"), JOB_MAX_OUTPUT_BYTES),
+            "error": "",
+            "duration_seconds": round(time.monotonic() - start, 3),
+            "exit_code": None,
+        }
+        await asyncio.to_thread(complete_execution, exec_id, status="success", result=result)
+        return result
+    except asyncio.CancelledError:
+        result = {
+            "success": False,
+            "output": "",
+            "error": "cancelled (scheduler shutdown)",
+            "duration_seconds": round(time.monotonic() - start, 3),
+            "exit_code": None,
+        }
+        # Synchronous so the row is finalized before the cancellation propagates.
+        complete_execution(exec_id, status="interrupted", result=result)
+        raise
+    except Exception as exc:  # noqa: BLE001 - graph failures must not crash the scheduler
+        log.exception("job %s graph execution raised", job_id)
         result = {
             "success": False,
             "output": "",

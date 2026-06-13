@@ -224,6 +224,9 @@ def update_content(item_type: str, item_id: int, content: dict) -> int:
             cur.execute(f"SELECT * FROM {table} WHERE id = %s", (item_id,))
             source = cur.fetchone()
             assert source, f"Item not found: {item_id}"
+            assert source["version"] is not None, (
+                f"Item {item_id} is a proposed row (no version); promote it via the proposals service instead."
+            )
 
             new_version = source["version"] + 1
             cur.execute(
@@ -291,7 +294,7 @@ def get_version_history(item_type: str, name: str, project: str | None = None) -
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
-                f"SELECT * FROM {table} WHERE name = %s {proj_clause} ORDER BY version DESC",
+                f"SELECT * FROM {table} WHERE name = %s {proj_clause} AND version IS NOT NULL ORDER BY version DESC",
                 [name] + proj_params,
             )
             return [_row_to_dict(r) for r in cur.fetchall()]
@@ -305,7 +308,7 @@ def get_version_history_summary(item_type: str, name: str, project: str | None =
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
-                f"SELECT id, version, created_at FROM {table} WHERE name = %s {proj_clause} ORDER BY version DESC",
+                f"SELECT id, version, created_at FROM {table} WHERE name = %s {proj_clause} AND version IS NOT NULL ORDER BY version DESC",
                 [name] + proj_params,
             )
             return [dict(r) for r in cur.fetchall()]

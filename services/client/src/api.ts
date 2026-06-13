@@ -201,6 +201,39 @@ export interface JobRunResult {
   exit_code: number | null;
 }
 
+export interface ProposalEvidence {
+  source: 'plan' | 'memory';
+  id: string;
+  note: string;
+}
+
+export interface Proposal {
+  id: number;
+  target_kind: 'rule' | 'skill' | 'hook' | 'job';
+  action: 'create' | 'update';
+  proposed_item_id: number;
+  target_name: string;
+  project: string | null;
+  target_id: number | null;
+  base_version: number | null;
+  title: string;
+  rationale: string;
+  evidence: ProposalEvidence[];
+  status: 'pending' | 'approved' | 'rejected';
+  applied_ref: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+  // Present on GET /proposals/{id}: the proposed row and the live target for diffing.
+  proposed_item?: (Partial<HarnessItem> & Partial<Job>) | null;
+  current_target?: (Partial<HarnessItem> & Partial<Job>) | null;
+}
+
+export interface ProposalCounts {
+  pending: number;
+  approved: number;
+  rejected: number;
+}
+
 export interface EvalSuite {
   id: number;
   name: string;
@@ -348,6 +381,19 @@ export const api = {
       remove: (jobId: number, configId: number) =>
         del(`/jobs/${jobId}/configs/${configId}`),
     },
+  },
+  proposals: {
+    list: (status?: string, pagination?: PaginationParams) => {
+      const params = paginationToParams(pagination);
+      if (status) params.status = status;
+      return get<Paginated<Proposal>>('/proposals', params);
+    },
+    counts: () => get<ProposalCounts>('/proposals/counts'),
+    get: (id: number) => get<Proposal>(`/proposals/${id}`),
+    approve: (id: number) => post<Proposal>(`/proposals/${id}/approve`, {}),
+    reject: (id: number) => post<Proposal>(`/proposals/${id}/reject`, {}),
+    remove: (id: number) => del(`/proposals/${id}`),
+    generate: () => post<{ started: boolean; job_id: number }>('/proposals/generate', {}),
   },
   evalConfigs: {
     suites: {
