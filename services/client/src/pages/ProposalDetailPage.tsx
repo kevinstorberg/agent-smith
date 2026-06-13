@@ -6,6 +6,12 @@ import { useNotification } from '../context/useNotification';
 
 const JOB_FIELDS = ['schedule_config', 'input_params', 'description'] as const;
 
+const STATUS_COLOR: Record<string, string> = {
+  pending: 'var(--info, #3498db)',
+  approved: 'var(--success, #2ecc71)',
+  rejected: 'var(--text-muted)',
+};
+
 function bodyOf(item: Proposal['proposed_item']): string {
   return (item?.content as { body?: string } | undefined)?.body ?? '';
 }
@@ -16,16 +22,22 @@ function jobFields(item: Proposal['proposed_item']): Record<string, unknown> {
 
 function Pane({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ flex: 1, minWidth: 0 }}>
-      <h4 style={{ margin: '0 0 8px' }}>{title}</h4>
+    <div style={{ flex: 1, minWidth: 280 }}>
+      <div className="form-label">{title}</div>
       <pre
         style={{
           whiteSpace: 'pre-wrap',
           overflowWrap: 'anywhere',
-          background: 'var(--bg-secondary, #f6f6f6)',
-          padding: 12,
-          borderRadius: 6,
-          maxHeight: 480,
+          background: 'var(--surface-elevated)',
+          color: 'var(--text)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius)',
+          fontFamily: 'var(--mono)',
+          fontSize: 12.5,
+          lineHeight: 1.6,
+          padding: 14,
+          margin: 0,
+          maxHeight: 520,
           overflow: 'auto',
         }}
       >
@@ -111,45 +123,57 @@ export function ProposalDetailPage() {
         </div>
       </div>
 
-      <p>
-        <span className="tag">{proposal.status}</span>{' '}
-        <span className="tag">{proposal.target_kind}</span>{' '}
-        {proposal.action} <strong>{proposal.target_name}</strong>
-        {proposal.project && <span className="tag tag-project">{proposal.project}</span>}
-        {proposal.base_version != null && ` (from v${proposal.base_version})`}
-      </p>
+      <div className="card">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+          <span
+            className="tag"
+            style={{ color: STATUS_COLOR[proposal.status], borderColor: STATUS_COLOR[proposal.status] }}
+          >
+            {proposal.status}
+          </span>
+          <span className="tag">{proposal.target_kind}</span>
+          <span style={{ color: 'var(--text-muted)' }}>
+            {proposal.action} <strong style={{ color: 'var(--text)' }}>{proposal.target_name}</strong>
+            {proposal.base_version != null && ` · from v${proposal.base_version}`}
+          </span>
+          {proposal.project && <span className="tag tag-project">{proposal.project}</span>}
+        </div>
+        {targetMissing && (
+          <p style={{ color: 'var(--danger, #e06c75)', margin: '12px 0 0' }}>
+            The target of this proposal was deleted — it can no longer be applied.
+          </p>
+        )}
+      </div>
 
-      {targetMissing && (
-        <p style={{ color: 'var(--danger, #c0392b)' }}>
-          The target of this proposal was deleted — it can no longer be applied.
-        </p>
-      )}
-
-      <h3>Rationale</h3>
-      <p>{proposal.rationale}</p>
+      <div className="card">
+        <div className="section-title">Rationale</div>
+        <p style={{ margin: 0, lineHeight: 1.7 }}>{proposal.rationale}</p>
+      </div>
 
       {proposal.evidence.length > 0 && (
-        <>
-          <h3>Evidence</h3>
-          <ul>
+        <div className="card">
+          <div className="section-title">Evidence</div>
+          <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.9 }}>
             {proposal.evidence.map((entry, i) => (
               <li key={i}>
                 {entry.source === 'plan' ? (
                   <Link to={`/plans/${entry.id}`}>plan {entry.id}</Link>
                 ) : (
-                  <span>memory {entry.id}</span>
+                  <span style={{ color: 'var(--text-muted)' }}>memory {entry.id}</span>
                 )}
-                {entry.note && ` — ${entry.note}`}
+                {entry.note && <span style={{ color: 'var(--text-muted)' }}> — {entry.note}</span>}
               </li>
             ))}
           </ul>
-        </>
+        </div>
       )}
 
-      <h3>{isUpdate ? 'Change' : 'Proposed content'}</h3>
-      <div style={{ display: 'flex', gap: 16 }}>
-        {isUpdate && <Pane title="Current">{before}</Pane>}
-        <Pane title="Proposed">{after}</Pane>
+      <div className="card">
+        <div className="section-title">{isUpdate ? 'Change' : 'Proposed content'}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+          {isUpdate && <Pane title="Current">{before}</Pane>}
+          <Pane title="Proposed">{after}</Pane>
+        </div>
       </div>
     </div>
   );

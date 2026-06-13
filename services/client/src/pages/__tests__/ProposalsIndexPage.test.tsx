@@ -32,6 +32,8 @@ vi.mock('../../api', () => ({
       list: vi.fn(),
       counts: vi.fn(),
       generate: vi.fn(),
+      approve: vi.fn(),
+      reject: vi.fn(),
     },
   },
 }));
@@ -42,6 +44,9 @@ import { api } from '../../api';
 const mockUsePagination = usePagination as ReturnType<typeof vi.fn>;
 const mockCounts = api.proposals.counts as ReturnType<typeof vi.fn>;
 const mockGenerate = api.proposals.generate as ReturnType<typeof vi.fn>;
+const mockApprove = api.proposals.approve as ReturnType<typeof vi.fn>;
+const mockReject = api.proposals.reject as ReturnType<typeof vi.fn>;
+const mockSetItems = vi.fn();
 
 const fakeProposals = [
   {
@@ -68,6 +73,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockUsePagination.mockReturnValue({
     items: fakeProposals,
+    setItems: mockSetItems,
     total: 2,
     loading: false,
     limit: 10,
@@ -77,6 +83,8 @@ beforeEach(() => {
   });
   mockCounts.mockResolvedValue({ pending: 2, approved: 1, rejected: 0 });
   mockGenerate.mockResolvedValue({ started: true, job_id: 7 });
+  mockApprove.mockResolvedValue({ id: 1, status: 'approved' });
+  mockReject.mockResolvedValue({ id: 1, status: 'rejected' });
 });
 
 describe('ProposalsIndexPage', () => {
@@ -104,6 +112,31 @@ describe('ProposalsIndexPage', () => {
     fireEvent.click(screen.getByText('Clarify the DRY rule'));
 
     expect(mockNavigate).toHaveBeenCalledWith('/proposals/1');
+  });
+
+  it('quick-approves a row without navigating', async () => {
+    renderWithProviders(<ProposalsIndexPage />);
+
+    fireEvent.click(screen.getAllByText('Approve')[0]);
+
+    await waitFor(() => expect(mockApprove).toHaveBeenCalledWith(1));
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockSetItems).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mockNotify).toHaveBeenCalledWith(expect.stringMatching(/applied/), 'success'),
+    );
+  });
+
+  it('quick-rejects a row and surfaces conflicts as errors', async () => {
+    mockReject.mockRejectedValue(new Error('proposal 2 is approved, not pending'));
+    renderWithProviders(<ProposalsIndexPage />);
+
+    fireEvent.click(screen.getAllByText('Reject')[1]);
+
+    await waitFor(() => expect(mockReject).toHaveBeenCalledWith(2));
+    await waitFor(() =>
+      expect(mockNotify).toHaveBeenCalledWith(expect.stringMatching(/reject failed/), 'error'),
+    );
   });
 
   it('triggers manual generation from the button', async () => {
