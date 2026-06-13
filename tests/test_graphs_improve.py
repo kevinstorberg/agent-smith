@@ -12,6 +12,7 @@ import json
 import pytest
 
 from services.api.models.plan import create_plan
+from services.api.models.plan_feedback import create_feedback
 from services.api.models.proposal import get_proposal
 from services.api.models.shared.harness import get_item, get_item_by_id, upsert_item
 from services.config import ALL_AGENTS
@@ -86,7 +87,10 @@ def _patch_llm_stack(monkeypatch, *, file_calls: list[dict], rubric_result: str 
 
 def test_improve_files_and_persists_a_proposal(monkeypatch):
     upsert_item("rule", "improvetest_rule", content={"body": RULE_BODY, "metadata": {}}, agents=ALL_AGENTS)
-    create_plan("improvetest plan", "The improvetest_rule keeps being misapplied; clarify step 1.")
+    draft_id = create_plan(
+        "improvetest plan", "The improvetest_rule keeps being misapplied; clarify step 1.", status="draft",
+    )
+    create_feedback(draft_id, "Risk: step 1 is ambiguous; add a worked example.")
 
     captured = _patch_llm_stack(
         monkeypatch,
@@ -118,10 +122,36 @@ def test_improve_files_and_persists_a_proposal(monkeypatch):
 
     # The agent received curator findings, inventory, and the persona prompt.
     message = captured["payload"]["messages"][0].content
-    assert "Findings from recent planning docs" in message
+    assert "Findings from recent draft plans and their second-opinion reviews" in message
     assert "improvetest_rule" in message  # inventory lists it
     assert "Pragmatic Engineer" in captured["system_prompt"]
     assert "Staged proposal" in captured["tool_results"][0]
+
+
+def test_recent_draft_entries_couples_feedback_and_excludes_final():
+    from services.graphs.library.improve import _recent_draft_entries
+
+    draft_id = create_plan("improvetest draft", "DRAFT BODY", status="draft")
+    create_feedback(draft_id, "FIRST REVIEW")
+    create_feedback(draft_id, "SECOND REVIEW")
+    create_plan("improvetest final", "FINAL BODY")  # status='final' -> excluded
+    nofb_id = create_plan("improvetest nofb", "NO FEEDBACK BODY", status="draft")
+
+    by_id = {eid: text for eid, text in _recent_draft_entries(None, 30)}
+
+    # Final plans are excluded; only drafts gathered.
+    assert all("FINAL BODY" not in text for text in by_id.values())
+
+    # Draft coupled with both reviews, full text, no truncation.
+    draft_text = by_id[str(draft_id)]
+    assert "DRAFT BODY" in draft_text
+    assert "FIRST REVIEW" in draft_text and "SECOND REVIEW" in draft_text
+    assert "Second-opinion review" in draft_text
+
+    # Draft without feedback: still included, no review section.
+    nofb_text = by_id[str(nofb_id)]
+    assert "NO FEEDBACK BODY" in nofb_text
+    assert "Second-opinion review" not in nofb_text
 
 
 def test_curators_run_sequentially(monkeypatch):

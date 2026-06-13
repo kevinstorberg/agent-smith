@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import TypedDict
@@ -21,6 +22,8 @@ from services.graphs.agents import (
 from services.graphs.messages import extract_text
 from services.graphs.model_factory import build_chat_model
 from services.rubric import rules_to_prompt_context, rules_to_rubric
+
+log = logging.getLogger("graphs.improve")
 
 RULE_AGENT = "curator"
 INPUT_SCHEMA = {"project": "string", "lookback_days": "integer", "max_proposals": "integer"}
@@ -103,9 +106,9 @@ def build_graph():
 
     async def _curate_plans(state: State) -> dict:
         days = _clamp(state["lookback_days"], *LOOKBACK_RANGE)
-        entries = await asyncio.to_thread(_recent_plan_entries, state["project"] or None, days)
+        entries = await asyncio.to_thread(_recent_draft_entries, state["project"] or None, days)
         model = build_chat_model("curator_reader", fallback_role="curator")
-        return {"plan_findings": await _digest(model, "plan", entries)}
+        return {"plan_findings": await _digest(model, "plan", entries, guidance=_DRAFT_DIGEST_GUIDANCE)}
 
     async def _curate_memories(state: State) -> dict:
         days = _clamp(state["lookback_days"], *LOOKBACK_RANGE)
@@ -131,7 +134,7 @@ def build_graph():
 
         message = (
             f"File at most {max_proposals} improvement proposals.\n\n"
-            f"## Findings from recent planning docs\n{state['plan_findings']}\n\n"
+            f"## Findings from recent draft plans and their second-opinion reviews\n{state['plan_findings']}\n\n"
             f"## Findings from recent memories\n{state['memory_findings']}\n\n"
             f"## Current harness inventory\n{inventory}\n\n"
             f"## Already proposed (do NOT re-file anything equivalent)\n{recent_titles}"
@@ -221,16 +224,31 @@ def _within_lookback(row: dict, days: int) -> bool:
     return ts >= datetime.now(timezone.utc) - timedelta(days=days)
 
 
-def _recent_plan_entries(project: str | None, days: int) -> list[tuple[str, str]]:
-    from services.api.models.plan import get_plan, list_plans
+DRAFT_CAP = 250
 
-    summaries, _ = list_plans(project=project, limit=100)
+
+def _recent_draft_entries(project: str | None, days: int) -> list[tuple[str, str]]:
+    """Recent DRAFT plans (the opinion-reviewed proposals), each coupled with its
+    second-opinion feedback so the curator digests a proposal and its critique as
+    one unit. Full body + full feedback, never truncated."""
+    from services.api.models.plan import get_plan, list_plans
+    from services.api.models.plan_feedback import list_feedback_for_plan
+
+    summaries, _ = list_plans(project=project, status="draft", limit=DRAFT_CAP)
+    if len(summaries) >= DRAFT_CAP:
+        log.warning(
+            "improve: draft gather hit the %d cap; older in-window drafts may be clipped",
+            DRAFT_CAP,
+        )
     entries = []
     for summary in summaries:
         if not _within_lookback(summary, days):
             continue
         plan = get_plan(summary["id"])
-        entries.append((str(plan["id"]), f"# {plan['title']}\n{plan['body']}"))
+        text = f"# {plan['title']}\n{plan['body']}"
+        for fb in list_feedback_for_plan(plan["id"]):
+            text += f"\n\n## Second-opinion review ({fb['source']})\n{fb['body']}"
+        entries.append((str(plan["id"]), text))
     return entries
 
 
@@ -241,7 +259,15 @@ def _recent_memory_entries(project: str | None, days: int) -> list[tuple[str, st
     return [(str(r["id"]), r["content"]) for r in rows if _within_lookback(r, days)]
 
 
-async def _digest(model, source: str, entries: list[tuple[str, str]]) -> str:
+_DRAFT_DIGEST_GUIDANCE = (
+    "Each entry is a proposed plan followed by its senior-engineer second-opinion "
+    "review(s). Treat the recurring weaknesses, risks, and rejected approaches the "
+    "reviews surface as the strongest signal — they show where a harness rule or skill "
+    "could prevent a repeated mistake."
+)
+
+
+async def _digest(model, source: str, entries: list[tuple[str, str]], guidance: str = "") -> str:
     """Map-reduce a full, untruncated corpus into a findings digest."""
     if not entries:
         return f"No {source} entries in the lookback window."
@@ -266,6 +292,7 @@ async def _digest(model, source: str, entries: list[tuple[str, str]]) -> str:
             "skills, hooks, or background jobs. For each finding give a one-line theme, the "
             f"source references in [{source} <id>] form, and a 1-2 sentence summary. Report only "
             "what is actually present; say so if nothing stands out."
+            + (f"\n\n{guidance}" if guidance else "")
         )
     )
     digests = []
