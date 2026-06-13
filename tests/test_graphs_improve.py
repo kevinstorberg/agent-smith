@@ -124,6 +124,17 @@ def test_improve_files_and_persists_a_proposal(monkeypatch):
     assert "Staged proposal" in captured["tool_results"][0]
 
 
+def test_curators_run_sequentially(monkeypatch):
+    from services.graphs.library import improve
+
+    monkeypatch.setattr(improve, "_load_selected_rules", lambda: FAKE_RULES)
+    edges = {(e.source, e.target) for e in improve.build_graph().get_graph().edges}
+
+    assert ("curate_plans", "curate_memories") in edges
+    assert ("curate_memories", "propose") in edges
+    assert ("curate_plans", "propose") not in edges
+
+
 def test_improve_zero_proposals_is_a_valid_success(monkeypatch):
     _patch_llm_stack(monkeypatch, file_calls=[])
 

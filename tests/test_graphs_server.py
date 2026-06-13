@@ -36,6 +36,7 @@ def _clear_model_env(monkeypatch):
         "MODEL_PROVIDER", "MODEL_ID", "MODEL", "MODEL_SERVER_URL", "MODEL_BASE_URL",
         "MODEL_SERVER_API_KEY", "MODEL_API_KEY", "MODEL_REGION",
         "MODEL_TEMPERATURE", "MODEL_TOP_P", "MODEL_THINKING",
+        "MODEL_MAX_RETRIES", "MODEL_REQUEST_TIMEOUT",
     )
     for prefix in ("OPINION", "OPINION_GRADER", "GRAPH"):
         for suffix in suffixes:
@@ -70,7 +71,39 @@ def test_model_factory_bedrock_builds_mantle_adapter(monkeypatch):
     assert captured["api_key"] == _FAKE_BEDROCK_API_KEY
     assert captured["temperature"] == 1.0
     assert captured["top_p"] == 0.95
+    assert captured["max_retries"] == 6
+    assert captured["timeout"] == 60.0
     assert "extra_body" not in captured
+
+
+def test_model_factory_retry_settings_overridable(monkeypatch):
+    from services.graphs import model_factory
+
+    _clear_model_env(monkeypatch)
+    captured, _ = _patch_fake_adapter(monkeypatch)
+    monkeypatch.setenv("OPINION_MODEL_SERVER_API_KEY", _FAKE_BEDROCK_API_KEY)
+    monkeypatch.setenv("GRAPH_MODEL_MAX_RETRIES", "3")
+    monkeypatch.setenv("OPINION_MODEL_REQUEST_TIMEOUT", "30")
+
+    model_factory.build_chat_model("opinion")
+
+    assert captured["max_retries"] == 3
+    assert captured["timeout"] == 30.0
+
+
+@pytest.mark.parametrize(
+    ("suffix", "value"),
+    [("MODEL_MAX_RETRIES", "-1"), ("MODEL_REQUEST_TIMEOUT", "0")],
+)
+def test_model_factory_rejects_invalid_retry_settings(monkeypatch, suffix, value):
+    from services.graphs.model_factory import load_model_config
+
+    _clear_model_env(monkeypatch)
+    monkeypatch.setenv("OPINION_MODEL_SERVER_API_KEY", _FAKE_BEDROCK_API_KEY)
+    monkeypatch.setenv(f"OPINION_{suffix}", value)
+
+    with pytest.raises(ValueError, match=suffix):
+        load_model_config("opinion")
 
 
 def test_model_factory_bedrock_derives_url_from_region(monkeypatch):

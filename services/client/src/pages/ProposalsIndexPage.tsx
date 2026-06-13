@@ -49,7 +49,7 @@ export function ProposalsIndexPage() {
         </button>
       </div>
 
-      <div className="filter-bar" style={{ display: 'flex', gap: 8 }}>
+      <div className="filters">
         {STATUSES.map(status => (
           <button
             key={status}
