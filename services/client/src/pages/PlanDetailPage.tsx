@@ -197,6 +197,14 @@ export function PlanDetailPage() {
             {plan!.title}
           </h2>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+            <span
+              className="tag"
+              style={plan!.status === 'draft'
+                ? { color: 'var(--info, #3498db)', borderColor: 'var(--info, #3498db)' }
+                : undefined}
+            >
+              {plan!.status}
+            </span>
             {plan!.project && (
               <span className="tag tag-project">{plan!.project}</span>
             )}
@@ -210,6 +218,23 @@ export function PlanDetailPage() {
               <ReactMarkdown>{plan!.body}</ReactMarkdown>
             </div>
           </div>
+
+          {(plan!.feedback?.length ?? 0) > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <div className="section-title">Feedback</div>
+              {plan!.feedback!.map(fb => (
+                <div key={fb.id} className="card" style={{ position: 'relative' }}>
+                  <CopyButton text={fb.body} style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }} />
+                  <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>
+                    {fb.source} · {new Date(fb.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                  <div className="markdown-content">
+                    <ReactMarkdown>{fb.body}</ReactMarkdown>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
     </div>

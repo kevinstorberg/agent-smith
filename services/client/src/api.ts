@@ -152,13 +152,24 @@ export interface EvalRunDetail extends EvalRun {
   output: string;
 }
 
+export interface PlanFeedback {
+  id: number;
+  plan_id: number;
+  source: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Plan {
   id: number;
   title: string;
   body: string;
   project: string | null;
+  status: 'draft' | 'final';
   created_at: string;
   updated_at: string;
+  feedback?: PlanFeedback[];
 }
 
 export interface JobConfig {
@@ -348,9 +359,10 @@ export const api = {
     remove: (id: number) => del<{ deleted: number }>(`/evals/${id}`),
   },
   plans: {
-    list: (pagination?: PaginationParams & { project?: string }) =>
+    list: (pagination?: PaginationParams & { project?: string; status?: string }) =>
       get<Paginated<Plan>>('/plans', {
         ...(pagination?.project ? { project: pagination.project } : {}),
+        ...(pagination?.status ? { status: pagination.status } : {}),
         ...paginationToParams(pagination),
       }),
     search: (q: string) => get<Plan[]>('/plans/search', { q }),

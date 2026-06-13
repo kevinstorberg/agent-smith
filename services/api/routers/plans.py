@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from scripts.shared.validation import MAX_TITLE_LENGTH, MAX_BODY_LENGTH
 
 from services.api.models.plan import list_plans, search_plans, get_plan, create_plan, update_plan, delete_plan
+from services.api.models.plan_feedback import list_feedback_for_plan
 from services.api.routers.base import require_found, list_response, delete_response, empty_to_none, resolve_project
 
 router = APIRouter()
@@ -14,10 +15,13 @@ router = APIRouter()
 @router.get("")
 def list_all(
     project: str = Query(""),
+    status: str = Query(""),
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
-    items, total = list_plans(project=empty_to_none(project), limit=limit, offset=offset)
+    items, total = list_plans(
+        project=empty_to_none(project), status=empty_to_none(status), limit=limit, offset=offset
+    )
     return list_response(items, total)
 
 
@@ -28,7 +32,9 @@ def search(q: str = Query(..., min_length=1), project: str = Query("")):
 
 @router.get("/{plan_id}")
 def get_one(plan_id: int):
-    return require_found(get_plan(plan_id), "Plan", plan_id)
+    plan = require_found(get_plan(plan_id), "Plan", plan_id)
+    plan["feedback"] = list_feedback_for_plan(plan_id)
+    return plan
 
 
 class CreateRequest(BaseModel):

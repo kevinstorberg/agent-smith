@@ -1,6 +1,8 @@
 """Opinion: returns a critical opinion on a proposed plan or architecture."""
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 from typing import TypedDict
 from uuid import uuid4
@@ -17,6 +19,8 @@ from services.graphs.agents import (
 from services.graphs.messages import extract_result_text
 from scripts.shared.paths import REPO_ROOT
 from services.rubric import rules_to_prompt_context, rules_to_rubric
+
+log = logging.getLogger("graphs.opinion")
 
 RULE_AGENT = "opinion"
 RUBRIC_MAX_ITERATIONS = os.environ.get("OPINION_RUBRIC_MAX_ITERATIONS", "3")
@@ -93,10 +97,23 @@ def build_graph():
             _raise_contract_error("empty_result", "Opinion graph returned an empty response.")
         return {"proposal": proposal, "result": text}
 
+    async def _record(state: State) -> State:
+        # Best-effort: persist the reviewed draft + its feedback, but never let a
+        # storage hiccup block the critique from reaching the caller (hot path).
+        from services.api.models.plan_feedback import record_opinion_review
+
+        try:
+            await asyncio.to_thread(record_opinion_review, state["proposal"], state["result"])
+        except Exception:  # noqa: BLE001 - persistence is a non-blocking side effect
+            log.warning("opinion: failed to persist draft/feedback", exc_info=True)
+        return state
+
     g = StateGraph(State)
     g.add_node("opine", _opine)
+    g.add_node("record", _record)
     g.add_edge(START, "opine")
-    g.add_edge("opine", END)
+    g.add_edge("opine", "record")
+    g.add_edge("record", END)
     return g.compile()
 
 

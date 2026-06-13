@@ -8,15 +8,23 @@ import { DateCell } from '../components/table';
 import { usePagination } from '../hooks/usePagination';
 import { makeRowClickable } from '../utils/a11y';
 
+const STATUSES = ['all', 'draft', 'final'] as const;
+
 export function PlansIndexPage() {
   const [projectFilter, setProjectFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Plan[] | null>(null);
   const navigate = useNavigate();
 
   const { items, total, loading, limit, offset, setLimit, setOffset } = usePagination<Plan>(
-    (l, o) => api.plans.list({ limit: l, offset: o, project: projectFilter || undefined }),
-    [projectFilter],
+    (l, o) => api.plans.list({
+      limit: l,
+      offset: o,
+      project: projectFilter || undefined,
+      status: statusFilter === 'all' ? undefined : statusFilter,
+    }),
+    [projectFilter, statusFilter],
   );
 
   useEffect(() => {
@@ -51,10 +59,25 @@ export function PlansIndexPage() {
         namePlaceholder="Search by title..."
       />
 
+      {!searchResults && (
+        <div className="filters">
+          {STATUSES.map(status => (
+            <button
+              key={status}
+              className={`btn${statusFilter === status ? ' btn-primary' : ''}`}
+              onClick={() => { setStatusFilter(status); setOffset(0); }}
+            >
+              {status}
+            </button>
+          ))}
+        </div>
+      )}
+
       <table className="table">
         <thead>
           <tr>
             <th>Title</th>
+            <th>Status</th>
             <th>Project</th>
             <th>Last Updated</th>
           </tr>
@@ -68,6 +91,16 @@ export function PlansIndexPage() {
             >
               <td>{plan.title}</td>
               <td>
+                <span
+                  className="tag"
+                  style={plan.status === 'draft'
+                    ? { color: 'var(--info, #3498db)', borderColor: 'var(--info, #3498db)' }
+                    : undefined}
+                >
+                  {plan.status}
+                </span>
+              </td>
+              <td>
                 {plan.project ? (
                   <span className="tag tag-project">{plan.project}</span>
                 ) : (
@@ -78,7 +111,7 @@ export function PlansIndexPage() {
             </tr>
           ))}
           {displayed.length === 0 && (
-            <tr><td colSpan={3} className="loading">No plans found</td></tr>
+            <tr><td colSpan={4} className="loading">No plans found</td></tr>
           )}
         </tbody>
       </table>

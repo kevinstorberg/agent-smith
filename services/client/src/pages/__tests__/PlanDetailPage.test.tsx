@@ -54,6 +54,7 @@ const fakePlan = {
   title: 'Test Plan',
   body: '# Hello',
   project: 'my-project',
+  status: 'final',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-02T00:00:00Z',
 };
@@ -241,6 +242,31 @@ describe('PlanDetailPage', () => {
       expect(mockRemove).not.toHaveBeenCalled();
 
       confirmSpy.mockRestore();
+    });
+
+    it('renders a status badge and full feedback for a draft', async () => {
+      mockGet.mockResolvedValue({
+        ...fakePlan,
+        status: 'draft',
+        feedback: [{
+          id: 1, plan_id: 42, source: 'opinion', body: 'Full critique body',
+          created_at: '2026-01-03T00:00:00Z', updated_at: '2026-01-03T00:00:00Z',
+        }],
+      });
+
+      renderWithProviders(<PlanDetailPage />);
+
+      await waitFor(() => expect(screen.getByText('Feedback')).toBeInTheDocument());
+      expect(screen.getByText('draft')).toBeInTheDocument();
+      const mds = screen.getAllByTestId('markdown');
+      expect(mds.some(m => m.textContent === 'Full critique body')).toBe(true);
+    });
+
+    it('omits the feedback section when there is none', async () => {
+      renderWithProviders(<PlanDetailPage />);
+
+      await waitFor(() => expect(screen.getByText('Test Plan')).toBeInTheDocument());
+      expect(screen.queryByText('Feedback')).not.toBeInTheDocument();
     });
   });
 });

@@ -20,6 +20,27 @@ def _clean_plans():
             cur.execute("DELETE FROM plans")
 
 
+def test_status_defaults_to_final():
+    plan = get_plan(create_plan("Final Plan", "body"))
+    assert plan["status"] == "final"
+
+
+def test_create_draft_status():
+    plan = get_plan(create_plan("Draft Plan", "body", status="draft"))
+    assert plan["status"] == "draft"
+
+
+def test_list_filters_by_status():
+    create_plan("a final", "body")
+    create_plan("a draft", "body", status="draft")
+    drafts, total = list_plans(status="draft")
+    assert total == 1 and drafts[0]["status"] == "draft"
+    finals, ftotal = list_plans(status="final")
+    assert ftotal == 1 and finals[0]["status"] == "final"
+    _, all_total = list_plans()
+    assert all_total == 2
+
+
 def test_create_and_get():
     plan_id = create_plan("My Plan", "Some body text")
     plan = get_plan(plan_id)
