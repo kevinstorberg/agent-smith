@@ -37,16 +37,24 @@ def create_rubric_agent(
     on_evaluation: Callable[[dict], None] | None = None,
     tools: list | None = None,
 ):
+    # Build with langchain's create_agent, NOT deepagents.create_deep_agent:
+    # the latter injects built-in ls/read_file/grep/execute/task/write_todos
+    # tools, which let a pure-reasoning agent "inspect" the (empty) container
+    # filesystem and hallucinate about a codebase it cannot see. Here the agent
+    # gets ONLY the tools explicitly passed (none for the opinion graph). The
+    # rubric loop comes from deepagents' RubricMiddleware, a standalone
+    # AgentMiddleware whose RubricState carries the `rubric` input.
     try:
-        from deepagents import RubricMiddleware, create_deep_agent
+        from deepagents import RubricMiddleware
+        from langchain.agents import create_agent
     except ImportError as exc:
         raise RuntimeError(
-            "deepagents>=0.6.5 is required for rubric-backed graph agents. "
-            "Install requirements.txt before running this graph."
+            "deepagents>=0.6.5 (for RubricMiddleware) and langchain (for create_agent) "
+            "are required for rubric-backed graph agents. Install requirements.txt."
         ) from exc
 
-    return create_deep_agent(
-        model=build_chat_model(model_role),
+    return create_agent(
+        build_chat_model(model_role),
         tools=tools or [],
         system_prompt=system_prompt,
         middleware=[

@@ -34,7 +34,15 @@ _SYSTEM_PROMPT = (
     "  3. One or two concrete simplifications or alternatives worth considering.\n"
     "  4. Any unstated assumptions the author should verify.\n"
     "Keep the response tight - prioritize signal over breadth. Do not flatter; do not "
-    "hedge."
+    "hedge.\n\n"
+    "GROUNDING (critical): You have NO access to any codebase, filesystem, runtime, or "
+    "tools. The proposal text in this message is your ONLY source of information. "
+    "Critique only what the proposal actually states. Never invent specifics that are "
+    "not in the proposal — do not name classes, functions, files, database engines, "
+    "libraries, or infrastructure the proposal does not mention, and never claim to have "
+    "inspected a codebase or filesystem. If a detail is not stated, treat it as an "
+    "unstated assumption to flag (phrased conditionally, e.g. 'if X uses Y...'), never as "
+    "established fact."
 )
 
 _GRADER_PROMPT = (
@@ -45,8 +53,13 @@ _GRADER_PROMPT = (
     "the intent of the rubric principles where they are relevant to the proposal. Do "
     "not require implementation-plan artifacts: no named function boundaries, file "
     "lists, code snippets, or step-by-step tracer-bullet plans. Return needs_revision "
-    "only when the opinion is vague, flattering, dodges the biggest risk, or ignores a "
-    "rubric principle that is clearly relevant to this proposal."
+    "when the opinion is vague, flattering, dodges the biggest risk, or ignores a "
+    "rubric principle that is clearly relevant to this proposal. Also return "
+    "needs_revision if the opinion is ungrounded — it asserts environment or "
+    "implementation specifics absent from the proposal (invented class/function/file "
+    "names, an unmentioned database engine or library internal), or claims to have "
+    "inspected a codebase or filesystem. A grounded critique reasons only from the "
+    "proposal text."
 )
 
 class State(TypedDict):
