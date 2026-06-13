@@ -72,7 +72,7 @@ def test_model_factory_bedrock_builds_mantle_adapter(monkeypatch):
     assert captured["temperature"] == 1.0
     assert captured["top_p"] == 0.95
     assert captured["max_retries"] == 6
-    assert captured["timeout"] == 60.0
+    assert captured["timeout"] == 300.0
     assert "extra_body" not in captured
 
 

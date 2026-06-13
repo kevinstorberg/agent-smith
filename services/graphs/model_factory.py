@@ -74,7 +74,7 @@ def load_model_config(role: str, fallback_role: str | None = None) -> GraphModel
         top_p=_float_setting(role, "MODEL_TOP_P", 0.95, fallback_role),
         max_tokens=_int_setting(role, "MODEL_MAX_TOKENS", 8192, fallback_role),
         max_retries=_int_setting(role, "MODEL_MAX_RETRIES", 6, fallback_role),
-        request_timeout=_float_setting(role, "MODEL_REQUEST_TIMEOUT", 60.0, fallback_role),
+        request_timeout=_float_setting(role, "MODEL_REQUEST_TIMEOUT", 300.0, fallback_role),
     )
     _validate_config(role, config)
     return config

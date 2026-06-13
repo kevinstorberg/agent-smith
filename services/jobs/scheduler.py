@@ -19,6 +19,7 @@ job_configs device/repo scoping (see ``services.jobs.scoping``).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import signal
@@ -63,6 +64,18 @@ def _kill_process_group(proc: asyncio.subprocess.Process) -> None:
         pass
 
 
+async def _pump(stream: asyncio.StreamReader | None, buf: bytearray) -> None:
+    """Accumulate a stream into ``buf`` as it arrives, so output captured so far
+    survives a kill — unlike communicate(), which discards partial reads on cancel."""
+    if stream is None:
+        return
+    while True:
+        chunk = await stream.read(8192)
+        if not chunk:
+            return
+        buf.extend(chunk)
+
+
 async def execute_job(job: dict) -> dict:
     """Run a job once, recording a ``job_executions`` row.
 
@@ -98,6 +111,7 @@ async def execute_job(job: dict) -> dict:
 async def _run_command_job(exec_id: int, job_id: int, command: str, params: dict) -> dict:
     start = time.monotonic()
     proc: asyncio.subprocess.Process | None = None
+    out_buf, err_buf = bytearray(), bytearray()
     try:
         timeout = float(params.get("timeout", JOB_DEFAULT_TIMEOUT))
         proc = await asyncio.create_subprocess_shell(
@@ -106,15 +120,21 @@ async def _run_command_job(exec_id: int, job_id: int, command: str, params: dict
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
         )
+        pumps = asyncio.gather(_pump(proc.stdout, out_buf), _pump(proc.stderr, err_buf))
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            await asyncio.wait_for(proc.wait(), timeout=timeout)
+            await pumps
         except asyncio.TimeoutError:
             _kill_process_group(proc)
-            await proc.wait()
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(pumps, timeout=5)
+            error = f"timed out after {timeout}s"
+            if err_buf.strip():
+                error += "\n--- partial stderr ---\n" + _truncate(bytes(err_buf), JOB_MAX_OUTPUT_BYTES)
             result = {
                 "success": False,
-                "output": "",
-                "error": f"timed out after {timeout}s",
+                "output": _truncate(bytes(out_buf), JOB_MAX_OUTPUT_BYTES),
+                "error": error,
                 "duration_seconds": round(time.monotonic() - start, 3),
                 "exit_code": None,
             }
@@ -124,8 +144,8 @@ async def _run_command_job(exec_id: int, job_id: int, command: str, params: dict
         exit_code = proc.returncode
         result = {
             "success": exit_code == 0,
-            "output": _truncate(stdout, JOB_MAX_OUTPUT_BYTES),
-            "error": _truncate(stderr, JOB_MAX_OUTPUT_BYTES),
+            "output": _truncate(bytes(out_buf), JOB_MAX_OUTPUT_BYTES),
+            "error": _truncate(bytes(err_buf), JOB_MAX_OUTPUT_BYTES),
             "duration_seconds": round(time.monotonic() - start, 3),
             "exit_code": exit_code,
         }
@@ -138,7 +158,7 @@ async def _run_command_job(exec_id: int, job_id: int, command: str, params: dict
             _kill_process_group(proc)
         result = {
             "success": False,
-            "output": "",
+            "output": _truncate(bytes(out_buf), JOB_MAX_OUTPUT_BYTES),
             "error": "cancelled (scheduler shutdown)",
             "duration_seconds": round(time.monotonic() - start, 3),
             "exit_code": None,
