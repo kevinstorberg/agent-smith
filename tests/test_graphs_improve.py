@@ -22,7 +22,7 @@ from tests.conftest import harness_cleanup
 
 RULE_BODY = "## Improve Test Rule\n* **The Rule:** Be specific."
 FAKE_RULES = [("DRY", "## DRY\n* **Your Process:**\n    1. Search existing code.")]
-INPUTS = {"project": "", "lookback_days": 7, "max_proposals": 3}
+INPUTS = {"project": "", "lookback_days": 7}
 
 _clean = harness_cleanup("improvetest_%")
 
@@ -226,6 +226,25 @@ def test_file_proposal_tool_enforces_limit_and_dedups_in_run():
     # Identical re-filing lands on the same fingerprint — still one staged.
     assert len(collector) == 1
     assert "limit reached" in tool.invoke({**call, "body": RULE_BODY + " changed differently"})
+
+
+def test_improve_caps_file_proposal_tool_at_one(monkeypatch):
+    """The graph binds file_proposal with a hard cap of one proposal per run."""
+    from services.graphs.tools import improve_tools
+
+    captured_caps: list[int] = []
+    real = improve_tools.build_file_proposal_tool
+
+    def _spy(collector, max_proposals):
+        captured_caps.append(max_proposals)
+        return real(collector, max_proposals)
+
+    monkeypatch.setattr(improve_tools, "build_file_proposal_tool", _spy)
+    _patch_llm_stack(monkeypatch, file_calls=[])
+
+    asyncio.run(dispatch("improve", INPUTS))
+
+    assert captured_caps == [1]
 
 
 def test_curator_digest_never_truncates(monkeypatch):
