@@ -245,6 +245,37 @@ export interface ProposalCounts {
   rejected: number;
 }
 
+export interface AuditEvent {
+  id: number;
+  correlation_key: string;
+  agent: 'claude' | 'codex' | 'gemini';
+  session_id: string;
+  tool_name: string;
+  cwd: string | null;
+  project: string | null;
+  status: 'pending' | 'success' | 'error';
+  created_at: string;
+  completed_at: string | null;
+  duration_ms: number | null;
+  // Present only on GET /audit/events/{id}: the full payloads.
+  tool_input?: Record<string, unknown>;
+  result?: unknown;
+}
+
+export interface AuditCounts {
+  claude: number;
+  codex: number;
+  gemini: number;
+}
+
+export interface AuditFilters {
+  agent?: string;
+  tool_name?: string;
+  session_id?: string;
+  project?: string;
+  status?: string;
+}
+
 export interface EvalSuite {
   id: number;
   name: string;
@@ -406,6 +437,19 @@ export const api = {
     reject: (id: number) => post<Proposal>(`/proposals/${id}/reject`, {}),
     remove: (id: number) => del(`/proposals/${id}`),
     generate: () => post<{ started: boolean; job_id: number }>('/proposals/generate', {}),
+  },
+  audit: {
+    list: (filters?: AuditFilters, pagination?: PaginationParams) => {
+      const params = paginationToParams(pagination);
+      if (filters?.agent) params.agent = filters.agent;
+      if (filters?.tool_name) params.tool_name = filters.tool_name;
+      if (filters?.session_id) params.session_id = filters.session_id;
+      if (filters?.project) params.project = filters.project;
+      if (filters?.status) params.status = filters.status;
+      return get<Paginated<AuditEvent>>('/audit/events', params);
+    },
+    counts: () => get<AuditCounts>('/audit/counts'),
+    get: (id: number) => get<AuditEvent>(`/audit/events/${id}`),
   },
   evalConfigs: {
     suites: {

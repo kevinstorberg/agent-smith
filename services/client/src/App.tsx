@@ -11,6 +11,8 @@ import { JobsIndexPage } from './pages/JobsIndexPage';
 import { JobDetailPage } from './pages/JobDetailPage';
 import { ProposalsIndexPage } from './pages/ProposalsIndexPage';
 import { ProposalDetailPage } from './pages/ProposalDetailPage';
+import { AuditIndexPage } from './pages/AuditIndexPage';
+import { AuditDetailPage } from './pages/AuditDetailPage';
 import { EvalSuitesPage } from './pages/EvalSuitesPage';
 import { EvalSuiteDetailPage } from './pages/EvalSuiteDetailPage';
 import { Sidebar } from './components/Sidebar';
@@ -45,6 +47,8 @@ export default function App() {
           <Route path="/plans/:id" element={<PlanDetailPage />} />
           <Route path="/proposals" element={<ProposalsIndexPage />} />
           <Route path="/proposals/:id" element={<ProposalDetailPage />} />
+          <Route path="/audit" element={<AuditIndexPage />} />
+          <Route path="/audit/:id" element={<AuditDetailPage />} />
           <Route path="/jobs" element={<JobsIndexPage />} />
           <Route path="/jobs/new" element={<JobDetailPage />} />
           <Route path="/jobs/:id" element={<JobDetailPage />} />

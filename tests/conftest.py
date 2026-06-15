@@ -64,3 +64,19 @@ def jobs_cleanup(*patterns: str):
         yield
         clean_job_rows(*patterns)
     return _clean
+
+
+def clean_audit_rows(*patterns: str):
+    from services.db import get_connection
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            for pattern in patterns:
+                cur.execute("DELETE FROM tool_call_events WHERE session_id LIKE %s", (pattern,))
+
+
+def audit_cleanup(*patterns: str):
+    @pytest.fixture(autouse=True)
+    def _clean():
+        yield
+        clean_audit_rows(*patterns)
+    return _clean

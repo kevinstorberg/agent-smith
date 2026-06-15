@@ -74,6 +74,7 @@ export function Sidebar() {
         <NavLink to="/plans" className={navClass}>Plans</NavLink>
         <NavLink to="/jobs" className={navClass}>Jobs</NavLink>
         <NavLink to="/proposals" className={navClass}>Proposals</NavLink>
+        <NavLink to="/audit" className={navClass}>Audit</NavLink>
       </div>
 
       <div className="sidebar-section">

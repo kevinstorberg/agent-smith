@@ -11,7 +11,13 @@ const PROPOSAL_STATUS_COLORS: Record<string, string> = {
   rejected: 'var(--text-muted)',
 };
 
-const MAPS = { plan: PLAN_STATUS_COLORS, proposal: PROPOSAL_STATUS_COLORS };
+const AUDIT_STATUS_COLORS: Record<string, string> = {
+  pending: 'var(--info, #3498db)',
+  success: 'var(--success, #2ecc71)',
+  error: 'var(--danger, #e06c75)',
+};
+
+const MAPS = { plan: PLAN_STATUS_COLORS, proposal: PROPOSAL_STATUS_COLORS, audit: AUDIT_STATUS_COLORS };
 
 export function StatusBadge({ status, kind }: { status: string; kind: keyof typeof MAPS }) {
   const color = MAPS[kind][status];
