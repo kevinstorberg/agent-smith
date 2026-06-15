@@ -4,8 +4,33 @@ import { api } from '../api';
 import type { Proposal } from '../api';
 import { useNotification } from '../context/useNotification';
 import { StatusBadge } from '../components/StatusBadge';
+import { lineDiff, type DiffRow } from '../utils/lineDiff';
 
 const JOB_FIELDS = ['schedule_config', 'input_params', 'description'] as const;
+
+const CODE_BOX: React.CSSProperties = {
+  whiteSpace: 'pre-wrap',
+  overflowWrap: 'anywhere',
+  background: 'var(--surface-elevated)',
+  color: 'var(--text)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius)',
+  fontFamily: 'var(--mono)',
+  fontSize: 12.5,
+  lineHeight: 1.6,
+  padding: 14,
+  margin: 0,
+  maxHeight: 520,
+  overflow: 'auto',
+};
+
+const DIFF_ROW_STYLE: Record<DiffRow['type'], React.CSSProperties> = {
+  context: {},
+  add: { background: 'rgba(46, 160, 67, 0.18)' },
+  remove: { background: 'rgba(248, 81, 73, 0.18)' },
+};
+
+const DIFF_GUTTER: Record<DiffRow['type'], string> = { context: ' ', add: '+', remove: '-' };
 
 function bodyOf(item: Proposal['proposed_item']): string {
   return (item?.content as { body?: string } | undefined)?.body ?? '';
@@ -19,26 +44,26 @@ function Pane({ title, children }: { title: string; children: React.ReactNode })
   return (
     <div style={{ flex: 1, minWidth: 280 }}>
       <div className="form-label">{title}</div>
-      <pre
-        style={{
-          whiteSpace: 'pre-wrap',
-          overflowWrap: 'anywhere',
-          background: 'var(--surface-elevated)',
-          color: 'var(--text)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius)',
-          fontFamily: 'var(--mono)',
-          fontSize: 12.5,
-          lineHeight: 1.6,
-          padding: 14,
-          margin: 0,
-          maxHeight: 520,
-          overflow: 'auto',
-        }}
-      >
-        {children}
-      </pre>
+      <pre style={CODE_BOX}>{children}</pre>
     </div>
+  );
+}
+
+function DiffView({ before, after }: { before: string; after: string }) {
+  const rows = lineDiff(before, after);
+  return (
+    <pre style={CODE_BOX}>
+      {rows.map((row, i) => (
+        <div key={i} data-diff={row.type} style={{ display: 'flex', ...DIFF_ROW_STYLE[row.type] }}>
+          <span style={{ width: 16, flexShrink: 0, opacity: 0.5, userSelect: 'none' }}>
+            {DIFF_GUTTER[row.type]}
+          </span>
+          <span style={{ flex: 1, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+            {row.text || ' '}
+          </span>
+        </div>
+      ))}
+    </pre>
   );
 }
 
@@ -160,10 +185,13 @@ export function ProposalDetailPage() {
 
       <div className="card">
         <div className="section-title">{isUpdate ? 'Change' : 'Proposed content'}</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-          {isUpdate && <Pane title="Current">{before}</Pane>}
-          <Pane title="Proposed">{after}</Pane>
-        </div>
+        {isUpdate ? (
+          <DiffView before={before} after={after} />
+        ) : (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+            <Pane title="Proposed">{after}</Pane>
+          </div>
+        )}
       </div>
     </div>
   );

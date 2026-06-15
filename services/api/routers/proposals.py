@@ -106,7 +106,7 @@ async def generate():
                 f"No background job named '{GENERATE_JOB_NAME}'. Create it first, e.g. "
                 f"job_create(name='{GENERATE_JOB_NAME}', schedule_config={{'hours': 4}}, "
                 "input_params={'graph_type': 'improve', 'graph_inputs': "
-                "{'project': '', 'lookback_days': 7, 'max_proposals': 5}})"
+                "{'project': '', 'lookback_days': 7}})"
             ),
         )
 

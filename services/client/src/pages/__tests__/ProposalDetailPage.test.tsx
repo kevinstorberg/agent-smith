@@ -67,17 +67,18 @@ beforeEach(() => {
 });
 
 describe('ProposalDetailPage', () => {
-  it('renders rationale, evidence links, and a two-pane diff for updates', async () => {
+  it('renders rationale, evidence links, and a highlighted unified diff for updates', async () => {
     renderWithProviders(<ProposalDetailPage />);
 
     expect(await screen.findByText('Clarify the DRY rule')).toBeInTheDocument();
     expect(screen.getByText(/step 1 is misread/)).toBeInTheDocument();
     expect(screen.getByText('plan 12').closest('a')).toHaveAttribute('href', '/plans/12');
     expect(screen.getByText('memory abc')).toBeInTheDocument();
-    expect(screen.getByText('Current')).toBeInTheDocument();
-    expect(screen.getByText('Proposed')).toBeInTheDocument();
-    expect(screen.getByText('## DRY rule')).toBeInTheDocument();
-    expect(screen.getByText('## DRY rule, clarified')).toBeInTheDocument();
+
+    const removed = screen.getByText('## DRY rule').closest('[data-diff]');
+    expect(removed).toHaveAttribute('data-diff', 'remove');
+    const added = screen.getByText('## DRY rule, clarified').closest('[data-diff]');
+    expect(added).toHaveAttribute('data-diff', 'add');
   });
 
   it('approves and reflects the new status', async () => {

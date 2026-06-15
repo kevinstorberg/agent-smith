@@ -26,10 +26,11 @@ from services.rubric import rules_to_prompt_context, rules_to_rubric
 log = logging.getLogger("graphs.improve")
 
 RULE_AGENT = "curator"
-INPUT_SCHEMA = {"project": "string", "lookback_days": "integer", "max_proposals": "integer"}
+INPUT_SCHEMA = {"project": "string", "lookback_days": "integer"}
 
 LOOKBACK_RANGE = (1, 90)
-MAX_PROPOSALS_RANGE = (1, 10)
+# One proposal per run, by design: a reviewable trickle the user can keep up with.
+MAX_PROPOSALS_PER_RUN = 1
 # Per-chunk character budget for the curator map passes. Content is never
 # truncated — more content means more map calls.
 CHUNK_CHAR_BUDGET = 24000
@@ -46,6 +47,8 @@ _SYSTEM_PROMPT = (
     "existing item instead.\n"
     "  - Prefer simple, small, surgical changes over rewrites. A one-paragraph clarification "
     "beats a restructure.\n"
+    "  - File AT MOST ONE proposal per run: pick the single highest-value change and file only "
+    "that. If two gaps tie, file the one with the strongest evidence and skip the rest.\n"
     "  - Propose DURABLE, STATELESS guidance: principles that stay true regardless of which "
     "model provider, library, library version, or infrastructure is in use today. Harness items "
     "outlive any specific tool.\n"
@@ -86,7 +89,6 @@ _GRADER_PROMPT = (
 class State(TypedDict):
     project: str
     lookback_days: int
-    max_proposals: int
     plan_findings: str
     memory_findings: str
     result: str
@@ -119,7 +121,6 @@ def build_graph():
     async def _propose(state: State) -> dict:
         from services.graphs.tools.improve_tools import RESEARCH_TOOLS, build_file_proposal_tool
 
-        max_proposals = _clamp(state["max_proposals"], *MAX_PROPOSALS_RANGE)
         inventory = await asyncio.to_thread(_inventory_summary, state["project"] or None)
         recent_titles = await asyncio.to_thread(_recent_titles_block)
 
@@ -129,11 +130,11 @@ def build_graph():
             max_iterations=max_iterations,
             model_role="curator",
             on_evaluation=lambda evaluation: evaluations.append(dict(evaluation)),
-            tools=[*RESEARCH_TOOLS, build_file_proposal_tool(collector, max_proposals)],
+            tools=[*RESEARCH_TOOLS, build_file_proposal_tool(collector, MAX_PROPOSALS_PER_RUN)],
         )
 
         message = (
-            f"File at most {max_proposals} improvement proposals.\n\n"
+            "Select and file ONLY the single highest-value improvement proposal (at most one).\n\n"
             f"## Findings from recent draft plans and their second-opinion reviews\n{state['plan_findings']}\n\n"
             f"## Findings from recent memories\n{state['memory_findings']}\n\n"
             f"## Current harness inventory\n{inventory}\n\n"
