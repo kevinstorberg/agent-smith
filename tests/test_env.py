@@ -61,3 +61,21 @@ def test_expand_env_list(monkeypatch: object):
 def test_expand_env_non_string():
     assert expand_env(42) == 42
     assert expand_env(None) is None
+
+
+def test_expand_env_extra_supplies_tokens():
+    assert expand_env("${REPO_ROOT}/x", extra={"REPO_ROOT": "/host/repo"}) == "/host/repo/x"
+
+
+def test_expand_env_extra_takes_precedence_over_environ(monkeypatch: object):
+    monkeypatch.setenv("REPO_ROOT", "/app")
+    assert expand_env("${REPO_ROOT}", extra={"REPO_ROOT": "/host/repo"}) == "/host/repo"
+
+
+def test_expand_env_extra_recurses(monkeypatch: object):
+    monkeypatch.delenv("REPO_ROOT", raising=False)
+    result = expand_env(
+        {"hooks": [{"command": "${REPO_ROOT}/run --x ${MISSING}"}]},
+        extra={"REPO_ROOT": "/host/repo"},
+    )
+    assert result == {"hooks": [{"command": "/host/repo/run --x ${MISSING}"}]}

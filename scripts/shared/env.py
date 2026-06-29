@@ -25,15 +25,21 @@ def load_dotenv(harness_root: Path) -> None:
     _load_env_file(harness_root / ".env.default")
 
 
-def expand_env(value):
+def expand_env(value, extra=None):
+    """Substitute ${VAR} tokens from the environment, recursing into dicts/lists.
+
+    ``extra`` supplies extra substitutions (e.g. a sync-time ${REPO_ROOT}) that take
+    precedence over os.environ. Unknown tokens are left untouched.
+    """
+    lookup = {**os.environ, **(extra or {})}
     if isinstance(value, str):
         return re.sub(
             r"\$\{(\w+)\}",
-            lambda m: os.environ.get(m.group(1), m.group(0)),
+            lambda m: lookup.get(m.group(1), m.group(0)),
             value,
         )
     if isinstance(value, dict):
-        return {k: expand_env(v) for k, v in value.items()}
+        return {k: expand_env(v, extra) for k, v in value.items()}
     if isinstance(value, list):
-        return [expand_env(v) for v in value]
+        return [expand_env(v, extra) for v in value]
     return value
