@@ -6,7 +6,6 @@ is portable across devices; sync resolves the token to each device's real repo p
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
