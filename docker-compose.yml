@@ -8,6 +8,9 @@ services:
     environment:
       APP_ENV: "${APP_ENV:-production}"
       DASHBOARD_PORT: "${DASHBOARD_PORT:-7654}"
+      # Host repo path, so hook ${REPO_ROOT} tokens expand to the host path (not /app)
+      # when sync writes settings. run.sh launches compose from the repo root.
+      HOST_REPO_ROOT: "${HOST_REPO_ROOT:-${PWD}}"
     env_file:
       - .env.default
       - path: .env.production
