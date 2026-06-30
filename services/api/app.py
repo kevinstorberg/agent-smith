@@ -10,12 +10,14 @@ bootstrap()
 import contextlib
 from contextlib import asynccontextmanager
 
+import anyio
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from services.db import init_db
+from services.config import DB_POOL_MAX
+from services.db import init_db, init_pool, close_pool
 from services.db.seed import seed_all
 from services.api.routers import harness_router
 from services.api.routers import memory, evals, plans, jobs, proposals, audit, eval_suites as eval_configs
@@ -33,9 +35,18 @@ MCP_SERVERS = [memory_mcp, plans_mcp, harness_mcp, evals_mcp, graphs_mcp, jobs_m
 @asynccontextmanager
 async def lifespan(app):
     init_db()
+    init_pool()
+    # Keep sync-endpoint threadpool concurrency at/below the DB pool size so a
+    # burst of DB-backed handlers queues at the threadpool rather than exhausting
+    # the pool (which would raise PoolError). The scheduler/graphs use a separate
+    # asyncio.to_thread executor bounded by in-flight jobs.
+    anyio.to_thread.current_default_thread_limiter().total_tokens = DB_POOL_MAX
     seed_all()
     scheduler = JobScheduler()
     async with contextlib.AsyncExitStack() as stack:
+        # Registered first → runs last on shutdown, after the scheduler and MCP
+        # sessions that use the pool have stopped.
+        stack.callback(close_pool)
         for srv in MCP_SERVERS:
             await stack.enter_async_context(srv.session_manager.run())
         await scheduler.start()

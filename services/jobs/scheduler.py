@@ -43,6 +43,10 @@ from services.jobs.scoping import job_runs_on_device
 
 log = logging.getLogger("jobs.scheduler")
 
+# How often (seconds) to emit a repeat "still failing" summary while an identical
+# tick failure persists. Bounds outage log volume independent of poll frequency.
+TICK_ERROR_LOG_INTERVAL_SECONDS = 60.0
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -226,6 +230,15 @@ class JobScheduler:
         self._stopped = asyncio.Event()
         self._running: set[int] = set()        # job ids currently executing (overlap guard)
         self._inflight: set[asyncio.Task] = set()  # in-flight execution tasks
+        # Collapse repeated identical tick failures (e.g. a DB that is unreachable
+        # every poll) into one full traceback plus time-throttled summaries, so a
+        # down dependency can't flood the logs with one line per poll forever. The
+        # throttle is by wall-clock, not tick count, so the log volume of an outage
+        # is bounded regardless of how fast the loop polls.
+        self._last_tick_error: str | None = None
+        self._tick_error_streak: int = 0
+        self._tick_error_last_log: float = 0.0
+        self._tick_error_log_interval: float = TICK_ERROR_LOG_INTERVAL_SECONDS
 
     async def start(self) -> None:
         self._stopped.clear()
@@ -281,12 +294,32 @@ class JobScheduler:
 
         task.add_done_callback(_done)
 
+    def _note_tick_error(self, exc: Exception) -> None:
+        """Log a failed tick, collapsing an unchanging failure into one traceback
+        plus throttled one-line repeats so a down dependency can't flood the logs."""
+        signature = f"{type(exc).__name__}: {exc}".splitlines()[0]
+        if signature == self._last_tick_error:
+            self._tick_error_streak += 1
+            log.warning("scheduler tick still failing (%dx): %s", self._tick_error_streak, signature)
+        else:
+            self._last_tick_error = signature
+            self._tick_error_streak = 1
+            log.exception("scheduler tick failed")
+
+    def _note_tick_ok(self) -> None:
+        """Announce recovery after a failure streak and reset the throttle state."""
+        if self._last_tick_error is not None:
+            log.info("scheduler tick recovered after %d failure(s)", self._tick_error_streak)
+            self._last_tick_error = None
+            self._tick_error_streak = 0
+
     async def _run(self) -> None:
         while not self._stopped.is_set():
             try:
                 await self._tick()
-            except Exception:  # noqa: BLE001 - one bad tick must not kill the loop
-                log.exception("scheduler tick failed")
+                self._note_tick_ok()
+            except Exception as exc:  # noqa: BLE001 - one bad tick must not kill the loop
+                self._note_tick_error(exc)
             try:
                 await asyncio.wait_for(self._stopped.wait(), timeout=self.poll_interval)
             except asyncio.TimeoutError:
