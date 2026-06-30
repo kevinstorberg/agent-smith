@@ -38,6 +38,16 @@ JOB_POLL_INTERVAL: float = float(os.environ.get("JOB_POLL_INTERVAL", "5"))
 JOB_DEFAULT_TIMEOUT: float = float(os.environ.get("JOB_DEFAULT_TIMEOUT", "300"))
 JOB_MAX_OUTPUT_BYTES: int = int(os.environ.get("JOB_MAX_OUTPUT_BYTES", "65536"))
 
+# DB connection pool + transient-error resilience. The pool is fixed-size
+# (minconn == maxconn == DB_POOL_MAX) so returned connections stay warm; see
+# services/db/pool.py.
+DB_POOL_MAX: int = int(os.environ.get("DB_POOL_MAX", "25"))
+DB_CONNECT_TIMEOUT: float = float(os.environ.get("DB_CONNECT_TIMEOUT", "5"))
+DB_CONNECT_MAX_ATTEMPTS: int = int(os.environ.get("DB_CONNECT_MAX_ATTEMPTS", "3"))
+DB_CONNECT_BACKOFF_BASE: float = float(os.environ.get("DB_CONNECT_BACKOFF_BASE", "0.1"))
+DB_CONNECT_BACKOFF_MAX: float = float(os.environ.get("DB_CONNECT_BACKOFF_MAX", "1.0"))
+DB_POOL_PRE_PING: bool = os.environ.get("DB_POOL_PRE_PING", "false").lower() in ("1", "true", "yes")
+
 MEMORY_STORE_PATH: str = os.environ.get("MEMORY_STORE_PATH", str(_repo_root / "memory_store"))
 PINECONE_INDEX: str = os.environ.get("PINECONE_INDEX", "agent-smith-memories")
 PINECONE_CLOUD: str = os.environ.get("PINECONE_CLOUD", "aws")

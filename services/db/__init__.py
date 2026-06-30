@@ -1,7 +1,8 @@
 from services.db.connection import get_connection
+from services.db.pool import init_pool, close_pool
 from services.config import DATABASE_URL
 
-__all__ = ["get_connection", "DATABASE_URL", "init_db"]
+__all__ = ["get_connection", "DATABASE_URL", "init_db", "init_pool", "close_pool"]
 
 
 def init_db() -> None:
