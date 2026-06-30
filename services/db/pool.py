@@ -126,22 +126,35 @@ def _get_pool() -> pg_pool.ThreadedConnectionPool:
 
 
 def acquire() -> "psycopg2.extensions.connection":
-    """Check out a live connection from the pool, retrying transient failures.
+    """Check out a live connection, handling two distinct failure modes.
 
-    Discards a connection that is already closed (or fails an opt-in pre-ping)
-    and acquires a fresh one within the attempt budget, so a failover that
-    killed pooled connections is recovered transparently.
+    - A *stale* pooled connection (already closed, or failing an opt-in
+      pre-ping) is discarded and the next one tried immediately with no backoff.
+      Because each discard shrinks the free list, this drains every dead pooled
+      connection in a single call — so a sleep/partition that severed the whole
+      pool costs one drain, not one failed op per connection.
+    - A genuine *connect* failure (free list empty, server unreachable) is
+      retried with bounded exponential backoff, then raised so a truly-down
+      database surfaces loudly. Pool exhaustion (PoolError) is not transient and
+      surfaces immediately.
     """
     pool = _get_pool()
-
-    def _checkout():
-        conn = pool.getconn()
-        if conn.closed or (DB_POOL_PRE_PING and not _ping_ok(pool, conn)):
+    connect_attempts = 0
+    while True:
+        try:
+            conn = pool.getconn()
+        except _TRANSIENT:
+            connect_attempts += 1
+            if connect_attempts >= DB_CONNECT_MAX_ATTEMPTS:
+                raise
+            log.warning("db connect failed (attempt %d/%d), backing off",
+                        connect_attempts, DB_CONNECT_MAX_ATTEMPTS)
+            time.sleep(_backoff_delay(connect_attempts))
+            continue
+        if conn.closed or (DB_POOL_PRE_PING and not _ping_ok(conn)):
             pool.putconn(conn, close=True)
-            raise psycopg2.OperationalError("stale pooled connection discarded")
+            continue
         return conn
-
-    return _retrying("db connection acquire", _checkout)
 
 
 def release(conn, *, close: bool) -> None:
@@ -150,7 +163,29 @@ def release(conn, *, close: bool) -> None:
     _get_pool().putconn(conn, close=close)
 
 
-def _ping_ok(pool: pg_pool.ThreadedConnectionPool, conn) -> bool:
+def drain_idle() -> None:
+    """Close and discard every idle (checked-in) pooled connection.
+
+    Recovers from a *mass*-staleness event — a laptop sleep or network partition
+    silently severs every pooled connection at once. When one in-use connection
+    fails with a connection-level error, the rest of the free list is almost
+    certainly dead too; purging it here means the next checkout reconnects fresh
+    instead of handing out 25 more dead sockets one failed op at a time. In-use
+    connections (owned by other threads) are left untouched and recover on their
+    own exit. Held under the pool's own lock so it cannot race getconn/putconn.
+    """
+    p = _pool
+    if p is None:
+        return
+    with p._lock:
+        while p._pool:
+            try:
+                p._pool.pop().close()
+            except Exception:
+                pass
+
+
+def _ping_ok(conn) -> bool:
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT 1")

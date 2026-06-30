@@ -65,4 +65,10 @@ def get_connection():
                 failure = commit_err
                 raise commit_err
     finally:
-        pool.release(conn, close=_is_broken(conn, failure))
+        broken = _is_broken(conn, failure)
+        pool.release(conn, close=broken)
+        if broken and isinstance(failure, _CONN_LEVEL_ERRORS):
+            # A connection-level failure usually means the whole pool went stale
+            # at once (laptop sleep / network drop). Purge the idle connections so
+            # the next checkout reconnects fresh instead of failing one per tick.
+            pool.drain_idle()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from unittest.mock import MagicMock
 
 import psycopg2
@@ -205,6 +206,104 @@ def test_acquire_pre_ping_replaces_bad_connection(monkeypatch):
 
     assert pool_mod.acquire() is good
     fake_pool.putconn.assert_called_once_with(bad, close=True)
+
+
+def test_acquire_drains_all_stale_in_one_call(monkeypatch):
+    """A sleep/partition can leave the whole free list dead. One acquire() must
+    drain ALL of them (not just the connect-retry budget) and return a live one."""
+    monkeypatch.setattr(pool_mod, "DB_POOL_PRE_PING", False)
+    monkeypatch.setattr(pool_mod, "DB_CONNECT_MAX_ATTEMPTS", 3)  # < number of stale conns
+    stale = [MagicMock(closed=1) for _ in range(5)]
+    live = MagicMock(closed=0)
+    fake_pool = MagicMock()
+    fake_pool.getconn.side_effect = [*stale, live]
+    monkeypatch.setattr(pool_mod, "_get_pool", lambda: fake_pool)
+
+    assert pool_mod.acquire() is live
+    assert fake_pool.putconn.call_count == 5  # every stale conn discarded in one call
+
+
+def test_acquire_retries_connect_failure_then_raises(monkeypatch):
+    monkeypatch.setattr(pool_mod.time, "sleep", lambda s: None)
+    monkeypatch.setattr(pool_mod, "DB_CONNECT_MAX_ATTEMPTS", 3)
+    fake_pool = MagicMock()
+    fake_pool.getconn.side_effect = psycopg2.OperationalError("connection refused")
+    monkeypatch.setattr(pool_mod, "_get_pool", lambda: fake_pool)
+
+    with pytest.raises(psycopg2.OperationalError):
+        pool_mod.acquire()
+    assert fake_pool.getconn.call_count == 3  # bounded backoff retry
+
+
+# --- mass-staleness: a connection-level error purges the idle pool ---
+
+def test_connection_level_error_drains_idle_pool(monkeypatch):
+    conn = _live_conn()
+    drain = MagicMock()
+    monkeypatch.setattr(conn_mod.pool, "acquire", lambda: conn)
+    monkeypatch.setattr(conn_mod.pool, "release", MagicMock())
+    monkeypatch.setattr(conn_mod.pool, "drain_idle", drain)
+
+    with pytest.raises(psycopg2.OperationalError):
+        with get_connection():
+            raise psycopg2.OperationalError("SSL SYSCALL error: EOF detected")
+
+    drain.assert_called_once()
+
+
+def test_ordinary_sql_error_does_not_drain_idle_pool(monkeypatch):
+    conn = _live_conn()
+    drain = MagicMock()
+    monkeypatch.setattr(conn_mod.pool, "acquire", lambda: conn)
+    monkeypatch.setattr(conn_mod.pool, "release", MagicMock())
+    monkeypatch.setattr(conn_mod.pool, "drain_idle", drain)
+
+    with pytest.raises(psycopg2.IntegrityError):
+        with get_connection():
+            raise psycopg2.IntegrityError("duplicate key value")
+
+    drain.assert_not_called()
+
+
+# --- end-to-end: the whole pool goes stale, recovery costs ONE failed op ---
+
+def test_mass_stale_pool_recovers_after_one_failure(monkeypatch):
+    monkeypatch.setattr(pool_mod, "DB_POOL_MAX", 3)
+    pool_mod.close_pool()
+
+    # Warm the pool, then return every connection to the free list.
+    pids, conns = set(), []
+    for _ in range(3):
+        c = pool_mod.acquire()
+        with c.cursor() as cur:
+            cur.execute("SELECT pg_backend_pid()")
+            pids.add(cur.fetchone()[0])
+        conns.append(c)
+    for c in conns:
+        pool_mod.release(c, close=False)
+
+    # Simulate sleep: kill every backend the pool is holding.
+    admin = psycopg2.connect(pool_mod.DATABASE_URL)
+    admin.autocommit = True
+    with admin.cursor() as cur:
+        for pid in pids:
+            cur.execute("SELECT pg_terminate_backend(%s)", (pid,))
+    admin.close()
+
+    # The next op may fail once (a stale conn handed out before detection); that
+    # failure drains the rest of the now-dead pool.
+    with contextlib.suppress(psycopg2.Error):
+        with get_connection() as c:
+            with c.cursor() as cur:
+                cur.execute("SELECT 1")
+
+    # Recovery must now be immediate on a fresh backend — not 3 more failures.
+    with get_connection() as c:
+        with c.cursor() as cur:
+            cur.execute("SELECT pg_backend_pid()")
+            new_pid = cur.fetchone()[0]
+    assert new_pid not in pids
+    pool_mod.close_pool()
 
 
 # --- regression guard for minconn == maxconn: pooled connections are REUSED ---
