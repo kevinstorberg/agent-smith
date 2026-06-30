@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import time
 import tomllib
 from pathlib import Path
 
@@ -85,13 +86,69 @@ def repo_config(agent: str, repo_path: str) -> dict[str, str]:
     return {k: str(Path(repo_path) / v) for k, v in base.items()}
 
 
+class ConfigUnreadableError(RuntimeError):
+    """A destination config file could not be parsed after retrying.
+
+    Raised only for genuine, non-transient corruption — torn reads (the file
+    caught mid-write by the live agent app) heal on retry and never reach here.
+    Carries the file path and parse location so the broken file is actionable,
+    and crashing here guarantees we never overwrite a file we couldn't read.
+    """
+
+    def __init__(self, path: Path, cause: Exception, attempts: int) -> None:
+        self.path = path
+        self.cause = cause
+        lineno = getattr(cause, "lineno", None)
+        colno = getattr(cause, "colno", None)
+        loc = f" at line {lineno}, column {colno}" if lineno is not None else ""
+        super().__init__(
+            f"{path} is not valid after {attempts} attempt(s){loc}: {cause}. "
+            f"Left unchanged (not overwritten). Fix the file, then re-run sync."
+        )
+
+
+# Parse failures that a re-read can resolve: a torn read yields invalid JSON/TOML,
+# or invalid UTF-8 if caught mid multi-byte write.
+_TRANSIENT_PARSE_ERRORS = (json.JSONDecodeError, tomllib.TOMLDecodeError, UnicodeDecodeError)
+
+
+def read_with_retry(
+    path: Path, fmt: str, *, max_attempts: int | None = None, backoff: float | None = None
+) -> dict:
+    """Read+parse a live config file, retrying torn reads before giving up.
+
+    The destination files are rewritten continuously by the running agent app,
+    so a single read can catch the file mid-write. We re-read up to
+    SYNC_READ_MAX_ATTEMPTS times with SYNC_READ_BACKOFF between tries; the live
+    write completes in milliseconds, so a retry catches a consistent file. If it
+    is still unparseable after the last attempt, the corruption is real, not
+    transient — raise ConfigUnreadableError and crash rather than risk a write.
+
+    Knobs are resolved lazily from services.config (which imports this module, so
+    a top-level import would be circular); tests pass them explicitly.
+    """
+    if max_attempts is None or backoff is None:
+        from services.config import SYNC_READ_BACKOFF, SYNC_READ_MAX_ATTEMPTS
+
+        max_attempts = SYNC_READ_MAX_ATTEMPTS if max_attempts is None else max_attempts
+        backoff = SYNC_READ_BACKOFF if backoff is None else backoff
+
+    last_error: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            text = path.read_text(encoding="utf-8")
+            return tomllib.loads(text) if fmt == "toml" else json.loads(text)
+        except _TRANSIENT_PARSE_ERRORS as exc:
+            last_error = exc
+            if attempt < max_attempts:
+                time.sleep(backoff)
+    raise ConfigUnreadableError(path, last_error, max_attempts)
+
+
 def _read_config(path: Path, fmt: str) -> dict:
     if not path.exists():
         return {}
-    text = path.read_text(encoding="utf-8")
-    if fmt == "toml":
-        return tomllib.loads(text)
-    return json.loads(text)
+    return read_with_retry(path, fmt)
 
 
 def _write_config(path: Path, data: dict, fmt: str) -> None:

@@ -48,6 +48,13 @@ DB_CONNECT_BACKOFF_BASE: float = float(os.environ.get("DB_CONNECT_BACKOFF_BASE",
 DB_CONNECT_BACKOFF_MAX: float = float(os.environ.get("DB_CONNECT_BACKOFF_MAX", "1.0"))
 DB_POOL_PRE_PING: bool = os.environ.get("DB_POOL_PRE_PING", "false").lower() in ("1", "true", "yes")
 
+# Sync reads destination agent config files (~/.claude.json, etc.) that the live
+# agent app rewrites continuously, so a read can catch the file mid-write (a torn
+# read = momentarily invalid JSON). Retry the read a few times before treating it
+# as genuine, unfixable corruption. See scripts/shared/agents.py::read_with_retry.
+SYNC_READ_MAX_ATTEMPTS: int = int(os.environ.get("SYNC_READ_MAX_ATTEMPTS", "3"))
+SYNC_READ_BACKOFF: float = float(os.environ.get("SYNC_READ_BACKOFF", "0.1"))
+
 MEMORY_STORE_PATH: str = os.environ.get("MEMORY_STORE_PATH", str(_repo_root / "memory_store"))
 PINECONE_INDEX: str = os.environ.get("PINECONE_INDEX", "agent-smith-memories")
 PINECONE_CLOUD: str = os.environ.get("PINECONE_CLOUD", "aws")
