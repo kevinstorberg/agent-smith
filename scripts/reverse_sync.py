@@ -31,21 +31,20 @@ def _parse_skill_frontmatter(text: str) -> str:
 
 
 def _reverse_mcp_transform(agent: str, server_config: dict) -> dict:
-    meta: dict = {}
-    if agent == "claude":
-        meta["url"] = server_config.get("url", "")
-        if "headers" in server_config:
-            meta["headers"] = server_config["headers"]
-        if "oauth" in server_config:
-            meta["oauth"] = server_config["oauth"]
-    elif agent == "codex":
-        meta["url"] = server_config.get("url", "")
-        if "headers" in server_config:
-            meta["headers"] = server_config["headers"]
-    elif agent == "gemini":
-        meta["url"] = server_config.get("httpUrl", server_config.get("url", ""))
-        if "headers" in server_config:
-            meta["headers"] = server_config["headers"]
+    if "command" in server_config:
+        meta: dict = {"command": server_config["command"]}
+        if server_config.get("args"):
+            meta["args"] = server_config["args"]
+        if server_config.get("env"):
+            meta["env"] = server_config["env"]
+        return meta
+
+    url = server_config.get("httpUrl") if agent == "gemini" else None
+    meta = {"url": url or server_config.get("url", "")}
+    if "headers" in server_config:
+        meta["headers"] = server_config["headers"]
+    if agent == "claude" and "oauth" in server_config:
+        meta["oauth"] = server_config["oauth"]
     return meta
 
 

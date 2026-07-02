@@ -12,6 +12,29 @@ import tomli_w
 # syncing config files to disk. Assignable to items, never sync/unsync targets.
 VIRTUAL_AGENTS: tuple[str, ...] = ("opinion", "curator")
 
+
+def _build_mcp_entry(srv, *, url_key, emit_type, http_extra):
+    """One agent's MCP server-config shape from stored tool metadata.
+
+    A tool is stdio (a local ``command`` with optional ``args``/``env``) or http (a
+    remote ``url`` with optional ``headers``/``oauth``). Crash early on a config that is
+    neither rather than emit a malformed server entry.
+    """
+    if "command" in srv:
+        entry = {"command": srv["command"]}
+        if srv.get("args"):
+            entry["args"] = srv["args"]
+        if srv.get("env"):
+            entry["env"] = srv["env"]
+        return {"type": "stdio", **entry} if emit_type else entry
+    if "url" in srv:
+        entry = {url_key: srv["url"], **{k: srv[k] for k in http_extra if k in srv}}
+        return {"type": "http", **entry} if emit_type else entry
+    raise ValueError(
+        f"MCP server must have 'command' (stdio) or 'url' (http); got keys {sorted(srv)}"
+    )
+
+
 AGENT_TARGETS = {
     "claude": {
         "rules_file": "~/.claude/CLAUDE.md",
@@ -21,10 +44,9 @@ AGENT_TARGETS = {
         "mcp_file": "~/.claude.json",
         "mcp_key": "mcpServers",
         "mcp_format": "json",
-        "mcp_transform": lambda srv: {
-            "type": "http", "url": srv["url"],
-            **{k: srv[k] for k in ("headers", "oauth") if k in srv},
-        },
+        "mcp_transform": lambda srv: _build_mcp_entry(
+            srv, url_key="url", emit_type=True, http_extra=("headers", "oauth")
+        ),
         "hooks_file": "~/.claude/settings.json",
         "hooks_key": "hooks",
         "hooks_format": "json",
@@ -36,10 +58,9 @@ AGENT_TARGETS = {
         "mcp_file": "~/.codex/config.toml",
         "mcp_key": "mcp_servers",
         "mcp_format": "toml",
-        "mcp_transform": lambda srv: {
-            "url": srv["url"],
-            **{k: srv[k] for k in ("headers",) if k in srv},
-        },
+        "mcp_transform": lambda srv: _build_mcp_entry(
+            srv, url_key="url", emit_type=False, http_extra=("headers",)
+        ),
         "hooks_file": "~/.codex/config.toml",
         "hooks_key": "hooks",
         "hooks_format": "toml",
@@ -51,10 +72,9 @@ AGENT_TARGETS = {
         "mcp_file": "~/.gemini/settings.json",
         "mcp_key": "mcpServers",
         "mcp_format": "json",
-        "mcp_transform": lambda srv: {
-            "httpUrl": srv["url"],
-            **{k: srv[k] for k in ("headers",) if k in srv},
-        },
+        "mcp_transform": lambda srv: _build_mcp_entry(
+            srv, url_key="httpUrl", emit_type=False, http_extra=("headers",)
+        ),
         "hooks_file": "~/.gemini/settings.json",
         "hooks_key": "hooks",
         "hooks_format": "json",
