@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { PlanDetailPage } from '../PlanDetailPage';
@@ -66,6 +66,10 @@ beforeEach(() => {
   mockCreate.mockResolvedValue({ ...fakePlan, id: 99 });
   mockUpdate.mockResolvedValue(fakePlan);
   mockRemove.mockResolvedValue(undefined);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('PlanDetailPage', () => {
@@ -152,6 +156,37 @@ describe('PlanDetailPage', () => {
       expect(screen.getByText('my-project')).toBeInTheDocument();
       expect(screen.getByText('Edit')).toBeInTheDocument();
       expect(screen.getByText('Delete')).toBeInTheDocument();
+    });
+
+    it('polls plan data every 15 seconds in view mode', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      renderWithProviders(<PlanDetailPage />);
+
+      await waitFor(() => expect(screen.getByText('Test Plan')).toBeInTheDocument());
+      mockGet.mockClear();
+
+      await act(async () => {
+        vi.advanceTimersByTime(15_000);
+        await Promise.resolve();
+      });
+
+      expect(mockGet).toHaveBeenCalledWith(42);
+    });
+
+    it('does not poll while editing', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      renderWithProviders(<PlanDetailPage />);
+
+      await waitFor(() => expect(screen.getByText('Edit')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('Edit'));
+      mockGet.mockClear();
+
+      await act(async () => {
+        vi.advanceTimersByTime(15_000);
+        await Promise.resolve();
+      });
+
+      expect(mockGet).not.toHaveBeenCalled();
     });
 
     it('shows loading then content once data loads', async () => {

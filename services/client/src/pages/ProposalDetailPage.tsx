@@ -4,6 +4,7 @@ import { api } from '../api';
 import type { Proposal } from '../api';
 import { useNotification } from '../context/useNotification';
 import { StatusBadge } from '../components/StatusBadge';
+import { usePolling } from '../hooks/usePolling';
 import { lineDiff, type DiffRow } from '../utils/lineDiff';
 import { CODE_BOX } from '../components/codeBox';
 
@@ -60,14 +61,17 @@ export function ProposalDetailPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(() => {
-    api.proposals
-      .get(Number(id))
-      .then(setProposal)
-      .catch(err => setError(err instanceof Error ? err.message : String(err)));
+  const load = useCallback(async ({ setErrorOnFailure = true }: { setErrorOnFailure?: boolean } = {}) => {
+    try {
+      setProposal(await api.proposals.get(Number(id)));
+      setError(null);
+    } catch (err) {
+      if (setErrorOnFailure) setError(err instanceof Error ? err.message : String(err));
+    }
   }, [id]);
 
-  useEffect(load, [load]);
+  useEffect(() => { load(); }, [load]);
+  usePolling(() => load({ setErrorOnFailure: false }), { enabled: Boolean(id) && !busy });
 
   if (error) return <div className="loading">Error: {error}</div>;
   if (!proposal) return <div className="loading">Loading...</div>;
@@ -92,8 +96,13 @@ export function ProposalDetailPage() {
 
   async function handleDelete() {
     if (!confirm('Delete this proposal?')) return;
-    await api.proposals.remove(Number(id));
-    navigate('/proposals');
+    setBusy(true);
+    try {
+      await api.proposals.remove(Number(id));
+      navigate('/proposals');
+    } finally {
+      setBusy(false);
+    }
   }
 
   const before = isJob

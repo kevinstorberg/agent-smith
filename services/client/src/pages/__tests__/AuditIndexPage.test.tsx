@@ -12,6 +12,7 @@ vi.mock('react-router', async (importOriginal) => {
 
 const mockSetLimit = vi.fn();
 const mockSetOffset = vi.fn();
+const mockRefresh = vi.fn();
 
 vi.mock('../../hooks/usePagination', () => ({
   usePagination: vi.fn(),
@@ -67,6 +68,7 @@ beforeEach(() => {
     offset: 0,
     setLimit: mockSetLimit,
     setOffset: mockSetOffset,
+    refresh: mockRefresh,
   });
   mockCounts.mockResolvedValue({ claude: 1, codex: 1, gemini: 0 });
 });
@@ -99,5 +101,18 @@ describe('AuditIndexPage', () => {
     fireEvent.click(screen.getByText('Bash'));
 
     expect(mockNavigate).toHaveBeenCalledWith('/audit/1');
+  });
+
+  it('polls audit events and counts every 15 seconds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderWithProviders(<AuditIndexPage />);
+    await waitFor(() => expect(mockCounts).toHaveBeenCalledTimes(1));
+
+    mockCounts.mockClear();
+    vi.advanceTimersByTime(15_000);
+
+    await waitFor(() => expect(mockRefresh).toHaveBeenCalledWith({ showLoading: false }));
+    expect(mockCounts).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 });

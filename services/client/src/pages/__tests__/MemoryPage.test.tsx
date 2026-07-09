@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { MemoryPage } from '../MemoryPage';
 
@@ -46,6 +46,10 @@ beforeEach(() => {
   mockRemove.mockResolvedValue({ deleted: true });
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('MemoryPage', () => {
   it('loads and displays memory items in list mode', async () => {
     renderWithProviders(<MemoryPage />);
@@ -68,6 +72,46 @@ describe('MemoryPage', () => {
     await waitFor(() => {
       expect(screen.getByText('No memories yet')).toBeInTheDocument();
     });
+  });
+
+  it('polls the current memory list every 15 seconds and stops after unmount', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { unmount } = renderWithProviders(<MemoryPage />);
+
+    await waitFor(() => expect(screen.getByText('First memory content')).toBeInTheDocument());
+    mockList.mockClear();
+
+    await act(async () => {
+      vi.advanceTimersByTime(15_000);
+      await Promise.resolve();
+    });
+
+    expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ limit: 10, offset: 0 }));
+
+    unmount();
+    mockList.mockClear();
+    await act(async () => {
+      vi.advanceTimersByTime(15_000);
+      await Promise.resolve();
+    });
+
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
+  it('does not poll while inline editing a memory', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderWithProviders(<MemoryPage />);
+
+    await waitFor(() => expect(screen.getByText('First memory content')).toBeInTheDocument());
+    fireEvent.click(screen.getAllByText('Edit')[0]);
+    mockList.mockClear();
+
+    await act(async () => {
+      vi.advanceTimersByTime(15_000);
+      await Promise.resolve();
+    });
+
+    expect(mockList).not.toHaveBeenCalled();
   });
 
   it('shows filter-specific empty state when filters return zero', async () => {

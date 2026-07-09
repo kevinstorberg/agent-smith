@@ -9,6 +9,7 @@ import { Pagination } from '../components/Pagination';
 import { useDetailPageEdit } from '../hooks/useDetailPageEdit';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { usePagination } from '../hooks/usePagination';
+import { usePolling } from '../hooks/usePolling';
 import { useNotification } from '../context/useNotification';
 import { MAX_TITLE_LENGTH } from '../constants';
 import { validators } from '../utils/validation';
@@ -77,13 +78,13 @@ export function JobDetailPage() {
     startEditing: startEdit, cancelEditing: cancelEdit, setSaving,
   } = useDetailPageEdit<Job>({ initialData: job, isNew, onCancel: () => navigate('/jobs') });
 
-  const loadJob = useCallback(async () => {
+  const loadJob = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
     if (isNew) return;
-    setLoading(true);
+    if (showLoading) setLoading(true);
     try {
       setJob(await api.jobs.get(Number(id)));
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [id, isNew]);
 
@@ -95,7 +96,7 @@ export function JobDetailPage() {
   });
   const updateMutation = useApiMutation({
     mutationFn: (data: Partial<Job>) => api.jobs.update(Number(id), data),
-    onSuccess: loadJob,
+    onSuccess: async () => { await loadJob(); },
   });
   const deleteMutation = useApiMutation({
     mutationFn: () => api.jobs.remove(Number(id)),
@@ -113,6 +114,17 @@ export function JobDetailPage() {
   const exec = usePagination<JobExecution>(
     (l, o) => (isNew ? Promise.resolve({ items: [], total: 0 }) : api.jobs.executions(Number(id), { limit: l, offset: o })),
     [id, execRefresh],
+  );
+  usePolling(
+    () => loadJob({ showLoading: false }),
+    {
+      enabled: !isNew && !editing && !saving && !runNowMutation.loading
+        && !updateMutation.loading && !deleteMutation.loading,
+    },
+  );
+  usePolling(
+    () => exec.refresh({ showLoading: false }),
+    { enabled: !isNew && tab === 'executions' && !editing && !saving && !runNowMutation.loading },
   );
 
   const save = async () => {

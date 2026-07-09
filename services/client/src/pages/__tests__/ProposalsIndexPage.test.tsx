@@ -12,6 +12,7 @@ vi.mock('react-router', async (importOriginal) => {
 
 const mockSetLimit = vi.fn();
 const mockSetOffset = vi.fn();
+const mockRefresh = vi.fn();
 const mockNotify = vi.fn();
 
 vi.mock('../../context/useNotification', async () => {
@@ -80,6 +81,7 @@ beforeEach(() => {
     offset: 0,
     setLimit: mockSetLimit,
     setOffset: mockSetOffset,
+    refresh: mockRefresh,
   });
   mockCounts.mockResolvedValue({ pending: 2, approved: 1, rejected: 0 });
   mockGenerate.mockResolvedValue({ started: true, job_id: 7 });
@@ -159,5 +161,18 @@ describe('ProposalsIndexPage', () => {
     await waitFor(() =>
       expect(mockNotify).toHaveBeenCalledWith(expect.stringMatching(/No background job named/), 'error'),
     );
+  });
+
+  it('polls proposals and counts every 15 seconds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderWithProviders(<ProposalsIndexPage />);
+    await waitFor(() => expect(mockCounts).toHaveBeenCalledTimes(1));
+
+    mockCounts.mockClear();
+    vi.advanceTimersByTime(15_000);
+
+    await waitFor(() => expect(mockRefresh).toHaveBeenCalledWith({ showLoading: false }));
+    expect(mockCounts).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 });

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { api } from '../api';
 import type { Plan } from '../api';
@@ -7,6 +7,7 @@ import { FilterBar } from '../components/FilterBar';
 import { DateCell } from '../components/table';
 import { StatusBadge } from '../components/StatusBadge';
 import { usePagination } from '../hooks/usePagination';
+import { usePolling } from '../hooks/usePolling';
 import { makeRowClickable } from '../utils/a11y';
 
 const STATUSES = ['all', 'draft', 'final'] as const;
@@ -18,7 +19,7 @@ export function PlansIndexPage() {
   const [searchResults, setSearchResults] = useState<Plan[] | null>(null);
   const navigate = useNavigate();
 
-  const { items, total, loading, limit, offset, setLimit, setOffset } = usePagination<Plan>(
+  const { items, total, loading, limit, offset, setLimit, setOffset, refresh } = usePagination<Plan>(
     (l, o) => api.plans.list({
       limit: l,
       offset: o,
@@ -27,17 +28,26 @@ export function PlansIndexPage() {
     }),
     [projectFilter, statusFilter],
   );
-
-  useEffect(() => {
-    if (!searchQuery.trim()) {
+  const searchTerm = searchQuery.trim();
+  const loadSearchResults = useCallback(async () => {
+    if (!searchTerm) {
       setSearchResults(null);
       return;
     }
-    const timeout = setTimeout(() => {
-      api.plans.search(searchQuery).then(setSearchResults);
-    }, 300);
+    setSearchResults(await api.plans.search(searchTerm));
+  }, [searchTerm]);
+
+  useEffect(() => {
+    if (!searchTerm) {
+      setSearchResults(null);
+      return;
+    }
+    const timeout = setTimeout(() => { loadSearchResults(); }, 300);
     return () => clearTimeout(timeout);
-  }, [searchQuery]);
+  }, [loadSearchResults, searchTerm]);
+  usePolling(
+    () => (searchTerm ? loadSearchResults() : refresh({ showLoading: false })),
+  );
 
   const displayed = searchResults ?? items;
 

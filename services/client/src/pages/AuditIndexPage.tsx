@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { api } from '../api';
 import type { AuditEvent, AuditCounts } from '../api';
@@ -6,6 +6,7 @@ import { Pagination } from '../components/Pagination';
 import { StatusBadge } from '../components/StatusBadge';
 import { DateCell, ProjectCell } from '../components/table';
 import { usePagination } from '../hooks/usePagination';
+import { usePolling } from '../hooks/usePolling';
 import { makeRowClickable } from '../utils/a11y';
 import { formatDuration } from '../utils/audit';
 
@@ -18,14 +19,27 @@ export function AuditIndexPage() {
   const [counts, setCounts] = useState<AuditCounts | null>(null);
   const navigate = useNavigate();
 
-  const { items, total, loading, limit, offset, setLimit, setOffset } = usePagination<AuditEvent>(
+  const { items, total, loading, limit, offset, setLimit, setOffset, refresh } = usePagination<AuditEvent>(
     (l, o) => api.audit.list({ agent: agent || undefined, status: status || undefined }, { limit: l, offset: o }),
     [agent, status],
   );
+  const loadCounts = useCallback(async () => {
+    try {
+      setCounts(await api.audit.counts());
+    } catch {
+      setCounts(null);
+    }
+  }, []);
 
   useEffect(() => {
-    api.audit.counts().then(setCounts).catch(() => setCounts(null));
-  }, [items]);
+    loadCounts();
+  }, [loadCounts]);
+  usePolling(async () => {
+    await Promise.all([
+      refresh({ showLoading: false }),
+      loadCounts(),
+    ]);
+  });
 
   if (loading) return <div className="loading">Loading...</div>;
 

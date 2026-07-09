@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { ProposalDetailPage } from '../ProposalDetailPage';
 
@@ -66,6 +66,10 @@ beforeEach(() => {
   mockReject.mockResolvedValue({ ...ruleUpdateProposal, status: 'rejected' });
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('ProposalDetailPage', () => {
   it('renders rationale, evidence links, and a highlighted unified diff for updates', async () => {
     renderWithProviders(<ProposalDetailPage />);
@@ -89,6 +93,42 @@ describe('ProposalDetailPage', () => {
     await waitFor(() => expect(mockApprove).toHaveBeenCalledWith(1));
     expect(await screen.findByText('approved')).toBeInTheDocument();
     expect(screen.queryByText('Approve')).not.toBeInTheDocument();
+  });
+
+  it('polls proposal details every 15 seconds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderWithProviders(<ProposalDetailPage />);
+
+    expect(await screen.findByText('Clarify the DRY rule')).toBeInTheDocument();
+    mockGet.mockClear();
+
+    await act(async () => {
+      vi.advanceTimersByTime(15_000);
+      await Promise.resolve();
+    });
+
+    expect(mockGet).toHaveBeenCalledWith(1);
+  });
+
+  it('does not poll while a review action is busy', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let resolveApprove: (value: unknown) => void = () => undefined;
+    mockApprove.mockReturnValue(new Promise(resolve => { resolveApprove = resolve; }));
+    renderWithProviders(<ProposalDetailPage />);
+
+    fireEvent.click(await screen.findByText('Approve'));
+    mockGet.mockClear();
+
+    await act(async () => {
+      vi.advanceTimersByTime(15_000);
+      await Promise.resolve();
+    });
+
+    expect(mockGet).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveApprove({ ...ruleUpdateProposal, status: 'approved' });
+    });
   });
 
   it('rejects and reflects the new status', async () => {

@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { JobDetailPage } from '../JobDetailPage';
 
 const mockNavigate = vi.fn();
+const mockExecRefresh = vi.hoisted(() => vi.fn());
 let mockParams: Record<string, string> = {};
 
 vi.mock('react-router', async (importOriginal) => {
@@ -14,7 +15,7 @@ vi.mock('react-router', async (importOriginal) => {
 vi.mock('../../hooks/usePagination', () => ({
   usePagination: vi.fn(() => ({
     items: [], total: 0, loading: false, limit: 10, offset: 0,
-    setLimit: vi.fn(), setOffset: vi.fn(), setItems: vi.fn(),
+    setLimit: vi.fn(), setOffset: vi.fn(), setItems: vi.fn(), refresh: mockExecRefresh,
   })),
 }));
 
@@ -61,6 +62,10 @@ beforeEach(() => {
   mockRunNow.mockResolvedValue({ success: true, output: 'ok', error: '', duration_seconds: 0.1, exit_code: 0 });
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('JobDetailPage', () => {
   describe('create mode', () => {
     beforeEach(() => { mockParams = { id: 'new' }; });
@@ -103,6 +108,19 @@ describe('JobDetailPage', () => {
         expect(mockNavigate).toHaveBeenCalledWith('/jobs/99', { replace: true });
       });
     });
+
+    it('does not poll job data for new jobs', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      renderWithProviders(<JobDetailPage />);
+      mockGet.mockClear();
+
+      await act(async () => {
+        vi.advanceTimersByTime(15_000);
+        await Promise.resolve();
+      });
+
+      expect(mockGet).not.toHaveBeenCalled();
+    });
   });
 
   describe('view mode', () => {
@@ -121,11 +139,65 @@ describe('JobDetailPage', () => {
       await waitFor(() => expect(mockRunNow).toHaveBeenCalledWith(42));
     });
 
+    it('polls job metadata every 15 seconds in view mode', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      renderWithProviders(<JobDetailPage />);
+
+      await waitFor(() => expect(screen.getByText('Test Job')).toBeInTheDocument());
+      mockGet.mockClear();
+
+      await act(async () => {
+        vi.advanceTimersByTime(15_000);
+        await Promise.resolve();
+      });
+
+      expect(mockGet).toHaveBeenCalledWith(42);
+    });
+
+    it('does not poll job metadata while editing', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      renderWithProviders(<JobDetailPage />);
+
+      await waitFor(() => expect(screen.getByText('Edit')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('Edit'));
+      mockGet.mockClear();
+
+      await act(async () => {
+        vi.advanceTimersByTime(15_000);
+        await Promise.resolve();
+      });
+
+      expect(mockGet).not.toHaveBeenCalled();
+    });
+
     it('switches to the executions tab', async () => {
       renderWithProviders(<JobDetailPage />);
       await waitFor(() => expect(screen.getByText('Test Job')).toBeInTheDocument());
       fireEvent.click(screen.getByText('Executions'));
       expect(screen.getByText('No executions yet')).toBeInTheDocument();
+    });
+
+    it('polls executions only on the executions tab', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      renderWithProviders(<JobDetailPage />);
+
+      await waitFor(() => expect(screen.getByText('Test Job')).toBeInTheDocument());
+      mockExecRefresh.mockClear();
+
+      await act(async () => {
+        vi.advanceTimersByTime(15_000);
+        await Promise.resolve();
+      });
+      expect(mockExecRefresh).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByText('Executions'));
+
+      await act(async () => {
+        vi.advanceTimersByTime(15_000);
+        await Promise.resolve();
+      });
+
+      expect(mockExecRefresh).toHaveBeenCalledWith({ showLoading: false });
     });
 
     it('confirms before deleting', async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { api } from '../api';
 import type { Proposal, ProposalCounts } from '../api';
@@ -6,6 +6,7 @@ import { Pagination } from '../components/Pagination';
 import { DateCell } from '../components/table';
 import { useNotification } from '../context/useNotification';
 import { usePagination } from '../hooks/usePagination';
+import { usePolling } from '../hooks/usePolling';
 import { makeRowClickable } from '../utils/a11y';
 
 const STATUSES = ['pending', 'approved', 'rejected'] as const;
@@ -18,20 +19,37 @@ export function ProposalsIndexPage() {
   const { notify } = useNotification();
 
   const [busyIds, setBusyIds] = useState<Set<number>>(new Set());
-  const { items, setItems, total, loading, limit, offset, setLimit, setOffset } = usePagination<Proposal>(
+  const { items, setItems, total, loading, limit, offset, setLimit, setOffset, refresh } = usePagination<Proposal>(
     (l, o) => api.proposals.list(statusFilter || undefined, { limit: l, offset: o }),
     [statusFilter],
   );
+  const loadCounts = useCallback(async () => {
+    try {
+      setCounts(await api.proposals.counts());
+    } catch {
+      setCounts(null);
+    }
+  }, []);
 
   useEffect(() => {
-    api.proposals.counts().then(setCounts).catch(() => setCounts(null));
-  }, [items]);
+    loadCounts();
+  }, [loadCounts]);
+  usePolling(
+    async () => {
+      await Promise.all([
+        refresh({ showLoading: false }),
+        loadCounts(),
+      ]);
+    },
+    { enabled: busyIds.size === 0 },
+  );
 
   async function quickReview(proposal: Proposal, action: 'approve' | 'reject') {
     setBusyIds(prev => new Set(prev).add(proposal.id));
     try {
       await api.proposals[action](proposal.id);
       setItems(prev => prev.filter(p => p.id !== proposal.id));
+      await loadCounts();
       notify(`${proposal.target_name}: ${action === 'approve' ? 'applied' : 'rejected'}`, 'success');
     } catch (err) {
       notify(`${action} failed: ${err instanceof Error ? err.message : String(err)}`, 'error');

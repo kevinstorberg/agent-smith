@@ -12,6 +12,7 @@ vi.mock('react-router', async (importOriginal) => {
 
 const mockSetLimit = vi.fn();
 const mockSetOffset = vi.fn();
+const mockRefresh = vi.fn();
 
 vi.mock('../../hooks/usePagination', () => ({
   usePagination: vi.fn(),
@@ -33,7 +34,7 @@ const fakeJobs = [
 function paginationReturn(overrides = {}) {
   return {
     items: fakeJobs, total: 2, loading: false, limit: 10, offset: 0,
-    setLimit: mockSetLimit, setOffset: mockSetOffset, setItems: vi.fn(),
+    setLimit: mockSetLimit, setOffset: mockSetOffset, setItems: vi.fn(), refresh: mockRefresh,
     ...overrides,
   };
 }
@@ -74,5 +75,19 @@ describe('JobsIndexPage', () => {
     renderWithProviders(<JobsIndexPage />);
     fireEvent.click(screen.getByText('Backup'));
     expect(mockNavigate).toHaveBeenCalledWith('/jobs/1');
+  });
+
+  it('polls the current jobs page every 15 seconds', () => {
+    vi.useFakeTimers();
+    const { unmount } = renderWithProviders(<JobsIndexPage />);
+
+    vi.advanceTimersByTime(15_000);
+    expect(mockRefresh).toHaveBeenCalledWith({ showLoading: false });
+
+    unmount();
+    mockRefresh.mockClear();
+    vi.advanceTimersByTime(15_000);
+    expect(mockRefresh).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });
