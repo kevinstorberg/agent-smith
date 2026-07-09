@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { screen, waitFor, act } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { AuditDetailPage } from '../AuditDetailPage';
 
@@ -37,6 +37,10 @@ beforeEach(() => {
   mockGet.mockResolvedValue(fakeEvent);
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('AuditDetailPage', () => {
   it('renders metadata and both payload panes for a completed event', async () => {
     renderWithProviders(<AuditDetailPage />);
@@ -56,5 +60,20 @@ describe('AuditDetailPage', () => {
 
     await waitFor(() => expect(screen.getByText('Tool input')).toBeInTheDocument());
     expect(screen.queryByText('Result')).not.toBeInTheDocument();
+  });
+
+  it('polls the audit event every 15 seconds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderWithProviders(<AuditDetailPage />);
+
+    expect(await screen.findByText(/claude · Bash/)).toBeInTheDocument();
+    mockGet.mockClear();
+
+    await act(async () => {
+      vi.advanceTimersByTime(15_000);
+      await Promise.resolve();
+    });
+
+    expect(mockGet).toHaveBeenCalledWith(1);
   });
 });

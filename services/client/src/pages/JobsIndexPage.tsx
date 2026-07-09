@@ -4,15 +4,17 @@ import type { Job } from '../api';
 import { Pagination } from '../components/Pagination';
 import { DateCell } from '../components/table';
 import { usePagination } from '../hooks/usePagination';
+import { usePolling } from '../hooks/usePolling';
 import { makeRowClickable } from '../utils/a11y';
 import { formatSchedule } from '../utils/schedule';
 
 export function JobsIndexPage() {
   const navigate = useNavigate();
 
-  const { items, total, loading, limit, offset, setLimit, setOffset } = usePagination<Job>(
+  const { items, total, loading, limit, offset, setLimit, setOffset, refresh } = usePagination<Job>(
     (l, o) => api.jobs.list({ limit: l, offset: o }),
   );
+  usePolling(() => refresh({ showLoading: false }));
 
   if (loading) return <div className="loading">Loading...</div>;
 

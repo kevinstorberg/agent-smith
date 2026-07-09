@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router';
 import { api } from '../api';
 import type { AuditEvent } from '../api';
 import { StatusBadge } from '../components/StatusBadge';
+import { usePolling } from '../hooks/usePolling';
 import { CODE_BOX } from '../components/codeBox';
 import { formatDuration } from '../utils/audit';
 
@@ -32,14 +33,17 @@ export function AuditDetailPage() {
   const [event, setEvent] = useState<AuditEvent | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(() => {
-    api.audit
-      .get(Number(id))
-      .then(setEvent)
-      .catch(err => setError(err instanceof Error ? err.message : String(err)));
+  const load = useCallback(async ({ setErrorOnFailure = true }: { setErrorOnFailure?: boolean } = {}) => {
+    try {
+      setEvent(await api.audit.get(Number(id)));
+      setError(null);
+    } catch (err) {
+      if (setErrorOnFailure) setError(err instanceof Error ? err.message : String(err));
+    }
   }, [id]);
 
-  useEffect(load, [load]);
+  useEffect(() => { load(); }, [load]);
+  usePolling(() => load({ setErrorOnFailure: false }), { enabled: Boolean(id) });
 
   if (error) return <div className="loading">Error: {error}</div>;
   if (!event) return <div className="loading">Loading...</div>;

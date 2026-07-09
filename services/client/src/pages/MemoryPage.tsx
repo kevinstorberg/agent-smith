@@ -4,6 +4,7 @@ import type { MemoryItem } from '../api';
 import { Pagination } from '../components/Pagination';
 import { CopyButton } from '../components/CopyButton';
 import { useNotification } from '../context/useNotification';
+import { usePolling } from '../hooks/usePolling';
 
 type Mode = 'list' | 'search';
 
@@ -44,8 +45,8 @@ export function MemoryPage() {
   );
   const sortOptions = mode === 'search' ? SEARCH_SORT_OPTIONS : LIST_SORT_OPTIONS;
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
+    if (showLoading) setLoading(true);
     const opts = {
       limit,
       offset,
@@ -60,13 +61,20 @@ export function MemoryPage() {
       setItems(res.items);
       setTotal(res.total);
     } catch {
-      setItems([]);
-      setTotal(0);
+      if (showLoading) {
+        setItems([]);
+        setTotal(0);
+      }
+    } finally {
+      if (showLoading) setLoading(false);
     }
-    setLoading(false);
   }, [mode, query, limit, offset, filterRepo, tagsArray, sort]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+  usePolling(
+    () => fetchData({ showLoading: false }),
+    { enabled: !editingId && !saving && !confirmDeleteId },
+  );
 
   const onFilterRepoChange = (v: string) => { setFilterRepo(v); setOffset(0); };
   const onFilterTagsChange = (v: string) => { setFilterTags(v); setOffset(0); };

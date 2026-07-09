@@ -10,6 +10,7 @@ import { DetailPageHeader } from '../components/DetailPageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { useDetailPageEdit } from '../hooks/useDetailPageEdit';
 import { useApiMutation } from '../hooks/useApiMutation';
+import { usePolling } from '../hooks/usePolling';
 import { useNotification } from '../context/useNotification';
 import { MAX_TITLE_LENGTH } from '../constants';
 import { validators } from '../utils/validation';
@@ -91,20 +92,24 @@ export function PlanDetailPage() {
     },
   });
 
-  const loadPlan = useCallback(async () => {
+  const loadPlan = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
     if (isNew) return;
-    setLoading(true);
+    if (showLoading) setLoading(true);
     try {
       const data = await api.plans.get(Number(id));
       setPlan(data);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [id, isNew]);
 
   useEffect(() => {
     loadPlan();
   }, [loadPlan]);
+  usePolling(
+    () => loadPlan({ showLoading: false }),
+    { enabled: !isNew && !editing && !saving && !updateMutation.loading && !deleteMutation.loading },
+  );
 
   const startEditing = () => {
     if (!plan) return;

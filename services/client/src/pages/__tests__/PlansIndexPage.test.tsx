@@ -12,6 +12,7 @@ vi.mock('react-router', async (importOriginal) => {
 
 const mockSetLimit = vi.fn();
 const mockSetOffset = vi.fn();
+const mockRefresh = vi.fn();
 
 vi.mock('../../hooks/usePagination', () => ({
   usePagination: vi.fn(),
@@ -47,6 +48,7 @@ beforeEach(() => {
     offset: 0,
     setLimit: mockSetLimit,
     setOffset: mockSetOffset,
+    refresh: mockRefresh,
   });
   mockSearch.mockResolvedValue([]);
 });
@@ -70,6 +72,7 @@ describe('PlansIndexPage', () => {
       offset: 0,
       setLimit: mockSetLimit,
       setOffset: mockSetOffset,
+      refresh: mockRefresh,
     });
 
     renderWithProviders(<PlansIndexPage />);
@@ -85,6 +88,7 @@ describe('PlansIndexPage', () => {
       offset: 0,
       setLimit: mockSetLimit,
       setOffset: mockSetOffset,
+      refresh: mockRefresh,
     });
 
     renderWithProviders(<PlansIndexPage />);
@@ -174,5 +178,42 @@ describe('PlansIndexPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'draft' }));
     expect(mockSetOffset).toHaveBeenCalledWith(0);
+  });
+
+  it('polls the paginated list when no search is active', () => {
+    vi.useFakeTimers();
+    const { unmount } = renderWithProviders(<PlansIndexPage />);
+
+    vi.advanceTimersByTime(15_000);
+    expect(mockRefresh).toHaveBeenCalledWith({ showLoading: false });
+
+    unmount();
+    mockRefresh.mockClear();
+    vi.advanceTimersByTime(15_000);
+    expect(mockRefresh).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('polls active search results instead of the paginated list', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockSearch.mockResolvedValue([{ id: 3, title: 'Found', project: null, status: 'draft', updated_at: '2026-03-01T00:00:00Z' }]);
+
+    renderWithProviders(<PlansIndexPage />);
+
+    fireEvent.change(screen.getByPlaceholderText('Search by title...'), { target: { value: 'Found' } });
+
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+    mockSearch.mockClear();
+    mockRefresh.mockClear();
+
+    await act(async () => {
+      vi.advanceTimersByTime(15_000);
+    });
+
+    expect(mockSearch).toHaveBeenCalledWith('Found');
+    expect(mockRefresh).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });
