@@ -17,6 +17,7 @@ services:
         required: false
     volumes:
       - memory_store:/app/memory_store
+      - hf_cache:/root/.cache/huggingface
       - ${RDS_CERT_PATH:-/dev/null}:/certs/rds-global-bundle.pem:ro
       - ${HOME}/.claude:/root/.claude
       - ${HOME}/.claude.json:/root/.claude.json
@@ -83,3 +84,4 @@ services:
 volumes:
   pgdata:
   memory_store:
+  hf_cache:
