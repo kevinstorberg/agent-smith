@@ -1,6 +1,6 @@
 PyYAML>=6.0
 tomli_w>=1.0
-mcp[cli]>=1.0
+mcp[cli]>=1.0,<2.0
 lancedb>=0.17.0
 deepagents>=0.6.5
 langchain>=0.3.0
