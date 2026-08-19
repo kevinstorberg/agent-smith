@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
+import { POLL_INTERVAL_MS } from '../../constants';
 import { PlanDetailPage } from '../PlanDetailPage';
 
 vi.mock('@uiw/react-md-editor', () => ({
@@ -158,7 +159,7 @@ describe('PlanDetailPage', () => {
       expect(screen.getByText('Delete')).toBeInTheDocument();
     });
 
-    it('polls plan data every 15 seconds in view mode', async () => {
+    it('polls plan data every 60 seconds in view mode', async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       renderWithProviders(<PlanDetailPage />);
 
@@ -166,7 +167,7 @@ describe('PlanDetailPage', () => {
       mockGet.mockClear();
 
       await act(async () => {
-        vi.advanceTimersByTime(15_000);
+        vi.advanceTimersByTime(POLL_INTERVAL_MS);
         await Promise.resolve();
       });
 
@@ -182,7 +183,7 @@ describe('PlanDetailPage', () => {
       mockGet.mockClear();
 
       await act(async () => {
-        vi.advanceTimersByTime(15_000);
+        vi.advanceTimersByTime(POLL_INTERVAL_MS);
         await Promise.resolve();
       });
 

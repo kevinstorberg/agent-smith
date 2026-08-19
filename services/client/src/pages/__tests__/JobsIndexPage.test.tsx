@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
+import { POLL_INTERVAL_MS } from '../../constants';
 import { JobsIndexPage } from '../JobsIndexPage';
 
 const mockNavigate = vi.fn();
@@ -77,16 +78,16 @@ describe('JobsIndexPage', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/jobs/1');
   });
 
-  it('polls the current jobs page every 15 seconds', () => {
+  it('polls the current jobs page every 60 seconds', () => {
     vi.useFakeTimers();
     const { unmount } = renderWithProviders(<JobsIndexPage />);
 
-    vi.advanceTimersByTime(15_000);
+    vi.advanceTimersByTime(POLL_INTERVAL_MS);
     expect(mockRefresh).toHaveBeenCalledWith({ showLoading: false });
 
     unmount();
     mockRefresh.mockClear();
-    vi.advanceTimersByTime(15_000);
+    vi.advanceTimersByTime(POLL_INTERVAL_MS);
     expect(mockRefresh).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
