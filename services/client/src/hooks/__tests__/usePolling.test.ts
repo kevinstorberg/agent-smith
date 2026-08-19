@@ -8,6 +8,10 @@ afterEach(() => {
 });
 
 describe('usePolling', () => {
+  it('defaults to a 60-second interval', () => {
+    expect(POLL_INTERVAL_MS).toBe(60_000);
+  });
+
   it('does not call immediately and calls after the interval', () => {
     vi.useFakeTimers();
     const callback = vi.fn();

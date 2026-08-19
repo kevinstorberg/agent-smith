@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
+import { POLL_INTERVAL_MS } from '../../constants';
 import { MemoryPage } from '../MemoryPage';
 
 vi.mock('../../api', () => ({
@@ -74,7 +75,7 @@ describe('MemoryPage', () => {
     });
   });
 
-  it('polls the current memory list every 15 seconds and stops after unmount', async () => {
+  it('polls the current memory list every 60 seconds and stops after unmount', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const { unmount } = renderWithProviders(<MemoryPage />);
 
@@ -82,7 +83,7 @@ describe('MemoryPage', () => {
     mockList.mockClear();
 
     await act(async () => {
-      vi.advanceTimersByTime(15_000);
+      vi.advanceTimersByTime(POLL_INTERVAL_MS);
       await Promise.resolve();
     });
 
@@ -91,7 +92,7 @@ describe('MemoryPage', () => {
     unmount();
     mockList.mockClear();
     await act(async () => {
-      vi.advanceTimersByTime(15_000);
+      vi.advanceTimersByTime(POLL_INTERVAL_MS);
       await Promise.resolve();
     });
 
@@ -107,7 +108,7 @@ describe('MemoryPage', () => {
     mockList.mockClear();
 
     await act(async () => {
-      vi.advanceTimersByTime(15_000);
+      vi.advanceTimersByTime(POLL_INTERVAL_MS);
       await Promise.resolve();
     });
 

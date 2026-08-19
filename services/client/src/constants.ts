@@ -1,5 +1,5 @@
 export const ALL_AGENTS = ['claude', 'codex', 'gemini'];
-export const POLL_INTERVAL_MS = 15_000;
+export const POLL_INTERVAL_MS = 60_000;
 
 export const TYPE_PATHS: Record<string, string> = {
   rule: 'rules',

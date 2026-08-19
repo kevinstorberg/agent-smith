@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
+import { POLL_INTERVAL_MS } from '../../constants';
 import { AuditIndexPage } from '../AuditIndexPage';
 
 const mockNavigate = vi.fn();
@@ -103,13 +104,13 @@ describe('AuditIndexPage', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/audit/1');
   });
 
-  it('polls audit events and counts every 15 seconds', async () => {
+  it('polls audit events and counts every 60 seconds', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     renderWithProviders(<AuditIndexPage />);
     await waitFor(() => expect(mockCounts).toHaveBeenCalledTimes(1));
 
     mockCounts.mockClear();
-    vi.advanceTimersByTime(15_000);
+    vi.advanceTimersByTime(POLL_INTERVAL_MS);
 
     await waitFor(() => expect(mockRefresh).toHaveBeenCalledWith({ showLoading: false }));
     expect(mockCounts).toHaveBeenCalledTimes(1);

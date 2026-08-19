@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, waitFor, act } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
+import { POLL_INTERVAL_MS } from '../../constants';
 import { AuditDetailPage } from '../AuditDetailPage';
 
 vi.mock('react-router', async (importOriginal) => {
@@ -62,7 +63,7 @@ describe('AuditDetailPage', () => {
     expect(screen.queryByText('Result')).not.toBeInTheDocument();
   });
 
-  it('polls the audit event every 15 seconds', async () => {
+  it('polls the audit event every 60 seconds', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     renderWithProviders(<AuditDetailPage />);
 
@@ -70,7 +71,7 @@ describe('AuditDetailPage', () => {
     mockGet.mockClear();
 
     await act(async () => {
-      vi.advanceTimersByTime(15_000);
+      vi.advanceTimersByTime(POLL_INTERVAL_MS);
       await Promise.resolve();
     });
 

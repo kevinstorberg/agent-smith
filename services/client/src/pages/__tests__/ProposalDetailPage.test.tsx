@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
+import { POLL_INTERVAL_MS } from '../../constants';
 import { ProposalDetailPage } from '../ProposalDetailPage';
 
 const mockNavigate = vi.fn();
@@ -95,7 +96,7 @@ describe('ProposalDetailPage', () => {
     expect(screen.queryByText('Approve')).not.toBeInTheDocument();
   });
 
-  it('polls proposal details every 15 seconds', async () => {
+  it('polls proposal details every 60 seconds', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     renderWithProviders(<ProposalDetailPage />);
 
@@ -103,7 +104,7 @@ describe('ProposalDetailPage', () => {
     mockGet.mockClear();
 
     await act(async () => {
-      vi.advanceTimersByTime(15_000);
+      vi.advanceTimersByTime(POLL_INTERVAL_MS);
       await Promise.resolve();
     });
 
@@ -120,7 +121,7 @@ describe('ProposalDetailPage', () => {
     mockGet.mockClear();
 
     await act(async () => {
-      vi.advanceTimersByTime(15_000);
+      vi.advanceTimersByTime(POLL_INTERVAL_MS);
       await Promise.resolve();
     });
 

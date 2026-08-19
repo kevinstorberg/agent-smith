@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
+import { POLL_INTERVAL_MS } from '../../constants';
 import { JobDetailPage } from '../JobDetailPage';
 
 const mockNavigate = vi.fn();
@@ -115,7 +116,7 @@ describe('JobDetailPage', () => {
       mockGet.mockClear();
 
       await act(async () => {
-        vi.advanceTimersByTime(15_000);
+        vi.advanceTimersByTime(POLL_INTERVAL_MS);
         await Promise.resolve();
       });
 
@@ -139,7 +140,7 @@ describe('JobDetailPage', () => {
       await waitFor(() => expect(mockRunNow).toHaveBeenCalledWith(42));
     });
 
-    it('polls job metadata every 15 seconds in view mode', async () => {
+    it('polls job metadata every 60 seconds in view mode', async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       renderWithProviders(<JobDetailPage />);
 
@@ -147,7 +148,7 @@ describe('JobDetailPage', () => {
       mockGet.mockClear();
 
       await act(async () => {
-        vi.advanceTimersByTime(15_000);
+        vi.advanceTimersByTime(POLL_INTERVAL_MS);
         await Promise.resolve();
       });
 
@@ -163,7 +164,7 @@ describe('JobDetailPage', () => {
       mockGet.mockClear();
 
       await act(async () => {
-        vi.advanceTimersByTime(15_000);
+        vi.advanceTimersByTime(POLL_INTERVAL_MS);
         await Promise.resolve();
       });
 
@@ -185,7 +186,7 @@ describe('JobDetailPage', () => {
       mockExecRefresh.mockClear();
 
       await act(async () => {
-        vi.advanceTimersByTime(15_000);
+        vi.advanceTimersByTime(POLL_INTERVAL_MS);
         await Promise.resolve();
       });
       expect(mockExecRefresh).not.toHaveBeenCalled();
@@ -193,7 +194,7 @@ describe('JobDetailPage', () => {
       fireEvent.click(screen.getByText('Executions'));
 
       await act(async () => {
-        vi.advanceTimersByTime(15_000);
+        vi.advanceTimersByTime(POLL_INTERVAL_MS);
         await Promise.resolve();
       });
 
