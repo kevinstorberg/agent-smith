@@ -14,3 +14,5 @@ evals/results/
 
 .claude
 .worktrees/
+
+.env.*
