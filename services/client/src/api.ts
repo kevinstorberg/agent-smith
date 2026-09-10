@@ -327,9 +327,15 @@ export interface ChatRoom {
 export interface ChatMessage {
   id: number;
   room_id: number;
-  author: 'user' | 'claude' | 'codex' | 'gemini';
+  // Widened beyond user/claude/codex/gemini: AI participants post under
+  // names configured in CHAT_MODEL_NAMES.
+  author: string;
   body: string;
   created_at: string;
+}
+
+export interface ChatConfig {
+  participants: string[];
 }
 
 export interface ChatRoomDetail {
@@ -484,6 +490,7 @@ export const api = {
     postMessage: (id: number, body: string) =>
       post<ChatMessage>(`/chat/${id}/messages`, { body }),
     stop: (id: number) => post<ChatRoom>(`/chat/${id}/stop`, {}),
+    config: () => get<ChatConfig>('/chat/config'),
   },
   evalConfigs: {
     suites: {

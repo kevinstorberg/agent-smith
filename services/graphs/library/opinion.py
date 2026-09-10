@@ -17,6 +17,7 @@ from services.graphs.agents import (
     rubric_status,
 )
 from services.graphs.messages import extract_result_text
+from services.graphs.prompts import grounding_block
 from scripts.shared.paths import REPO_ROOT
 from services.rubric import rules_to_prompt_context, rules_to_rubric
 
@@ -34,15 +35,8 @@ _SYSTEM_PROMPT = (
     "  3. One or two concrete simplifications or alternatives worth considering.\n"
     "  4. Any unstated assumptions the author should verify.\n"
     "Keep the response tight - prioritize signal over breadth. Do not flatter; do not "
-    "hedge.\n\n"
-    "GROUNDING (critical): You have NO access to any codebase, filesystem, runtime, or "
-    "tools. The proposal text in this message is your ONLY source of information. "
-    "Critique only what the proposal actually states. Never invent specifics that are "
-    "not in the proposal — do not name classes, functions, files, database engines, "
-    "libraries, or infrastructure the proposal does not mention, and never claim to have "
-    "inspected a codebase or filesystem. If a detail is not stated, treat it as an "
-    "unstated assumption to flag (phrased conditionally, e.g. 'if X uses Y...'), never as "
-    "established fact."
+    "hedge. Critique only what the proposal actually states.\n\n"
+    + grounding_block("The proposal text in this message")
 )
 
 _GRADER_PROMPT = (

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import pytest
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 
 from services.api.routers.chat import (
     CreateRoomRequest,
     PostMessageRequest,
+    config,
     create,
     get_one,
     list_all,
@@ -27,9 +28,19 @@ def _clean_chat_rooms():
     clean()
 
 
+def _post(room_id: int, body: str) -> tuple[dict, BackgroundTasks]:
+    tasks = BackgroundTasks()
+    message = post_message(room_id, PostMessageRequest(body=body), tasks)
+    return message, tasks
+
+
+def _scheduled_participants(tasks: BackgroundTasks) -> list[str]:
+    return [task.args[1] for task in tasks.tasks]
+
+
 def test_user_rest_flow_never_accepts_an_author():
     room = create(CreateRoomRequest(topic="REST flow", context="Use the real sessions."))
-    message = post_message(room["id"], PostMessageRequest(body="Start here"))
+    message, _ = _post(room["id"], "Start here")
 
     result = get_one(room["id"], after_message_id=0)
 
@@ -46,7 +57,7 @@ def test_rest_maps_missing_and_closed_rooms():
     room = create(CreateRoomRequest(topic="Close me"))
     stop(room["id"])
     with pytest.raises(HTTPException) as closed:
-        post_message(room["id"], PostMessageRequest(body="Too late"))
+        _post(room["id"], "Too late")
     assert closed.value.status_code == 409
 
 
@@ -54,3 +65,53 @@ def test_rest_maps_whitespace_only_input_to_validation_error():
     with pytest.raises(HTTPException) as invalid:
         create(CreateRoomRequest(topic="   "))
     assert invalid.value.status_code == 422
+
+
+@pytest.fixture
+def _participants_env(monkeypatch):
+    monkeypatch.setenv("CHAT_MODEL_NAMES", "Kimi,Qwen")
+    monkeypatch.setenv("CHAT_MODEL_IDS", "moonshotai.kimi-k2.5,qwen.qwen3-max")
+
+
+@pytest.mark.parametrize("mention", ["@kimi", "@Kimi", "@KIMI"])
+def test_mention_matching_is_case_insensitive(_participants_env, mention):
+    room = create(CreateRoomRequest(topic="Summon"))
+
+    _, tasks = _post(room["id"], f"hey {mention}, thoughts?")
+
+    assert _scheduled_participants(tasks) == ["Kimi"]
+
+
+def test_each_distinct_mentioned_participant_is_scheduled_once(_participants_env):
+    room = create(CreateRoomRequest(topic="Summon several"))
+
+    _, tasks = _post(room["id"], "@Kimi @qwen @kimi weigh in please")
+
+    assert _scheduled_participants(tasks) == ["Kimi", "Qwen"]
+
+
+@pytest.mark.parametrize("body", ["no mention here", "@KimiX is not registered", "mail@kimi.example is an email, not a mention"])
+def test_non_mentions_schedule_nothing(_participants_env, body):
+    room = create(CreateRoomRequest(topic="Quiet"))
+
+    _, tasks = _post(room["id"], body)
+
+    assert tasks.tasks == []
+
+
+def test_misconfigured_registry_fails_the_post_before_storing_anything(monkeypatch):
+    monkeypatch.setenv("CHAT_MODEL_NAMES", "Kimi")
+    monkeypatch.setenv("CHAT_MODEL_IDS", "id-one,id-two")
+    room = create(CreateRoomRequest(topic="Broken registry"))
+
+    with pytest.raises(HTTPException) as failure:
+        _post(room["id"], "@Kimi hello")
+
+    assert failure.value.status_code == 422
+    assert "equal length" in failure.value.detail
+    assert get_one(room["id"], after_message_id=0)["messages"] == []
+
+
+def test_config_lists_participants_in_registry_order(_participants_env):
+    assert config() == {"participants": ["Kimi", "Qwen"]}
+

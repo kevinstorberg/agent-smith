@@ -30,7 +30,14 @@ export function ChatPage() {
   const [context, setContext] = useState('');
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
+  const [aiParticipants, setAiParticipants] = useState<string[]>([]);
   const { notify } = useNotification();
+
+  useEffect(() => {
+    api.chat.config()
+      .then(result => setAiParticipants(result.participants))
+      .catch(error => notify(error instanceof Error ? error.message : String(error), 'error'));
+  }, [notify]);
 
   const loadRooms = useCallback(async (showError = true) => {
     try {
@@ -229,6 +236,11 @@ export function ChatPage() {
                 )}
               </div>
 
+              {detail.room.state === 'open' && aiParticipants.length > 0 && (
+                <div className="chat-empty">
+                  Mention {aiParticipants.map(name => `@${name}`).join(' or ')} to bring an AI into the room.
+                </div>
+              )}
               <form className="chat-composer" onSubmit={sendMessage}>
                 <textarea
                   className="input"

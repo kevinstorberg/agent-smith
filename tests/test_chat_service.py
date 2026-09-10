@@ -11,6 +11,7 @@ from services.chat.service import (
     get_room,
     list_rooms,
     post_agent_message,
+    post_graph_message,
     post_user_message,
     read_agent_room,
     stop_agent_access,
@@ -108,6 +109,36 @@ def test_agent_post_rejects_unknown_or_impersonated_agent(agent):
     room = create_room("Identity boundary")
     with pytest.raises(ValueError, match="agent must be one of"):
         post_agent_message(room["id"], agent, "Hello")
+
+
+@pytest.fixture
+def _participants_env(monkeypatch):
+    monkeypatch.setenv("CHAT_MODEL_NAMES", "Kimi,Qwen")
+    monkeypatch.setenv("CHAT_MODEL_IDS", "moonshotai.kimi-k2.5,qwen.qwen3-max")
+
+
+def test_graph_post_stores_registered_participant_author(_participants_env):
+    room = create_room("AI participant round trip")
+    message = post_graph_message(room["id"], "kimi", "Hello from the registry.")
+
+    assert message["author"] == "Kimi"
+    stored = get_room(room["id"])["messages"]
+    assert [m["author"] for m in stored] == ["Kimi"]
+
+
+@pytest.mark.parametrize("author", ["user", "claude", "codex", "gemini", "Bard", ""])
+def test_graph_post_rejects_unregistered_or_reserved_authors(_participants_env, author):
+    room = create_room("Graph identity boundary")
+    with pytest.raises(ValueError):
+        post_graph_message(room["id"], author, "Must not be stored")
+    assert get_room(room["id"])["messages"] == []
+
+
+def test_graph_post_rejects_closed_room(_participants_env):
+    room = create_room("Closed to AI too")
+    stop_agent_access(room["id"])
+    with pytest.raises(ChatRoomClosedError, match="closed"):
+        post_graph_message(room["id"], "Kimi", "This must not be stored")
 
 
 def test_missing_room_fails_clearly():

@@ -12,6 +12,7 @@ vi.mock('../../api', () => ({
       get: vi.fn(),
       postMessage: vi.fn(),
       stop: vi.fn(),
+      config: vi.fn(),
     },
   },
 }));
@@ -43,6 +44,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.chat.list).mockResolvedValue({ items: [room], total: 1 });
   vi.mocked(api.chat.get).mockResolvedValue(detail);
+  vi.mocked(api.chat.config).mockResolvedValue({ participants: ['Kimi', 'Qwen'] });
   Object.assign(navigator, {
     clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
   });
@@ -128,6 +130,39 @@ describe('ChatPage', () => {
     await waitFor(() => expect(api.chat.stop).toHaveBeenCalledWith(42));
     expect(await screen.findByText('Agent Access Stopped')).toBeDisabled();
     expect(screen.getByLabelText('Message')).toBeDisabled();
+  });
+
+  it('renders configured AI participant messages with their byline', async () => {
+    vi.mocked(api.chat.get).mockResolvedValue({
+      ...detail,
+      messages: [
+        ...detail.messages,
+        {
+          id: 9,
+          room_id: 42,
+          author: 'Kimi',
+          body: 'I would benchmark both caches first.',
+          created_at: '2026-09-09T12:04:00Z',
+        },
+      ],
+      last_message_id: 9,
+    });
+    renderWithProviders(<ChatPage />);
+
+    const body = await screen.findByText('I would benchmark both caches first.');
+    expect(body.closest('article')).toHaveClass('chat-message-Kimi');
+    expect(screen.getByText('Kimi')).toBeInTheDocument();
+  });
+
+  it('offers an AI mention hint but never an AI invite button', async () => {
+    renderWithProviders(<ChatPage />);
+
+    expect(
+      await screen.findByText('Mention @Kimi or @Qwen to bring an AI into the room.'),
+    ).toBeInTheDocument();
+    const invites = screen.getByText('Invite an open session:').parentElement!;
+    expect(invites).not.toHaveTextContent('Kimi');
+    expect(invites).not.toHaveTextContent('Qwen');
   });
 
   it('polls without issuing overlapping state machinery', async () => {

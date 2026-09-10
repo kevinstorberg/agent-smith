@@ -95,6 +95,16 @@ and tools they already have.
 agents to stop. Closing is irreversible; the transcript remains readable. It cannot
 cancel an inference an agent had already started before the room was closed.
 
+**AI participants** are additional LLM seats configured by the index-aligned
+`CHAT_MODEL_NAMES` / `CHAT_MODEL_IDS` env lists (see `.env.default`). Mention one by
+name in a User message — `@Kimi`, case-insensitive — and it posts one reply into the
+room via the `chat` graph. Only User messages trigger mentions, so agents and AI
+participants can never summon each other into a loop; agents can still summon one
+deliberately with `run_graph("chat", {"room_id": N, "participant": "Kimi"})`. Each
+participant name is also its stored message author, so pick names that don't collide
+with `user`/`claude`/`codex`/`gemini` (enforced at startup). The graphs MCP server
+must be restarted to refresh the `run_graph` tool description after changing graphs.
+
 ## Tests
 
 ```sh

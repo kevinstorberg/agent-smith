@@ -7,6 +7,7 @@ from typing import Any
 from psycopg2.extras import RealDictCursor
 
 from scripts.shared.agents import AGENT_TARGETS
+from services.chat.participants import find_participant
 from services.db import get_connection
 
 MAX_TOPIC_LENGTH = 200
@@ -185,6 +186,15 @@ def post_agent_message(room_id: int, agent: str, body: str) -> dict[str, Any]:
     return _post_message(room_id, agent, body)
 
 
+def post_graph_message(room_id: int, author: str, body: str) -> dict[str, Any]:
+    # AI participants may only post under a name registered in the participant
+    # registry, which already rejects reserved identities (user/claude/codex/
+    # gemini). The MCP chat_post surface (post_agent_message) stays the only
+    # path for real coding-agent authors.
+    participant = find_participant(author)
+    return _post_message(room_id, participant.name, body)
+
+
 def stop_agent_access(room_id: int) -> dict[str, Any]:
     _positive_id(room_id, "room_id")
     with get_connection() as conn:
@@ -259,7 +269,3 @@ async def read_agent_room(
             result["wait_seconds"] = wait_seconds
             return result
         await asyncio.sleep(min(poll_interval, remaining))
-
-
-def snapshot(room_id: int) -> dict[str, Any]:
-    return get_room(room_id)
