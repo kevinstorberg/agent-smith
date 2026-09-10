@@ -15,6 +15,7 @@ import { AuditIndexPage } from './pages/AuditIndexPage';
 import { AuditDetailPage } from './pages/AuditDetailPage';
 import { EvalSuitesPage } from './pages/EvalSuitesPage';
 import { EvalSuiteDetailPage } from './pages/EvalSuiteDetailPage';
+import { ChatPage } from './pages/ChatPage';
 import { Sidebar } from './components/Sidebar';
 import { NotificationBar } from './components/NotificationBar';
 import { NotificationProvider } from './context/NotificationContext';
@@ -55,6 +56,7 @@ export default function App() {
           <Route path="/eval-configs" element={<EvalSuitesPage />} />
           <Route path="/eval-configs/new" element={<EvalSuiteDetailPage />} />
           <Route path="/eval-configs/:id" element={<EvalSuiteDetailPage />} />
+          <Route path="/chat" element={<ChatPage />} />
           </Routes>
         </div>
       </div>
