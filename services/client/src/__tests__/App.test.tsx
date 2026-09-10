@@ -45,6 +45,10 @@ vi.mock('../pages/EvalSuiteDetailPage', () => ({
   EvalSuiteDetailPage: () => <div data-testid="eval-suite-detail">EvalSuiteDetail</div>,
 }));
 
+vi.mock('../pages/ChatPage', () => ({
+  ChatPage: () => <div data-testid="chat-page">ChatPage</div>,
+}));
+
 vi.mock('../components/Sidebar', () => ({
   Sidebar: () => <nav data-testid="sidebar">Sidebar</nav>,
 }));
@@ -140,5 +144,10 @@ describe('App', () => {
   it('renders eval suite detail at /eval-configs/:id', () => {
     renderApp(['/eval-configs/1']);
     expect(screen.getByText('EvalSuiteDetail')).toBeInTheDocument();
+  });
+
+  it('renders chat at /chat', () => {
+    renderApp(['/chat']);
+    expect(screen.getByText('ChatPage')).toBeInTheDocument();
   });
 });

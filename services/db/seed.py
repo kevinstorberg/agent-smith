@@ -9,6 +9,7 @@ MCP_SERVERS = [
     ("evals", f"{MCP_BASE}/mcp/evals/", "Manage evaluation suites and scenarios"),
     ("graphs", f"{MCP_BASE}/mcp/graphs/", "Run hardcoded LangGraph workflows by type"),
     ("jobs", f"{MCP_BASE}/mcp/jobs/", "Manage background jobs, scheduling, and execution history"),
+    ("chat", f"{MCP_BASE}/mcp/chat/", "Read and post messages in shared Chat Rooms"),
 ]
 
 

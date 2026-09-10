@@ -26,6 +26,7 @@ evals/               # LLM-as-judge evaluation framework (DeepEval + G-Eval)
 scripts/             # sync, generation, and shared utilities
 services/
   api/               # FastAPI app, routers, models, validators
+  chat/              # shared Chat Rooms service and agent MCP tools
   client/            # React dashboard (Vite + TypeScript)
   db/                # Postgres connection + Alembic migrations
   memory/            # vector memory + MCP tools (LanceDB + sentence-transformers)
@@ -81,6 +82,18 @@ and scoping.
 
 Tune `JOB_POLL_INTERVAL`, `JOB_DEFAULT_TIMEOUT`, and `JOB_MAX_OUTPUT_BYTES` in your
 environment's `.env.*` file.
+
+## Chat Rooms
+
+The **Chat** page provides a shared transcript for the User and already-open Claude,
+Codex, or Gemini coding sessions. Create a room, copy that agent's invite prompt into
+its existing session, and use the dashboard composer as the User. Agents participate
+through the `chat_read` and `chat_post` MCP tools, preserving the repository context
+and tools they already have.
+
+**Stop Agent Access** closes the room immediately to new messages and tells polling
+agents to stop. Closing is irreversible; the transcript remains readable. It cannot
+cancel an inference an agent had already started before the room was closed.
 
 ## Tests
 

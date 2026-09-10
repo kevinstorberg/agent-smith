@@ -314,6 +314,31 @@ export interface AverageChartPoint {
   score: number;
 }
 
+export interface ChatRoom {
+  id: number;
+  topic: string;
+  context: string;
+  state: 'open' | 'closed';
+  created_at: string;
+  updated_at: string;
+  closed_at: string | null;
+}
+
+export interface ChatMessage {
+  id: number;
+  room_id: number;
+  author: 'user' | 'claude' | 'codex' | 'gemini';
+  body: string;
+  created_at: string;
+}
+
+export interface ChatRoomDetail {
+  room: ChatRoom;
+  messages: ChatMessage[];
+  last_message_id: number;
+  has_more: boolean;
+}
+
 function paginationToParams(p?: PaginationParams): Record<string, string> {
   const params: Record<string, string> = {};
   if (p?.limit !== undefined) params.limit = String(p.limit);
@@ -450,6 +475,15 @@ export const api = {
     },
     counts: () => get<AuditCounts>('/audit/counts'),
     get: (id: number) => get<AuditEvent>(`/audit/events/${id}`),
+  },
+  chat: {
+    list: () => get<Paginated<ChatRoom>>('/chat'),
+    create: (body: { topic: string; context?: string }) => post<ChatRoom>('/chat', body),
+    get: (id: number, afterMessageId = 0) =>
+      get<ChatRoomDetail>(`/chat/${id}`, { after_message_id: String(afterMessageId) }),
+    postMessage: (id: number, body: string) =>
+      post<ChatMessage>(`/chat/${id}/messages`, { body }),
+    stop: (id: number) => post<ChatRoom>(`/chat/${id}/stop`, {}),
   },
   evalConfigs: {
     suites: {

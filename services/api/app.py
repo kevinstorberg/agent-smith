@@ -20,16 +20,26 @@ from services.config import DB_POOL_MAX
 from services.db import init_db, init_pool, close_pool
 from services.db.seed import seed_all
 from services.api.routers import harness_router
-from services.api.routers import memory, evals, plans, jobs, proposals, audit, eval_suites as eval_configs
+from services.api.routers import (
+    audit,
+    chat,
+    eval_suites as eval_configs,
+    evals,
+    jobs,
+    memory,
+    plans,
+    proposals,
+)
 from services.memory.server import mcp as memory_mcp
 from services.plans.server import mcp as plans_mcp
 from services.harness.server import mcp as harness_mcp
 from services.evals.server import mcp as evals_mcp
 from services.graphs.server import mcp as graphs_mcp
 from services.jobs.server import mcp as jobs_mcp
+from services.chat.server import mcp as chat_mcp
 from services.jobs.scheduler import JobScheduler
 
-MCP_SERVERS = [memory_mcp, plans_mcp, harness_mcp, evals_mcp, graphs_mcp, jobs_mcp]
+MCP_SERVERS = [memory_mcp, plans_mcp, harness_mcp, evals_mcp, graphs_mcp, jobs_mcp, chat_mcp]
 
 
 @asynccontextmanager
@@ -71,6 +81,7 @@ app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
 app.include_router(proposals.router, prefix="/api/proposals", tags=["proposals"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
 app.include_router(eval_configs.router, prefix="/api/eval-configs", tags=["eval-configs"])
+app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 
 for _srv in MCP_SERVERS:
     _srv.settings.streamable_http_path = "/"
