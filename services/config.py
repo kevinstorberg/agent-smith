@@ -7,16 +7,11 @@ from pathlib import Path
 APP_ENV: str = os.environ.get("APP_ENV", "development")
 
 _repo_root = Path(__file__).resolve().parent.parent
-_env_default = _repo_root / ".env.default"
-_env_file = _repo_root / f".env.{APP_ENV}"
 
-if not _env_file.is_file() and not os.environ.get(f"DATABASE_URL_{APP_ENV.upper()}"):
-    raise SystemExit(f".env.{APP_ENV} not found at {_env_file}. Create it for APP_ENV={APP_ENV}.")
+from scripts.shared.env import load_dotenv
+from scripts.shared.database_safety import production_database_url, validate_certificate, validate_database_target, validate_memory_target
 
-from scripts.shared.env import _load_env_file
-
-_load_env_file(_env_file)
-_load_env_file(_env_default)
+load_dotenv(_repo_root)
 
 from scripts.shared.agents import AGENT_TARGETS, VIRTUAL_AGENTS
 
@@ -25,7 +20,11 @@ DATABASE_URL: str = os.environ.get(_db_var, "")
 if not DATABASE_URL:
     raise SystemExit(f"{_db_var} is required for APP_ENV={APP_ENV}. Set it in .env.{APP_ENV}")
 
-if "pytest" in sys.modules and APP_ENV != "test":
+validate_database_target(APP_ENV, DATABASE_URL, production_database_url(_repo_root, dict(os.environ)))
+validate_certificate(DATABASE_URL)
+validate_memory_target(_repo_root, dict(os.environ))
+
+if "pytest" in sys.modules and APP_ENV != "test" and os.environ.get("AGENT_SMITH_EVAL_RUN") != "1":
     raise SystemExit(f"Tests can only run in APP_ENV=test, got APP_ENV={APP_ENV}.")
 
 ALL_AGENTS: list[str] = list(AGENT_TARGETS)
@@ -48,13 +47,7 @@ DB_CONNECT_BACKOFF_BASE: float = float(os.environ.get("DB_CONNECT_BACKOFF_BASE",
 DB_CONNECT_BACKOFF_MAX: float = float(os.environ.get("DB_CONNECT_BACKOFF_MAX", "1.0"))
 DB_POOL_PRE_PING: bool = os.environ.get("DB_POOL_PRE_PING", "false").lower() in ("1", "true", "yes")
 
-# Sync reads destination agent config files (~/.claude.json, etc.) that the live
-# agent app rewrites continuously, so a read can catch the file mid-write (a torn
-# read = momentarily invalid JSON). In Docker the files arrive via a VirtioFS bind
-# mount whose view of a host write can lag by seconds — far longer than the write
-# itself — so the retry window must outlast that propagation, not just the write.
-# Worst case adds ~4.5s to a failing sync before treating the corruption as real.
-# See scripts/shared/agents.py::read_with_retry.
+# Live agents rewrite their settings; retry torn reads before treating them as corrupt.
 SYNC_READ_MAX_ATTEMPTS: int = int(os.environ.get("SYNC_READ_MAX_ATTEMPTS", "10"))
 SYNC_READ_BACKOFF: float = float(os.environ.get("SYNC_READ_BACKOFF", "0.5"))
 

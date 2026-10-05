@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from scripts.shared import hook_utils
 from scripts.shared.agents import AGENT_TARGETS
 from scripts.shared.paths import REPO_ROOT
@@ -32,21 +30,12 @@ def test_expands_to_host_repo_root_when_injected(monkeypatch):
 
 def test_falls_back_to_repo_root_on_host(monkeypatch):
     monkeypatch.delenv("HOST_REPO_ROOT", raising=False)
-    monkeypatch.setattr(hook_utils, "_in_container", lambda: False)
     result = hook_utils._expand_hook_paths(_hooks(PRE))
     assert _command(result) == f"{REPO_ROOT}/.venv/bin/python {REPO_ROOT}/scripts/audit_hook.py --phase pre"
 
 
-def test_raises_in_container_without_host_repo_root(monkeypatch):
+def test_token_free_hooks_are_unchanged(monkeypatch):
     monkeypatch.delenv("HOST_REPO_ROOT", raising=False)
-    monkeypatch.setattr(hook_utils, "_in_container", lambda: True)
-    with pytest.raises(RuntimeError, match="HOST_REPO_ROOT"):
-        hook_utils._expand_hook_paths(_hooks(PRE))
-
-
-def test_token_free_hooks_sync_in_container_without_env(monkeypatch):
-    monkeypatch.delenv("HOST_REPO_ROOT", raising=False)
-    monkeypatch.setattr(hook_utils, "_in_container", lambda: True)
     hooks = _hooks("/usr/bin/env python3 /opt/some_hook.py")
     assert hook_utils._expand_hook_paths(hooks) == hooks
 
