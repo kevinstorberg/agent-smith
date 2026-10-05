@@ -14,6 +14,7 @@ langgraph>=1.0
 pinecone>=7.0.0
 sentence-transformers>=3.0.0
 psycopg2-binary>=2.9.0
+pgvector>=0.4.1
 alembic>=1.18.0
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0

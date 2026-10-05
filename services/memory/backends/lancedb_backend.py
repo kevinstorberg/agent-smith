@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
+from typing import Any
 
 import lancedb
 from langchain_core.vectorstores import VectorStore
 from langchain_community.vectorstores import LanceDB as LanceDBVectorStore
+from langchain_core.documents import Document
 
 from scripts.shared.validation import validate_memory_id
 from services.config import MEMORY_STORE_PATH
@@ -30,8 +33,33 @@ def init() -> None:
     _db()
 
 
+class _UpsertingLanceDBVectorStore(LanceDBVectorStore):
+    def add_documents(self, documents: list[Document], **kwargs: Any) -> list[str]:
+        ids = kwargs.get("ids") or [doc.metadata.get("id") for doc in documents]
+        if len(ids) != len(documents) or any(not id for id in ids):
+            raise ValueError("Every LanceDB memory document must have an ID")
+
+        table = _get_table()
+        existing_rows: list[dict] = []
+        if table:
+            for id in ids:
+                validate_memory_id(id)
+                rows = table.search().where(f"id = '{id}'", prefilter=True).limit(1).to_list()
+                if rows:
+                    existing_rows.extend(deepcopy(rows))
+                    table.delete(f"id = '{id}'")
+
+        try:
+            return super().add_documents(documents, **kwargs)
+        except Exception:
+            current_table = _get_table()
+            if current_table and existing_rows:
+                current_table.add(existing_rows)
+            raise
+
+
 def get_vectorstore(embeddings) -> VectorStore:
-    return LanceDBVectorStore(
+    return _UpsertingLanceDBVectorStore(
         connection=_db(),
         embedding=embeddings,
         table_name=TABLE_NAME,

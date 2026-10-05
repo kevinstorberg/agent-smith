@@ -1,4 +1,4 @@
-x-postgres-image: &postgres-image postgres:17
+x-postgres-image: &postgres-image pgvector/pgvector:0.8.1-pg17
 
 services:
   app:

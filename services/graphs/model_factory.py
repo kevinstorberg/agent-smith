@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import os
 import re
 from dataclasses import dataclass
@@ -30,8 +31,18 @@ class GraphModelConfig:
     request_timeout: float
 
 
-def build_chat_model(role: str, fallback_role: str | None = None) -> BaseChatModel:
+def build_chat_model(
+    role: str,
+    fallback_role: str | None = None,
+    *,
+    model_id: str | None = None,
+) -> BaseChatModel:
     config = load_model_config(role, fallback_role=fallback_role)
+    if model_id is not None:
+        # One role block can serve several models (e.g. the chat participant
+        # registry): keep the role's provider/credentials/limits, swap the id.
+        config = dataclasses.replace(config, model_id=model_id.strip())
+        _validate_config(role, config)
     return _PROVIDER_BUILDERS[config.provider](config)
 
 

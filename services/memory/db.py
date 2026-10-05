@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from copy import deepcopy
 from datetime import datetime, timezone
 
 from langchain_core.documents import Document
@@ -12,8 +13,9 @@ from langchain_classic.retrievers.time_weighted_retriever import (
 from langchain_huggingface import HuggingFaceEmbeddings
 
 from services.memory.backends import get_backend
+from services.config import MEMORY_EMBEDDING_MODEL
 
-MODEL_NAME = os.environ.get("MEMORY_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+MODEL_NAME = MEMORY_EMBEDDING_MODEL
 DECAY_RATE = float(os.environ.get("MEMORY_DECAY_RATE", "0.01"))
 DEFAULT_LIMIT = int(os.environ.get("MEMORY_DEFAULT_LIMIT", "20"))
 SEARCH_FETCH_CEILING = int(os.environ.get("MEMORY_SEARCH_FETCH_CEILING", "200"))
@@ -35,15 +37,23 @@ def _now() -> str:
 
 def _parse_datetime(val) -> datetime:
     if isinstance(val, datetime):
-        return val
-    if isinstance(val, (int, float)):
-        return datetime.fromtimestamp(val)
-    if isinstance(val, str) and val:
+        parsed = val
+    elif isinstance(val, (int, float)):
+        parsed = datetime.fromtimestamp(val, tz=timezone.utc)
+    elif isinstance(val, str) and val:
         try:
-            return datetime.fromisoformat(val)
+            parsed = datetime.fromisoformat(val)
         except (ValueError, TypeError):
-            pass
-    return datetime.now()
+            return datetime.now()
+    else:
+        return datetime.now()
+
+    # LangChain's time-weighted retriever uses naive local datetimes internally.
+    # Normalize persisted timestamps to naive UTC so reloads cannot mix aware and
+    # naive values during datetime subtraction.
+    if parsed.tzinfo is not None:
+        return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
 
 
 def _id_based_salient_docs(retriever: TimeWeightedVectorStoreRetriever, query: str) -> dict:
@@ -155,6 +165,32 @@ def _raw_to_row(record: dict) -> dict:
     return _to_row(content=record.get("text", ""), id=record.get("id", meta.get("id", "")), meta=meta)
 
 
+def _persist_document(
+    retriever: TimeWeightedVectorStoreRetriever,
+    document: Document,
+    *,
+    id: str,
+    current_time: datetime,
+    replace_index: int | None = None,
+) -> None:
+    memory_document = deepcopy(document)
+    memory_document.metadata.setdefault("last_accessed_at", current_time)
+    memory_document.metadata.setdefault("created_at", current_time)
+    memory_document.metadata["buffer_idx"] = (
+        len(retriever.memory_stream) if replace_index is None else replace_index
+    )
+
+    # Persist a separate copy first. Vector-store adapters may sanitize metadata,
+    # and a failed write must not corrupt or remove the live memory-stream entry.
+    retriever.vectorstore.add_documents(
+        [deepcopy(memory_document)], ids=[id], current_time=current_time
+    )
+    if replace_index is None:
+        retriever.memory_stream.append(memory_document)
+    else:
+        retriever.memory_stream[replace_index] = memory_document
+
+
 
 def init() -> None:
     get_backend().init()
@@ -178,7 +214,7 @@ def add(content: str, repo: str | None = None, tags: list[str] | None = None) ->
     )
 
     retriever = _get_retriever()
-    retriever.add_documents([doc], ids=[id], current_time=now_dt)
+    _persist_document(retriever, doc, id=id, current_time=now_dt)
     return id
 
 
@@ -252,7 +288,6 @@ def update(
     new_repo = repo if repo is not None else (existing.get("repo") or "")
     new_tags = tags if tags is not None else existing.get("tags", [])
 
-    delete(id)
     now_str = _now()
     now_dt = datetime.now()
 
@@ -268,4 +303,22 @@ def update(
     )
 
     retriever = _get_retriever()
-    retriever.add_documents([doc], ids=[id], current_time=now_dt)
+    replace_index = next(
+        (
+            index
+            for index, existing_doc in enumerate(retriever.memory_stream)
+            if existing_doc.metadata.get("id") == id
+        ),
+        None,
+    )
+    if replace_index is None:
+        raise RuntimeError(
+            f"Memory {id} exists in the backend but is missing from the retriever stream"
+        )
+    _persist_document(
+        retriever,
+        doc,
+        id=id,
+        current_time=now_dt,
+        replace_index=replace_index,
+    )

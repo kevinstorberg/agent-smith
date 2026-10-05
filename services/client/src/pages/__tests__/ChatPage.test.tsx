@@ -12,9 +12,16 @@ vi.mock('../../api', () => ({
       get: vi.fn(),
       postMessage: vi.fn(),
       stop: vi.fn(),
+      config: vi.fn(),
+      update: vi.fn(),
+      remove: vi.fn(),
     },
   },
 }));
+
+// Fixture values for the mocked /chat/config response — the page itself never
+// hardcodes participant names; it renders whatever the backend registry returns.
+const AI_PARTICIPANTS = ['Kimi', 'Qwen'];
 
 const room: ChatRoom = {
   id: 42,
@@ -43,6 +50,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.chat.list).mockResolvedValue({ items: [room], total: 1 });
   vi.mocked(api.chat.get).mockResolvedValue(detail);
+  vi.mocked(api.chat.config).mockResolvedValue({ participants: AI_PARTICIPANTS });
   Object.assign(navigator, {
     clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
   });
@@ -128,6 +136,72 @@ describe('ChatPage', () => {
     await waitFor(() => expect(api.chat.stop).toHaveBeenCalledWith(42));
     expect(await screen.findByText('Agent Access Stopped')).toBeDisabled();
     expect(screen.getByLabelText('Message')).toBeDisabled();
+  });
+
+  it('renders configured AI participant messages with their byline', async () => {
+    const participant = AI_PARTICIPANTS[0];
+    vi.mocked(api.chat.get).mockResolvedValue({
+      ...detail,
+      messages: [
+        ...detail.messages,
+        {
+          id: 9,
+          room_id: 42,
+          author: participant,
+          body: 'I would benchmark both caches first.',
+          created_at: '2026-09-09T12:04:00Z',
+        },
+      ],
+      last_message_id: 9,
+    });
+    renderWithProviders(<ChatPage />);
+
+    const body = await screen.findByText('I would benchmark both caches first.');
+    expect(body.closest('article')).toHaveClass(`chat-message-${participant}`);
+    expect(screen.getByText(participant)).toBeInTheDocument();
+  });
+
+  it('offers an AI mention hint but never an AI invite button', async () => {
+    renderWithProviders(<ChatPage />);
+
+    const mentionList = AI_PARTICIPANTS.map(name => `@${name}`).join(' or ');
+    expect(
+      await screen.findByText(`Mention ${mentionList} to bring an AI into the room.`),
+    ).toBeInTheDocument();
+    const invites = screen.getByText('Invite an open session:').parentElement!;
+    for (const name of AI_PARTICIPANTS) {
+      expect(invites).not.toHaveTextContent(name);
+    }
+  });
+
+  it('edits a room from the header form', async () => {
+    const renamed = { ...room, topic: 'Renamed topic', context: 'New context' };
+    vi.mocked(api.chat.update).mockResolvedValue(renamed);
+    renderWithProviders(<ChatPage />);
+
+    await screen.findByText('Extend the existing cache interface.');
+    fireEvent.click(screen.getByText('Edit'));
+    fireEvent.change(screen.getByLabelText('Topic'), { target: { value: 'Renamed topic' } });
+    fireEvent.change(screen.getByLabelText('Context (optional)'), { target: { value: 'New context' } });
+    fireEvent.click(screen.getByText('Save'));
+
+    await waitFor(() => expect(api.chat.update).toHaveBeenCalledWith(42, {
+      topic: 'Renamed topic',
+      context: 'New context',
+    }));
+    expect(await screen.findByRole('heading', { name: 'Renamed topic' })).toBeInTheDocument();
+  });
+
+  it('deletes a room after one confirmed action', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(api.chat.remove).mockResolvedValue(undefined);
+    renderWithProviders(<ChatPage />);
+
+    await screen.findByText('Extend the existing cache interface.');
+    fireEvent.click(screen.getByText('Delete'));
+
+    await waitFor(() => expect(api.chat.remove).toHaveBeenCalledWith(42));
+    expect(screen.queryByText('Choose a cache strategy')).not.toBeInTheDocument();
   });
 
   it('polls without issuing overlapping state machinery', async () => {

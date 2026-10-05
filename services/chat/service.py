@@ -7,6 +7,7 @@ from typing import Any
 from psycopg2.extras import RealDictCursor
 
 from scripts.shared.agents import AGENT_TARGETS
+from services.chat.participants import find_participant
 from services.db import get_connection
 
 MAX_TOPIC_LENGTH = 200
@@ -101,6 +102,38 @@ def list_rooms(limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], 
     return rooms, total
 
 
+def update_room(room_id: int, topic: str, context: str = "") -> dict[str, Any]:
+    _positive_id(room_id, "room_id")
+    clean_topic = _bounded_text(topic, "topic", MAX_TOPIC_LENGTH, required=True)
+    clean_context = _bounded_text(context, "context", MAX_CONTEXT_LENGTH, required=False)
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                UPDATE chat_rooms
+                SET topic = %s, context = %s, updated_at = now()
+                WHERE id = %s
+                RETURNING *
+                """,
+                (clean_topic, clean_context, room_id),
+            )
+            room = cur.fetchone()
+    if not room:
+        raise ChatRoomNotFoundError(f"Chat room not found: {room_id}")
+    return _room_view(dict(room))
+
+
+def delete_room(room_id: int) -> None:
+    _positive_id(room_id, "room_id")
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Messages go with the room via the FK's ON DELETE CASCADE.
+            cur.execute("DELETE FROM chat_rooms WHERE id = %s RETURNING id", (room_id,))
+            deleted = cur.fetchone()
+    if not deleted:
+        raise ChatRoomNotFoundError(f"Chat room not found: {room_id}")
+
+
 def _require_room(cur, room_id: int) -> dict[str, Any]:
     cur.execute("SELECT * FROM chat_rooms WHERE id = %s", (room_id,))
     row = cur.fetchone()
@@ -185,6 +218,15 @@ def post_agent_message(room_id: int, agent: str, body: str) -> dict[str, Any]:
     return _post_message(room_id, agent, body)
 
 
+def post_graph_message(room_id: int, author: str, body: str) -> dict[str, Any]:
+    # AI participants may only post under a name registered in the participant
+    # registry, which already rejects reserved identities (user/claude/codex/
+    # gemini). The MCP chat_post surface (post_agent_message) stays the only
+    # path for real coding-agent authors.
+    participant = find_participant(author)
+    return _post_message(room_id, participant.name, body)
+
+
 def stop_agent_access(room_id: int) -> dict[str, Any]:
     _positive_id(room_id, "room_id")
     with get_connection() as conn:
@@ -259,7 +301,3 @@ async def read_agent_room(
             result["wait_seconds"] = wait_seconds
             return result
         await asyncio.sleep(min(poll_interval, remaining))
-
-
-def snapshot(room_id: int) -> dict[str, Any]:
-    return get_room(room_id)

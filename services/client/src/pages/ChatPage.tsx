@@ -2,10 +2,10 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api, type ChatMessage, type ChatRoom, type ChatRoomDetail } from '../api';
 import { CopyButton } from '../components/CopyButton';
 import { useNotification } from '../context/useNotification';
+import { useAssignableAgents } from '../hooks/useAssignableAgents';
 import { usePolling } from '../hooks/usePolling';
 
 const CHAT_POLL_INTERVAL_MS = 2_000;
-const CODING_AGENTS = ['claude', 'codex', 'gemini'] as const;
 
 function invitePrompt(roomId: number, agent: string): string {
   return `Join Agent Smith Chat Room ${roomId} as ${agent}. Use the chat MCP tools to collaborate in this room: call chat_read with room_id=${roomId}, after_message_id=0, and wait_seconds=20; reply with chat_post using agent="${agent}"; then keep reading with the returned last_message_id until the outcome is "closed".`;
@@ -30,7 +30,18 @@ export function ChatPage() {
   const [context, setContext] = useState('');
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
+  const [aiParticipants, setAiParticipants] = useState<string[]>([]);
+  const [editing, setEditing] = useState(false);
+  const [editTopic, setEditTopic] = useState('');
+  const [editContext, setEditContext] = useState('');
+  const { agents: codingAgents } = useAssignableAgents();
   const { notify } = useNotification();
+
+  useEffect(() => {
+    api.chat.config()
+      .then(result => setAiParticipants(result.participants))
+      .catch(error => notify(error instanceof Error ? error.message : String(error), 'error'));
+  }, [notify]);
 
   const loadRooms = useCallback(async (showError = true) => {
     try {
@@ -60,6 +71,7 @@ export function ChatPage() {
 
   useEffect(() => {
     setDetail(null);
+    setEditing(false);
     loadSelectedRoom();
   }, [loadSelectedRoom]);
 
@@ -95,6 +107,47 @@ export function ChatPage() {
       setDetail(current => current ? appendMessage(current, message) : current);
       setDraft('');
       await loadRooms(false);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : String(error), 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function startRoomEdit() {
+    if (!detail) return;
+    setEditTopic(detail.room.topic);
+    setEditContext(detail.room.context);
+    setEditing(true);
+  }
+
+  async function saveRoomEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!detail || !editTopic.trim()) return;
+    setSaving(true);
+    try {
+      const room = await api.chat.update(detail.room.id, { topic: editTopic, context: editContext });
+      setDetail(current => current ? { ...current, room } : current);
+      setRooms(current => current.map(existing => existing.id === room.id ? room : existing));
+      setEditing(false);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : String(error), 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteRoom() {
+    if (!detail) return;
+    if (!confirm('Delete this room and its entire transcript? This cannot be undone.')) return;
+    setSaving(true);
+    try {
+      await api.chat.remove(detail.room.id);
+      const remaining = rooms.filter(existing => existing.id !== detail.room.id);
+      setRooms(remaining);
+      setSelectedRoomId(remaining[0]?.id ?? null);
+      setDetail(null);
+      notify('Room deleted', 'success');
     } catch (error) {
       notify(error instanceof Error ? error.message : String(error), 'error');
     } finally {
@@ -188,19 +241,57 @@ export function ChatPage() {
                   <h3>{detail.room.topic}</h3>
                   {detail.room.context && <p>{detail.room.context}</p>}
                 </div>
-                <button
-                  className="btn btn-danger"
-                  disabled={saving || detail.room.state === 'closed'}
-                  onClick={stopAgentAccess}
-                >
-                  {detail.room.state === 'closed' ? 'Agent Access Stopped' : 'Stop Agent Access'}
-                </button>
+                <div className="chat-room-actions">
+                  <button className="btn" disabled={saving} onClick={startRoomEdit}>
+                    Edit
+                  </button>
+                  <button className="btn btn-danger" disabled={saving} onClick={deleteRoom}>
+                    Delete
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    disabled={saving || detail.room.state === 'closed'}
+                    onClick={stopAgentAccess}
+                  >
+                    {detail.room.state === 'closed' ? 'Agent Access Stopped' : 'Stop Agent Access'}
+                  </button>
+                </div>
               </header>
+
+              {editing && (
+                <form className="card chat-create" onSubmit={saveRoomEdit}>
+                  <label className="form-label" htmlFor="chat-edit-topic">Topic</label>
+                  <input
+                    id="chat-edit-topic"
+                    className="input"
+                    maxLength={200}
+                    value={editTopic}
+                    onChange={event => setEditTopic(event.target.value)}
+                    autoFocus
+                  />
+                  <label className="form-label" htmlFor="chat-edit-context">Context (optional)</label>
+                  <textarea
+                    id="chat-edit-context"
+                    className="input chat-context-input"
+                    maxLength={20_000}
+                    value={editContext}
+                    onChange={event => setEditContext(event.target.value)}
+                  />
+                  <div className="chat-room-actions">
+                    <button className="btn btn-primary" disabled={saving || !editTopic.trim()}>
+                      {saving ? 'Saving...' : 'Save'}
+                    </button>
+                    <button type="button" className="btn" disabled={saving} onClick={() => setEditing(false)}>
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
 
               {detail.room.state === 'open' && (
                 <div className="chat-invites">
                   <span>Invite an open session:</span>
-                  {CODING_AGENTS.map(agent => (
+                  {codingAgents.map(agent => (
                     <span key={agent} className="chat-invite">
                       {agent}
                       <CopyButton text={invitePrompt(detail.room.id, agent)} />
@@ -229,6 +320,11 @@ export function ChatPage() {
                 )}
               </div>
 
+              {detail.room.state === 'open' && aiParticipants.length > 0 && (
+                <div className="chat-empty">
+                  Mention {aiParticipants.map(name => `@${name}`).join(' or ')} to bring an AI into the room.
+                </div>
+              )}
               <form className="chat-composer" onSubmit={sendMessage}>
                 <textarea
                   className="input"

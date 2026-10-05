@@ -12,9 +12,14 @@ from langchain_pinecone import PineconeVectorStore
 from pinecone import Pinecone, ServerlessSpec
 
 from scripts.shared.validation import validate_memory_id
-from services.config import PINECONE_INDEX as INDEX_NAME, PINECONE_CLOUD as CLOUD, PINECONE_REGION as REGION
+from services.config import (
+    MEMORY_EMBEDDING_DIMENSION,
+    PINECONE_CLOUD as CLOUD,
+    PINECONE_INDEX as INDEX_NAME,
+    PINECONE_REGION as REGION,
+)
 from services.memory.backends import build_row
-DIMENSION = 384  # all-MiniLM-L6-v2
+DIMENSION = MEMORY_EMBEDDING_DIMENSION
 
 _pc: Pinecone | None = None
 _index = None
