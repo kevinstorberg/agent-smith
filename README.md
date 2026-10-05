@@ -29,7 +29,7 @@ services/
   chat/              # shared Chat Rooms service and agent MCP tools
   client/            # React dashboard (Vite + TypeScript)
   db/                # Postgres connection + Alembic migrations
-  memory/            # vector memory + MCP tools (LanceDB + sentence-transformers)
+  memory/            # vector memory + MCP tools (pgvector, LanceDB, or Pinecone)
 ```
 
 ## Harness
@@ -61,8 +61,21 @@ Supports Claude, Codex, and Gemini. Only writes when content has changed. Set
 ## Memory
 
 Vector memory with time-weighted retrieval, served as MCP tools on the dashboard endpoint.
-Defaults to LanceDB (local, stored in `memory_store/`). Set `MEMORY_BACKEND=pinecone` in
-`.env` with a `PINECONE_API_KEY` to use Pinecone instead.
+Defaults to LanceDB (local, stored in `memory_store/`). The supported backends are
+`lancedb`, `pinecone`, and `pgvector`. The pgvector backend uses the existing
+`DATABASE_URL_<ENV>` database and the Alembic-managed `memories` table:
+
+```env
+MEMORY_BACKEND=pgvector
+MEMORY_EMBEDDING_MODEL=all-MiniLM-L6-v2
+MEMORY_EMBEDDING_DIMENSION=384
+```
+
+The model and dimension form one storage contract. Changing either requires a schema and
+data migration; startup fails if stored rows use a different model or the database column
+has a different dimension. pgvector retrieval uses exact cosine distance, so no approximate
+index needs to be trained before cutover. Keep `MEMORY_BACKEND=pinecone` during the data
+migration and change the production backend only after reconciliation passes.
 
 ## Background Jobs
 
@@ -132,7 +145,8 @@ Requires the app container to be running (`./run.sh`). Configure via `EVAL_MODEL
 
 ## Database
 
-Postgres stores harness items, eval configs, eval results, plans, and memory metadata.
+Postgres stores harness items, eval configs, eval results, plans, and—when
+`MEMORY_BACKEND=pgvector`—memory content, metadata, and embeddings.
 Schema is managed by Alembic. Migrations run automatically on app startup, or manually:
 
 ```sh

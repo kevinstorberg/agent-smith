@@ -102,6 +102,38 @@ def list_rooms(limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], 
     return rooms, total
 
 
+def update_room(room_id: int, topic: str, context: str = "") -> dict[str, Any]:
+    _positive_id(room_id, "room_id")
+    clean_topic = _bounded_text(topic, "topic", MAX_TOPIC_LENGTH, required=True)
+    clean_context = _bounded_text(context, "context", MAX_CONTEXT_LENGTH, required=False)
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                UPDATE chat_rooms
+                SET topic = %s, context = %s, updated_at = now()
+                WHERE id = %s
+                RETURNING *
+                """,
+                (clean_topic, clean_context, room_id),
+            )
+            room = cur.fetchone()
+    if not room:
+        raise ChatRoomNotFoundError(f"Chat room not found: {room_id}")
+    return _room_view(dict(room))
+
+
+def delete_room(room_id: int) -> None:
+    _positive_id(room_id, "room_id")
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Messages go with the room via the FK's ON DELETE CASCADE.
+            cur.execute("DELETE FROM chat_rooms WHERE id = %s RETURNING id", (room_id,))
+            deleted = cur.fetchone()
+    if not deleted:
+        raise ChatRoomNotFoundError(f"Chat room not found: {room_id}")
+
+
 def _require_room(cur, room_id: int) -> dict[str, Any]:
     cur.execute("SELECT * FROM chat_rooms WHERE id = %s", (room_id,))
     row = cur.fetchone()

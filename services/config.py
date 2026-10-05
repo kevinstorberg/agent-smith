@@ -59,6 +59,14 @@ SYNC_READ_MAX_ATTEMPTS: int = int(os.environ.get("SYNC_READ_MAX_ATTEMPTS", "10")
 SYNC_READ_BACKOFF: float = float(os.environ.get("SYNC_READ_BACKOFF", "0.5"))
 
 MEMORY_STORE_PATH: str = os.environ.get("MEMORY_STORE_PATH", str(_repo_root / "memory_store"))
+MEMORY_EMBEDDING_MODEL: str = os.environ.get(
+    "MEMORY_EMBEDDING_MODEL", "all-MiniLM-L6-v2"
+)
+MEMORY_EMBEDDING_DIMENSION: int = int(
+    os.environ.get("MEMORY_EMBEDDING_DIMENSION", "384")
+)
+if MEMORY_EMBEDDING_DIMENSION <= 0:
+    raise SystemExit("MEMORY_EMBEDDING_DIMENSION must be a positive integer.")
 PINECONE_INDEX: str = os.environ.get("PINECONE_INDEX", "agent-smith-memories")
 PINECONE_CLOUD: str = os.environ.get("PINECONE_CLOUD", "aws")
 PINECONE_REGION: str = os.environ.get("PINECONE_REGION", "us-east-1")

@@ -485,6 +485,9 @@ export const api = {
   chat: {
     list: () => get<Paginated<ChatRoom>>('/chat'),
     create: (body: { topic: string; context?: string }) => post<ChatRoom>('/chat', body),
+    update: (id: number, body: { topic: string; context?: string }) =>
+      patch<ChatRoom>(`/chat/${id}`, body),
+    remove: (id: number) => del(`/chat/${id}`),
     get: (id: number, afterMessageId = 0) =>
       get<ChatRoomDetail>(`/chat/${id}`, { after_message_id: String(afterMessageId) }),
     postMessage: (id: number, body: string) =>

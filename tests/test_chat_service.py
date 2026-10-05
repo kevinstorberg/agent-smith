@@ -8,6 +8,7 @@ from services.chat.service import (
     ChatRoomClosedError,
     ChatRoomNotFoundError,
     create_room,
+    delete_room,
     get_room,
     list_rooms,
     post_agent_message,
@@ -15,6 +16,7 @@ from services.chat.service import (
     post_user_message,
     read_agent_room,
     stop_agent_access,
+    update_room,
 )
 from services.db import get_connection
 
@@ -139,6 +141,45 @@ def test_graph_post_rejects_closed_room(_participants_env):
     stop_agent_access(room["id"])
     with pytest.raises(ChatRoomClosedError, match="closed"):
         post_graph_message(room["id"], "Kimi", "This must not be stored")
+
+
+def test_update_room_changes_topic_and_context_even_when_closed():
+    room = create_room("Old topic", "Old context")
+    stop_agent_access(room["id"])
+
+    updated = update_room(room["id"], "New topic", "New context")
+
+    assert updated["topic"] == "New topic"
+    assert updated["context"] == "New context"
+    assert updated["state"] == "closed"
+    assert get_room(room["id"])["room"]["topic"] == "New topic"
+
+
+def test_update_room_validates_topic_and_room():
+    room = create_room("Valid")
+    with pytest.raises(ValueError, match="topic must not be empty"):
+        update_room(room["id"], "   ")
+    with pytest.raises(ChatRoomNotFoundError, match="Chat room not found"):
+        update_room(2_000_000_000, "Anything")
+
+
+def test_delete_room_removes_room_and_transcript():
+    room = create_room("Doomed")
+    post_user_message(room["id"], "This message goes with the room")
+
+    delete_room(room["id"])
+
+    with pytest.raises(ChatRoomNotFoundError, match="Chat room not found"):
+        get_room(room["id"])
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM chat_messages WHERE room_id = %s", (room["id"],))
+            assert cur.fetchone()[0] == 0
+
+
+def test_delete_room_requires_an_existing_room():
+    with pytest.raises(ChatRoomNotFoundError, match="Chat room not found"):
+        delete_room(2_000_000_000)
 
 
 def test_missing_room_fails_clearly():

@@ -84,6 +84,15 @@ def test_delete_row_removes_entry():
     assert lb.get_row(mem_id) is None
 
 
+def test_update_replaces_row_instead_of_appending_duplicate():
+    mem_id = db.add("before", repo="", tags=[])
+    db.update(mem_id, content="after")
+
+    rows = [row for row in lb.load_all() if row["id"] == mem_id]
+    assert len(rows) == 1
+    assert rows[0]["text"] == "after"
+
+
 def test_get_row_rejects_invalid_id():
     with pytest.raises(ValueError, match="Invalid memory ID"):
         lb.get_row("not-a-uuid")

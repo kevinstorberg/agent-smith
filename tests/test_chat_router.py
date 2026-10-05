@@ -8,10 +8,12 @@ from services.api.routers.chat import (
     PostMessageRequest,
     config,
     create,
+    delete,
     get_one,
     list_all,
     post_message,
     stop,
+    update,
 )
 from services.db import get_connection
 
@@ -59,6 +61,29 @@ def test_rest_maps_missing_and_closed_rooms():
     with pytest.raises(HTTPException) as closed:
         _post(room["id"], "Too late")
     assert closed.value.status_code == 409
+
+
+def test_rest_updates_and_deletes_rooms():
+    room = create(CreateRoomRequest(topic="Before", context="Old"))
+
+    updated = update(room["id"], CreateRoomRequest(topic="After", context="New"))
+    assert updated["topic"] == "After"
+    assert updated["context"] == "New"
+
+    delete(room["id"])
+    with pytest.raises(HTTPException) as missing:
+        get_one(room["id"], after_message_id=0)
+    assert missing.value.status_code == 404
+
+
+def test_rest_maps_update_and_delete_of_missing_room_to_404():
+    with pytest.raises(HTTPException) as update_missing:
+        update(2_000_000_000, CreateRoomRequest(topic="Anything"))
+    assert update_missing.value.status_code == 404
+
+    with pytest.raises(HTTPException) as delete_missing:
+        delete(2_000_000_000)
+    assert delete_missing.value.status_code == 404
 
 
 def test_rest_maps_whitespace_only_input_to_validation_error():

@@ -17,10 +17,12 @@ from services.chat.service import (
     ChatRoomClosedError,
     ChatRoomNotFoundError,
     create_room,
+    delete_room,
     get_room,
     list_rooms,
     post_user_message,
     stop_agent_access,
+    update_room,
 )
 
 log = logging.getLogger("graphs.chat")
@@ -70,6 +72,16 @@ def config():
 @router.get("/{room_id}")
 def get_one(room_id: int, after_message_id: int = Query(0, ge=0)):
     return _call(get_room, room_id, after_message_id)
+
+
+@router.patch("/{room_id}")
+def update(room_id: int, body: CreateRoomRequest):
+    return _call(update_room, room_id, body.topic, body.context)
+
+
+@router.delete("/{room_id}", status_code=204)
+def delete(room_id: int):
+    _call(delete_room, room_id)
 
 
 @router.post("/{room_id}/messages", status_code=201)

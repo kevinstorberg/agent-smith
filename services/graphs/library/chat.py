@@ -6,6 +6,7 @@ from typing import Any, TypedDict
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 
+from scripts.shared.agents import AGENT_TARGETS
 from services.chat.participants import chat_participants, find_participant
 from services.chat.service import get_room, post_graph_message
 from services.graphs.messages import extract_text
@@ -35,10 +36,11 @@ class State(TypedDict):
 
 
 def _system_prompt(name: str, others: list[str]) -> str:
+    coding_agents = ", ".join(f"'{agent}'" for agent in sorted(AGENT_TARGETS))
     company = f" and possibly other AI participants ({', '.join(others)})" if others else ""
     return (
         f"You are {name}, an AI participant in a shared chat room used by a human "
-        f"('user'), coding agents ('claude', 'codex', 'gemini'),{company}. You post "
+        f"('user'), coding agents ({coding_agents}),{company}. You post "
         "one reply per invocation, only when explicitly mentioned.\n\n"
         + grounding_block("The room topic, context, and transcript in this message")
         + "\n\n"

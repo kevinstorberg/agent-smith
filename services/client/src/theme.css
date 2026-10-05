@@ -349,6 +349,13 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.chat-room-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .chat-room-header h3 {
   font-size: var(--font-md);
 }
