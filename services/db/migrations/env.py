@@ -2,7 +2,8 @@ import sys
 from logging.config import fileConfig
 from pathlib import Path
 
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import create_engine, pool
+from sqlalchemy.engine import make_url
 from alembic import context
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
@@ -17,13 +18,13 @@ if config.config_file_name is not None:
 target_metadata = None
 
 from services.config import DATABASE_URL as database_url
-config.set_main_option("sqlalchemy.url", database_url)
+# SQLAlchemy 2.1 defaults to psycopg 3; the application uses psycopg2.
+migration_url = make_url(database_url).set(drivername="postgresql+psycopg2")
 
 
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
     context.configure(
-        url=url,
+        url=migration_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -33,9 +34,8 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
+    connectable = create_engine(
+        migration_url,
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:

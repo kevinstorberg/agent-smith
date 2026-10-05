@@ -10,7 +10,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:17
+        image: pgvector/pgvector:0.8.1-pg17
         env:
           POSTGRES_DB: agent_smith_test
           POSTGRES_HOST_AUTH_METHOD: trust
