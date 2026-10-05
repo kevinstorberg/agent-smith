@@ -89,7 +89,6 @@ def build_frontend(env: dict[str, str], force: bool = False) -> None:
     fingerprint = digest(frontend_inputs())
     stamp = CLIENT / "dist/.agent-smith-source-hash"
     if not force and (CLIENT / "dist/index.html").is_file() and stamp.exists() and stamp.read_text() == fingerprint:
-        print("Frontend unchanged; using existing build", flush=True)
         return
     npm = install_frontend()
     checked([npm, "run", "build"], env=frontend_environment(env), cwd=CLIENT)
