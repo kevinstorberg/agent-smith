@@ -293,10 +293,11 @@ def sync_item(item_type: str, item_id: int, device_name: str = "") -> dict:
             "message": "No agents to sync",
         }
 
+    withheld: list[str] = []
     sync_dispatch = {
         "rule": lambda a: sync_rules(a, False, device_name),
         "skill": lambda a: sync_skills(a, False, device_name),
-        "tool": lambda a: sync_mcp(a, False),
+        "tool": lambda a: withheld.extend(sync_mcp(a, False)),
         "hook": lambda a: sync_hooks(a, False),
         "agent": lambda a: sync_agents(a, False, device_name),
     }
@@ -315,6 +316,13 @@ def sync_item(item_type: str, item_id: int, device_name: str = "") -> dict:
     finally:
         shared.harness.list_items_full = original
 
+    if withheld:
+        return {
+            "success": False,
+            "item_name": item["name"],
+            "agents_synced": agents_to_sync,
+            "message": "; ".join(withheld),
+        }
     return {
         "success": True,
         "item_name": item["name"],

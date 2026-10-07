@@ -46,6 +46,20 @@ def load_dotenv(harness_root: Path) -> None:
     os.environ.update(environment(harness_root, app_env))
 
 
+ENV_REFERENCE = re.compile(r"\$\{(\w+)\}")
+
+
+def env_references(value) -> set[str]:
+    """Names of the ${VAR} tokens anywhere in a string, dict or list."""
+    if isinstance(value, str):
+        return set(ENV_REFERENCE.findall(value))
+    if isinstance(value, dict):
+        return set().union(*(env_references(v) for v in value.values()))
+    if isinstance(value, list):
+        return set().union(*(env_references(v) for v in value))
+    return set()
+
+
 def expand_env(value, extra=None):
     """Substitute ${VAR} tokens from the environment, recursing into dicts/lists.
 
@@ -54,11 +68,7 @@ def expand_env(value, extra=None):
     """
     lookup = {**os.environ, **(extra or {})}
     if isinstance(value, str):
-        return re.sub(
-            r"\$\{(\w+)\}",
-            lambda m: lookup.get(m.group(1), m.group(0)),
-            value,
-        )
+        return ENV_REFERENCE.sub(lambda m: lookup.get(m.group(1), m.group(0)), value)
     if isinstance(value, dict):
         return {k: expand_env(v, extra) for k, v in value.items()}
     if isinstance(value, list):
