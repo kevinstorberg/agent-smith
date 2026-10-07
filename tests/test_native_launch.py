@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import time
@@ -136,6 +137,20 @@ def test_relaunch_stops_running_instance_and_waits_for_its_lock(tmp_path, monkey
         manage.replace_running_instance("production")
         with instance_lock(tmp_path, "production"):
             pass
+        assert launcher.wait(timeout=5) == 0
+        assert not (tmp_path / ".runtime/production.json").exists()
+    finally:
+        if launcher.poll() is None:
+            launcher.kill()
+            launcher.wait()
+
+
+def test_relaunch_stops_a_launcher_suspended_in_its_terminal(tmp_path, monkeypatch):
+    monkeypatch.setattr(manage, "ROOT", tmp_path)
+    launcher = _start_fake_launcher(tmp_path, "token-suspended")
+    try:
+        os.kill(launcher.pid, signal.SIGSTOP)
+        manage.replace_running_instance("production")
         assert launcher.wait(timeout=5) == 0
         assert not (tmp_path / ".runtime/production.json").exists()
     finally:

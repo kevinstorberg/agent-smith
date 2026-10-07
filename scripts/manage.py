@@ -114,6 +114,8 @@ def running_instance(mode: str) -> int | None:
 
 def stop_instance(mode: str, pid: int) -> None:
     os.kill(pid, signal.SIGTERM)
+    # A launcher suspended in its terminal (Ctrl+Z) keeps SIGTERM pending until it is resumed.
+    os.kill(pid, signal.SIGCONT)
     wait_for_lock_release(ROOT, MODES[mode], timeout=35)
 
 
