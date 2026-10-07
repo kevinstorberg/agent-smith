@@ -35,6 +35,7 @@ from services.config import (
 from services.jobs.models.execution import (
     complete_execution,
     create_execution,
+    list_executions_for_job,
     reconcile_running_executions,
 )
 from services.jobs.models.job import list_jobs
@@ -46,10 +47,21 @@ log = logging.getLogger("jobs.scheduler")
 # How often (seconds) to emit a repeat "still failing" summary while an identical
 # tick failure persists. Bounds outage log volume independent of poll frequency.
 TICK_ERROR_LOG_INTERVAL_SECONDS = 60.0
+# Recent executions searched for this device's last run when seeding the schedule.
+LAST_RUN_LOOKBACK = 50
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _last_run_started(job_id: int, device: str) -> datetime | None:
+    """When this device last started the job; runs a shutdown interrupted don't count."""
+    executions, _ = list_executions_for_job(job_id, limit=LAST_RUN_LOOKBACK)
+    for execution in executions:
+        if execution["device"] == device and execution["status"] != "interrupted":
+            return datetime.fromisoformat(execution["started_at"])
+    return None
 
 
 def _truncate(data: bytes, limit: int) -> str:
@@ -266,6 +278,8 @@ class JobScheduler:
         return [j for j in jobs if job_runs_on_device(j["id"], self.device_name)]
 
     async def _seed_schedule(self) -> None:
+        # Resume from each job's last run: seeding every job at now + interval let routine
+        # restarts (./run.sh replaces a running instance) postpone interval jobs indefinitely.
         now = _utcnow()
         for job in await asyncio.to_thread(self._eligible_jobs):
             try:
@@ -277,7 +291,8 @@ class JobScheduler:
                     job.get("schedule_config"),
                 )
                 continue
-            self._next_run[job["id"]] = now + interval
+            last_run = await asyncio.to_thread(_last_run_started, job["id"], self.device_name)
+            self._next_run[job["id"]] = max(last_run + interval, now) if last_run else now + interval
 
     def _dispatch(self, job: dict) -> None:
         job_id = job["id"]
