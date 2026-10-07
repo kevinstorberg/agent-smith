@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import argparse
+import json
 import os
 from pathlib import Path
+import subprocess
 import sys
+import time
 from urllib.parse import urlsplit, urlunsplit
 
 import psycopg2
@@ -94,3 +98,89 @@ def test_running_instance_blocks_dependency_changes_and_duplicate_launch(tmp_pat
                 pytest.fail("Production lock must not be acquired twice")
     with instance_lock(tmp_path, "production"):
         pass
+
+
+def _start_fake_launcher(root: Path, token: str) -> subprocess.Popen:
+    """A process that holds production's lock and record the way a real launcher does."""
+    ready = root / "ready"
+    code = f"""
+import json, os, signal, sys, time
+from pathlib import Path
+sys.path.insert(0, {str(Path(manage.ROOT))!r})
+from scripts.shared.processes import instance_lock
+root = Path({str(root)!r})
+signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+with instance_lock(root, "production"):
+    record = root / ".runtime/production.json"
+    record.write_text(json.dumps({{"pid": os.getpid(), "token": {token!r}}}))
+    try:
+        (root / "ready").write_text("1")
+        time.sleep(60)
+    finally:
+        record.unlink(missing_ok=True)
+"""
+    # The launcher identity check matches manage.py's path and the launch token in the command line.
+    process = subprocess.Popen([sys.executable, "-c", code, str(Path(manage.__file__).resolve()), "--launch-token", token])
+    deadline = time.monotonic() + 10
+    while not ready.exists():
+        assert process.poll() is None and time.monotonic() < deadline, "fake launcher never became ready"
+        time.sleep(0.05)
+    return process
+
+
+def test_relaunch_stops_running_instance_and_waits_for_its_lock(tmp_path, monkeypatch):
+    monkeypatch.setattr(manage, "ROOT", tmp_path)
+    launcher = _start_fake_launcher(tmp_path, "token-1")
+    try:
+        assert manage.running_instance("production") == launcher.pid
+        manage.replace_running_instance("production")
+        with instance_lock(tmp_path, "production"):
+            pass
+        assert launcher.wait(timeout=5) == 0
+        assert not (tmp_path / ".runtime/production.json").exists()
+    finally:
+        if launcher.poll() is None:
+            launcher.kill()
+            launcher.wait()
+
+
+def test_record_of_a_dead_launcher_is_discarded_instead_of_blocking_launch(tmp_path, monkeypatch):
+    monkeypatch.setattr(manage, "ROOT", tmp_path)
+    finished = subprocess.Popen([sys.executable, "-c", "pass"])
+    finished.wait()
+    record = tmp_path / ".runtime/production.json"
+    record.parent.mkdir()
+    record.write_text(json.dumps({"pid": finished.pid, "token": "gone"}))
+    assert manage.running_instance("production") is None
+    assert not record.exists()
+
+
+def test_record_pointing_at_an_unrelated_process_is_never_signalled(tmp_path, monkeypatch):
+    monkeypatch.setattr(manage, "ROOT", tmp_path)
+    record = tmp_path / ".runtime/production.json"
+    record.parent.mkdir()
+    record.write_text(json.dumps({"pid": os.getpid(), "token": "not-this-process"}))
+    with pytest.raises(RuntimeError, match="unrelated process"):
+        manage.replace_running_instance("production")
+    assert record.exists()
+
+
+def test_only_the_user_facing_launch_replaces_a_running_instance(monkeypatch):
+    class Launched(Exception):
+        pass
+
+    def launch(*args, **kwargs):
+        raise Launched
+
+    replaced = []
+    monkeypatch.setattr(manage, "selected_environment", lambda mode: {})
+    monkeypatch.setattr(manage, "replace_running_instance", replaced.append)
+    monkeypatch.setattr(manage.os, "execve", launch)
+    monkeypatch.setattr(manage, "instance_lock", launch)
+    args = argparse.Namespace(mode="production", stop=False, status=False, detach=False, rebuild=False, launch_token=None)
+    with pytest.raises(Launched):
+        manage.run_application(args)
+    assert replaced == ["production"]
+    with pytest.raises(Launched):
+        manage.run_application(argparse.Namespace(**{**vars(args), "launch_token": "child"}))
+    assert replaced == ["production"]

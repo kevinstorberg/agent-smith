@@ -15,12 +15,14 @@ One source of truth, synced everywhere.
 Requires Python 3.13 and Node 22.12 or newer. `./setup.sh` installs into `.venv`
 and `services/client/node_modules`; subsequent launches reuse those dependencies.
 `./run.sh` starts production: it builds the frontend only when source inputs change,
-then serves the dashboard + API + MCP on port 7654. Generate the ERD separately
-with `./erd.sh` (requires native Graphviz).
+then serves the dashboard + API + MCP on port 7654. If this checkout's instance of the
+same mode is already running, `./run.sh` gracefully stops it first and relaunches; a
+launch whose configuration fails validation leaves the running instance untouched.
+Generate the ERD separately with `./erd.sh` (requires native Graphviz).
 
 ```sh
 ./run.sh dev                 # API with reload on 7655, Vite UI on 4321
-./run.sh -d                  # production in the background
+./run.sh -d                  # production in the background (restarts it if running)
 ./run.sh --status            # inspect production process
 ./run.sh --stop              # graceful shutdown of this checkout's production process
 ./run.sh dev --stop          # stop development
