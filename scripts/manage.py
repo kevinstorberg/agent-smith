@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.shared.database_safety import production_database_url, validate_certificate, validate_database_target, validate_memory_target
 from scripts.shared.env import environment
 from scripts.shared.local_postgres import temporary_postgres
-from scripts.shared.processes import instance_lock, supervise
+from scripts.shared.processes import instance_lock, supervise, wait_for_lock_release
 
 CLIENT = ROOT / "services/client"
 MODES = {"dev": "development", "development": "development", "prod": "production", "production": "production", "test": "test"}
@@ -97,25 +97,44 @@ def build_frontend(env: dict[str, str], force: bool = False) -> None:
     stamp.write_text(fingerprint)
 
 
-def control_instance(mode: str, stop: bool = False) -> int:
+def running_instance(mode: str) -> int | None:
     record = ROOT / ".runtime" / f"{MODES[mode]}.json"
     if not record.exists():
-        print(f"{MODES[mode]} is not running")
-        return 0
+        return None
     data = json.loads(record.read_text())
     command = subprocess.run(["ps", "-p", str(data["pid"]), "-o", "command="], capture_output=True, text=True)
+    if not command.stdout.strip():
+        # A launcher killed without cleanup (e.g. SIGKILL) leaves its record behind; no process to signal.
+        record.unlink(missing_ok=True)
+        return None
     if str(Path(__file__).resolve()) not in command.stdout or f"--launch-token {data['token']}" not in command.stdout:
         raise RuntimeError("Stale process record; refusing to signal an unrelated process")
-    if stop:
-        os.kill(data["pid"], signal.SIGTERM)
-        deadline = time.monotonic() + 35
-        while record.exists() and time.monotonic() < deadline:
-            time.sleep(0.1)
-        if record.exists():
-            raise RuntimeError("Application has not stopped after 35 seconds; inspect its log")
+    return data["pid"]
+
+
+def stop_instance(mode: str, pid: int) -> None:
+    os.kill(pid, signal.SIGTERM)
+    # A launcher suspended in its terminal (Ctrl+Z) keeps SIGTERM pending until it is resumed.
+    os.kill(pid, signal.SIGCONT)
+    wait_for_lock_release(ROOT, MODES[mode], timeout=35)
+
+
+def control_instance(mode: str, stop: bool = False) -> int:
+    pid = running_instance(mode)
+    if pid is None:
+        print(f"{MODES[mode]} is not running")
+    elif stop:
+        stop_instance(mode, pid)
     else:
-        print(f"{MODES[mode]} running (pid={data['pid']})")
+        print(f"{MODES[mode]} running (pid={pid})")
     return 0
+
+
+def replace_running_instance(mode: str) -> None:
+    pid = running_instance(mode)
+    if pid is not None:
+        print(f"Stopping running {MODES[mode]} (pid={pid}) before relaunch")
+        stop_instance(mode, pid)
 
 
 def run_application(args: argparse.Namespace) -> int:
@@ -125,6 +144,10 @@ def run_application(args: argparse.Namespace) -> int:
     port = int(env.get("DASHBOARD_PORT", "7654"))
     if not 1 <= port <= 65535:
         raise ValueError("DASHBOARD_PORT must be between 1 and 65535")
+    if not args.launch_token:
+        # Only the user-facing invocation replaces a running instance, and only after the
+        # new launch's configuration validated, so a bad config never takes down a working server.
+        replace_running_instance(args.mode)
     runtime = ROOT / ".runtime"
     runtime.mkdir(mode=0o700, exist_ok=True)
     if args.detach:

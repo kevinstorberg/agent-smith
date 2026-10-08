@@ -10,6 +10,10 @@ import time
 from typing import Iterator
 
 
+class InstanceRunningError(RuntimeError):
+    pass
+
+
 @contextmanager
 def instance_lock(root: Path, app_env: str) -> Iterator[None]:
     runtime = root / ".runtime"
@@ -18,8 +22,22 @@ def instance_lock(root: Path, app_env: str) -> Iterator[None]:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise RuntimeError(f"{app_env} is already running in this checkout; use a separate checkout or stop it first") from None
+            raise InstanceRunningError(f"{app_env} is already running in this checkout; use a separate checkout or stop it first") from None
         yield
+
+
+def wait_for_lock_release(root: Path, app_env: str, timeout: float) -> None:
+    # The lock outlives the process record and the supervised children, so its release
+    # is the earliest moment a replacement launch can take over the port and the build.
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            with instance_lock(root, app_env):
+                return
+        except InstanceRunningError:
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"{app_env} has not stopped after {timeout:g} seconds; inspect its log") from None
+            time.sleep(0.1)
 
 
 def stop_process(process: subprocess.Popen) -> None:
