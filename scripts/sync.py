@@ -47,18 +47,22 @@ def main() -> int:
     from scripts.shared.mcp_utils import sync_mcp
     from scripts.shared.hook_utils import sync_hooks
 
+    withheld: list[str] = []
     for agent in AGENT_TARGETS:
         print(f"[{agent}/rules]")
         sync_rules(agent, args.dry_run, device_name=device_name)
         print(f"[{agent}/skills]")
         sync_skills(agent, args.dry_run, device_name=device_name)
         print(f"[{agent}/mcp]")
-        sync_mcp(agent, args.dry_run)
+        withheld += sync_mcp(agent, args.dry_run)
         print(f"[{agent}/hooks]")
         sync_hooks(agent, args.dry_run)
         print(f"[{agent}/agents]")
         sync_agents(agent, args.dry_run, device_name=device_name)
 
+    if withheld:
+        print(f"\n✗ {len(withheld)} MCP server deployment(s) withheld; see the ERROR lines above")
+        return 1
     return 0
 
 

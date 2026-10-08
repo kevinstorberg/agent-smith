@@ -245,7 +245,10 @@ def list_memories(
     sort: str = "created_at_desc",
     limit: int | None = None,
 ) -> list[dict]:
-    rows = [_raw_to_row(r) for r in get_backend().load_all()]
+    # Read the retriever's stream, which add/update/delete keep current, instead of a full
+    # backend load per call: on Pinecone that load is ~5 MB and exhausted the monthly egress
+    # quota. Like search, it sees other processes' writes only after this process restarts.
+    rows = [_doc_to_row(doc) for doc in _get_retriever().memory_stream]
     result = _filter_and_sort(rows, repo=repo, tags=tags, sort=sort)
     return result[: int(limit)] if limit is not None else result
 

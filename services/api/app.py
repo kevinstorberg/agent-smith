@@ -85,6 +85,9 @@ app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 
 for _srv in MCP_SERVERS:
     _srv.settings.streamable_http_path = "/"
+    # Sessions live only in this process, so every restart would answer connected agents'
+    # session IDs with 404; no tool here uses per-session state (notifications, progress, sampling).
+    _srv.settings.stateless_http = True
     _app = _srv.streamable_http_app()
     _app.router.lifespan_context = None
     app.mount(f"/mcp/{_srv.name.split(' - ')[0]}", _app)

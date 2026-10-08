@@ -109,6 +109,32 @@ def test_search_with_date_sort_uses_retriever_not_load_all(monkeypatch):
     assert calls == [], "search() must filter via retriever, not bypass to load_all()"
 
 
+def test_list_memories_uses_retriever_not_load_all(monkeypatch):
+    db.add("alpha entry", repo="r")
+
+    calls: list[str] = []
+    original = lancedb_backend.load_all
+    monkeypatch.setattr(
+        lancedb_backend,
+        "load_all",
+        lambda: (calls.append("load_all"), original())[1],
+    )
+
+    assert [m["content"] for m in db.list_memories(repo="r")] == ["alpha entry"]
+    assert calls == [], "list_memories() must read the retriever stream; a full backend load per call exhausts Pinecone egress"
+
+
+def test_list_memories_reflects_update_and_delete():
+    kept = db.add("original wording", repo="r", tags=["a"])
+    removed = db.add("to be deleted", repo="r")
+
+    db.update(kept, content="revised wording", tags=["b"])
+    db.delete(removed)
+
+    memories = db.list_memories(repo="r")
+    assert [(m["id"], m["content"], m["tags"]) for m in memories] == [(kept, "revised wording", ["b"])]
+
+
 def test_get_by_id():
     id = db.add("findable", repo="r")
     mem = db.get(id)

@@ -20,6 +20,8 @@ from services.config import (
 )
 from services.memory.backends import build_row
 DIMENSION = MEMORY_EMBEDDING_DIMENSION
+# Pinecone's maximum query top_k, and query has no pagination, so it bounds load_all.
+LOAD_ALL_CEILING = 10000
 
 _pc: Pinecone | None = None
 _index = None
@@ -74,9 +76,15 @@ def get_vectorstore(embeddings) -> VectorStore:
 def load_all() -> list[dict]:
     index = _get_index()
     dummy_vec = [0.0] * DIMENSION
-    results = index.query(vector=dummy_vec, top_k=10000, include_metadata=True)
+    results = index.query(vector=dummy_vec, top_k=LOAD_ALL_CEILING, include_metadata=True)
+    matches = results.get("matches", [])
+    if len(matches) >= LOAD_ALL_CEILING:
+        raise RuntimeError(
+            f"Pinecone load_all reached the {LOAD_ALL_CEILING}-match query ceiling, so memories beyond it "
+            "would be silently missing; page through index.list() and fetch() instead of one query"
+        )
     rows = []
-    for match in results.get("matches", []):
+    for match in matches:
         meta = dict(match.get("metadata", {}))
         text = meta.pop("text", "")
         rows.append(build_row(match["id"], text, meta))

@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
+import services.jobs.scheduler as scheduler_module
 from services.jobs.models.config import create_config
-from services.jobs.models.execution import list_executions_for_job
+from services.jobs.models.execution import create_execution, get_execution, list_executions_for_job
 from services.jobs.models.job import create_job
 from services.jobs.schedule import parse_interval
 from services.jobs.scheduler import JobScheduler, execute_job
@@ -139,6 +140,40 @@ async def test_scheduler_fires_interval_job_and_records_execution():
         assert "fired" in found["result"]["output"]
     finally:
         await scheduler.stop()
+
+
+@pytest.mark.asyncio
+async def test_seed_schedule_resumes_each_job_from_its_last_run(monkeypatch):
+    """A restart must neither push a job a full interval out nor skip one that fell due while down."""
+    now = datetime.now(timezone.utc)
+    every_two_days = {"days": 2}
+    jobs = [{"id": job_id, "schedule_config": every_two_days} for job_id in (1, 2, 3)]
+    last_runs = {1: now - timedelta(days=1), 2: now - timedelta(days=3), 3: None}
+    monkeypatch.setattr(JobScheduler, "_eligible_jobs", lambda self: jobs)
+    monkeypatch.setattr(scheduler_module, "_last_run_started", lambda job_id, device: last_runs[job_id])
+
+    scheduler = JobScheduler(device_name="laptop")
+    await scheduler._seed_schedule()
+
+    assert scheduler._next_run[1] == last_runs[1] + timedelta(days=2)
+    assert scheduler._next_run[2] <= datetime.now(timezone.utc)
+    assert scheduler._next_run[3] >= now + timedelta(days=2)
+
+
+def test_last_run_started_skips_interrupted_runs_and_other_devices():
+    job_id = create_job(
+        name="JOBTEST Last Run",
+        schedule_config={"hours": 1},
+        input_params={"command": "echo x"},
+    )
+    completed = create_execution(job_id=job_id, status="success", device="laptop")
+    create_execution(job_id=job_id, status="interrupted", device="laptop")
+    create_execution(job_id=job_id, status="success", device="desktop")
+
+    started = scheduler_module._last_run_started(job_id, "laptop")
+
+    assert started == datetime.fromisoformat(get_execution(completed)["started_at"])
+    assert scheduler_module._last_run_started(job_id, "elsewhere") is None
 
 
 @pytest.mark.asyncio
