@@ -8,29 +8,12 @@ jobs:
   backend:
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: pgvector/pgvector:0.8.1-pg17
-        env:
-          POSTGRES_DB: agent_smith_test
-          POSTGRES_HOST_AUTH_METHOD: trust
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 10
-
     env:
-      APP_ENV: test
-      DATABASE_URL_TEST: postgresql://postgres@localhost/agent_smith_test
+      AGENT_SMITH_PYTHON: python
+      POSTGRES_BIN: /usr/lib/postgresql/17/bin
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Create test env file
-        run: echo "DATABASE_URL_TEST=postgresql://postgres@localhost/agent_smith_test" > .env.test
 
       - uses: actions/setup-python@v5
         with:
@@ -39,11 +22,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Lint
-        run: ruff check .
+      - name: Install native PostgreSQL and pgvector
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get update
+          sudo apt-get install -y postgresql-17 postgresql-17-pgvector
 
-      - name: Run backend tests
-        run: pytest tests/ -v
+      - name: Lint and run backend tests in a temporary native cluster
+        run: ./audit.sh --backend-only
 
   frontend:
     runs-on: ubuntu-latest
@@ -66,12 +54,3 @@ jobs:
 
       - name: Build frontend
         run: cd services/client && npm run build
-
-  docker:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Validate Docker build
-        run: docker build -t agent-smith-test .

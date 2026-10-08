@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
-
-docker compose exec app python -m pytest evals/test_suite.py -v "$@"
+exec "${LAUNCH_PYTHON:-python3}" scripts/manage.py evals "$@"

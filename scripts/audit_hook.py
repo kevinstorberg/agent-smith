@@ -2,8 +2,8 @@
 """PreToolUse / PostToolUse audit hook for coding agents.
 
 Reads the agent's hook JSON on stdin, normalizes it across Claude/Codex/Gemini,
-and POSTs one event to the dashboard's ingest API. It runs on the host (the
-dashboard + DB run in Docker), so it talks HTTP, not SQL, and uses only the
+and POSTs one event to the dashboard's ingest API. It runs independently of the
+dashboard, so it talks HTTP, not SQL, and uses only the
 standard library to stay fast and dependency-free.
 
 CONTRACT: this hook is pure observation. It ALWAYS exits 0 and writes nothing to

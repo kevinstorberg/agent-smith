@@ -10,9 +10,11 @@ import pytest
 @pytest.fixture(scope="session", autouse=True)
 def _setup_test_db():
     from services.db.create import create_database
-    from services.config import DATABASE_URL
+    from services.config import APP_ENV, DATABASE_URL
     from services.db import init_db
 
+    if APP_ENV != "test":
+        raise RuntimeError("Backend tests cannot use an application configured outside APP_ENV=test")
     create_database(DATABASE_URL)
     init_db()
 

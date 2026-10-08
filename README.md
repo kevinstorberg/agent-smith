@@ -8,12 +8,31 @@ One source of truth, synced everywhere.
 ## Quick Start
 
 ```sh
+./setup.sh                   # once: Python + frontend dependencies
 ./run.sh
 ```
 
-This builds the Docker image, generates the ERD, and starts the dashboard + MCP
-server. Use `./run.sh -nc` to force a no-cache rebuild. See `DASHBOARD_PORT` in
-`.env.default` for the port (default 7654).
+Requires Python 3.13 and Node 22.12 or newer. `./setup.sh` installs into `.venv`
+and `services/client/node_modules`; subsequent launches reuse those dependencies.
+`./run.sh` starts production: it builds the frontend only when source inputs change,
+then serves the dashboard + API + MCP on port 7654. Generate the ERD separately
+with `./erd.sh` (requires native Graphviz).
+
+```sh
+./run.sh dev                 # API with reload on 7655, Vite UI on 4321
+./run.sh -d                  # production in the background
+./run.sh --status            # inspect production process
+./run.sh --stop              # graceful shutdown of this checkout's production process
+./run.sh dev --stop          # stop development
+./run.sh -nc                 # force frontend rebuild; also accepts --rebuild
+```
+
+Launch modes select `.env.development` and `.env.production` respectively. Override
+ports with `DASHBOARD_PORT` and `DEV_FRONTEND_PORT`. Servers bind to loopback by
+default; set `DASHBOARD_HOST` explicitly for remote access. Background launch reports
+that startup has begun; inspect `.runtime/<environment>.log` for readiness/failures.
+Use separate checkouts for active development and production so dependency refreshes
+and frontend builds cannot alter the deployed checkout.
 
 Agents connect to the MCP endpoint at `http://localhost:<DASHBOARD_PORT>/mcp/`.
 
@@ -127,8 +146,17 @@ must be restarted to refresh the `run_graph` tool description after changing gra
 Runs backend tests (pytest) and frontend tests (Vitest). Pytest flags are forwarded:
 `./audit.sh -x` stops on first failure, `./audit.sh -k test_plans` filters by name.
 
-CI runs both suites plus a Docker build validation. DB-dependent tests use a Postgres
-service container in CI.
+Install native PostgreSQL 17 and pgvector for tests. Set `POSTGRES_BIN` to the server
+bin directory if it is not on PATH (Homebrew example: `$(brew --prefix postgresql@17)/bin`).
+`./audit.sh` initializes a fresh cluster on a random loopback port, runs backend
+tests with a temporary local memory store, and stops/removes only that owned cluster.
+It never resets, drops, or connects to your configured application databases. CI uses
+this same native backend audit command; no container runtime is required.
+
+For direct `pytest tests/` invocations, set `APP_ENV=test` and `DATABASE_URL_TEST`
+to a dedicated loopback database ending in `_test`. Remote targets and targets
+matching configured production are rejected before connecting. Prefer `./audit.sh`
+for automatic isolation.
 
 ## Evals
 
@@ -140,25 +168,76 @@ and picked up automatically at test time.
 ./evals.sh --suite rules_plans    # run a specific suite
 ```
 
-Requires the app container to be running (`./run.sh`). Configure via `EVAL_MODEL`,
-`EVAL_JUDGE_MODEL`, and `EVAL_THRESHOLD` in your environment's `.env.*` file.
+Runs directly against the selected application database; the dashboard need not be
+running. Defaults to production for compatibility; use `./evals.sh --env development`
+to evaluate development suites. Evals intentionally record results in that database.
+Configure via `EVAL_MODEL`, `EVAL_JUDGE_MODEL`, and `EVAL_THRESHOLD` in the selected
+environment's `.env.*` file.
 
 ## Database
 
 Postgres stores harness items, eval configs, eval results, plans, and—when
 `MEMORY_BACKEND=pgvector`—memory content, metadata, and embeddings.
-Schema is managed by Alembic. Migrations run automatically on app startup, or manually:
+Schema is managed by Alembic. Development/test migrations run on startup. Production
+startup only reads the migration revision and refuses incompatible schemas. Production
+database creation and direct production Alembic commands (including downgrade) are
+blocked. Forward upgrades require explicit database-name confirmation after review:
 
 ```sh
-.venv/bin/alembic upgrade head
+./db.sh development
+./db.sh production --confirm-database <production-database-name>
 ```
 
-Set `DATABASE_URL` in `.env` to override the default (`postgresql://localhost/agent_smith`).
+Set `DATABASE_URL_DEVELOPMENT`, `DATABASE_URL_TEST`, or `DATABASE_URL_PRODUCTION`
+in the corresponding `.env.*` file. Existing external production databases and data
+remain in place. Install pgvector before initializing new local databases. Development
+and test cannot select the configured production target.
+
+For a new development database on an already running native PostgreSQL server, use
+`APP_ENV=development .venv/bin/python -m services.db.create`, then `./run.sh dev`.
+PostgreSQL is optional on the application host when the selected application database
+already runs elsewhere; its native server binaries are required for isolated audits.
+
+Application guards do not restrict arbitrary SQL clients. Use a production runtime
+role that does not own schemas/tables and lacks database/schema creation permissions;
+use separate credentials for reviewed migrations. This change does not alter existing
+roles, grants, schemas, or production data.
 
 ## Environment
 
 `.env.default` contains committed defaults. Each environment has its own override file
-(`.env.development`, `.env.test`, `.env.production`) — all gitignored. `.env.default` is
-loaded first; the environment-specific file overrides it based on `APP_ENV` (default: `development`).
+(`.env.development`, `.env.test`, `.env.production`) — all gitignored. Defaults are
+overridden by the selected environment file, then explicit process variables.
+`APP_ENV` defaults to development for Python entry points; `./run.sh` explicitly
+selects production for compatibility. Local memory paths default to separate
+`memory_store/<environment>` directories; shared production paths/indexes are rejected
+in development and test.
 
 See `.env.default` for all available configuration options.
+
+## Existing installations
+
+The code migration does not stop existing services or remove Docker volumes. Keep
+those volumes and verified backups until native production has been checked. Existing
+external PostgreSQL and Pinecone data stay in place; retain their URLs/backend settings.
+For LanceDB, copy the existing `memory_store` volume while the old writer is stopped,
+verify the copy, and set an absolute `MEMORY_STORE_PATH` in `.env.production`. Production
+refuses an absent/empty store rather than silently starting with no memories. An entirely
+new installation can use pgvector or a separately initialized LanceDB store.
+
+Replace certificate paths such as `/certs/rds-global-bundle.pem` in database URLs with
+the existing host certificate path. Keep TLS verification enabled. Recheck stored job
+commands for Linux-specific tools and `/app` paths: native jobs run as the launching
+user. Agent config files are accessed directly in that user's home directory. Only one
+application process per environment is launched; do not add Uvicorn workers, because
+the scheduler runs inside each application process. For persistence across reboots,
+manage the production launcher through launchd/systemd under an appropriate user.
+
+Existing development harness tools may contain MCP URLs for the old port 7654. Update
+those development URLs before syncing to agents, or explicitly retain that port in
+`.env.development` while production is stopped. The default production port stays 7654.
+
+Native setup requires OS-specific prerequisites; the launcher does not install global
+system packages or automatically change production infrastructure. Linux PostgreSQL
+packages are documented by [PostgreSQL](https://www.postgresql.org/download/linux/ubuntu/),
+and extension installation by [pgvector](https://github.com/pgvector/pgvector#installation).
