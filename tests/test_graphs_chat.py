@@ -50,18 +50,19 @@ def harness(monkeypatch):
     """Patch registry env + the chat module's service/LLM seams; capture calls."""
     from services.graphs.library import chat
 
+    monkeypatch.delenv("CHAT_MODEL_IDS", raising=False)
     monkeypatch.setenv("CHAT_MODEL_NAMES", "Kimi,Qwen")
-    monkeypatch.setenv("CHAT_MODEL_IDS", "moonshotai.kimi-k2.5,qwen.qwen3-max")
+    monkeypatch.setenv("CHAT_KIMI_MODEL_ID", "moonshotai.kimi-k2.5")
+    monkeypatch.setenv("CHAT_QWEN_MODEL_ID", "qwen.qwen3-max")
 
-    captured: dict = {"model_calls": [], "model_ids": [], "posts": [], "reply": "A helpful reply."}
+    captured: dict = {"model_calls": [], "model_roles": [], "posts": [], "reply": "A helpful reply."}
     pages = {"sequence": [_page(_open_room(), [_message(1, "user", "What do you think?")])]}
 
     def fake_get_room(room_id, after_message_id=0):
         return pages["sequence"].pop(0)
 
-    def fake_build_chat_model(role, fallback_role=None, *, model_id=None):
-        assert role == "chat"
-        captured["model_ids"].append(model_id)
+    def fake_build_chat_model(role, fallback_role=None):
+        captured["model_roles"].append((role, fallback_role))
         return _FakeModel(captured["reply"], captured["model_calls"])
 
     def fake_post(room_id, author, body):
@@ -92,7 +93,7 @@ def test_chat_graph_rejects_missing_or_wrong_inputs(inputs):
 def test_happy_path_posts_reply_as_registered_participant(harness):
     result = json.loads(asyncio.run(dispatch("chat", {"room_id": 42, "participant": "kimi"})))
 
-    assert harness["model_ids"] == ["moonshotai.kimi-k2.5"]
+    assert harness["model_roles"] == [("chat_kimi", "chat")]
     assert harness["posts"] == [(42, "Kimi", "A helpful reply.")]
     assert result["author"] == "Kimi"
     assert result["message"]["id"] == 99

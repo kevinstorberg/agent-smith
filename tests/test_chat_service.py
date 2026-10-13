@@ -115,8 +115,10 @@ def test_agent_post_rejects_unknown_or_impersonated_agent(agent):
 
 @pytest.fixture
 def _participants_env(monkeypatch):
+    monkeypatch.delenv("CHAT_MODEL_IDS", raising=False)
     monkeypatch.setenv("CHAT_MODEL_NAMES", "Kimi,Qwen")
-    monkeypatch.setenv("CHAT_MODEL_IDS", "moonshotai.kimi-k2.5,qwen.qwen3-max")
+    monkeypatch.setenv("CHAT_KIMI_MODEL_ID", "moonshotai.kimi-k2.5")
+    monkeypatch.setenv("CHAT_QWEN_MODEL_ID", "qwen.qwen3-max")
 
 
 def test_graph_post_stores_registered_participant_author(_participants_env):

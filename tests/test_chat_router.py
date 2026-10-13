@@ -94,8 +94,10 @@ def test_rest_maps_whitespace_only_input_to_validation_error():
 
 @pytest.fixture
 def _participants_env(monkeypatch):
+    monkeypatch.delenv("CHAT_MODEL_IDS", raising=False)
     monkeypatch.setenv("CHAT_MODEL_NAMES", "Kimi,Qwen")
-    monkeypatch.setenv("CHAT_MODEL_IDS", "moonshotai.kimi-k2.5,qwen.qwen3-max")
+    monkeypatch.setenv("CHAT_KIMI_MODEL_ID", "moonshotai.kimi-k2.5")
+    monkeypatch.setenv("CHAT_QWEN_MODEL_ID", "qwen.qwen3-max")
 
 
 @pytest.mark.parametrize("mention", ["@kimi", "@Kimi", "@KIMI"])
@@ -125,15 +127,16 @@ def test_non_mentions_schedule_nothing(_participants_env, body):
 
 
 def test_misconfigured_registry_fails_the_post_before_storing_anything(monkeypatch):
-    monkeypatch.setenv("CHAT_MODEL_NAMES", "Kimi")
-    monkeypatch.setenv("CHAT_MODEL_IDS", "id-one,id-two")
+    monkeypatch.delenv("CHAT_MODEL_IDS", raising=False)
+    monkeypatch.setenv("CHAT_MODEL_NAMES", "Kimi,Bard")
+    monkeypatch.setenv("CHAT_KIMI_MODEL_ID", "moonshotai.kimi-k2.5")
     room = create(CreateRoomRequest(topic="Broken registry"))
 
     with pytest.raises(HTTPException) as failure:
         _post(room["id"], "@Kimi hello")
 
     assert failure.value.status_code == 422
-    assert "equal length" in failure.value.detail
+    assert "Graph model role 'chat_bard' has no MODEL_ID configured" in failure.value.detail
     assert get_one(room["id"], after_message_id=0)["messages"] == []
 
 
