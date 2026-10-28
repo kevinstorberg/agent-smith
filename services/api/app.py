@@ -9,9 +9,10 @@ bootstrap()
 
 import contextlib
 from contextlib import asynccontextmanager
+import logging
 
 import anyio
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -41,6 +42,9 @@ from services.meetings.server import mcp as meetings_mcp
 from services.jobs.scheduler import JobScheduler
 
 MCP_SERVERS = [memory_mcp, plans_mcp, harness_mcp, evals_mcp, graphs_mcp, jobs_mcp, chat_mcp, meetings_mcp]
+
+# Stateless transports finish after every request, so their INFO cleanup messages are routine noise.
+logging.getLogger("mcp.server.streamable_http").setLevel(logging.WARNING)
 
 
 @asynccontextmanager
@@ -98,14 +102,29 @@ if dist_dir.exists():
     app.mount("/assets", StaticFiles(directory=str(dist_dir / "assets")), name="assets")
 
 
+def _frontend_file(path: str) -> Path | None:
+    try:
+        build_root = dist_dir.resolve()
+        file_path = (build_root / path).resolve()
+        if not file_path.is_relative_to(build_root):
+            raise HTTPException(status_code=404)
+        return file_path if file_path.is_file() else None
+    except (OSError, ValueError):
+        raise HTTPException(status_code=404) from None
+
+
 @app.api_route("/{path:path}", methods=["GET"], include_in_schema=False)
-async def spa_fallback(request: Request, path: str):
-    if dist_dir.exists():
-        file_path = dist_dir / path
-        if file_path.is_file():
-            return FileResponse(file_path)
-        return FileResponse(dist_dir / "index.html")
-    return FileResponse(dist_dir / "index.html", status_code=404)
+async def spa_fallback(path: str):
+    file_path = _frontend_file(path)
+    if file_path is not None:
+        return FileResponse(file_path)
+    # Machine-readable discovery URLs must never fall back to the dashboard's HTML.
+    if path.partition("/")[0] == ".well-known":
+        raise HTTPException(status_code=404)
+    index_path = _frontend_file("index.html")
+    if index_path is not None:
+        return FileResponse(index_path)
+    raise HTTPException(status_code=404)
 
 
 if __name__ == "__main__":
