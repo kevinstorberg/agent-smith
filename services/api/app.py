@@ -37,9 +37,10 @@ from services.evals.server import mcp as evals_mcp
 from services.graphs.server import mcp as graphs_mcp
 from services.jobs.server import mcp as jobs_mcp
 from services.chat.server import mcp as chat_mcp
+from services.meetings.server import mcp as meetings_mcp
 from services.jobs.scheduler import JobScheduler
 
-MCP_SERVERS = [memory_mcp, plans_mcp, harness_mcp, evals_mcp, graphs_mcp, jobs_mcp, chat_mcp]
+MCP_SERVERS = [memory_mcp, plans_mcp, harness_mcp, evals_mcp, graphs_mcp, jobs_mcp, chat_mcp, meetings_mcp]
 
 
 @asynccontextmanager

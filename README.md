@@ -100,22 +100,95 @@ migration and change the production backend only after reconciliation passes.
 
 ## Background Jobs
 
-Scheduled shell commands that run on a fixed interval, managed via the dashboard (the
-**Jobs** tab) or MCP tools. Each job stores a `schedule_config` interval (e.g.
-`{"minutes": 5}`) and an `input_params.command`. Like harness items, jobs carry
+Shell commands and LangGraph workflows run on a fixed interval, managed via the dashboard
+(the **Jobs** tab) or MCP tools. Each job stores a `schedule_config` interval (e.g.
+`{"minutes": 5}`) and exactly one of `input_params.command` or
+`input_params.graph_type` with `graph_inputs`. Like harness items, jobs carry
 **deployment configs** (`job_configs`) scoping them by device (`DEVICE_NAME`) and repo with
 additive (include) / subtractive (exclude) rules — a job only runs on a device its configs
 select.
 
 A pure-asyncio scheduler runs inside the dashboard process (started in the app lifespan): it
-polls for due jobs, executes each command in a subprocess with a timeout, and records every
-run in `job_executions` (status, timing, stdout/stderr, exit code). Executions left
+polls for due jobs, executes commands in subprocesses or graphs in-process with a timeout,
+and records every run in `job_executions` (status, timing, output/error, exit code). Executions left
 `running` when the app stops are reconciled to `interrupted` on the next startup. Trigger an
 immediate run with **Run Now** (or the `job_run_now` MCP tool), which ignores the schedule
 and scoping.
 
 Tune `JOB_POLL_INTERVAL`, `JOB_DEFAULT_TIMEOUT`, and `JOB_MAX_OUTPUT_BYTES` in your
 environment's `.env.*` file.
+
+## Meeting Context
+
+The `meeting_ingest` graph imports meeting summaries and selected metadata into PostgreSQL.
+It uses a configured provider factory; Granola is the first adapter. Imported context stays
+separate from generated memories. This graph has no agent and creates no tickets or memories.
+
+Set source configuration and the real API key only in the gitignored `.env.production`:
+
+```env
+MEETING_SOURCES_JSON={"work":{"provider":"granola","account_key":"personal","api_key_env":"GRANOLA_API_KEY","project":null,"provider_options":{}}}
+GRANOLA_API_KEY=your-granola-api-key
+```
+
+Leave `provider_options` empty to list everything accessible to the key. Granola also supports
+`folder_id`, `space_id`, and `page_size` (1-30). Access follows the [Granola key scopes](https://docs.granola.ai/help-center/sharing/integrations/granola-api):
+personal access covers notes the key owner can read; workspace keys cover public notes and
+API-enabled spaces, and cannot read unshared private notes or folders. Summary imports exclude
+private note text, transcripts, attachments, and arbitrary provider fields.
+
+Keep `account_key` stable when rotating credentials; use a new `account_key` for a different account.
+Adding another provider requires an adapter and factory registration, then a configuration
+change. Folder/project configuration changes restart synchronization with a deep scan while
+retaining prior stored context. Provider/account switches retain their independent records.
+
+Probe the real API, then verify the graph, persistence, and MCP reader in an owned disposable
+database. These commands load only meeting settings/credentials from `.env.production` and
+never use its database target. Native PostgreSQL/pgvector and `POSTGRES_BIN` follow the test
+prerequisites below. Output contains counts and verification flags, without meeting content.
+
+```sh
+.venv/bin/python -m scripts.meetings probe --source work
+.venv/bin/python -m scripts.meetings verify-live --source work --isolated-db --stage scan
+.venv/bin/python -m scripts.meetings verify-live --source work --isolated-db --stage context
+```
+
+After deploying the reviewed change, apply its migration through the existing confirmation
+flow, then create the recurring job on the device running the dashboard:
+
+```sh
+./db.sh production --confirm-database <production-database-name>
+APP_ENV=production .venv/bin/python -m scripts.meetings schedule --source work --device "<actual-device>" --interval-minutes 15
+```
+
+Scheduling creates or updates one device-scoped job with a 300-second timeout. Startup does
+not create meeting jobs or upgrade production schemas. The dashboard must stay running for
+periodic imports. Execution history appears in **Jobs**; source progress is also available
+through `meeting_sync_status` on `/mcp/meetings/`.
+
+To import immediately, use the graphs MCP tool:
+
+```python
+run_graph(type="meeting_ingest", inputs={"source": "work"})
+```
+
+The meetings MCP server provides `meeting_list`, `meeting_get`, `meeting_search`, and
+`meeting_sync_status`. List/search filter by source, project, and timezone-aware meeting
+dates; reads see committed imports immediately. Each summary has a stable UUID, source URL,
+provider/account identity, local revision, source timestamps, and selected meeting metadata.
+
+Each normal scan lists all accessible IDs and fetches new, changed, or pending summaries.
+The initial scan and a daily deep scan refresh all details and recheck omitted records.
+Runs stop after a 240-second work budget and resume the saved page/item checkpoint next time.
+A database claim prevents overlapping source imports; outcomes include `continued`,
+`completed`, `completed_with_warnings`, and `skipped_busy`. Failed/interrupted runs preserve
+committed progress; a scan unfinished after 24 hours reports degraded status.
+
+Context is eventually consistent: processing notes appear after the provider makes them
+available. Three unresolved detail observations hide a previously stored summary; explicit
+deletion tombstones hide it immediately. A successful later fetch restores availability.
+Listing absence alone does not delete context. Existing content remains stored for diagnosis;
+there is no automatic retention purge, full revision history, or replication of source ACLs.
 
 ## Chat Rooms
 
@@ -178,7 +251,7 @@ environment's `.env.*` file.
 
 ## Database
 
-Postgres stores harness items, eval configs, eval results, plans, and—when
+Postgres stores harness items, eval configs, eval results, plans, meeting context, and—when
 `MEMORY_BACKEND=pgvector`—memory content, metadata, and embeddings.
 Schema is managed by Alembic. Development/test migrations run on startup. Production
 startup only reads the migration revision and refuses incompatible schemas. Production
