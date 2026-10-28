@@ -4,8 +4,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
 
-from services.api.routers.base import empty_to_none, require_found
-from services.meetings import db
+from services.api.routers.base import delete_response, empty_to_none, require_found
+from services.meetings import db, digestion_db
 
 router = APIRouter()
 
@@ -40,3 +40,32 @@ def status(source: str = Query("", max_length=100)):
 def get_one(summary_id: UUID):
     key = str(summary_id)
     return require_found(db.get_summary(key), "Meeting summary", key)
+
+
+@router.get("/{summary_id}/transcript")
+def get_transcript(
+    summary_id: UUID,
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    key = str(summary_id)
+    return require_found(digestion_db.get_transcript(key, limit=limit, offset=offset), "Meeting summary", key)
+
+
+@router.delete("/{summary_id}/transcript")
+def delete_transcript(summary_id: UUID):
+    key = str(summary_id)
+    require_found(db.get_summary(key), "Meeting summary", key)
+    digestion_db.delete_transcript(key)
+    return delete_response(key)
+
+
+@router.post("/{summary_id}/transcript/retry")
+def retry_transcript(summary_id: UUID):
+    key = str(summary_id)
+    require_found(db.get_summary(key), "Meeting summary", key)
+    try:
+        digestion_db.retry_transcript(key)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+    return {"success": True}

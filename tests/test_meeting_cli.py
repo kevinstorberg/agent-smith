@@ -72,11 +72,11 @@ print(json.dumps(meetings.run_isolated('fixture', 'verify-live', 'one-summary'))
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stage", ["one-summary", "scan", "context"])
+@pytest.mark.parametrize("stage", ["one-summary", "scan", "context", "transcript"])
 async def test_live_verification_discards_graph_output_and_keeps_summary_content_private(monkeypatch, stage):
     from services.graphs import runtime
-    from services.meetings import db, factory, service
-    from services.meetings.types import MeetingSummary
+    from services.meetings import db, digestion_db, factory, service
+    from services.meetings.types import MeetingSummary, TranscriptPage, TranscriptSegment
 
     monkeypatch.setenv("MEETING_SOURCES_JSON", json.dumps({
         "fixture": {"provider": "granola", "account_key": "personal", "api_key_env": "MEETING_TEST_KEY"},
@@ -95,7 +95,7 @@ async def test_live_verification_discards_graph_output_and_keeps_summary_content
 
     async def dispatch(graph_type, inputs):
         calls.append((graph_type, inputs))
-        return json.dumps({"private": "private-fixture-key"})
+        return json.dumps({"private": "private-fixture-key", "transcript": {"meeting_id": row["id"]}})
 
     async def partial_sync(source, *, run_budget_seconds):
         assert source == "fixture" and run_budget_seconds == 0.001
@@ -111,12 +111,19 @@ async def test_live_verification_discards_graph_output_and_keeps_summary_content
         async def aclose(self):
             self.closed = True
 
+        async def get_transcript_page(self, external_id, cursor=None):
+            return TranscriptPage((TranscriptSegment("Private transcript content", {}),))
+
     provider = Provider()
     monkeypatch.setattr(runtime, "dispatch", dispatch)
     monkeypatch.setattr(factory, "build_meeting_provider", lambda config: provider)
     monkeypatch.setattr(service, "sync_source", partial_sync)
     monkeypatch.setattr(db, "list_summaries", lambda **kwargs: {"items": [row], "total": 1})
     monkeypatch.setattr(db, "get_summary", lambda summary_id: row)
+    if stage == "transcript":
+        monkeypatch.setattr(db, "list_summaries", lambda **kwargs: {"items": [{"id": f"other-{index}"} for index in range(20)], "total": 21})
+        monkeypatch.setattr(digestion_db, "get_transcript", lambda summary_id: {"status": "ready"})
+        monkeypatch.setattr(digestion_db, "get_record", lambda summary_id: {"transcript": {"segments": [TranscriptSegment("Private transcript content", {}).to_dict(0)]}})
     monkeypatch.setattr(db, "source_status", lambda source: [{"scan_started_at": None if calls else "checkpoint", "last_completed_at": "completed" if calls else None}])
     result = await meetings.verify_live("fixture", stage)
     assert calls == [("meeting_ingest", {"source": "fixture"})] * 2
@@ -127,4 +134,4 @@ async def test_live_verification_discards_graph_output_and_keeps_summary_content
     if stage == "context":
         assert result["context_reader_verified"]
     rendered = json.dumps(result)
-    assert all(value not in rendered for value in ("Private meeting", "private-fixture-key", "sensitive", "fixture-note"))
+    assert all(value not in rendered for value in ("Private meeting", "Private transcript", "private-fixture-key", "sensitive", "fixture-note"))

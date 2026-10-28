@@ -172,6 +172,24 @@ describe('specific API methods', () => {
     expect(url.pathname).toBe('/api/meetings/summary-id');
   });
 
+  it('meetings.transcript pages segments and deletes through the same summary route', async () => {
+    globalThis.fetch = mockFetch({ items: [], total: 0 });
+    await api.meetings.transcript('summary-id', { limit: 100, offset: 100 });
+    const url = new URL((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect(url.pathname).toBe('/api/meetings/summary-id/transcript');
+    expect(Object.fromEntries(url.searchParams)).toEqual({ limit: '100', offset: '100' });
+
+    await api.meetings.deleteTranscript('summary-id');
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[1]).toEqual([
+      '/api/meetings/summary-id/transcript', { method: 'DELETE' },
+    ]);
+    await api.meetings.retryTranscript('summary-id');
+    const [retryUrl, retryOptions] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[2];
+    expect(retryUrl).toBe('/api/meetings/summary-id/transcript/retry');
+    expect(retryOptions.method).toBe('POST');
+    expect(retryOptions.body).toBe('{}');
+  });
+
   it('harness.sync sends POST to /harness/sync', async () => {
     globalThis.fetch = mockFetch({ success: true, stdout: '', stderr: '' });
     await api.harness.sync();

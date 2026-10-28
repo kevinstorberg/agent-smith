@@ -160,6 +160,27 @@ export interface MeetingListParams extends PaginationParams {
   before?: string;
 }
 
+export interface TranscriptSegment {
+  id: string;
+  text: string;
+  speaker: {
+    name?: string | null;
+    source?: string | null;
+    attribution?: string | null;
+    diarization_label?: string | null;
+  };
+  start_time: string | null;
+  end_time: string | null;
+}
+
+export interface MeetingTranscript extends Paginated<TranscriptSegment> {
+  status: 'not_imported' | 'pending' | 'capturing' | 'ready' | 'unsupported' | 'unavailable' | 'failed' | 'deleted';
+  offset: number;
+  limit: number;
+  error_type: string | null;
+  captured_at: string | null;
+}
+
 export interface EvalRun {
   id: number;
   timestamp: string;
@@ -425,6 +446,10 @@ export const api = {
       ...(params?.before ? { before: params.before } : {}),
     }),
     get: (id: string) => get<MeetingSummary>(`/meetings/${encodeURIComponent(id)}`),
+    transcript: (id: string, params?: PaginationParams) =>
+      get<MeetingTranscript>(`/meetings/${encodeURIComponent(id)}/transcript`, paginationToParams(params)),
+    deleteTranscript: (id: string) => del<{ deleted: boolean; id: string }>(`/meetings/${encodeURIComponent(id)}/transcript`),
+    retryTranscript: (id: string) => post<{ success: boolean }>(`/meetings/${encodeURIComponent(id)}/transcript/retry`, {}),
   },
   memory: {
     search: (q: string, opts?: PaginationParams & { repo?: string; tags?: string[]; sort?: string }) =>

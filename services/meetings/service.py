@@ -39,10 +39,15 @@ def _source_failure(source: str, error: Exception) -> dict:
     return result
 
 
-async def sync_sources(source: str | None = None, *, run_budget_seconds: float = 240) -> dict:
+async def sync_sources(source: str | None = None, *, run_budget_seconds: float = 240, raise_on_failure: bool = True) -> dict:
     _validate_budget(run_budget_seconds)
     if source is not None:
-        return await sync_source(source, run_budget_seconds=run_budget_seconds)
+        try:
+            return await sync_source(source, run_budget_seconds=run_budget_seconds)
+        except Exception as error:
+            if raise_on_failure:
+                raise
+            return _source_failure(source, error)
     # Freeze names, settings and credential values together for this invocation.
     env = dict(os.environ)
     names = list_source_names(env)
@@ -98,7 +103,7 @@ async def sync_sources(source: str | None = None, *, run_budget_seconds: float =
     if outcomes & {"failed", "interrupted", "deferred"}:
         result["known_counts"] = result["counts"]
         result["counts"] = None
-    if "failed" in outcomes:
+    if "failed" in outcomes and raise_on_failure:
         raise MeetingSyncError(json.dumps(result, sort_keys=True)) from None
     return result
 

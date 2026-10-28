@@ -232,6 +232,10 @@ def _save_summary(cur: RealDictCursor, config: SourceConfig, scan: dict, summary
          summary.provider_deleted_at, meeting_start, meeting_end, content_hash, revision, available, scan.get("id")),
     )
     status = "created" if old is None else "updated" if changed else "unchanged"
+    if status == "created":
+        from services.meetings.digestion_db import enroll
+
+        enroll(cur, summary_id)
     return {"id": summary_id, "revision": revision, "status": status}
 
 
