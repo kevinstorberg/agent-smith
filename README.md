@@ -36,7 +36,13 @@ that startup has begun; inspect `.runtime/<environment>.log` for readiness/failu
 Use separate checkouts for active development and production so dependency refreshes
 and frontend builds cannot alter the deployed checkout.
 
-Agents connect to the MCP endpoint at `http://localhost:<DASHBOARD_PORT>/mcp/`.
+Agents connect to individual MCP endpoints at
+`http://localhost:<DASHBOARD_PORT>/mcp/<server>/`, such as `/mcp/memory/`.
+Tool requests use POST with `Accept: application/json, text/event-stream`.
+Optional GET event streams require `Accept: text/event-stream`; requests without it
+receive 406. The local servers do not require OAuth, so unsupported discovery URLs
+under `/.well-known/` return 404. Warnings and errors remain visible while routine
+stateless transport cleanup messages are quieted.
 
 ## Structure
 
