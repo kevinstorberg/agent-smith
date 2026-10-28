@@ -9,6 +9,7 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
+from services.config import DEVICE_NAME
 from services.api.routers.jobs import (
     ConfigCreateRequest,
     ConfigUpdateRequest,
@@ -46,6 +47,27 @@ def test_create_attaches_default_config():
     assert len(job["configs"]) == 1
     assert job["configs"][0]["device"] == "*"
     assert job["configs"][0]["enabled"] is True
+
+
+def test_create_graph_scoped_to_this_device_attaches_one_server_device_config():
+    params = {"graph_type": "echo", "graph_inputs": {"text": "scheduled graph"}, "timeout": 300}
+    job = create(JobCreateRequest(
+        name="JOBTEST R Device Graph", schedule_config={"minutes": 15},
+        input_params=params, device_scope="this_device",
+    ))
+    assert job["input_params"] == params
+    assert len(job["configs"]) == 1
+    config = job["configs"][0]
+    assert config["device"] == DEVICE_NAME
+    assert config["repo"] == "*" and config["enabled"] and not config["exclude"]
+
+
+def test_create_rejects_unknown_device_scope():
+    with pytest.raises(ValidationError):
+        JobCreateRequest(
+            name="JOBTEST R Bad Device", schedule_config={"minutes": 5},
+            input_params={"command": "echo x"}, device_scope="client-supplied-device",
+        )
 
 
 def test_create_rejects_empty_schedule():
@@ -103,6 +125,16 @@ def test_update_changes_fields():
     )
     assert updated["description"] == "new desc"
     assert updated["schedule_config"] == {"minutes": 10}
+
+
+def test_update_replaces_command_and_graph_execution_payloads():
+    job = _create("JOBTEST R Execution Mode")
+    graph = {"graph_type": "echo", "graph_inputs": {"text": "updated graph"}, "timeout": 300}
+    updated = update(job["id"], JobUpdateRequest(input_params=graph))
+    assert updated["input_params"] == graph
+    command = {"command": "echo command again", "timeout": 300}
+    updated = update(job["id"], JobUpdateRequest(input_params=command))
+    assert updated["input_params"] == command
 
 
 def test_delete_removes_job():

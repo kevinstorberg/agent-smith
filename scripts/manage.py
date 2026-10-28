@@ -102,7 +102,7 @@ def running_instance(mode: str) -> int | None:
     if not record.exists():
         return None
     data = json.loads(record.read_text())
-    command = subprocess.run(["ps", "-p", str(data["pid"]), "-o", "command="], capture_output=True, text=True)
+    command = subprocess.run(["ps", "-ww", "-p", str(data["pid"]), "-o", "command="], capture_output=True, text=True)
     if not command.stdout.strip():
         # A launcher killed without cleanup (e.g. SIGKILL) leaves its record behind; no process to signal.
         record.unlink(missing_ok=True)

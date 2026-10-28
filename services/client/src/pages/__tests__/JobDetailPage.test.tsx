@@ -110,6 +110,93 @@ describe('JobDetailPage', () => {
       });
     });
 
+    it('creates a graph schedule through the form on this device', async () => {
+      renderWithProviders(<JobDetailPage />);
+      fireEvent.change(screen.getByPlaceholderText('Job name'), { target: { value: 'Meetings: work' } });
+      fireEvent.change(screen.getByLabelText('Job type'), { target: { value: 'graph' } });
+      fireEvent.change(screen.getByLabelText('Graph'), { target: { value: 'meeting_ingest' } });
+      fireEvent.change(screen.getByLabelText('Graph inputs (JSON)'), { target: { value: '{"source":"work"}' } });
+      fireEvent.change(screen.getByLabelText('Run every'), { target: { value: '15' } });
+      expect(screen.getByLabelText('Run on')).toHaveValue('this_device');
+      fireEvent.click(screen.getByText('Save'));
+
+      await waitFor(() => expect(mockCreate).toHaveBeenCalledWith({
+        name: 'Meetings: work',
+        schedule_config: { minutes: 15 },
+        input_params: { graph_type: 'meeting_ingest', graph_inputs: { source: 'work' }, timeout: 300 },
+        device_scope: 'this_device',
+        description: null,
+      }));
+    });
+
+    it.each(['{', '[]', 'null', '"text"', '1'])('rejects graph inputs that are not a JSON object: %s', (inputs) => {
+      renderWithProviders(<JobDetailPage />);
+      fireEvent.change(screen.getByPlaceholderText('Job name'), { target: { value: 'Meetings' } });
+      fireEvent.change(screen.getByLabelText('Job type'), { target: { value: 'graph' } });
+      fireEvent.change(screen.getByLabelText('Graph'), { target: { value: 'meeting_ingest' } });
+      fireEvent.change(screen.getByLabelText('Graph inputs (JSON)'), { target: { value: inputs } });
+      fireEvent.click(screen.getByText('Save'));
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    it('requires a graph name and a positive timeout', () => {
+      renderWithProviders(<JobDetailPage />);
+      fireEvent.change(screen.getByPlaceholderText('Job name'), { target: { value: 'Meetings' } });
+      fireEvent.change(screen.getByLabelText('Job type'), { target: { value: 'graph' } });
+      fireEvent.click(screen.getByText('Save'));
+      expect(mockCreate).not.toHaveBeenCalled();
+      fireEvent.change(screen.getByLabelText('Graph'), { target: { value: 'meeting_ingest' } });
+      fireEvent.change(screen.getByLabelText('Timeout (seconds)'), { target: { value: '0' } });
+      fireEvent.click(screen.getByText('Save'));
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    it('clears graph fields when switching back to a command', async () => {
+      renderWithProviders(<JobDetailPage />);
+      fireEvent.change(screen.getByPlaceholderText('Job name'), { target: { value: 'Command' } });
+      fireEvent.change(screen.getByLabelText('Job type'), { target: { value: 'graph' } });
+      fireEvent.change(screen.getByLabelText('Graph'), { target: { value: 'echo' } });
+      fireEvent.change(screen.getByLabelText('Graph inputs (JSON)'), { target: { value: 'invalid abandoned input' } });
+      fireEvent.change(screen.getByLabelText('Job type'), { target: { value: 'command' } });
+      fireEvent.change(screen.getByPlaceholderText('echo hello'), { target: { value: 'echo hi' } });
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+      expect(mockCreate.mock.calls[0][0].input_params).toEqual({ command: 'echo hi', timeout: 300 });
+    });
+
+    it.each(['', '0'])('keeps a switched command timeout visible and validates it: %s', async (timeout) => {
+      renderWithProviders(<JobDetailPage />);
+      fireEvent.change(screen.getByPlaceholderText('Job name'), { target: { value: 'Command' } });
+      fireEvent.change(screen.getByLabelText('Job type'), { target: { value: 'graph' } });
+      fireEvent.change(screen.getByLabelText('Timeout (seconds)'), { target: { value: timeout } });
+      fireEvent.change(screen.getByLabelText('Job type'), { target: { value: 'command' } });
+      fireEvent.change(screen.getByPlaceholderText('echo hello'), { target: { value: 'echo hi' } });
+      expect(screen.getByLabelText('Timeout (seconds)')).toBeVisible();
+      fireEvent.click(screen.getByText('Save'));
+      expect(mockCreate).not.toHaveBeenCalled();
+      fireEvent.change(screen.getByLabelText('Timeout (seconds)'), { target: { value: '20' } });
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+      expect(mockCreate.mock.calls[0][0].input_params).toEqual({ command: 'echo hi', timeout: 20 });
+    });
+
+    it('keeps the graph draft after a server rejection and allows retry', async () => {
+      mockCreate.mockRejectedValueOnce(new Error('Unknown graph'));
+      renderWithProviders(<JobDetailPage />);
+      fireEvent.change(screen.getByPlaceholderText('Job name'), { target: { value: 'Graph job' } });
+      fireEvent.change(screen.getByLabelText('Job type'), { target: { value: 'graph' } });
+      fireEvent.change(screen.getByLabelText('Graph'), { target: { value: 'wrong' } });
+      fireEvent.change(screen.getByLabelText('Graph inputs (JSON)'), { target: { value: '{"text":"hello"}' } });
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(screen.getByText('Save')).toBeEnabled());
+      expect(mockNavigate).not.toHaveBeenCalled();
+      expect(screen.getByLabelText('Graph inputs (JSON)')).toHaveValue('{"text":"hello"}');
+      fireEvent.change(screen.getByLabelText('Graph'), { target: { value: 'echo' } });
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/jobs/99', { replace: true }));
+    });
+
     it('does not poll job data for new jobs', async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       renderWithProviders(<JobDetailPage />);
@@ -125,6 +212,56 @@ describe('JobDetailPage', () => {
   });
 
   describe('view mode', () => {
+    it('displays and edits an existing graph without requiring a command', async () => {
+      const params = { graph_type: 'meeting_ingest', graph_inputs: { source: 'work' }, timeout: 300 };
+      mockGet.mockResolvedValue({ ...fakeJob, input_params: params });
+      renderWithProviders(<JobDetailPage />);
+      await waitFor(() => expect(screen.getByText('meeting_ingest')).toBeInTheDocument());
+      expect(screen.getByText(/"source": "work"/)).toBeInTheDocument();
+      expect(screen.queryByText('Command')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByText('Edit'));
+      expect(screen.getByLabelText('Job type')).toHaveValue('graph');
+      expect(screen.getByLabelText('Graph')).toHaveValue('meeting_ingest');
+      fireEvent.change(screen.getByLabelText('Graph inputs (JSON)'), { target: { value: '{"source":"other"}' } });
+      fireEvent.change(screen.getByLabelText('Timeout (seconds)'), { target: { value: '450' } });
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith(42, {
+        name: fakeJob.name,
+        description: fakeJob.description,
+        schedule_config: fakeJob.schedule_config,
+        input_params: { ...params, graph_inputs: { source: 'other' }, timeout: 450 },
+      }));
+    });
+
+    it('keeps edited graph inputs after an update failure and allows retry', async () => {
+      mockGet.mockResolvedValue({ ...fakeJob, input_params: { graph_type: 'echo', graph_inputs: { text: 'old' }, timeout: 300 } });
+      mockUpdate.mockRejectedValueOnce(new Error('Server unavailable'));
+      renderWithProviders(<JobDetailPage />);
+      await waitFor(() => expect(screen.getByText('Edit')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('Edit'));
+      fireEvent.change(screen.getByLabelText('Graph inputs (JSON)'), { target: { value: '{"text":"new"}' } });
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(screen.getByText('Save')).toBeEnabled());
+      expect(screen.getByLabelText('Graph inputs (JSON)')).toHaveValue('{"text":"new"}');
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(2));
+    });
+
+    it('switches command jobs to graphs without submitting the old command', async () => {
+      renderWithProviders(<JobDetailPage />);
+      await waitFor(() => expect(screen.getByText('Edit')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('Edit'));
+      fireEvent.change(screen.getByLabelText('Job type'), { target: { value: 'graph' } });
+      fireEvent.change(screen.getByLabelText('Graph'), { target: { value: 'echo' } });
+      fireEvent.change(screen.getByLabelText('Graph inputs (JSON)'), { target: { value: '{"text":"hello"}' } });
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+      expect(mockUpdate.mock.calls[0][1].input_params).toEqual({
+        graph_type: 'echo', graph_inputs: { text: 'hello' }, timeout: 300,
+      });
+    });
+
     it('loads and displays job data', async () => {
       renderWithProviders(<JobDetailPage />);
       await waitFor(() => expect(screen.getByText('Test Job')).toBeInTheDocument());
