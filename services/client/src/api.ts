@@ -439,7 +439,7 @@ export const api = {
     list: (pagination?: PaginationParams) =>
       get<Paginated<Job>>('/jobs', paginationToParams(pagination)),
     get: (id: number) => get<Job>(`/jobs/${id}`),
-    create: (body: { name: string; schedule_config: Record<string, number>; input_params?: Record<string, unknown>; description?: string | null }) =>
+    create: (body: { name: string; schedule_config: Record<string, number>; input_params?: Record<string, unknown>; description?: string | null; device_scope?: 'all_devices' | 'this_device' }) =>
       post<Job>('/jobs', body),
     update: (id: number, body: { name?: string; schedule_config?: Record<string, number>; input_params?: Record<string, unknown>; description?: string | null }) =>
       put<Job>(`/jobs/${id}`, body),

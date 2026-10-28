@@ -68,6 +68,13 @@ def jobs_cleanup(*patterns: str):
     return _clean
 
 
+def clean_meeting_rows(account_key: str):
+    from services.db import get_connection
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM meeting_summaries WHERE account_key = %s", (account_key,))
+        cur.execute("DELETE FROM meeting_sync_state WHERE account_key = %s", (account_key,))
+
+
 def clean_audit_rows(*patterns: str):
     from services.db import get_connection
     with get_connection() as conn:

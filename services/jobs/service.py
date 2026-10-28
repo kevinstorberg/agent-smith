@@ -1,8 +1,8 @@
 """Service-layer helpers for background jobs (the management boundary).
 
-Creating a job here also creates a default '*'/'*' config so the job runs
-everywhere by default — mirroring the harness convention where creating an item
-also creates a default deployment config. Callers narrow scope afterward. The
+Creating a job here also creates one deployment config, defaulting to '*'/'*'
+so the job runs everywhere. Callers can select the initial device scope without
+exposing a globally scheduled job between separate requests. The
 underlying model (``services.jobs.models.job.create_job``) stays pure and does
 not create configs on its own.
 
@@ -58,7 +58,12 @@ def create_job_with_default_config(
     schedule_config: dict,
     input_params: dict | None = None,
     description: str | None = None,
+    *,
+    device: str = "*",
 ) -> int:
+    if not isinstance(device, str) or not 1 <= len(device.strip()) <= 100:
+        raise ValueError("Job device must be a nonblank string of at most 100 characters")
+    device = device.strip()
     with get_connection() as conn:
         job_id = BackgroundJobModel.create(
             name=name,
@@ -67,5 +72,5 @@ def create_job_with_default_config(
             description=description,
             conn=conn,
         )
-        JobConfigModel.create(job_id=job_id, device="*", repo="*", enabled=True, exclude=False, conn=conn)
+        JobConfigModel.create(job_id=job_id, device=device, repo="*", enabled=True, exclude=False, conn=conn)
     return job_id

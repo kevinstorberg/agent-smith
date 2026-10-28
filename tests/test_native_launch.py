@@ -130,6 +130,7 @@ with instance_lock(root, "production"):
 
 
 def test_relaunch_stops_running_instance_and_waits_for_its_lock(tmp_path, monkeypatch):
+    monkeypatch.setenv("COLUMNS", "80")
     monkeypatch.setattr(manage, "ROOT", tmp_path)
     launcher = _start_fake_launcher(tmp_path, "token-1")
     try:
@@ -146,6 +147,7 @@ def test_relaunch_stops_running_instance_and_waits_for_its_lock(tmp_path, monkey
 
 
 def test_relaunch_stops_a_launcher_suspended_in_its_terminal(tmp_path, monkeypatch):
+    monkeypatch.setenv("COLUMNS", "80")
     monkeypatch.setattr(manage, "ROOT", tmp_path)
     launcher = _start_fake_launcher(tmp_path, "token-suspended")
     try:

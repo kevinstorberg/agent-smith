@@ -72,6 +72,8 @@ export function JobDetailPage() {
   const [loading, setLoading] = useState(!isNew);
   const [tab, setTab] = useState<'details' | 'executions'>('details');
   const [execRefresh, setExecRefresh] = useState(0);
+  const [graphInputsText, setGraphInputsText] = useState<string | null>(null);
+  const [deviceScope, setDeviceScope] = useState<'all_devices' | 'this_device'>('all_devices');
 
   const {
     editing, saving, editValues, setEditValue,
@@ -127,13 +129,63 @@ export function JobDetailPage() {
     { enabled: !isNew && tab === 'executions' && !editing && !saving && !runNowMutation.loading },
   );
 
+  const inputParams = editValues.input_params ?? {};
+  const jobType = 'graph_type' in inputParams ? 'graph' : 'command';
+  const graphInputs = graphInputsText ?? JSON.stringify(inputParams.graph_inputs ?? {}, null, 2);
+
+  const changeJobType = (type: string) => {
+    const params = { ...inputParams };
+    delete params.command;
+    delete params.graph_type;
+    delete params.graph_inputs;
+    if (type === 'graph') {
+      params.graph_type = '';
+      params.graph_inputs = {};
+      params.timeout ??= 300;
+    } else {
+      params.command = '';
+    }
+    setEditValue('input_params', params);
+    setGraphInputsText(null);
+    if (isNew) setDeviceScope(type === 'graph' ? 'this_device' : 'all_devices');
+  };
+
   const save = async () => {
     const name = editValues.name ?? '';
     const nameErr = validators.compose(validators.required, validators.maxLength(MAX_TITLE_LENGTH))(name);
     if (nameErr) { notify(nameErr === 'Required' ? 'Name is required.' : `Name must be ${MAX_TITLE_LENGTH} characters or fewer.`, 'error'); return; }
 
-    const input_params = (editValues.input_params ?? {}) as Record<string, unknown>;
-    if (validators.required(input_params.command)) { notify('Command is required.', 'error'); return; }
+    const input_params = { ...inputParams };
+    if (jobType === 'graph') {
+      const graph = String(input_params.graph_type ?? '').trim();
+      if (!graph) { notify('Graph is required.', 'error'); return; }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(graphInputs);
+      } catch {
+        notify('Graph inputs must be a JSON object.', 'error');
+        return;
+      }
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        notify('Graph inputs must be a JSON object.', 'error');
+        return;
+      }
+      input_params.graph_type = graph;
+      input_params.graph_inputs = parsed;
+      delete input_params.command;
+    } else {
+      if (validators.required(input_params.command)) { notify('Command is required.', 'error'); return; }
+      delete input_params.graph_type;
+      delete input_params.graph_inputs;
+    }
+    if (jobType === 'graph' || 'timeout' in input_params) {
+      const timeout = Number(input_params.timeout ?? 300);
+      if (!Number.isFinite(timeout) || timeout <= 0) {
+        notify('Timeout must be a positive number of seconds.', 'error');
+        return;
+      }
+      input_params.timeout = timeout;
+    }
 
     const schedule_config = editValues.schedule_config ?? { minutes: 5 };
     const description = (editValues.description as string | null) || null;
@@ -141,9 +193,12 @@ export function JobDetailPage() {
     setSaving(true);
     try {
       if (isNew) {
-        await createMutation.mutateAsync({ name, schedule_config, input_params, description });
+        await createMutation.mutate({
+          name, schedule_config, input_params, description,
+          ...(deviceScope === 'this_device' ? { device_scope: deviceScope } : {}),
+        });
       } else {
-        await updateMutation.mutateAsync({ name, schedule_config, input_params, description });
+        await updateMutation.mutate({ name, schedule_config, input_params, description });
       }
     } finally {
       setSaving(false);
@@ -162,9 +217,9 @@ export function JobDetailPage() {
         backTo={{ label: 'jobs', path: '/jobs' }}
         editing={editing}
         saving={saving}
-        onEdit={() => job && startEdit(job)}
+        onEdit={() => { setGraphInputsText(null); if (job) startEdit(job); }}
         onSave={save}
-        onCancel={cancelEdit}
+        onCancel={() => { setGraphInputsText(null); cancelEdit(); }}
         onDelete={job ? () => deleteMutation.mutateAsync() : undefined}
         onNavigateBack={() => navigate('/jobs')}
         deleteConfirmMessage={job ? `Delete job "${job.name}"?` : undefined}
@@ -182,17 +237,62 @@ export function JobDetailPage() {
           />
           <FieldError maxLength={MAX_TITLE_LENGTH} currentLength={editValues.name?.length ?? 0} />
 
-          <label style={styles.label}>Command</label>
-          <input
-            style={{ ...styles.field, width: '100%', fontFamily: 'var(--mono)' }}
-            value={command}
-            onChange={e => setEditValue('input_params', { ...(editValues.input_params ?? {}), command: e.target.value })}
-            placeholder="echo hello"
-          />
+          <label style={styles.label} htmlFor="job-type">Job type</label>
+          <select id="job-type" style={styles.field} value={jobType} onChange={e => changeJobType(e.target.value)}>
+            <option value="command">Command</option>
+            <option value="graph">Graph</option>
+          </select>
 
-          <label style={styles.label}>Run every</label>
+          {jobType === 'graph' ? (
+            <>
+              <label style={styles.label} htmlFor="job-graph">Graph</label>
+              <input
+                id="job-graph"
+                style={{ ...styles.field, width: '100%', fontFamily: 'var(--mono)' }}
+                value={String(inputParams.graph_type ?? '')}
+                onChange={e => setEditValue('input_params', { ...inputParams, graph_type: e.target.value })}
+                placeholder="meeting_ingest"
+              />
+              <label style={styles.label} htmlFor="job-graph-inputs">Graph inputs (JSON)</label>
+              <textarea
+                id="job-graph-inputs"
+                style={{ ...styles.field, width: '100%', minHeight: 100, fontFamily: 'var(--mono)' }}
+                value={graphInputs}
+                onChange={e => setGraphInputsText(e.target.value)}
+                placeholder={'{"source":"work"}'}
+              />
+            </>
+          ) : (
+            <>
+              <label style={styles.label} htmlFor="job-command">Command</label>
+              <input
+                id="job-command"
+                style={{ ...styles.field, width: '100%', fontFamily: 'var(--mono)' }}
+                value={command}
+                onChange={e => setEditValue('input_params', { ...inputParams, command: e.target.value })}
+                placeholder="echo hello"
+              />
+            </>
+          )}
+
+          {(jobType === 'graph' || 'timeout' in inputParams) && (
+            <>
+              <label style={styles.label} htmlFor="job-timeout">Timeout (seconds)</label>
+              <input
+                id="job-timeout"
+                type="number"
+                min={1}
+                style={styles.field}
+                value={String(inputParams.timeout ?? 300)}
+                onChange={e => setEditValue('input_params', { ...inputParams, timeout: e.target.value })}
+              />
+            </>
+          )}
+
+          <label style={styles.label} htmlFor="job-interval">Run every</label>
           <div style={{ display: 'flex', gap: 8 }}>
             <input
+              id="job-interval"
               type="number"
               min={1}
               style={{ ...styles.field, width: 100 }}
@@ -200,6 +300,7 @@ export function JobDetailPage() {
               onChange={e => setEditValue('schedule_config', { [sched.unit]: Math.max(1, Number(e.target.value)) })}
             />
             <select
+              aria-label="Interval unit"
               style={styles.field}
               value={sched.unit}
               onChange={e => setEditValue('schedule_config', { [e.target.value]: sched.value })}
@@ -211,6 +312,24 @@ export function JobDetailPage() {
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
               This job uses multiple time units; editing here collapses it to the single unit above.
             </div>
+          )}
+
+          {isNew && (
+            <>
+              <label style={styles.label} htmlFor="job-device-scope">Run on</label>
+              <select
+                id="job-device-scope"
+                style={styles.field}
+                value={deviceScope}
+                onChange={e => setDeviceScope(e.target.value as typeof deviceScope)}
+              >
+                <option value="this_device">This device</option>
+                <option value="all_devices">All devices</option>
+              </select>
+              <p style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 6 }}>
+                This device is the computer running the dashboard.
+              </p>
+            </>
           )}
 
           <label style={styles.label}>Description</label>
@@ -244,8 +363,20 @@ export function JobDetailPage() {
           {tab === 'details' && (
             <div className="card">
               {job.description && <p style={{ marginBottom: 12 }}>{job.description}</p>}
-              <label style={styles.label}>Command</label>
-              <pre style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>{String(job.input_params?.command ?? '--')}</pre>
+              {job.input_params.graph_type ? (
+                <>
+                  <label style={styles.label}>Graph</label>
+                  <pre style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>{String(job.input_params.graph_type)}</pre>
+                  <label style={styles.label}>Graph inputs</label>
+                  <pre style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>{JSON.stringify(job.input_params.graph_inputs ?? {}, null, 2)}</pre>
+                  {job.input_params.timeout != null && <p>Timeout: {String(job.input_params.timeout)} seconds</p>}
+                </>
+              ) : (
+                <>
+                  <label style={styles.label}>Command</label>
+                  <pre style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>{String(job.input_params.command ?? '--')}</pre>
+                </>
+              )}
 
               <label style={styles.label}>Configs (device / repo scoping)</label>
               <table className="table">

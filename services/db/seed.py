@@ -10,6 +10,7 @@ MCP_SERVERS = [
     ("graphs", f"{MCP_BASE}/mcp/graphs/", "Run hardcoded LangGraph workflows by type"),
     ("jobs", f"{MCP_BASE}/mcp/jobs/", "Manage background jobs, scheduling, and execution history"),
     ("chat", f"{MCP_BASE}/mcp/chat/", "Read and post messages in shared Chat Rooms"),
+    ("meetings", f"{MCP_BASE}/mcp/meetings/", "Read imported meeting summaries and synchronization status"),
 ]
 
 
