@@ -3,7 +3,28 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from scripts.shared.env import expand_env, load_dotenv
+import pytest
+
+from scripts.shared.env import env_prefix, expand_env, load_dotenv
+
+
+@pytest.mark.parametrize(
+    ("name", "prefix"),
+    [
+        ("opinion_grader", "OPINION_GRADER"),
+        ("Kimi K3", "KIMI_K3"),
+        ("kimi-k2.5", "KIMI_K2_5"),
+        ("  chat__Kimi  ", "CHAT_KIMI"),
+    ],
+)
+def test_env_prefix_normalizes_names(name, prefix):
+    assert env_prefix(name) == prefix
+
+
+@pytest.mark.parametrize("name", ["", "!!!", " - "])
+def test_env_prefix_rejects_names_without_letters_or_digits(name):
+    with pytest.raises(ValueError, match="no letters or digits"):
+        env_prefix(name)
 
 
 def test_load_dotenv_reads_file(tmp_path: Path, monkeypatch: object):

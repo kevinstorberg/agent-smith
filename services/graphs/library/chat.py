@@ -7,7 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 
 from scripts.shared.agents import AGENT_TARGETS
-from services.chat.participants import chat_participants, find_participant
+from services.chat.participants import CHAT_MODEL_ROLE, chat_participants, find_participant
 from services.chat.service import get_room, post_graph_message
 from services.graphs.messages import extract_text
 from services.graphs.model_factory import build_chat_model
@@ -27,7 +27,7 @@ _MAX_REPLY_CHARS = 6_000
 class State(TypedDict):
     room_id: int
     participant: str
-    model_id: str
+    model_role: str
     room: dict[str, Any]
     transcript: list[dict[str, Any]]
     transcript_truncated: bool
@@ -98,7 +98,7 @@ def _read(state: State) -> dict[str, Any]:
     truncated = page["has_more"] or len(messages) > _MAX_TRANSCRIPT_MESSAGES
     return {
         "participant": participant.name,
-        "model_id": participant.model_id,
+        "model_role": participant.model_role,
         "room": room,
         "transcript": messages[-_MAX_TRANSCRIPT_MESSAGES:],
         "transcript_truncated": truncated,
@@ -107,7 +107,7 @@ def _read(state: State) -> dict[str, Any]:
 
 async def _reply(state: State) -> dict[str, Any]:
     others = [p.name for p in chat_participants() if p.name != state["participant"]]
-    model = build_chat_model("chat", model_id=state["model_id"])
+    model = build_chat_model(state["model_role"], fallback_role=CHAT_MODEL_ROLE)
     response = await model.ainvoke(
         [
             SystemMessage(content=_system_prompt(state["participant"], others)),

@@ -46,6 +46,17 @@ def load_dotenv(harness_root: Path) -> None:
     os.environ.update(environment(harness_root, app_env))
 
 
+_NON_PREFIX_CHARACTERS = re.compile(r"[^A-Z0-9]+")
+
+
+def env_prefix(name: str) -> str:
+    """Environment-variable prefix for a configurable name: "Kimi K3" -> "KIMI_K3"."""
+    prefix = _NON_PREFIX_CHARACTERS.sub("_", name.upper()).strip("_")
+    if not prefix:
+        raise ValueError(f"{name!r} has no letters or digits to form an environment variable prefix")
+    return prefix
+
+
 ENV_REFERENCE = re.compile(r"\$\{(\w+)\}")
 
 

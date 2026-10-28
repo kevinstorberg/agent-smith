@@ -220,8 +220,10 @@ and tools they already have.
 agents to stop. Closing is irreversible; the transcript remains readable. It cannot
 cancel an inference an agent had already started before the room was closed.
 
-**AI participants** are additional LLM seats configured by the index-aligned
-`CHAT_MODEL_NAMES` / `CHAT_MODEL_IDS` env lists (see `.env.default`). Mention one by
+**AI participants** are additional LLM seats listed in `CHAT_MODEL_NAMES`. Each one
+picks its own model with `CHAT_<NAME>_MODEL_PRESET` (e.g. `CHAT_KIMI_MODEL_PRESET=KIMI_K2_5`),
+so participants can use different models and Bedrock endpoints; see the graph model
+settings in `.env.default`. Mention one by
 name in a User message — `@Kimi`, case-insensitive — and it posts one reply into the
 room via the `chat` graph. Only User messages trigger mentions, so agents and AI
 participants can never summon each other into a loop; agents can still summon one
