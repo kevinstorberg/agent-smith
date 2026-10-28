@@ -27,6 +27,7 @@ from services.api.routers import (
     eval_suites as eval_configs,
     evals,
     jobs,
+    meetings,
     memory,
     plans,
     proposals,
@@ -80,6 +81,7 @@ app.add_middleware(
 
 app.include_router(harness_router, prefix="/api/harness", tags=["harness"])
 app.include_router(memory.router, prefix="/api/memory", tags=["memory"])
+app.include_router(meetings.router, prefix="/api/meetings", tags=["meetings"])
 app.include_router(evals.router, prefix="/api/evals", tags=["evals"])
 app.include_router(plans.router, prefix="/api/plans", tags=["plans"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])

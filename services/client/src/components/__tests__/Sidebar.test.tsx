@@ -40,7 +40,7 @@ describe('Sidebar', () => {
 
   it('renders all navigation links', () => {
     renderSidebar();
-    for (const label of ['Agents', 'Hooks', 'Rules', 'Skills', 'Tools', 'Memory', 'Plans', 'Chat', 'Evals', 'Results']) {
+    for (const label of ['Agents', 'Hooks', 'Rules', 'Skills', 'Tools', 'Memory', 'Meetings', 'Plans', 'Chat', 'Evals', 'Results']) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
   });

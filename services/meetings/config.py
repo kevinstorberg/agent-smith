@@ -27,10 +27,7 @@ class SourceConfig:
         return hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()
 
 
-def load_source_config(name: str, env: Mapping[str, str] | None = None) -> SourceConfig:
-    if not isinstance(name, str) or not _NAME.fullmatch(name):
-        raise ValueError("Meeting source must be a nonblank name of at most 100 characters")
-    env = os.environ if env is None else env
+def _source_settings(env: Mapping[str, str]) -> dict[str, dict]:
     try:
         sources = json.loads(env.get("MEETING_SOURCES_JSON", "{}"))
     except (ValueError, TypeError):
@@ -61,6 +58,18 @@ def load_source_config(name: str, env: Mapping[str, str] | None = None) -> Sourc
         if identity in identities:
             raise ValueError("Configure only one meeting source per provider/account_key")
         identities.add(identity)
+    return sources
+
+
+def list_source_names(env: Mapping[str, str] | None = None) -> list[str]:
+    return sorted(_source_settings(os.environ if env is None else env))
+
+
+def load_source_config(name: str, env: Mapping[str, str] | None = None) -> SourceConfig:
+    if not isinstance(name, str) or not _NAME.fullmatch(name):
+        raise ValueError("Meeting source must be a nonblank name of at most 100 characters")
+    env = os.environ if env is None else env
+    sources = _source_settings(env)
     if name not in sources:
         raise ValueError(f"Unknown meeting source '{name}'; configure MEETING_SOURCES_JSON")
     settings = sources[name]

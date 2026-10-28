@@ -83,11 +83,14 @@ def validate_inputs(
 
     mod = registry[graph_type]
     for field, type_name in mod.INPUT_SCHEMA.items():
-        py_type = _PRIMITIVE_TYPES.get(type_name)
+        optional = isinstance(type_name, str) and type_name.endswith("?")
+        py_type = _PRIMITIVE_TYPES.get(type_name.removesuffix("?")) if isinstance(type_name, str) else None
         if py_type is None:
             raise ValueError(
                 f"graph '{graph_type}' has unsupported input type '{type_name}' for field '{field}'"
             )
+        if optional and field not in inputs:
+            continue
         if field not in inputs or not isinstance(inputs[field], py_type):
             raise ValueError(
                 f"graph '{graph_type}' input '{field}' missing or wrong type"

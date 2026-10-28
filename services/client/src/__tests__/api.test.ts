@@ -150,6 +150,28 @@ describe('paginationToParams (tested through api methods)', () => {
 });
 
 describe('specific API methods', () => {
+  it('meetings.list includes search, filters and paging without imposing a connection', async () => {
+    globalThis.fetch = mockFetch({ items: [], total: 0 });
+    await api.meetings.list({ q: 'release plan', limit: 25, offset: 50 });
+    const url = new URL((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect(url.pathname).toBe('/api/meetings');
+    expect(Object.fromEntries(url.searchParams)).toEqual({ q: 'release plan', limit: '25', offset: '50' });
+
+    await api.meetings.list({ source: 'team', project: 'agent-smith', after: '2026-10-01T00:00:00Z', before: '2026-11-01T00:00:00Z' });
+    const filtered = new URL((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[1][0]);
+    expect(filtered.searchParams.get('source')).toBe('team');
+    expect(filtered.searchParams.get('project')).toBe('agent-smith');
+    expect(filtered.searchParams.get('after')).toBe('2026-10-01T00:00:00Z');
+    expect(filtered.searchParams.get('before')).toBe('2026-11-01T00:00:00Z');
+  });
+
+  it('meetings.get reads the selected stable summary ID', async () => {
+    globalThis.fetch = mockFetch({ id: 'summary-id' });
+    await api.meetings.get('summary-id');
+    const url = new URL((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect(url.pathname).toBe('/api/meetings/summary-id');
+  });
+
   it('harness.sync sends POST to /harness/sync', async () => {
     globalThis.fetch = mockFetch({ success: true, stdout: '', stderr: '' });
     await api.harness.sync();

@@ -132,4 +132,32 @@ describe('usePagination', () => {
 
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+
+  it('exposes a fetch failure and clears it after a successful retry', async () => {
+    const fetcher = vi.fn()
+      .mockRejectedValueOnce(new Error('Storage unavailable'))
+      .mockResolvedValueOnce({ items: ['recovered'], total: 1 });
+    const { result } = renderHook(() => usePagination(fetcher));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe('Storage unavailable');
+
+    await act(async () => { await result.current.refresh(); });
+    expect(result.current.error).toBeNull();
+    expect(result.current.items).toEqual(['recovered']);
+  });
+
+  it('ignores an older request failure after a newer request succeeds', async () => {
+    let rejectFirst: (error: Error) => void = () => undefined;
+    const fetcher = vi.fn()
+      .mockReturnValueOnce(new Promise((_, reject) => { rejectFirst = reject; }))
+      .mockResolvedValueOnce({ items: ['current'], total: 1 });
+    const { result } = renderHook(() => usePagination(fetcher));
+
+    await act(async () => { await result.current.refresh(); });
+    await act(async () => { rejectFirst(new Error('Old request')); });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.items).toEqual(['current']);
+  });
 });

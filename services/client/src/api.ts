@@ -131,6 +131,35 @@ export interface MemoryItem {
   last_accessed_at?: string;
 }
 
+export interface MeetingSummary {
+  id: string;
+  provider: string;
+  account_key: string;
+  external_id: string;
+  source_name: string;
+  project: string | null;
+  title: string | null;
+  summary_text: string;
+  summary_markdown: string | null;
+  source_url: string;
+  metadata: Record<string, unknown>;
+  provider_created_at: string;
+  provider_updated_at: string;
+  meeting_start: string | null;
+  meeting_end: string | null;
+  revision: number;
+  first_seen_at: string;
+  updated_at: string;
+}
+
+export interface MeetingListParams extends PaginationParams {
+  q?: string;
+  source?: string;
+  project?: string;
+  after?: string;
+  before?: string;
+}
+
 export interface EvalRun {
   id: number;
   timestamp: string;
@@ -385,6 +414,17 @@ export const api = {
       },
       reorder: (type: string, ids: number[]) => put<{ reordered: boolean }>(`/harness/items/${type}/reorder`, { ids }),
     },
+  },
+  meetings: {
+    list: (params?: MeetingListParams) => get<Paginated<MeetingSummary>>('/meetings', {
+      ...paginationToParams(params),
+      ...(params?.q ? { q: params.q } : {}),
+      ...(params?.source ? { source: params.source } : {}),
+      ...(params?.project ? { project: params.project } : {}),
+      ...(params?.after ? { after: params.after } : {}),
+      ...(params?.before ? { before: params.before } : {}),
+    }),
+    get: (id: string) => get<MeetingSummary>(`/meetings/${encodeURIComponent(id)}`),
   },
   memory: {
     search: (q: string, opts?: PaginationParams & { repo?: string; tags?: string[]; sort?: string }) =>

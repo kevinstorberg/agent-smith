@@ -1,22 +1,22 @@
-"""Import meeting summaries as context using a configured note provider."""
+"""Import all configured meeting connections, or one optional named source."""
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-INPUT_SCHEMA = {"source": "string"}
+INPUT_SCHEMA = {"source": "string?"}
 
 
 class State(TypedDict):
-    source: str
+    source: NotRequired[str]
     result: dict
 
 
 async def _sync_summaries(state: State) -> dict:
-    from services.meetings.service import sync_source
+    from services.meetings.service import sync_sources
 
-    return {"result": await sync_source(state["source"])}
+    return {"result": await sync_sources(state.get("source"))}
 
 
 def build_graph():

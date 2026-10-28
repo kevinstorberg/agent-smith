@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -9,6 +10,7 @@ from services.graphs.runtime import (
     build_tool_description,
     dispatch,
     scan_library,
+    validate_inputs,
 )
 
 
@@ -52,6 +54,21 @@ def test_dispatch_rejects_missing_input():
 def test_dispatch_rejects_wrong_type():
     with pytest.raises(ValueError, match="input 'text' missing or wrong type"):
         asyncio.run(dispatch("echo", {"text": 123}))
+
+
+def test_optional_meeting_source_allows_omission_and_validates_present_values():
+    validate_inputs("meeting_ingest", {})
+    validate_inputs("meeting_ingest", {"source": "work"})
+    for source in (None, 123, [], {}):
+        with pytest.raises(ValueError, match="input 'source' missing or wrong type"):
+            validate_inputs("meeting_ingest", {"source": source})
+
+
+@pytest.mark.parametrize("type_name", [None, 1, [], {}, "unknown?"])
+def test_malformed_schema_type_has_descriptive_error(type_name):
+    registry = {"broken": SimpleNamespace(INPUT_SCHEMA={"field": type_name})}
+    with pytest.raises(ValueError, match="unsupported input type"):
+        validate_inputs("broken", {}, registry)
 
 
 def test_dispatch_rejects_empty_type():

@@ -74,6 +74,7 @@ export function JobDetailPage() {
   const [execRefresh, setExecRefresh] = useState(0);
   const [graphInputsText, setGraphInputsText] = useState<string | null>(null);
   const [deviceScope, setDeviceScope] = useState<'all_devices' | 'this_device'>('all_devices');
+  const [deviceScopeTouched, setDeviceScopeTouched] = useState(false);
 
   const {
     editing, saving, editValues, setEditValue,
@@ -147,7 +148,14 @@ export function JobDetailPage() {
     }
     setEditValue('input_params', params);
     setGraphInputsText(null);
-    if (isNew) setDeviceScope(type === 'graph' ? 'this_device' : 'all_devices');
+    if (isNew && !deviceScopeTouched) setDeviceScope(type === 'graph' ? 'this_device' : 'all_devices');
+  };
+
+  const changeGraph = (graph: string) => {
+    setEditValue('input_params', { ...inputParams, graph_type: graph });
+    if (isNew && !deviceScopeTouched) {
+      setDeviceScope(graph.trim() === 'meeting_ingest' ? 'all_devices' : 'this_device');
+    }
   };
 
   const save = async () => {
@@ -250,7 +258,7 @@ export function JobDetailPage() {
                 id="job-graph"
                 style={{ ...styles.field, width: '100%', fontFamily: 'var(--mono)' }}
                 value={String(inputParams.graph_type ?? '')}
-                onChange={e => setEditValue('input_params', { ...inputParams, graph_type: e.target.value })}
+                onChange={e => changeGraph(e.target.value)}
                 placeholder="meeting_ingest"
               />
               <label style={styles.label} htmlFor="job-graph-inputs">Graph inputs (JSON)</label>
@@ -259,8 +267,11 @@ export function JobDetailPage() {
                 style={{ ...styles.field, width: '100%', minHeight: 100, fontFamily: 'var(--mono)' }}
                 value={graphInputs}
                 onChange={e => setGraphInputsText(e.target.value)}
-                placeholder={'{"source":"work"}'}
+                placeholder="{}"
               />
+              {String(inputParams.graph_type ?? '').trim() === 'meeting_ingest' && (
+                <p className="text-muted-sm">Use {'{}'} to import all configured meeting connections.</p>
+              )}
             </>
           ) : (
             <>
@@ -321,7 +332,7 @@ export function JobDetailPage() {
                 id="job-device-scope"
                 style={styles.field}
                 value={deviceScope}
-                onChange={e => setDeviceScope(e.target.value as typeof deviceScope)}
+                onChange={e => { setDeviceScope(e.target.value as typeof deviceScope); setDeviceScopeTouched(true); }}
               >
                 <option value="this_device">This device</option>
                 <option value="all_devices">All devices</option>
