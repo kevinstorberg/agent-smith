@@ -6,7 +6,7 @@ from services.chat.participants import ChatParticipant, chat_participants, find_
 
 REGISTRY_ENV = {
     "CHAT_MODEL_NAMES": "Kimi, Qwen",
-    "CHAT_KIMI_MODEL_ID": "moonshotai.kimi-k2.5",
+    "CHAT_KIMI_MODEL_ID": "us.moonshotai.kimi-k3",
     "CHAT_QWEN_MODEL_ID": "qwen.qwen3-max",
 }
 
@@ -42,8 +42,8 @@ def test_participant_model_can_come_from_a_preset():
     participants = chat_participants(
         registry(
             CHAT_KIMI_MODEL_ID=None,
-            CHAT_KIMI_MODEL_PRESET="KIMI_K2_5",
-            KIMI_K2_5_MODEL_ID="moonshotai.kimi-k2.5",
+            CHAT_KIMI_MODEL_PRESET="KIMI_K3",
+            KIMI_K3_MODEL_ID="us.moonshotai.kimi-k3",
         )
     )
 
@@ -66,7 +66,7 @@ def test_participant_with_an_unknown_preset_is_rejected():
 
 def test_obsolete_index_aligned_model_ids_are_rejected():
     with pytest.raises(ValueError, match="CHAT_MODEL_IDS is obsolete"):
-        chat_participants(registry(CHAT_MODEL_IDS="moonshotai.kimi-k2.5,qwen.qwen3-max"))
+        chat_participants(registry(CHAT_MODEL_IDS="us.moonshotai.kimi-k3,qwen.qwen3-max"))
 
 
 def test_names_sharing_a_settings_prefix_are_rejected():

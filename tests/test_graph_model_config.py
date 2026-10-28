@@ -27,7 +27,7 @@ BASE_ENV = {
     "BIG_MODEL_ID": "us.moonshotai.kimi-k3",
     "BIG_MODEL_SERVER_URL": RUNTIME_TEMPLATE,
     "BIG_MODEL_MAX_TOKENS": "16384",
-    "SMALL_MODEL_ID": "moonshotai.kimi-k2.5",
+    "SMALL_MODEL_ID": "qwen.qwen3-coder-480b-a35b-instruct",
     "SMALL_MODEL_SERVER_URL": MANTLE_TEMPLATE,
     "OPINION_MODEL_PRESET": "BIG",
     "OPINION_MODEL_SERVER_API_KEY": API_KEY,
@@ -72,7 +72,7 @@ def test_grader_uses_its_own_preset_and_its_parents_credentials():
     )
 
     assert config.settings_chain == ("OPINION_GRADER", "SMALL", "OPINION", "GRAPH")
-    assert config.model_id == "moonshotai.kimi-k2.5"
+    assert config.model_id == "qwen.qwen3-coder-480b-a35b-instruct"
     assert config.server_url == MANTLE_US_EAST_1
     assert config.server_api_key == API_KEY
     # The parent's preset is not in the grader's chain, so BIG's 16384 cannot leak.
@@ -286,28 +286,22 @@ def _shipped_env() -> dict[str, str]:
 
 @pytest.mark.parametrize(
     ("role", "fallback_role"),
-    [("opinion", None), ("curator", None)],
+    [
+        ("opinion", None),
+        ("opinion_grader", "opinion"),
+        ("curator", None),
+        ("curator_grader", "curator"),
+        ("curator_reader", "curator"),
+        ("chat_kimi", CHAT_MODEL_ROLE),
+    ],
 )
-def test_shipped_config_runs_main_agents_on_kimi_k3_via_bedrock_runtime(role, fallback_role):
+def test_shipped_config_runs_all_kimi_roles_on_kimi_k3_via_bedrock_runtime(role, fallback_role):
     config = load_model_config(role, fallback_role, env=_shipped_env())
 
     assert config.model_id == "us.moonshotai.kimi-k3"
     assert config.server_url == RUNTIME_US_EAST_1
     assert config.max_tokens == 16384
     assert (config.streaming, config.request_timeout, config.max_retries) == (True, 120.0, 2)
-
-
-@pytest.mark.parametrize(
-    ("role", "fallback_role"),
-    [("opinion_grader", "opinion"), ("curator_grader", "curator"), ("curator_reader", "curator")],
-)
-def test_shipped_config_keeps_graders_and_readers_on_kimi_k2_5_via_mantle(role, fallback_role):
-    config = load_model_config(role, fallback_role, env=_shipped_env())
-
-    assert config.model_id == "moonshotai.kimi-k2.5"
-    assert config.server_url == MANTLE_US_EAST_1
-    assert config.max_tokens == 8192
-    assert (config.streaming, config.request_timeout, config.max_retries) == (False, 300.0, 6)
 
 
 def test_shipped_config_gives_each_chat_participant_its_own_model():
@@ -322,8 +316,8 @@ def test_shipped_config_gives_each_chat_participant_its_own_model():
         p.name: load_model_config(p.model_role, CHAT_MODEL_ROLE, env=shipped) for p in participants
     }
     assert (resolved["Kimi"].model_id, resolved["Kimi"].server_url) == (
-        "moonshotai.kimi-k2.5",
-        MANTLE_US_EAST_1,
+        "us.moonshotai.kimi-k3",
+        RUNTIME_US_EAST_1,
     )
     assert (resolved["Qwen"].model_id, resolved["Qwen"].server_url) == (
         "qwen.qwen3-coder-480b-a35b-instruct",

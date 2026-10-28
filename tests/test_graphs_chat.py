@@ -52,7 +52,7 @@ def harness(monkeypatch):
 
     monkeypatch.delenv("CHAT_MODEL_IDS", raising=False)
     monkeypatch.setenv("CHAT_MODEL_NAMES", "Kimi,Qwen")
-    monkeypatch.setenv("CHAT_KIMI_MODEL_ID", "moonshotai.kimi-k2.5")
+    monkeypatch.setenv("CHAT_KIMI_MODEL_ID", "us.moonshotai.kimi-k3")
     monkeypatch.setenv("CHAT_QWEN_MODEL_ID", "qwen.qwen3-max")
 
     captured: dict = {"model_calls": [], "model_roles": [], "posts": [], "reply": "A helpful reply."}

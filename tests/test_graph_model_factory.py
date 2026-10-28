@@ -28,7 +28,7 @@ FACTORY_ENV = {
     "BIG_MODEL_ID": "us.moonshotai.kimi-k3",
     "BIG_MODEL_SERVER_URL": "https://bedrock-runtime.{region}.amazonaws.com/openai/v1",
     "BIG_MODEL_MAX_TOKENS": "16384",
-    "SMALL_MODEL_ID": "moonshotai.kimi-k2.5",
+    "SMALL_MODEL_ID": "qwen.qwen3-coder-480b-a35b-instruct",
     "SMALL_MODEL_SERVER_URL": "https://bedrock-mantle.{region}.api.aws/v1",
     "OPINION_MODEL_PRESET": "BIG",
     "OPINION_GRADER_MODEL_PRESET": "SMALL",
@@ -77,7 +77,7 @@ def test_adapter_is_built_from_the_resolved_config(model_env, captured_adapter_k
 def test_grader_role_builds_from_its_own_preset(model_env, captured_adapter_kwargs):
     build_chat_model("opinion_grader", fallback_role="opinion")
 
-    assert captured_adapter_kwargs["model"] == "moonshotai.kimi-k2.5"
+    assert captured_adapter_kwargs["model"] == "qwen.qwen3-coder-480b-a35b-instruct"
     assert captured_adapter_kwargs["base_url"] == "https://bedrock-mantle.us-east-1.api.aws/v1"
     assert captured_adapter_kwargs["api_key"] == API_KEY
 

@@ -13,7 +13,7 @@ from scripts.shared.env import env_prefix, expand_env, load_dotenv
     [
         ("opinion_grader", "OPINION_GRADER"),
         ("Kimi K3", "KIMI_K3"),
-        ("kimi-k2.5", "KIMI_K2_5"),
+        ("qwen3-coder.480b", "QWEN3_CODER_480B"),
         ("  chat__Kimi  ", "CHAT_KIMI"),
     ],
 )

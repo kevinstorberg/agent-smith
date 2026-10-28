@@ -247,7 +247,7 @@ def _model_id(settings: _RoleSettings) -> str:
     return settings.require(
         "MODEL_ID",
         _parse_model_id,
-        "a Bedrock model id in dot notation such as 'moonshotai.kimi-k2.5', "
+        "a Bedrock model id in dot notation such as 'us.moonshotai.kimi-k3', "
         "not a Hugging Face path",
         hint=f" (or name a preset with {settings.prefixes[0]}_MODEL_PRESET)",
     )
