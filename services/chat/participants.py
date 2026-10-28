@@ -38,7 +38,7 @@ def chat_participants(env: Mapping[str, str] | None = None) -> list[ChatParticip
     if "CHAT_MODEL_IDS" in env:
         raise ValueError(
             "CHAT_MODEL_IDS is obsolete: give each participant its own model with "
-            "CHAT_<NAME>_MODEL_PRESET, e.g. CHAT_KIMI_MODEL_PRESET=KIMI_K2_5. "
+            "CHAT_<NAME>_MODEL_PRESET, e.g. CHAT_KIMI_MODEL_PRESET=KIMI_K3. "
             "See the chat settings in .env.default."
         )
 

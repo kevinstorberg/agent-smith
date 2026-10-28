@@ -96,7 +96,7 @@ def test_rest_maps_whitespace_only_input_to_validation_error():
 def _participants_env(monkeypatch):
     monkeypatch.delenv("CHAT_MODEL_IDS", raising=False)
     monkeypatch.setenv("CHAT_MODEL_NAMES", "Kimi,Qwen")
-    monkeypatch.setenv("CHAT_KIMI_MODEL_ID", "moonshotai.kimi-k2.5")
+    monkeypatch.setenv("CHAT_KIMI_MODEL_ID", "us.moonshotai.kimi-k3")
     monkeypatch.setenv("CHAT_QWEN_MODEL_ID", "qwen.qwen3-max")
 
 
@@ -129,7 +129,7 @@ def test_non_mentions_schedule_nothing(_participants_env, body):
 def test_misconfigured_registry_fails_the_post_before_storing_anything(monkeypatch):
     monkeypatch.delenv("CHAT_MODEL_IDS", raising=False)
     monkeypatch.setenv("CHAT_MODEL_NAMES", "Kimi,Bard")
-    monkeypatch.setenv("CHAT_KIMI_MODEL_ID", "moonshotai.kimi-k2.5")
+    monkeypatch.setenv("CHAT_KIMI_MODEL_ID", "us.moonshotai.kimi-k3")
     room = create(CreateRoomRequest(topic="Broken registry"))
 
     with pytest.raises(HTTPException) as failure:
