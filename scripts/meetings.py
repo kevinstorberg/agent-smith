@@ -80,7 +80,7 @@ async def verify_live(source: str, stage: str) -> dict:
         status = db.source_status(source)
         if not status or not status[0]["scan_started_at"]:
             raise RuntimeError("Live scan verification did not retain a resumable checkpoint")
-    graph_result = json.loads(await dispatch("meeting_ingest", {"source": source}))
+    graph_result = json.loads(await dispatch("meeting_ingest", {"source": source, "digest": False}))
     if stage == "scan":
         status = db.source_status(source)
         if not status or status[0]["scan_started_at"] or not status[0]["last_completed_at"]:
@@ -137,7 +137,7 @@ async def verify_live(source: str, stage: str) -> dict:
         raise RuntimeError("Live meeting verification found a normalized summary mismatch")
     if stored["provider_updated_at"] != summary.provider_updated_at.isoformat():
         raise RuntimeError("Source note changed during live verification; rerun against a stable note")
-    await dispatch("meeting_ingest", {"source": source})
+    await dispatch("meeting_ingest", {"source": source, "digest": False})
     replay_total = db.list_summaries(source=source)["total"]
     matching = db.get_summary(stored["id"])
     if replay_total != total or matching is None or matching["revision"] != stored["revision"]:

@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from psycopg2.extras import Json
 
 from services.api.routers.meetings import router
 from services.meetings import db, digestion_db
@@ -153,8 +154,11 @@ def test_rest_transcript_rejects_invalid_paging(client, saved, params):
     assert client.get(f"/api/meetings/{rows[0]['id']}/transcript", params=params).status_code == 422
 
 
-@pytest.mark.parametrize("suffix,method", [("/transcript", "get"), ("/transcript", "delete"), ("/transcript/retry", "post")])
-def test_rest_transcript_requires_an_available_meeting_and_uuid(client, saved, suffix, method):
+@pytest.mark.parametrize("suffix,method", [
+    ("/transcript", "get"), ("/transcript", "delete"), ("/transcript/retry", "post"),
+    ("/memories", "get"), ("/memories/retry", "post"),
+])
+def test_rest_meeting_artifacts_require_an_available_meeting_and_uuid(client, saved, suffix, method):
     configs, rows, _ = saved
     request = getattr(client, method)
     assert request(f"/api/meetings/not-a-uuid{suffix}").status_code == 422
@@ -164,3 +168,74 @@ def test_rest_transcript_requires_an_available_meeting_and_uuid(client, saved, s
         db.save_progress(configs[0], "transcript-hider", {}, unavailable_id=rows[0]["external_id"])
     db.release_source(configs[0], "transcript-hider", "completed_with_warnings")
     assert request(f"/api/meetings/{rows[0]['id']}{suffix}").status_code == 404
+
+
+@pytest.fixture
+def captured_for_memories(saved):
+    configs, rows, _ = saved
+    config, meeting_id = configs[0], rows[0]["id"]
+    digestion_db.claim_transcript([(config.provider, config.account_key)], "memory-reader")
+    segments = [{"id": "segment-0", "text": "The team agreed to ship next week.", "speaker": {}, "start_time": None, "end_time": None}]
+    digestion_db.save_capture(meeting_id, "memory-reader", digestion_db.get_context(meeting_id), {"segments": segments}, complete=True)
+    digestion_db.release(meeting_id, "memory-reader")
+    return meeting_id
+
+
+def test_rest_meeting_memories_hide_staging_and_expose_only_the_committed_artifact(client, captured_for_memories):
+    meeting_id = captured_for_memories
+    item = {
+        "id": str(uuid4()), "content": "The team agreed to ship next week.", "kind": "decision",
+        "evidence": [{"segment_id": "segment-0", "quote": "The team agreed to ship next week."}],
+    }
+    artifact = {"offset": 1, "items": [item], "created_at": "2026-10-28T12:00:00+00:00", "reason": None,
+                "published_ids": [item["id"]], "private_agent_messages": "PRIVATE_MODEL_CHAIN"}
+    with db._cursor() as cur:
+        cur.execute("UPDATE meeting_digestions SET memory_artifact = %s WHERE meeting_id = %s", (Json(artifact), meeting_id))
+
+    staged = client.get(f"/api/meetings/{meeting_id}/memories")
+    assert staged.status_code == 200 and staged.json()["status"] == "pending"
+    assert staged.json()["items"] == [] and item["content"] not in staged.text
+
+    with db._cursor() as cur:
+        cur.execute("UPDATE meeting_digestions SET memory_status = 'done', memory_updated_at = clock_timestamp() WHERE meeting_id = %s", (meeting_id,))
+    committed = client.get(f"/api/meetings/{meeting_id}/memories")
+    assert committed.status_code == 200
+    assert committed.json()["status"] == "done" and committed.json()["items"] == [item]
+    assert committed.json()["updated_at"]
+    assert set(committed.json()) == {"status", "items", "reason", "error_type", "updated_at"}
+    assert "PRIVATE_MODEL_CHAIN" not in committed.text and "published_ids" not in committed.text
+
+
+def test_rest_meeting_memories_retry_only_failed_generation_with_a_complete_transcript(client, captured_for_memories):
+    meeting_id = captured_for_memories
+    with db._cursor() as cur:
+        cur.execute("UPDATE meeting_digestions SET memory_status = 'failed', memory_attempts = 3, memory_error = 'SafeFailure' WHERE meeting_id = %s", (meeting_id,))
+    response = client.post(f"/api/meetings/{meeting_id}/memories/retry")
+    assert response.status_code == 200 and response.json() == {"success": True}
+    queued = client.get(f"/api/meetings/{meeting_id}/memories").json()
+    assert queued["status"] == "pending" and queued["error_type"] is None
+    assert client.post(f"/api/meetings/{meeting_id}/memories/retry").status_code == 422
+
+
+@pytest.mark.parametrize("status", ["pending", "deleted", "unsupported", "unavailable", "failed"])
+def test_rest_meeting_memories_explain_missing_transcripts_without_queueing_generation(client, saved, status):
+    _, rows, _ = saved
+    meeting_id = rows[0]["id"]
+    with db._cursor() as cur:
+        cur.execute("UPDATE meeting_digestions SET transcript_status = %s WHERE meeting_id = %s", (status, meeting_id))
+    blocked = client.get(f"/api/meetings/{meeting_id}/memories").json()
+    assert blocked["status"] == "blocked" and blocked["reason"] == "transcript_" + status
+    assert blocked["items"] == []
+    assert client.post(f"/api/meetings/{meeting_id}/memories/retry").status_code == 422
+
+
+def test_rest_meeting_memories_do_not_backfill_an_older_meeting(client, saved):
+    _, rows, _ = saved
+    meeting_id = rows[0]["id"]
+    with db._cursor() as cur:
+        cur.execute("DELETE FROM meeting_digestions WHERE meeting_id = %s", (meeting_id,))
+    response = client.get(f"/api/meetings/{meeting_id}/memories")
+    assert response.status_code == 200 and response.json()["status"] == "not_imported"
+    assert response.json()["items"] == []
+    assert client.post(f"/api/meetings/{meeting_id}/memories/retry").status_code == 422
+    assert digestion_db.get_record(meeting_id) is None

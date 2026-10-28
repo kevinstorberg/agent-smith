@@ -21,7 +21,9 @@ def configure_schedule(source: str, device: str, interval_minutes: float = 15) -
         raise ValueError("Meeting schedule interval_minutes must be a finite positive number")
     name = f"Meetings: {config.name}"
     interval = {"minutes": interval_minutes}
-    params = {"graph_type": "meeting_ingest", "graph_inputs": {"source": config.name}, "timeout": 300}
+    from services.meetings.enrichment import JOB_TIMEOUT_SECONDS
+
+    params = {"graph_type": "meeting_ingest", "graph_inputs": {"source": config.name}, "timeout": JOB_TIMEOUT_SECONDS}
     validate_input_params(params)
     with get_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("SET LOCAL statement_timeout = '5s'")

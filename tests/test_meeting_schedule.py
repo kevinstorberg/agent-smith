@@ -43,7 +43,7 @@ def test_schedule_is_idempotent_and_explicitly_scoped_to_one_device(source):
     job = get_job(job_id)
     assert job["name"] == "Meetings: " + source.name
     assert job["schedule_config"] == {"minutes": 15}
-    assert job["input_params"] == {"graph_type": "meeting_ingest", "graph_inputs": {"source": source.name}, "timeout": 300}
+    assert job["input_params"] == {"graph_type": "meeting_ingest", "graph_inputs": {"source": source.name}, "timeout": 600}
     configs = list_configs(job_id)
     assert len(configs) == 1
     assert configs[0]["device"] == "meeting-device"
@@ -145,6 +145,12 @@ async def test_fifteen_minute_schedule_fires_twice_and_restart_uses_actual_histo
             return TranscriptPage((TranscriptSegment("A durable decision", {}),))
 
     monkeypatch.setitem(factory._PROVIDER_BUILDERS, "test", Provider)
+    from services.meetings import analysis
+
+    async def no_new_memories(*args, **kwargs):
+        return {"items": [], "reason": "No new durable information"}
+
+    monkeypatch.setattr(analysis, "analyze_memories", no_new_memories)
     job_id = configure_schedule(source.name, DEVICE_NAME)
     clock = {"now": datetime.now(timezone.utc)}
     monkeypatch.setattr(scheduler_module, "_utcnow", lambda: clock["now"])

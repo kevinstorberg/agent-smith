@@ -22,6 +22,16 @@ def enroll(cur, meeting_id: str) -> None:
 
 
 def claim_transcript(identities: list[tuple[str, str]], owner: str) -> dict | None:
+    return _claim(identities, owner, "d.transcript_status = 'pending' AND d.next_attempt_at <= clock_timestamp()")
+
+
+def claim_digestion(identities: list[tuple[str, str]], owner: str) -> dict | None:
+    return _claim(identities, owner,
+                  "(d.transcript_status = 'pending' AND d.next_attempt_at <= clock_timestamp()) OR "
+                  "(d.transcript_status = 'ready' AND d.memory_status = 'pending' AND d.memory_next_attempt_at <= clock_timestamp())")
+
+
+def _claim(identities: list[tuple[str, str]], owner: str, eligibility: str) -> dict | None:
     if not identities:
         return None
     if not isinstance(owner, str) or not owner.strip() or len(owner) > 100:
@@ -34,10 +44,10 @@ def claim_transcript(identities: list[tuple[str, str]], owner: str) -> dict | No
         if cur.fetchone():
             return None
         cur.execute(
-            """SELECT d.meeting_id FROM meeting_digestions d
+            f"""SELECT d.meeting_id FROM meeting_digestions d
                JOIN meeting_summaries m ON m.id = d.meeting_id
                WHERE (m.provider, m.account_key) IN %s AND m.available
-                 AND d.transcript_status = 'pending' AND d.next_attempt_at <= clock_timestamp()
+                 AND ({eligibility})
                ORDER BY d.created_at, d.meeting_id LIMIT 1 FOR UPDATE OF d""",
             (tuple(identities),),
         )

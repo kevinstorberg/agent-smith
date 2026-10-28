@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 
 from services.api.routers.base import delete_response, empty_to_none, require_found
-from services.meetings import db, digestion_db
+from services.meetings import db, digestion_db, memory_db
 
 router = APIRouter()
 
@@ -66,6 +66,23 @@ def retry_transcript(summary_id: UUID):
     require_found(db.get_summary(key), "Meeting summary", key)
     try:
         digestion_db.retry_transcript(key)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+    return {"success": True}
+
+
+@router.get("/{summary_id}/memories")
+def get_memories(summary_id: UUID):
+    key = str(summary_id)
+    return require_found(memory_db.get_memories(key), "Meeting summary", key)
+
+
+@router.post("/{summary_id}/memories/retry")
+def retry_memories(summary_id: UUID):
+    key = str(summary_id)
+    require_found(db.get_summary(key), "Meeting summary", key)
+    try:
+        memory_db.retry_memories(key)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
     return {"success": True}

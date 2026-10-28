@@ -34,6 +34,11 @@ def init() -> None:
 
 
 class _UpsertingLanceDBVectorStore(LanceDBVectorStore):
+    def similarity_search(self, query: str, k: int = 4, **kwargs: Any) -> list[Document]:
+        if _get_table() is None:
+            return []
+        return super().similarity_search(query, k=k, **kwargs)
+
     def add_documents(self, documents: list[Document], **kwargs: Any) -> list[str]:
         ids = kwargs.get("ids") or [doc.metadata.get("id") for doc in documents]
         if len(ids) != len(documents) or any(not id for id in ids):

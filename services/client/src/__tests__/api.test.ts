@@ -190,6 +190,19 @@ describe('specific API methods', () => {
     expect(retryOptions.body).toBe('{}');
   });
 
+  it('reads generated memories and queues a failed generation retry', async () => {
+    globalThis.fetch = mockFetch({ status: 'pending', items: [] });
+    await api.meetings.memories('summary-id');
+    const url = new URL((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect(url.pathname).toBe('/api/meetings/summary-id/memories');
+
+    await api.meetings.retryMemories('summary-id');
+    const [retryUrl, options] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[1];
+    expect(retryUrl).toBe('/api/meetings/summary-id/memories/retry');
+    expect(options.method).toBe('POST');
+    expect(options.body).toBe('{}');
+  });
+
   it('harness.sync sends POST to /harness/sync', async () => {
     globalThis.fetch = mockFetch({ success: true, stdout: '', stderr: '' });
     await api.harness.sync();

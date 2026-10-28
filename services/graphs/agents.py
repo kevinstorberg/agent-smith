@@ -28,6 +28,29 @@ def rubric_explanation(evaluations: list[dict]) -> str:
     return "Rubric middleware produced no evaluations."
 
 
+def create_tool_agent(
+    *,
+    system_prompt: str,
+    model_role: str,
+    tools: list | None = None,
+    middleware: list | None = None,
+    fallback_role: str | None = None,
+):
+    # Plain create_agent exposes only the supplied tools; deepagents also adds
+    # filesystem and shell tools that these grounded workflows must not have.
+    try:
+        from langchain.agents import create_agent
+    except ImportError as exc:
+        raise RuntimeError("langchain is required for graph agents. Install requirements.txt.") from exc
+
+    return create_agent(
+        build_chat_model(model_role, fallback_role=fallback_role),
+        tools=tools or [],
+        system_prompt=system_prompt,
+        middleware=middleware or [],
+    )
+
+
 def create_rubric_agent(
     *,
     system_prompt: str,
@@ -37,25 +60,17 @@ def create_rubric_agent(
     on_evaluation: Callable[[dict], None] | None = None,
     tools: list | None = None,
 ):
-    # Build with langchain's create_agent, NOT deepagents.create_deep_agent:
-    # the latter injects built-in ls/read_file/grep/execute/task/write_todos
-    # tools, which let a pure-reasoning agent "inspect" the (empty) container
-    # filesystem and hallucinate about a codebase it cannot see. Here the agent
-    # gets ONLY the tools explicitly passed (none for the opinion graph). The
-    # rubric loop comes from deepagents' RubricMiddleware, a standalone
-    # AgentMiddleware whose RubricState carries the `rubric` input.
     try:
         from deepagents import RubricMiddleware
-        from langchain.agents import create_agent
     except ImportError as exc:
         raise RuntimeError(
             "deepagents>=0.6.5 (for RubricMiddleware) and langchain (for create_agent) "
             "are required for rubric-backed graph agents. Install requirements.txt."
         ) from exc
 
-    return create_agent(
-        build_chat_model(model_role),
-        tools=tools or [],
+    return create_tool_agent(
+        model_role=model_role,
+        tools=tools,
         system_prompt=system_prompt,
         middleware=[
             RubricMiddleware(

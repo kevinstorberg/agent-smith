@@ -82,7 +82,7 @@ export function MeetingTranscript({ meetingId }: { meetingId: string }) {
   const canRetry = transcript && ['failed', 'unsupported', 'unavailable'].includes(transcript.status);
 
   return (
-    <section className="card" aria-label="Meeting transcript">
+    <section id="meeting-transcript" className="card" aria-label="Meeting transcript">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h3 className="section-title" style={{ margin: 0 }}>Transcript</h3>
         {canDelete && (

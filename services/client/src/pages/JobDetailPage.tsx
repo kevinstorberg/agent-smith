@@ -270,7 +270,7 @@ export function JobDetailPage() {
                 placeholder="{}"
               />
               {String(inputParams.graph_type ?? '').trim() === 'meeting_ingest' && (
-                <p className="text-muted-sm">Use {'{}'} to import all configured meeting connections.</p>
+                <p className="text-muted-sm">Use {'{}'} to import all configured meeting connections. Set Timeout to 600 seconds for transcript and memory processing.</p>
               )}
             </>
           ) : (

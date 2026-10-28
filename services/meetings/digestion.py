@@ -62,8 +62,8 @@ async def capture_transcripts(source: str | None = None, *, run_budget_seconds: 
     return report
 
 
-async def _capture_next(source: str | None, report: dict) -> None:
-    env = dict(os.environ)
+def configured_sources(source: str | None, env: dict | None = None) -> dict:
+    env = dict(os.environ) if env is None else env
     names = [source] if source is not None else list_source_names(env)
     configs = {}
     for name in names:
@@ -72,40 +72,48 @@ async def _capture_next(source: str | None, report: dict) -> None:
         except ValueError:
             continue  # The import reports invalid credentials/settings; healthy sources can progress.
         configs[(config.provider, config.account_key)] = config
+    return configs
+
+
+async def _capture_next(source: str | None, report: dict) -> None:
+    configs = configured_sources(source)
     async with claimed_meeting(list(configs)) as (owner, row):
         if row is None:
             report["outcome"] = "idle"
             return
-        meeting_id = row["meeting_id"]
-        report["meeting_id"] = meeting_id
-        context = await run_db(db.get_context, meeting_id)
-        if context is None:
-            await run_db(db.record_failure, meeting_id, owner, "SourceUnavailable", status="unavailable")
-            report["outcome"] = "unavailable"
-            return
-        provider = None
-        try:
-            config = configs[(context["provider"], context["account_key"])]
-            provider = build_meeting_provider(config)
-            reader = getattr(provider, "get_transcript_page", None)
-            if reader is None:
-                await run_db(db.record_failure, meeting_id, owner, "TranscriptUnsupported", status="unsupported")
-                report["outcome"] = "unsupported"
-                return
-            segments = await _capture(provider, context, row, owner)
-            report.update(outcome="ready", segments=segments)
-        except TranscriptChangedError:
-            await run_db(db.reset_capture, meeting_id, owner)
-            report.update(outcome="continued", error_type="TranscriptChangedError")
-        except Exception as error:
-            status = "unavailable" if isinstance(error, MeetingProviderError) and error.status_code in {403, 404} else None
-            await run_db(db.record_failure, meeting_id, owner, type(error).__name__, status=status)
-            report.update(outcome="failed", error_type=type(error).__name__)
-        finally:
-            if provider is not None:
-                async with asyncio.timeout(PROVIDER_CLOSE_SECONDS):
-                    await provider.aclose()
+        await capture_claimed(configs, owner, row, report)
 
+
+async def capture_claimed(configs: dict, owner: str, row: dict, report: dict) -> None:
+    meeting_id = row["meeting_id"]
+    report["meeting_id"] = meeting_id
+    context = await run_db(db.get_context, meeting_id)
+    if context is None:
+        await run_db(db.record_failure, meeting_id, owner, "SourceUnavailable", status="unavailable")
+        report["outcome"] = "unavailable"
+        return
+    provider = None
+    try:
+        config = configs[(context["provider"], context["account_key"])]
+        provider = build_meeting_provider(config)
+        reader = getattr(provider, "get_transcript_page", None)
+        if reader is None:
+            await run_db(db.record_failure, meeting_id, owner, "TranscriptUnsupported", status="unsupported")
+            report["outcome"] = "unsupported"
+            return
+        segments = await _capture(provider, context, row, owner)
+        report.update(outcome="ready", segments=segments)
+    except TranscriptChangedError:
+        await run_db(db.reset_capture, meeting_id, owner)
+        report.update(outcome="continued", error_type="TranscriptChangedError")
+    except Exception as error:
+        status = "unavailable" if isinstance(error, MeetingProviderError) and error.status_code in {403, 404} else None
+        await run_db(db.record_failure, meeting_id, owner, type(error).__name__, status=status)
+        report.update(outcome="failed", error_type=type(error).__name__)
+    finally:
+        if provider is not None:
+            async with asyncio.timeout(PROVIDER_CLOSE_SECONDS):
+                await provider.aclose()
 
 async def _capture(provider, context: dict, row: dict, owner: str) -> int:
     meeting_id = context["id"]

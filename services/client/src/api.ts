@@ -181,6 +181,21 @@ export interface MeetingTranscript extends Paginated<TranscriptSegment> {
   captured_at: string | null;
 }
 
+export interface MeetingMemory {
+  id: string;
+  content: string;
+  kind: 'fact' | 'decision' | 'commitment' | 'constraint' | 'preference' | 'lesson' | 'question';
+  evidence: { segment_id: string; quote: string }[];
+}
+
+export interface MeetingMemories {
+  status: 'not_imported' | 'pending' | 'running' | 'done' | 'failed' | 'blocked';
+  items: MeetingMemory[];
+  reason: string | null;
+  error_type: string | null;
+  updated_at: string | null;
+}
+
 export interface EvalRun {
   id: number;
   timestamp: string;
@@ -450,6 +465,8 @@ export const api = {
       get<MeetingTranscript>(`/meetings/${encodeURIComponent(id)}/transcript`, paginationToParams(params)),
     deleteTranscript: (id: string) => del<{ deleted: boolean; id: string }>(`/meetings/${encodeURIComponent(id)}/transcript`),
     retryTranscript: (id: string) => post<{ success: boolean }>(`/meetings/${encodeURIComponent(id)}/transcript/retry`, {}),
+    memories: (id: string) => get<MeetingMemories>(`/meetings/${encodeURIComponent(id)}/memories`),
+    retryMemories: (id: string) => post<{ success: boolean }>(`/meetings/${encodeURIComponent(id)}/memories/retry`, {}),
   },
   memory: {
     search: (q: string, opts?: PaginationParams & { repo?: string; tags?: string[]; sort?: string }) =>
