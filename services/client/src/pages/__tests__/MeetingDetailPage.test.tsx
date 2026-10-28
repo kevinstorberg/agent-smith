@@ -9,7 +9,7 @@ vi.mock('react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router')>();
   return { ...actual, useParams: () => ({ id: meetingFixture.id }) };
 });
-vi.mock('../../api', () => ({ api: { meetings: { get: vi.fn(), transcript: vi.fn(), deleteTranscript: vi.fn(), retryTranscript: vi.fn(), memories: vi.fn(), retryMemories: vi.fn() } } }));
+vi.mock('../../api', () => ({ api: { meetings: { get: vi.fn(), transcript: vi.fn(), deleteTranscript: vi.fn(), retryTranscript: vi.fn(), memories: vi.fn(), retryMemories: vi.fn(), profiles: vi.fn(), retryProfiles: vi.fn() } } }));
 import { api } from '../../api';
 
 const mockGet = vi.mocked(api.meetings.get);
@@ -19,6 +19,7 @@ beforeEach(() => {
   mockGet.mockResolvedValue(meetingFixture);
   vi.mocked(api.meetings.transcript).mockResolvedValue({ status: 'not_imported', items: [], total: 0, limit: 100, offset: 0, error_type: null, captured_at: null });
   vi.mocked(api.meetings.memories).mockResolvedValue({ status: 'not_imported', items: [], reason: null, error_type: null, updated_at: null });
+  vi.mocked(api.meetings.profiles).mockResolvedValue({ status: 'not_imported', items: [], reason: null, error_type: null });
 });
 
 afterEach(() => vi.useRealTimers());

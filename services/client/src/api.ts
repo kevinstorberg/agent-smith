@@ -1,5 +1,15 @@
 const BASE = '/api';
 
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 async function parseError(res: Response): Promise<never> {
   const body = await res.json().catch(() => null);
   const detail = body?.detail;
@@ -9,7 +19,7 @@ async function parseError(res: Response): Promise<never> {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ? detail.map((e: any) => `${e.loc?.slice(-1)[0] ?? 'field'}: ${e.msg}`).join('; ')
       : `${res.status} ${res.statusText}`;
-  throw new Error(message);
+  throw new ApiError(message, res.status);
 }
 
 async function get<T>(path: string, params?: Record<string, string | string[]>): Promise<T> {
@@ -59,8 +69,11 @@ async function patch<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
-async function del<T = void>(path: string): Promise<T> {
-  const res = await fetch(BASE + path, { method: 'DELETE' });
+async function del<T = void>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(BASE + path, {
+    method: 'DELETE',
+    ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  });
   if (!res.ok) await parseError(res);
   const text = await res.text();
   return text ? JSON.parse(text) : (undefined as T);
@@ -188,12 +201,63 @@ export interface MeetingMemory {
   evidence: { segment_id: string; quote: string }[];
 }
 
-export interface MeetingMemories {
+export interface MeetingGeneration {
   status: 'not_imported' | 'pending' | 'running' | 'done' | 'failed' | 'blocked';
-  items: MeetingMemory[];
   reason: string | null;
   error_type: string | null;
+}
+
+export interface MeetingMemories extends MeetingGeneration {
+  items: MeetingMemory[];
   updated_at: string | null;
+}
+
+export interface MeetingProfileSummary {
+  id: string;
+  display_name: string;
+  email: string | null;
+  revision: number;
+}
+
+export interface MeetingProfiles extends MeetingGeneration {
+  items: MeetingProfileSummary[];
+}
+
+export interface ProfileClaimCorrection {
+  action: 'correct' | 'reject';
+  content: string | null;
+  reason: string;
+  corrected_at: string;
+}
+
+export interface ProfileClaim {
+  id: string;
+  category: 'driver' | 'priority' | 'communication' | 'decision_pattern' | 'perception' | 'interaction' | 'uncertainty';
+  epistemic: 'self_report' | 'observed' | 'inference';
+  confidence: 'low' | 'medium' | 'high';
+  content: string;
+  rationale: string;
+  target_id: string | null;
+  target_name: string | null;
+  evidence: { segment_id: string; quote: string }[];
+  meeting_id: string;
+  source_url: string;
+  status: 'active' | 'corrected' | 'rejected';
+  correction: ProfileClaimCorrection | null;
+}
+
+export interface ParticipantProfile extends MeetingProfileSummary {
+  identity_scope: 'email' | 'meeting';
+  deleted: boolean;
+  claims: ProfileClaim[];
+  updated_at: string;
+}
+
+export interface ClaimCorrectionInput {
+  expected_revision: number;
+  action: 'correct' | 'reject';
+  content?: string;
+  reason: string;
 }
 
 export interface EvalRun {
@@ -467,6 +531,13 @@ export const api = {
     retryTranscript: (id: string) => post<{ success: boolean }>(`/meetings/${encodeURIComponent(id)}/transcript/retry`, {}),
     memories: (id: string) => get<MeetingMemories>(`/meetings/${encodeURIComponent(id)}/memories`),
     retryMemories: (id: string) => post<{ success: boolean }>(`/meetings/${encodeURIComponent(id)}/memories/retry`, {}),
+    profiles: (id: string) => get<MeetingProfiles>(`/meetings/${encodeURIComponent(id)}/profiles`),
+    retryProfiles: (id: string) => post<{ success: boolean }>(`/meetings/${encodeURIComponent(id)}/profiles/retry`, {}),
+    profile: (id: string) => get<ParticipantProfile>(`/meetings/profiles/${encodeURIComponent(id)}`),
+    correctClaim: (id: string, claimId: string, body: ClaimCorrectionInput) =>
+      post<ParticipantProfile>(`/meetings/profiles/${encodeURIComponent(id)}/claims/${encodeURIComponent(claimId)}`, body),
+    deleteProfile: (id: string, expectedRevision: number) =>
+      del<{ deleted: boolean; id: string }>(`/meetings/profiles/${encodeURIComponent(id)}`, { expected_revision: expectedRevision }),
   },
   memory: {
     search: (q: string, opts?: PaginationParams & { repo?: string; tags?: string[]; sort?: string }) =>

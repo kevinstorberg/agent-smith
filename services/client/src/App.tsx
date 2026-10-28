@@ -5,6 +5,7 @@ import { HarnessCreatePage } from './pages/HarnessCreatePage';
 import { MemoryPage } from './pages/MemoryPage';
 import { MeetingsIndexPage } from './pages/MeetingsIndexPage';
 import { MeetingDetailPage } from './pages/MeetingDetailPage';
+import { ProfileDetailPage } from './pages/ProfileDetailPage';
 import { EvalsPage } from './pages/EvalsPage';
 import { EvalDetailPage } from './pages/EvalDetailPage';
 import { PlansIndexPage } from './pages/PlansIndexPage';
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="/memory" element={<MemoryPage />} />
           <Route path="/meetings" element={<MeetingsIndexPage />} />
           <Route path="/meetings/:id" element={<MeetingDetailPage />} />
+          <Route path="/meetings/profiles/:id" element={<ProfileDetailPage />} />
           <Route path="/evals" element={<EvalsPage />} />
           <Route path="/evals/:id" element={<EvalDetailPage />} />
           <Route path="/plans" element={<PlansIndexPage />} />

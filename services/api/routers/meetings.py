@@ -1,13 +1,35 @@
 from __future__ import annotations
 
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, Field
 
 from services.api.routers.base import delete_response, empty_to_none, require_found
-from services.meetings import db, digestion_db, memory_db
+from services.meetings import db, digestion_db, memory_db, profile_db
 
 router = APIRouter()
+
+
+class ProfileRevisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1, strict=True)
+
+
+class ClaimCorrectionRequest(ProfileRevisionRequest):
+    action: Literal["correct", "reject"]
+    content: str | None = Field(None, max_length=2000)
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+def _profile_change(action, *args):
+    try:
+        return action(*args)
+    except profile_db.ProfileRevisionConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
 
 
 @router.get("")
@@ -86,3 +108,38 @@ def retry_memories(summary_id: UUID):
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
     return {"success": True}
+
+
+@router.get("/{summary_id}/profiles")
+def get_meeting_profiles(summary_id: UUID):
+    key = str(summary_id)
+    return require_found(profile_db.meeting_profiles(key), "Meeting summary", key)
+
+
+@router.post("/{summary_id}/profiles/retry")
+def retry_profiles(summary_id: UUID):
+    key = str(summary_id)
+    require_found(db.get_summary(key), "Meeting summary", key)
+    _profile_change(profile_db.retry_profiles, key)
+    return {"success": True}
+
+
+@router.get("/profiles/{profile_id}")
+def get_profile(profile_id: UUID):
+    key = str(profile_id)
+    return require_found(profile_db.get_profile(key), "Participant profile", key)
+
+
+@router.post("/profiles/{profile_id}/claims/{claim_id}")
+def correct_profile_claim(profile_id: UUID, claim_id: UUID, body: ClaimCorrectionRequest):
+    key = str(profile_id)
+    require_found(profile_db.get_profile(key), "Participant profile", key)
+    return _profile_change(profile_db.correct_claim, key, str(claim_id), body.expected_revision, body.action, body.content, body.reason)
+
+
+@router.delete("/profiles/{profile_id}")
+def delete_profile(profile_id: UUID, body: ProfileRevisionRequest):
+    key = str(profile_id)
+    require_found(profile_db.get_profile(key), "Participant profile", key)
+    _profile_change(profile_db.delete_profile, key, body.expected_revision)
+    return delete_response(key)

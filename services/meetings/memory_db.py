@@ -1,23 +1,13 @@
 from __future__ import annotations
 
-import json
-import random
 from uuid import UUID
 
-from psycopg2.extras import Json
-
-from services.meetings.db import ClaimLostError, _cursor, _serialize
-from services.meetings.digestion_db import _owned
+from services.meetings import stage_db
+from services.meetings.db import _cursor, _serialize
 
 
 def _pending(cur, meeting_id: str, owner: str, transcript_hash: str) -> dict:
-    row = _owned(cur, meeting_id, owner)
-    cur.execute("SELECT available FROM meeting_summaries WHERE id = %s FOR SHARE", (meeting_id,))
-    meeting = cur.fetchone()
-    if (not meeting or not meeting["available"] or row["transcript_status"] != "ready"
-            or row["transcript_hash"] != transcript_hash or row["memory_status"] != "pending"):
-        raise ClaimLostError("Meeting memory input changed or its stage is no longer pending")
-    return row
+    return stage_db.pending(cur, meeting_id, owner, transcript_hash, "memory")
 
 
 def assert_publishable(meeting_id: str, owner: str, transcript_hash: str) -> None:
@@ -26,30 +16,11 @@ def assert_publishable(meeting_id: str, owner: str, transcript_hash: str) -> Non
 
 
 def save_progress(meeting_id: str, owner: str, transcript_hash: str, artifact: dict, *, complete: bool = False) -> None:
-    if not isinstance(artifact, dict) or len(json.dumps(artifact).encode()) > 2_000_000:
-        raise ValueError("Meeting memory output must be an object of at most 2000000 bytes")
-    with _cursor() as cur:
-        _pending(cur, meeting_id, owner, transcript_hash)
-        cur.execute(
-            """UPDATE meeting_digestions SET memory_artifact = %s, memory_status = %s,
-               memory_error = NULL, memory_updated_at = clock_timestamp(), updated_at = clock_timestamp()
-               WHERE meeting_id = %s""", (Json(artifact), "done" if complete else "pending", meeting_id),
-        )
+    stage_db.save_progress("memory", meeting_id, owner, transcript_hash, artifact, complete=complete)
 
 
 def record_failure(meeting_id: str, owner: str, error_type: str) -> None:
-    if not error_type or not error_type.replace("_", "").isalnum() or len(error_type) > 100:
-        raise ValueError("Memory error must be a safe category")
-    with _cursor() as cur:
-        row = _owned(cur, meeting_id, owner)
-        attempts = row["memory_attempts"] + 1
-        delay = min(900, 60 * 5 ** (attempts - 1)) * random.uniform(0.8, 1.2)
-        cur.execute(
-            """UPDATE meeting_digestions SET memory_status = %s, memory_attempts = %s, memory_error = %s,
-               memory_next_attempt_at = clock_timestamp() + %s * interval '1 second',
-               memory_updated_at = clock_timestamp(), updated_at = clock_timestamp() WHERE meeting_id = %s""",
-            ("failed" if attempts >= 3 else "pending", attempts, error_type, delay, meeting_id),
-        )
+    stage_db.record_failure("memory", meeting_id, owner, error_type)
 
 
 def get_memories(meeting_id: str) -> dict | None:

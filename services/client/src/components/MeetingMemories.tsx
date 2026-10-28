@@ -5,6 +5,7 @@ import type { MeetingMemory } from '../api';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { useApiRead } from '../hooks/useApiRead';
 import { usePolling } from '../hooks/usePolling';
+import { MeetingGenerationState } from './MeetingGenerationState';
 
 const KIND_LABELS: Record<MeetingMemory['kind'], string> = {
   fact: 'Fact', decision: 'Decision', commitment: 'Commitment', constraint: 'Constraint',
@@ -42,22 +43,9 @@ export function MeetingMemories({ meetingId }: { meetingId: string }) {
           <button className="btn" onClick={() => load()} disabled={loading || retry.loading}>Retry</button>
         </div>
       )}
-      {memories?.status === 'not_imported' && <p className="text-muted-sm">Memory generation is not enabled for this older meeting. Existing meetings are not processed retroactively.</p>}
-      {memories?.status === 'pending' && <p className="text-muted-sm">Memory generation is queued for the next meeting import run.</p>}
-      {memories?.status === 'running' && <p className="text-muted-sm">Generating meeting memories...</p>}
-      {memories?.status === 'blocked' && (
-        <p className="text-muted-sm">{BLOCKED_MESSAGES[memories.reason ?? ''] || 'Memories need a complete saved transcript. Check the transcript status.'}</p>
-      )}
-      {memories?.status === 'failed' && (
-        <div>
-          <p className="text-muted-sm">Memory generation failed.</p>
-          <button className="btn" onClick={() => retry.mutate()} disabled={retry.loading}>
-            {retry.loading ? 'Queuing...' : 'Retry generation'}
-          </button>
-          <p className="text-muted-sm">Queues another attempt for the next meeting import run.</p>
-          {retry.error && <p role="alert">Could not queue another attempt. Try again.</p>}
-        </div>
-      )}
+      {memories && <MeetingGenerationState result={memories} output="memories"
+        blockedMessage={BLOCKED_MESSAGES[memories.reason ?? ''] || 'Memories need a complete saved transcript. Check the transcript status.'}
+        retrying={retry.loading} retryFailed={Boolean(retry.error)} onRetry={() => retry.mutate()} />}
       {memories?.status === 'done' && (
         <>
           {memories.items.length === 0 ? (
