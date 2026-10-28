@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from typing import Literal
+
 import psycopg2
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
+from services.config import DEVICE_NAME
 from services.jobs.models.config import (
     create_config,
     delete_config,
@@ -48,6 +51,7 @@ class JobCreateRequest(BaseModel):
     schedule_config: dict
     input_params: dict
     description: str | None = None
+    device_scope: Literal["all_devices", "this_device"] = "all_devices"
 
     @field_validator("schedule_config")
     @classmethod
@@ -66,7 +70,8 @@ class JobCreateRequest(BaseModel):
 def create(body: JobCreateRequest):
     try:
         job_id = create_job_with_default_config(
-            body.name, body.schedule_config, body.input_params, body.description
+            body.name, body.schedule_config, body.input_params, body.description,
+            device=DEVICE_NAME if body.device_scope == "this_device" else "*",
         )
     except psycopg2.IntegrityError:
         raise HTTPException(status_code=409, detail=f"A job named '{body.name}' already exists")

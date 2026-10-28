@@ -154,17 +154,29 @@ prerequisites below. Output contains counts and verification flags, without meet
 ```
 
 After deploying the reviewed change, apply its migration through the existing confirmation
-flow, then create the recurring job on the device running the dashboard:
+flow and restart the dashboard with the updated code:
 
 ```sh
 ./db.sh production --confirm-database <production-database-name>
-APP_ENV=production .venv/bin/python -m scripts.meetings schedule --source work --device "<actual-device>" --interval-minutes 15
 ```
 
-Scheduling creates or updates one device-scoped job with a 300-second timeout. Startup does
-not create meeting jobs or upgrade production schemas. The dashboard must stay running for
-periodic imports. Execution history appears in **Jobs**; source progress is also available
-through `meeting_sync_status` on `/mcp/meetings/`.
+Open **Jobs → New Job** and enter:
+
+- **Name:** `Meetings: work`
+- **Job type:** Graph
+- **Graph:** `meeting_ingest`
+- **Graph inputs (JSON):** `{"source":"work"}`
+- **Run every:** 15 minutes
+- **Timeout (seconds):** 300
+- **Run on:** This device
+
+Save the job. **This device** is resolved from the dashboard's `DEVICE_NAME` and stored with
+the job in the same transaction. Graph jobs default to this scope; **All devices** is also
+available for jobs intentionally deployed everywhere. Existing deployment configs remain
+visible in job details. Use **Run Now** for an immediate import and **Executions** to inspect
+the result. The dashboard must stay running for periodic imports. Startup does not create
+meeting jobs or upgrade production schemas. Source progress is also available through
+`meeting_sync_status` on `/mcp/meetings/`.
 
 To import immediately, use the graphs MCP tool:
 
