@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
+import os
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -11,12 +13,94 @@ from typing import TypeVar
 from uuid import uuid4
 
 from services.meetings import db
-from services.meetings.config import SourceConfig, load_source_config
+from services.meetings.config import SourceConfig, list_source_names, load_source_config
 from services.meetings.factory import build_meeting_provider
 from services.meetings.types import InvalidCursorError, MeetingProvider, MeetingProviderError, MeetingSummary
 
 T = TypeVar("T")
 log = logging.getLogger(__name__)
+_COUNTS = ("listed", "fetched", "processed", "created", "updated", "unchanged", "stale", "pending", "unavailable")
+
+
+class MeetingSyncError(RuntimeError):
+    pass
+
+
+def _validate_budget(run_budget_seconds: float) -> None:
+    if (isinstance(run_budget_seconds, bool) or not isinstance(run_budget_seconds, (int, float))
+            or not math.isfinite(run_budget_seconds) or not 0 < run_budget_seconds <= 240):
+        raise ValueError("Meeting run budget must be greater than zero and at most 240 seconds")
+
+
+def _source_failure(source: str, error: Exception) -> dict:
+    result = {"source": source, "outcome": "failed", "error_type": type(error).__name__, "counts": None}
+    if isinstance(error, MeetingProviderError) and type(error.status_code) is int and 100 <= error.status_code <= 599:
+        result["status_code"] = error.status_code
+    return result
+
+
+async def sync_sources(source: str | None = None, *, run_budget_seconds: float = 240) -> dict:
+    _validate_budget(run_budget_seconds)
+    if source is not None:
+        return await sync_source(source, run_budget_seconds=run_budget_seconds)
+    # Freeze names, settings and credential values together for this invocation.
+    env = dict(os.environ)
+    names = list_source_names(env)
+    if not names:
+        raise ValueError("No meeting connections are configured; set MEETING_SOURCES_JSON")
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + run_budget_seconds
+    if len(names) > 1:
+        last_attempt = {}
+        for status in await run_db(db.source_status):
+            name = status["source_name"]
+            stamp = datetime.fromisoformat(status["updated_at"])
+            if name not in last_attempt or stamp > last_attempt[name]:
+                last_attempt[name] = stamp
+        oldest = datetime.min.replace(tzinfo=timezone.utc)
+        names.sort(key=lambda name: (last_attempt.get(name, oldest), name))
+    results = []
+    for index, name in enumerate(names):
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            results.append({"source": name, "outcome": "deferred", "counts": None})
+            continue
+        budget = remaining / (len(names) - index)
+        attempt = asyncio.timeout(budget)
+        try:
+            async with attempt:
+                config = load_source_config(name, env)
+                result = await sync_source(name, config=config, run_budget_seconds=budget)
+        except TimeoutError as error:
+            if attempt.expired():
+                result = {"source": name, "outcome": "interrupted", "counts": None}
+            else:
+                result = _source_failure(name, error)
+        except Exception as error:
+            result = _source_failure(name, error)
+        results.append(result)
+    outcomes = {result["outcome"] for result in results}
+    if "failed" in outcomes:
+        outcome = "failed"
+    elif outcomes & {"continued", "interrupted", "deferred"}:
+        outcome = "continued"
+    elif "completed_with_warnings" in outcomes:
+        outcome = "completed_with_warnings"
+    elif outcomes == {"skipped_busy"}:
+        outcome = "skipped_busy"
+    else:
+        outcome = "completed"
+    result = {
+        "outcome": outcome,
+        "sources": results,
+        "counts": {key: sum(item.get(key, 0) for item in results) for key in _COUNTS},
+    }
+    if outcomes & {"failed", "interrupted", "deferred"}:
+        result["known_counts"] = result["counts"]
+        result["counts"] = None
+    if "failed" in outcomes:
+        raise MeetingSyncError(json.dumps(result, sort_keys=True)) from None
+    return result
 
 
 async def run_db(function: Callable[..., T], *args, **kwargs) -> T:
@@ -82,10 +166,12 @@ async def sync_source(
     *,
     provider: MeetingProvider | None = None,
     run_budget_seconds: float = 240,
+    config: SourceConfig | None = None,
 ) -> dict:
-    if isinstance(run_budget_seconds, bool) or not math.isfinite(run_budget_seconds) or not 0 < run_budget_seconds <= 240:
-        raise ValueError("Meeting run budget must be greater than zero and at most 240 seconds")
-    config = load_source_config(source)
+    _validate_budget(run_budget_seconds)
+    config = load_source_config(source) if config is None else config
+    if config.name != source:
+        raise ValueError("Meeting source must match its configuration name")
     if provider is None:
         provider = build_meeting_provider(config)
     try:
@@ -123,7 +209,7 @@ def _new_scan(state: dict) -> dict:
         "deep": last_deep is None or now - last_deep >= timedelta(days=1),
         "phase": "listing", "cursor": None, "page": None, "offset": 0,
         "next_cursor": None, "seen_cursors": [], "restarts": 0, "attempts": 0,
-        "counts": {key: 0 for key in ("listed", "fetched", "processed", "created", "updated", "unchanged", "stale", "pending", "unavailable")},
+        "counts": dict.fromkeys(_COUNTS, 0),
     }
 
 

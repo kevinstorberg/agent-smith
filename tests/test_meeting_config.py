@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from services.meetings.config import load_source_config
+from services.meetings.config import list_source_names, load_source_config
 from services.meetings.factory import build_meeting_provider
 
 
@@ -17,6 +17,18 @@ def test_config_does_not_expose_credentials_or_hash_them():
     assert "secret-for-tests" not in repr(config)
     assert config.fingerprint == rotated.fingerprint
     assert config.fingerprint != load_source_config("work", source_env(project="agent-smith")).fingerprint
+
+
+def test_list_source_names_validates_settings_without_loading_credentials():
+    env = source_env()
+    settings = json.loads(env["MEETING_SOURCES_JSON"])
+    settings["another"] = {**settings["work"], "account_key": "another-account"}
+    env = {"MEETING_SOURCES_JSON": json.dumps(settings)}
+    assert list_source_names(env) == ["another", "work"]
+    assert list_source_names({}) == []
+    settings["duplicate"] = settings["work"]
+    with pytest.raises(ValueError, match="one meeting source"):
+        list_source_names({"MEETING_SOURCES_JSON": json.dumps(settings)})
 
 
 @pytest.mark.parametrize("settings", [{"account_key": ""}, {"api_key_env": "raw secret"}, {"provider_options": []}, {"project": ""}, {"unexpected": True}])

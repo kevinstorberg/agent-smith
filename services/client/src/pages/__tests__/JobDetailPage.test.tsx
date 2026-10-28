@@ -110,23 +110,34 @@ describe('JobDetailPage', () => {
       });
     });
 
-    it('creates a graph schedule through the form on this device', async () => {
+    it('creates an all-connections meeting schedule on all devices by default', async () => {
       renderWithProviders(<JobDetailPage />);
-      fireEvent.change(screen.getByPlaceholderText('Job name'), { target: { value: 'Meetings: work' } });
+      fireEvent.change(screen.getByPlaceholderText('Job name'), { target: { value: 'Meetings' } });
       fireEvent.change(screen.getByLabelText('Job type'), { target: { value: 'graph' } });
       fireEvent.change(screen.getByLabelText('Graph'), { target: { value: 'meeting_ingest' } });
-      fireEvent.change(screen.getByLabelText('Graph inputs (JSON)'), { target: { value: '{"source":"work"}' } });
       fireEvent.change(screen.getByLabelText('Run every'), { target: { value: '15' } });
-      expect(screen.getByLabelText('Run on')).toHaveValue('this_device');
+      expect(screen.getByLabelText('Run on')).toHaveValue('all_devices');
       fireEvent.click(screen.getByText('Save'));
 
       await waitFor(() => expect(mockCreate).toHaveBeenCalledWith({
-        name: 'Meetings: work',
+        name: 'Meetings',
         schedule_config: { minutes: 15 },
-        input_params: { graph_type: 'meeting_ingest', graph_inputs: { source: 'work' }, timeout: 300 },
-        device_scope: 'this_device',
+        input_params: { graph_type: 'meeting_ingest', graph_inputs: {}, timeout: 300 },
         description: null,
       }));
+    });
+
+    it('keeps other graph defaults and preserves an explicit device choice', () => {
+      renderWithProviders(<JobDetailPage />);
+      fireEvent.change(screen.getByLabelText('Job type'), { target: { value: 'graph' } });
+      fireEvent.change(screen.getByLabelText('Graph'), { target: { value: 'echo' } });
+      expect(screen.getByLabelText('Run on')).toHaveValue('this_device');
+
+      fireEvent.change(screen.getByLabelText('Run on'), { target: { value: 'this_device' } });
+      fireEvent.change(screen.getByLabelText('Graph'), { target: { value: 'meeting_ingest' } });
+      expect(screen.getByLabelText('Run on')).toHaveValue('this_device');
+      fireEvent.change(screen.getByLabelText('Graph'), { target: { value: 'echo' } });
+      expect(screen.getByLabelText('Run on')).toHaveValue('this_device');
     });
 
     it.each(['{', '[]', 'null', '"text"', '1'])('rejects graph inputs that are not a JSON object: %s', (inputs) => {

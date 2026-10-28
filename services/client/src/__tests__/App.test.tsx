@@ -21,6 +21,14 @@ vi.mock('../pages/MemoryPage', () => ({
   MemoryPage: () => <div data-testid="memory-page">MemoryPage</div>,
 }));
 
+vi.mock('../pages/MeetingsIndexPage', () => ({
+  MeetingsIndexPage: () => <div data-testid="meetings-index">MeetingsIndex</div>,
+}));
+
+vi.mock('../pages/MeetingDetailPage', () => ({
+  MeetingDetailPage: () => <div data-testid="meeting-detail">MeetingDetail</div>,
+}));
+
 vi.mock('../pages/EvalsPage', () => ({
   EvalsPage: () => <div data-testid="evals-page">EvalsPage</div>,
 }));
@@ -114,6 +122,15 @@ describe('App', () => {
   it('renders memory page at /memory', () => {
     renderApp(['/memory']);
     expect(screen.getByText('MemoryPage')).toBeInTheDocument();
+  });
+
+  it('renders the meeting browser and detail routes', () => {
+    const { unmount } = renderApp(['/meetings']);
+    expect(screen.getByTestId('meetings-index')).toBeInTheDocument();
+    unmount();
+
+    renderApp(['/meetings/9d85d0c6-bf5d-41b9-9a7d-c1e082180b8e']);
+    expect(screen.getByTestId('meeting-detail')).toBeInTheDocument();
   });
 
   it('renders evals page at /evals', () => {

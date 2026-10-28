@@ -12,6 +12,7 @@ export function usePagination<T>(
   const [items, setItems] = useState<T[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [limit, setLimit] = useState(10);
   const [offset, setOffset] = useState(0);
   const mountedRef = useRef(false);
@@ -40,6 +41,11 @@ export function usePagination<T>(
       if (mountedRef.current && requestId === requestIdRef.current) {
         setItems(res.items);
         setTotal(res.total);
+        setError(null);
+      }
+    } catch (err) {
+      if (mountedRef.current && requestId === requestIdRef.current) {
+        setError(err instanceof Error ? err.message : String(err));
       }
     } finally {
       if (mountedRef.current && requestId === requestIdRef.current) {
@@ -53,5 +59,5 @@ export function usePagination<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refresh, ...deps]);
 
-  return { items, setItems, total, loading, limit, offset, setLimit, setOffset, refresh };
+  return { items, setItems, total, loading, error, limit, offset, setLimit, setOffset, refresh };
 }

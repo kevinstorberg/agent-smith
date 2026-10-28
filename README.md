@@ -133,9 +133,13 @@ separate from generated memories. This graph has no agent and creates no tickets
 Set source configuration and the real API key only in the gitignored `.env.production`:
 
 ```env
-MEETING_SOURCES_JSON={"work":{"provider":"granola","account_key":"personal","api_key_env":"GRANOLA_API_KEY","project":null,"provider_options":{}}}
+MEETING_SOURCES_JSON={"granola":{"provider":"granola","account_key":"personal","api_key_env":"GRANOLA_API_KEY","project":null,"provider_options":{}}}
 GRANOLA_API_KEY=your-granola-api-key
 ```
+
+Each key in `MEETING_SOURCES_JSON` is a connection label, not a meeting category.
+Configure every account/provider connection there. The default graph inputs `{}` import
+all configured connections; adding another connection does not require another job.
 
 Leave `provider_options` empty to list everything accessible to the key. Granola also supports
 `folder_id`, `space_id`, and `page_size` (1-30). Access follows the [Granola key scopes](https://docs.granola.ai/help-center/sharing/integrations/granola-api):
@@ -154,9 +158,9 @@ never use its database target. Native PostgreSQL/pgvector and `POSTGRES_BIN` fol
 prerequisites below. Output contains counts and verification flags, without meeting content.
 
 ```sh
-.venv/bin/python -m scripts.meetings probe --source work
-.venv/bin/python -m scripts.meetings verify-live --source work --isolated-db --stage scan
-.venv/bin/python -m scripts.meetings verify-live --source work --isolated-db --stage context
+.venv/bin/python -m scripts.meetings probe --source granola
+.venv/bin/python -m scripts.meetings verify-live --source granola --isolated-db --stage scan
+.venv/bin/python -m scripts.meetings verify-live --source granola --isolated-db --stage context
 ```
 
 After deploying the reviewed change, apply its migration through the existing confirmation
@@ -168,27 +172,40 @@ flow and restart the dashboard with the updated code:
 
 Open **Jobs → New Job** and enter:
 
-- **Name:** `Meetings: work`
+- **Name:** `Meetings`
 - **Job type:** Graph
 - **Graph:** `meeting_ingest`
-- **Graph inputs (JSON):** `{"source":"work"}`
+- **Graph inputs (JSON):** `{}`
 - **Run every:** 15 minutes
 - **Timeout (seconds):** 300
-- **Run on:** This device
+- **Run on:** All devices
 
-Save the job. **This device** is resolved from the dashboard's `DEVICE_NAME` and stored with
-the job in the same transaction. Graph jobs default to this scope; **All devices** is also
-available for jobs intentionally deployed everywhere. Existing deployment configs remain
-visible in job details. Use **Run Now** for an immediate import and **Executions** to inspect
-the result. The dashboard must stay running for periodic imports. Startup does not create
-meeting jobs or upgrade production schemas. Source progress is also available through
-`meeting_sync_status` on `/mcp/meetings/`.
+Save the job. New `meeting_ingest` jobs default to **All devices**. Each running Agent Smith
+instance imports its configured connections into the shared database. Stable provider/account
+identities, per-account claims and upserts prevent duplicate records when devices overlap.
+Existing deployment configs remain visible in job details. Use **Run Now** for an immediate
+import and **Executions** to inspect execution status. The dashboard must stay running
+for periodic imports. Startup does not create meeting jobs or upgrade production schemas.
+Source progress is also available through `meeting_sync_status` on `/mcp/meetings/`.
+
+Open **Meetings** in the sidebar (`/meetings`) to browse and search saved summaries from all
+connections. Select a meeting to read its summary, connection/provider details, timestamps,
+revision and source link. Meeting context is shared across devices and is separate from the
+generated memories shown on the Memory page.
 
 To import immediately, use the graphs MCP tool:
 
 ```python
-run_graph(type="meeting_ingest", inputs={"source": "work"})
+run_graph(type="meeting_ingest", inputs={})
 ```
+
+The optional `source` input restricts an explicitly targeted run to one connection, for
+example `{"source":"granola"}`. Omit it for all connections. Each all-connection run snapshots
+the connection configuration and shares its bounded work budget fairly. It attempts the
+remaining connections after a source failure, then reports a failed execution with safe
+per-source diagnostics. Partial progress counts that cannot be determined are reported as
+unknown, with known completed counts kept separately. Interrupted or deferred work resumes
+on later scheduled runs; connections with no or older attempts get priority.
 
 The meetings MCP server provides `meeting_list`, `meeting_get`, `meeting_search`, and
 `meeting_sync_status`. List/search filter by source, project, and timezone-aware meeting
