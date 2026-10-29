@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router';
+import { Routes, Route, Navigate, useLocation, useParams } from 'react-router';
 import { HarnessIndexPage } from './pages/HarnessIndexPage';
 import { HarnessDetailPage } from './pages/HarnessDetailPage';
 import { HarnessCreatePage } from './pages/HarnessCreatePage';
@@ -6,6 +6,7 @@ import { MemoryPage } from './pages/MemoryPage';
 import { MeetingsIndexPage } from './pages/MeetingsIndexPage';
 import { MeetingDetailPage } from './pages/MeetingDetailPage';
 import { ProfileDetailPage } from './pages/ProfileDetailPage';
+import { ProfilesIndexPage } from './pages/ProfilesIndexPage';
 import { EvalsPage } from './pages/EvalsPage';
 import { EvalDetailPage } from './pages/EvalDetailPage';
 import { PlansIndexPage } from './pages/PlansIndexPage';
@@ -22,6 +23,17 @@ import { ChatPage } from './pages/ChatPage';
 import { Sidebar } from './components/Sidebar';
 import { NotificationBar } from './components/NotificationBar';
 import { NotificationProvider } from './context/NotificationContext';
+
+function LegacyProfileRedirect() {
+  const { id } = useParams();
+  const { search, hash } = useLocation();
+  return <Navigate to={`/profiles/${encodeURIComponent(id!)}${search}${hash}`} replace />;
+}
+
+function ProfileRoute() {
+  const { id } = useParams();
+  return <ProfileDetailPage key={id} />;
+}
 
 export default function App() {
   return (
@@ -46,7 +58,9 @@ export default function App() {
           <Route path="/memory" element={<MemoryPage />} />
           <Route path="/meetings" element={<MeetingsIndexPage />} />
           <Route path="/meetings/:id" element={<MeetingDetailPage />} />
-          <Route path="/meetings/profiles/:id" element={<ProfileDetailPage />} />
+          <Route path="/meetings/profiles/:id" element={<LegacyProfileRedirect />} />
+          <Route path="/profiles" element={<ProfilesIndexPage />} />
+          <Route path="/profiles/:id" element={<ProfileRoute />} />
           <Route path="/evals" element={<EvalsPage />} />
           <Route path="/evals/:id" element={<EvalDetailPage />} />
           <Route path="/plans" element={<PlansIndexPage />} />

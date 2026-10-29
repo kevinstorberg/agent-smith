@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { api, ApiError } from '../api';
 import type { ClaimCorrectionInput, ProfileClaim } from '../api';
@@ -7,6 +7,8 @@ import { useApiRead } from '../hooks/useApiRead';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { usePolling } from '../hooks/usePolling';
 import { safeHttpUrl } from '../utils/links';
+import { ProfileMetadata } from '../components/ProfileMetadata';
+import { ProfileIdentity } from '../components/ProfileIdentity';
 
 const CATEGORIES: [ProfileClaim['category'], string][] = [
   ['driver', 'Drivers'], ['priority', 'Priorities'], ['communication', 'Communication'],
@@ -26,10 +28,15 @@ interface Edit {
 export function ProfileDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const read = useCallback(() => id ? api.meetings.profile(id) : Promise.reject(new Error('Profile not found')), [id]);
+  const read = useCallback(() => id ? api.profiles.get(id) : Promise.reject(new Error('Profile not found')), [id]);
   const { data: profile, loading, error, refresh } = useApiRead(read);
   const [edit, setEdit] = useState<Edit | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [metadataBusy, setMetadataBusy] = useState(false);
+  const [identityBusy, setIdentityBusy] = useState(false);
+  useEffect(() => {
+    if (profile && profile.id !== id) navigate(`/profiles/${profile.id}`, { replace: true });
+  }, [profile, id, navigate]);
 
   const failedChange = (failure: Error) => {
     if (failure instanceof ApiError && failure.status === 409) {
@@ -41,16 +48,16 @@ export function ProfileDetailPage() {
     }
   };
   const correction = useApiMutation({
-    mutationFn: ({ claimId, body }: { claimId: string; body: ClaimCorrectionInput }) => api.meetings.correctClaim(id!, claimId, body),
+    mutationFn: ({ claimId, body }: { claimId: string; body: ClaimCorrectionInput }) => api.profiles.correctClaim(profile!.id, claimId, body),
     onSuccess: () => { setEdit(null); setNotice(null); refresh(); },
     onError: failedChange,
   });
   const deletion = useApiMutation({
-    mutationFn: (revision: number) => api.meetings.deleteProfile(id!, revision),
-    onSuccess: () => navigate('/meetings'),
+    mutationFn: (revision: number) => api.profiles.remove(profile!.id, revision),
+    onSuccess: () => navigate('/profiles'),
     onError: failedChange,
   });
-  usePolling(() => refresh({ showLoading: false }), { enabled: !edit && !correction.loading && !deletion.loading });
+  usePolling(() => refresh({ showLoading: false }), { enabled: !edit && !metadataBusy && !identityBusy && !correction.loading && !deletion.loading });
 
   const startEdit = (claim: ProfileClaim, action: Edit['action']) => {
     if (!profile) return;
@@ -76,8 +83,8 @@ export function ProfileDetailPage() {
   return (
     <div>
       <div className="page-header">
-        <h2 className="page-title">{loading || error ? 'Participant profile' : profile?.display_name}</h2>
-        <Link className="btn" to="/meetings">Back to meetings</Link>
+        <h2 className="page-title">{loading || error ? 'Profile' : profile?.display_name}</h2>
+        <Link className="btn" to="/profiles">Back to profiles</Link>
       </div>
       {loading ? <div className="loading">Loading participant profile...</div> : error ? (
         <div className="card" role="alert"><p>Could not load this participant profile. It may be unavailable or deleted.</p><button className="btn" onClick={() => refresh()}>Retry</button></div>
@@ -88,11 +95,16 @@ export function ProfileDetailPage() {
             <p className="text-muted-sm">{profile.identity_scope === 'email' ? 'Identity linked by email.' : 'Identified in this meeting only; no cross-meeting identity match.'}</p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
               <span className="tag">Revision {profile.revision}</span><DateCell date={profile.updated_at} />
-              <button className="btn btn-danger" style={{ marginLeft: 'auto' }} onClick={remove} disabled={Boolean(edit) || correction.loading || deletion.loading}>
+              <button className="btn btn-danger" style={{ marginLeft: 'auto' }} onClick={remove} disabled={Boolean(edit) || metadataBusy || identityBusy || correction.loading || deletion.loading}>
                 {deletion.loading ? 'Deleting...' : 'Delete profile'}
               </button>
             </div>
+            <ProfileMetadata key={`metadata-${profile.id}`} profile={profile} disabled={Boolean(edit) || identityBusy || correction.loading || deletion.loading}
+              onBusyChange={setMetadataBusy} onReload={() => refresh({ showLoading: false })} />
           </div>
+          <ProfileIdentity key={`identity-${profile.id}`} profile={profile} disabled={Boolean(edit) || metadataBusy || correction.loading || deletion.loading}
+            onBusyChange={setIdentityBusy} onReload={() => refresh({ showLoading: false })}
+            onSaved={winner => { if (winner.id !== id) navigate(`/profiles/${winner.id}`, { replace: true }); else refresh({ showLoading: false }); }} />
           {notice && <p className="card" role="alert">{notice}</p>}
           {profile.claims.length === 0 && <p className="card text-muted-sm">No claims with available source meetings.</p>}
           {CATEGORIES.map(([category, label]) => {
@@ -135,8 +147,8 @@ export function ProfileDetailPage() {
                       <button className="btn" onClick={() => { setEdit(null); setNotice(null); }} disabled={correction.loading}>Cancel</button>
                     </div>
                   </div> : <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                    <button className="btn btn-sm" onClick={() => startEdit(claim, 'correct')} disabled={Boolean(edit) || deletion.loading}>Correct claim</button>
-                    <button className="btn btn-sm" onClick={() => startEdit(claim, 'reject')} disabled={Boolean(edit) || deletion.loading}>Reject claim</button>
+                    <button className="btn btn-sm" onClick={() => startEdit(claim, 'correct')} disabled={Boolean(edit) || metadataBusy || identityBusy || deletion.loading}>Correct claim</button>
+                    <button className="btn btn-sm" onClick={() => startEdit(claim, 'reject')} disabled={Boolean(edit) || metadataBusy || identityBusy || deletion.loading}>Reject claim</button>
                   </div>}
                 </article>;
               })}

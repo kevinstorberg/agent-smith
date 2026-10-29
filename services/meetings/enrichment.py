@@ -170,37 +170,45 @@ class DigestionRun:
         self.memory_report.update(outcome="done", memories=len(artifact["items"]), memory_ids=artifact["published_ids"])
 
     async def _profile_work(self, record: dict) -> None:
+        try:
+            await self._update_profiles(record)
+        except profile_db.ProfileRevisionConflict:
+            await run_db(profile_db.reset_progress, record["meeting_id"], self.owner, record["transcript_hash"])
+            raise
+
+    async def _update_profiles(self, record: dict) -> None:
         from services.graphs.model_config import resolve_model_id
         from services.meetings.profile_analysis import analyze_profiles
 
         meeting_id = record["meeting_id"]
-        participants = meeting_participants(record["snapshot"], record["transcript"]["segments"])
+        participants_revision = record.get("participants_revision", 0)
+        analysis_snapshot = {**record["snapshot"], "manual_participants": record.get("participant_snapshot", []),
+                             "participants_revision": participants_revision}
+        participants = await run_db(profile_db.resolve_participants,
+                                    meeting_participants(analysis_snapshot, record["transcript"]["segments"]))
         profiles = await run_db(profile_db.load_profiles, participants)
         artifact = copy.deepcopy(record["profile_artifact"]) or {
             "version": 1, "offset": 0, "items": [], "reason": "",
             "model": resolve_model_id("meeting_profile", "curator"), "prompt_version": 1,
             "expected_revisions": {profile["id"]: profile["revision"] for profile in profiles},
+            "participants_revision": participants_revision,
         }
         if artifact["version"] != 1:
             raise ValueError("Unsupported meeting profile artifact version")
+        if artifact.get("participants_revision", 0) != participants_revision:
+            raise profile_db.ProfileRevisionConflict("Meeting participants changed; rebuild the profile candidate")
         if artifact["expected_revisions"] != {profile["id"]: profile["revision"] for profile in profiles}:
-            await run_db(profile_db.reset_progress, meeting_id, self.owner, record["transcript_hash"])
             raise profile_db.ProfileRevisionConflict("Participant profile changed; rebuild the profile candidate")
         segments = expanded_segments(record["transcript"]["segments"])
         while artifact["offset"] < len(segments):
             window, end = transcript_window(segments, artifact["offset"])
             result = await analyze_profiles(
-                record["snapshot"], window, artifact["items"], participants=participants,
+                analysis_snapshot, window, artifact["items"], participants=participants,
                 profiles=profiles, memories=record["memory_artifact"].get("items", []), deadline=self.deadline,
             )
             artifact["items"].extend(result["items"])
             artifact.update(offset=end, reason=result.get("reason", ""))
             await run_db(profile_db.save_progress, meeting_id, self.owner, record["transcript_hash"], artifact)
-        try:
-            profile_ids = await run_db(profile_db.apply_profiles, meeting_id, self.owner, record["transcript_hash"], artifact, participants)
-        except profile_db.ProfileRevisionConflict:
-            # Human corrections win; rebuild only the uncommitted profile stage.
-            await run_db(profile_db.reset_progress, meeting_id, self.owner, record["transcript_hash"])
-            raise
+        profile_ids = await run_db(profile_db.apply_profiles, meeting_id, self.owner, record["transcript_hash"], artifact, participants)
         record.update(profile_status="done", profile_artifact=artifact)
         self.profile_report.update(outcome="done", profiles=len(profile_ids), profile_ids=profile_ids)

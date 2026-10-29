@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { Sidebar } from '../Sidebar';
 
@@ -20,9 +20,9 @@ vi.mock('../../context/useNotification', () => ({
 
 import { api } from '../../api';
 
-function renderSidebar() {
+function renderSidebar(path = '/') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <Sidebar />
     </MemoryRouter>,
   );
@@ -40,9 +40,28 @@ describe('Sidebar', () => {
 
   it('renders all navigation links', () => {
     renderSidebar();
-    for (const label of ['Agents', 'Hooks', 'Rules', 'Skills', 'Tools', 'Memory', 'Meetings', 'Plans', 'Chat', 'Evals', 'Results']) {
+    for (const label of ['Agents', 'Hooks', 'Rules', 'Skills', 'Tools', 'Memory', 'Meetings', 'Profiles', 'Plans', 'Chat', 'Evals', 'Results']) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
+  });
+
+  it('keeps Profiles active while a profile is open', () => {
+    renderSidebar('/profiles/profile-id');
+    const link = screen.getByRole('link', { name: 'Profiles' });
+    expect(link).toHaveAttribute('href', '/profiles');
+    expect(link).toHaveClass('active');
+    expect(screen.getByRole('link', { name: 'Meetings' })).not.toHaveClass('active');
+  });
+
+  it('alphabetizes links inside each existing sidebar section', () => {
+    const { container } = renderSidebar();
+    const sections = [...container.querySelectorAll('.sidebar-section')].map(section => within(section as HTMLElement).queryAllByRole('link').map(link => link.textContent));
+    expect(sections).toEqual([
+      ['Agents', 'Hooks', 'Rules', 'Skills', 'Tools'],
+      ['Audit', 'Chat', 'Jobs', 'Meetings', 'Memory', 'Plans', 'Profiles', 'Proposals'],
+      ['Evals', 'Results'],
+      [],
+    ]);
   });
 
   it('sync success notifies user', async () => {

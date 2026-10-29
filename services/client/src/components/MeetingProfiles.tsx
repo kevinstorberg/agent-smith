@@ -27,7 +27,7 @@ export function MeetingProfiles({ meetingId }: { meetingId: string }) {
 
   return (
     <section className="card" aria-label="Meeting participant profiles">
-      <h3 className="section-title">Participant profiles</h3>
+      <h3 className="section-title">Profiles</h3>
       {!data && loading && <p className="text-muted-sm">Loading participant profiles...</p>}
       {error && <div role="alert"><p>Could not load participant profiles. Try again.</p><button className="btn" onClick={() => refresh()} disabled={loading}>Retry</button></div>}
       {data && <MeetingGenerationState result={data} output="profiles" blockedMessage={blockedMessage(data.reason)}
@@ -37,7 +37,7 @@ export function MeetingProfiles({ meetingId }: { meetingId: string }) {
       ) : (
         <ul style={{ listStyle: 'none' }}>
           {data.items.map(profile => <li key={profile.id} style={{ marginBottom: 8 }}>
-            <Link to={`/meetings/profiles/${profile.id}`}>{profile.display_name}</Link>
+            <Link to={`/profiles/${profile.id}`}>{profile.display_name}</Link>
             {profile.email && <span className="text-muted-sm"> · {profile.email}</span>}
           </li>)}
         </ul>

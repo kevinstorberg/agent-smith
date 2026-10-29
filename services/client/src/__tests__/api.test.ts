@@ -20,7 +20,7 @@ describe('parseError (tested through api methods)', () => {
   it('preserves a conflict status for profile revision recovery', async () => {
     globalThis.fetch = mockFetch({ detail: 'Profile changed' }, { ok: false, status: 409 });
     try {
-      await api.meetings.profile('profile-id');
+      await api.profiles.get('profile-id');
       expect.fail('Expected a conflict');
     } catch (error) {
       expect(error).toBeInstanceOf(ApiError);
@@ -216,20 +216,66 @@ describe('specific API methods', () => {
   it('reads profiles and submits revision-checked corrections and deletion', async () => {
     globalThis.fetch = mockFetch({});
     await api.meetings.profiles('meeting-id');
-    await api.meetings.profile('profile-id');
+    await api.profiles.get('profile-id');
     await api.meetings.retryProfiles('meeting-id');
     const body = { expected_revision: 3, action: 'correct' as const, content: 'Corrected claim', reason: 'Source correction' };
-    await api.meetings.correctClaim('profile-id', 'claim-id', body);
-    await api.meetings.deleteProfile('profile-id', 4);
+    await api.profiles.correctClaim('profile-id', 'claim-id', body);
+    await api.profiles.remove('profile-id', 4);
     const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
     expect(new URL(calls[0][0]).pathname).toBe('/api/meetings/meeting-id/profiles');
-    expect(new URL(calls[1][0]).pathname).toBe('/api/meetings/profiles/profile-id');
+    expect(new URL(calls[1][0]).pathname).toBe('/api/profiles/profile-id');
     expect(calls[2][0]).toBe('/api/meetings/meeting-id/profiles/retry');
-    expect(calls[3][0]).toBe('/api/meetings/profiles/profile-id/claims/claim-id');
+    expect(calls[3][0]).toBe('/api/profiles/profile-id/claims/claim-id');
     expect(JSON.parse(calls[3][1].body)).toEqual(body);
-    expect(calls[4][0]).toBe('/api/meetings/profiles/profile-id');
+    expect(calls[4][0]).toBe('/api/profiles/profile-id');
     expect(calls[4][1].method).toBe('DELETE');
     expect(JSON.parse(calls[4][1].body)).toEqual({ expected_revision: 4 });
+  });
+
+  it('lists all profiles with server-side search and paging', async () => {
+    globalThis.fetch = mockFetch({ items: [], total: 0 });
+    await api.profiles.list({ q: 'Alex @example.test', limit: 25, offset: 50 });
+    const url = new URL((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect(url.pathname).toBe('/api/profiles');
+    expect(Object.fromEntries(url.searchParams)).toEqual({ q: 'Alex @example.test', limit: '25', offset: '50' });
+
+    await api.profiles.list();
+    const unfiltered = new URL((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[1][0]);
+    expect(unfiltered.search).toBe('');
+  });
+
+  it('serializes profile tags, false star filters, sorting and revision-checked identity actions', async () => {
+    globalThis.fetch = mockFetch({});
+    await api.profiles.list({ tags: ['team', 'priority'], starred: false, sort: 'name_desc' });
+    const url = new URL((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect(url.searchParams.getAll('tags')).toEqual(['team', 'priority']);
+    expect(url.searchParams.get('starred')).toBe('false');
+    expect(url.searchParams.get('sort')).toBe('name_desc');
+    await api.profiles.update('source', { expected_revision: 1, tags: ['team'], starred: true });
+    await api.profiles.merge('source', { expected_revision: 2, target_id: 'target', target_revision: 3 });
+    await api.profiles.linkEmail('target', { expected_revision: 4, email: 'known@example.test' });
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[1][0]).toBe('/api/profiles/source');
+    expect(calls[1][1].method).toBe('PATCH');
+    expect(JSON.parse(calls[1][1].body)).toEqual({ expected_revision: 1, tags: ['team'], starred: true });
+    expect(calls[2][0]).toBe('/api/profiles/source/merge');
+    expect(JSON.parse(calls[2][1].body)).toEqual({ expected_revision: 2, target_id: 'target', target_revision: 3 });
+    expect(calls[3][0]).toBe('/api/profiles/target/aliases');
+    expect(JSON.parse(calls[3][1].body)).toEqual({ expected_revision: 4, email: 'known@example.test' });
+  });
+
+  it('reads and updates manual meeting participants and queues explicit processing', async () => {
+    globalThis.fetch = mockFetch({});
+    await api.meetings.participants('meeting-id');
+    await api.meetings.updateParticipants('meeting-id', { expected_revision: 0, participants: [{ name: 'Alex', email: 'known@example.test', speaker_key: 'speaker-1' }] });
+    await api.meetings.process('meeting-id');
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    expect(new URL(calls[0][0]).pathname).toBe('/api/meetings/meeting-id/participants');
+    expect(calls[1][0]).toBe('/api/meetings/meeting-id/participants');
+    expect(calls[1][1].method).toBe('PUT');
+    expect(JSON.parse(calls[1][1].body)).toEqual({ expected_revision: 0, participants: [{ name: 'Alex', email: 'known@example.test', speaker_key: 'speaker-1' }] });
+    expect(calls[2][0]).toBe('/api/meetings/meeting-id/process');
+    expect(calls[2][1].method).toBe('POST');
   });
 
   it('harness.sync sends POST to /harness/sync', async () => {

@@ -169,6 +169,9 @@ prerequisites below. Output contains counts and verification flags, without meet
 After deploying the reviewed change, apply its migration through the existing confirmation
 flow and restart the dashboard with the updated code:
 
+Stop meeting runners on other devices before upgrading, and update every runner before
+resuming the shared job. An older runner cannot apply the new profile identity rules.
+
 ```sh
 ./db.sh production --confirm-database <production-database-name>
 ```
@@ -211,21 +214,49 @@ Newly imported meetings also produce memories through a tool-calling agent after
 transcript is ready. The agent searches existing memories, reads every transcript window and
 stages evidence-backed results before publication. Meeting details show the generated content,
 exact evidence quotes, processing status and retry action; the same records are available on
-**Memory**. Previously imported meetings are not backfilled. Pending work resumes without
+**Memory**. Previously imported meetings can be queued explicitly with **Process meeting**
+on their detail page. Pending work resumes without
 regenerating completed windows or republishing acknowledged memories.
 
 After memories are saved, a second tool-calling agent builds participant profiles in the same
 graph run. It receives the newly generated memories directly and can retrieve older memories
-and canonical profiles. Open a profile from the meeting's **Participant profiles** card to
-see priorities, inferred drivers, communication patterns and directed perceptions/interactions.
+and canonical profiles. Open **Profiles** in the sidebar to search and browse profiles across
+meetings. Each profile has its own page, with priorities, inferred drivers, communication
+patterns and directed perceptions/interactions. Meeting profile cards link to the same records.
 Each claim includes its confidence, whether it is self-reported, observed or inferred, and
 exact transcript evidence. Profile retries preserve completed memories.
 
-Profiles merge across meetings only through a reliable email identity: an explicit speaker
+Profiles accumulate evidence as new meetings are digested. The profile list shows the number
+of available source meetings and when each profile was last updated. The list and detail pages
+refresh automatically; background updates preserve an open correction draft. Deleted profiles
+stay hidden, and claims from unavailable meetings do not contribute to the visible counts.
+
+Search profiles by name or linked email, filter by tags or stars, and choose a name or date
+sort. Tags and stars belong to the profile and survive later meeting updates. The detail page
+lets you merge two profiles into one person. Both identities remain linked to the surviving
+profile, including in future meetings and historical meeting links. You can also link another
+email explicitly. Merging preserves evidence and human corrections; conflicting histories
+cause the merge to fail instead of silently choosing one.
+
+Automatic matching across meetings uses a reliable email identity: an explicit speaker
 email or an unambiguous match between a named speaker and the meeting's named attendee roster.
-Names without an email and anonymous speaker labels remain meeting-scoped. A shared microphone
+Names without an email and anonymous speaker labels remain meeting-scoped unless you explicitly
+assign them to an existing profile. A shared microphone
 without a distinguishable speaker does not create a person; silent attendees are not profiled.
 No names or email aliases are guessed.
+
+In a meeting's **Participants** card, add a name and email or choose an existing profile.
+Once a transcript is available, select its speaker to explicitly attribute that speaker's
+words. Participant additions are stored separately from provider metadata and survive syncs.
+Saving an enrolled meeting's participants queues updated profile analysis while preserving
+completed memories. Changed speaker assignments retire the affected earlier profile claims
+from the current view while retaining their evidence and correction history. Participant
+changes wait until an active run finishes.
+
+**Process meeting** explicitly enrolls an older saved meeting or retries its missing stages.
+Requested meetings take priority in the existing meeting job; use **Run Now** in Jobs to
+process the queue sooner. This action does not create another job or restore a deliberately
+deleted transcript. Previously imported meetings are not enrolled automatically in bulk.
 
 Use **Correct** or **Reject** on a profile claim to retain a human override with a reason.
 Later analysis reads those overrides. Revision checks prevent a background analysis from

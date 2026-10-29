@@ -1,0 +1,100 @@
+import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router';
+import { api, ApiError } from '../api';
+import type { ProfileSummary } from '../api';
+import { Pagination } from '../components/Pagination';
+import { BadgeCell, DateCell } from '../components/table';
+import { ProfileStar } from '../components/ProfileStar';
+import { usePagination } from '../hooks/usePagination';
+import { usePolling } from '../hooks/usePolling';
+import { makeRowClickable } from '../utils/a11y';
+import { parseTags } from '../utils/tags';
+import { useApiMutation } from '../hooks/useApiMutation';
+
+const SORT_OPTIONS = [
+  ['created_at_desc', 'Newest profiles'], ['created_at_asc', 'Oldest profiles'],
+  ['name_asc', 'Name A–Z'], ['name_desc', 'Name Z–A'],
+  ['updated_at_desc', 'Recently updated'], ['updated_at_asc', 'Least recently updated'],
+];
+
+export function ProfilesIndexPage() {
+  const navigate = useNavigate();
+  const [searchText, setSearchText] = useState('');
+  const [query, setQuery] = useState('');
+  const [tagText, setTagText] = useState('');
+  const tags = useMemo(() => parseTags(tagText), [tagText]);
+  const [starredOnly, setStarredOnly] = useState(false);
+  const [sort, setSort] = useState('created_at_desc');
+  const [notice, setNotice] = useState<string | null>(null);
+  const { items, total, loading, error, limit, offset, setLimit, setOffset, refresh } = usePagination<ProfileSummary>(
+    (pageLimit, pageOffset) => api.profiles.list({ limit: pageLimit, offset: pageOffset, q: query || undefined,
+      sort, ...(tags.length ? { tags } : {}), ...(starredOnly ? { starred: true } : {}) }),
+    [query, tags, starredOnly, sort],
+  );
+  const star = useApiMutation({
+    mutationFn: (profile: ProfileSummary) => api.profiles.update(profile.id, { expected_revision: profile.revision, starred: !profile.starred }),
+    onSuccess: () => { setNotice(null); refresh({ showLoading: false }); },
+    onError: failure => {
+      setNotice(failure instanceof ApiError && failure.status === 409 ? 'This profile changed. Review the refreshed profile and try again.' : 'Could not change the star. Try again.');
+      refresh({ showLoading: false });
+    },
+  });
+  usePolling(() => refresh({ showLoading: false }), { enabled: !star.loading });
+
+  const search = (value: string) => {
+    setQuery(value.trim());
+    setOffset(0);
+  };
+
+  return (
+    <div>
+      <h2 className="page-title" style={{ marginBottom: 8 }}>Profiles</h2>
+      <p className="text-muted-sm" style={{ marginBottom: 16 }}>Participant profiles with evidence from your meeting history.</p>
+      <form className="search-bar" onSubmit={event => { event.preventDefault(); search(searchText); }}>
+        <input aria-label="Search profiles" placeholder="Search by name or email..." maxLength={1000}
+          value={searchText} onChange={event => setSearchText(event.target.value)} />
+        <button className="btn btn-primary" type="submit">Search</button>
+        {query && <button className="btn" type="button" onClick={() => { setSearchText(''); search(''); }}>Clear</button>}
+      </form>
+      <div className="filters" style={{ marginTop: 8 }}>
+        <input aria-label="Filter by tags" placeholder="Tags (comma-separated)" value={tagText}
+          onChange={event => { setTagText(event.target.value); setOffset(0); }} />
+        <label><input type="checkbox" checked={starredOnly} onChange={event => { setStarredOnly(event.target.checked); setOffset(0); }} /> Starred only</label>
+        <label htmlFor="profile-sort">Sort</label>
+        <select id="profile-sort" className="pagination-select" value={sort} onChange={event => { setSort(event.target.value); setOffset(0); }}>
+          {SORT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </div>
+      {tags.length > 0 && <p className="text-muted-sm">Matches all tags: {tags.join(', ')}</p>}
+      {notice && <p role="alert" className="card">{notice}</p>}
+      {loading ? <div className="loading">Loading profiles...</div> : error ? (
+        <div className="card" role="alert">
+          <p>Could not load profiles. Try again.</p>
+          <button className="btn" onClick={() => refresh()}>Retry</button>
+        </div>
+      ) : (
+        <>
+          <table className="table">
+            <thead><tr><th>Star</th><th>Name</th><th>Email</th><th>Identity</th><th>Tags</th><th>Meetings</th><th>Last updated</th></tr></thead>
+            <tbody>
+              {items.map(profile => <tr key={profile.id} {...makeRowClickable(() => navigate(`/profiles/${profile.id}`))} style={{ cursor: 'pointer' }}>
+                <td><ProfileStar name={profile.display_name} starred={profile.starred} disabled={star.loading} onClick={() => star.mutate(profile)} /></td>
+                <td>{profile.display_name}</td>
+                <td>{profile.email || '—'}</td>
+                <td>{profile.identity_scope === 'email' ? 'Email' : 'Meeting only'}</td>
+                <td><BadgeCell items={profile.tags} /></td>
+                <td>{profile.meeting_count}</td>
+                <td><DateCell date={profile.updated_at} /></td>
+              </tr>)}
+              {items.length === 0 && <tr><td colSpan={7} className="loading">
+                {query || tags.length || starredOnly ? 'No profiles match your search.' : 'No profiles saved yet. Profiles appear as new meetings are processed.'}
+              </td></tr>}
+            </tbody>
+          </table>
+          <Pagination total={total} limit={limit} offset={offset} onPageChange={setOffset}
+            onLimitChange={value => { setLimit(value); setOffset(0); }} />
+        </>
+      )}
+    </div>
+  );
+}

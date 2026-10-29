@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import ReactMarkdown from 'react-markdown';
 import { api } from '../api';
@@ -6,6 +6,7 @@ import { CopyButton } from '../components/CopyButton';
 import { MeetingTranscript } from '../components/MeetingTranscript';
 import { MeetingMemories } from '../components/MeetingMemories';
 import { MeetingProfiles } from '../components/MeetingProfiles';
+import { MeetingParticipants } from '../components/MeetingParticipants';
 import { CODE_BOX } from '../components/codeBox';
 import { DateCell } from '../components/table';
 import { usePolling } from '../hooks/usePolling';
@@ -14,6 +15,8 @@ import { safeHttpUrl } from '../utils/links';
 
 export function MeetingDetailPage() {
   const { id } = useParams();
+  const [processingVersion, setProcessingVersion] = useState(0);
+  const processingChanged = useCallback(() => setProcessingVersion(previous => previous + 1), []);
   const read = useCallback(() => {
     if (!id) return Promise.reject(new Error('Meeting not found'));
     return api.meetings.get(id);
@@ -57,9 +60,10 @@ export function MeetingDetailPage() {
             </div>
             <div className="markdown-content"><ReactMarkdown>{meeting.summary_markdown || meeting.summary_text}</ReactMarkdown></div>
           </div>
-          <MeetingTranscript key={meeting.id} meetingId={meeting.id} />
-          <MeetingMemories key={`memories-${meeting.id}`} meetingId={meeting.id} />
-          <MeetingProfiles key={`profiles-${meeting.id}`} meetingId={meeting.id} />
+          <MeetingParticipants key={meeting.id} meetingId={meeting.id} onChanged={processingChanged} />
+          <MeetingTranscript key={`transcript-${meeting.id}-${processingVersion}`} meetingId={meeting.id} />
+          <MeetingMemories key={`memories-${meeting.id}-${processingVersion}`} meetingId={meeting.id} />
+          <MeetingProfiles key={`profiles-${meeting.id}-${processingVersion}`} meetingId={meeting.id} />
           {Object.keys(meeting.metadata).length > 0 && (
             <details className="card">
               <summary>Additional metadata</summary>

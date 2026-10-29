@@ -45,11 +45,12 @@ def _claim(identities: list[tuple[str, str]], owner: str, eligibility: str) -> d
         if cur.fetchone():
             return None
         cur.execute(
-            f"""SELECT d.meeting_id FROM meeting_digestions d
+            f"""SELECT d.meeting_id, m.manual_participants, m.participants_revision FROM meeting_digestions d
                JOIN meeting_summaries m ON m.id = d.meeting_id
                WHERE (m.provider, m.account_key) IN %s AND m.available
                  AND ({eligibility})
-               ORDER BY d.created_at, d.meeting_id LIMIT 1 FOR UPDATE OF d""",
+               ORDER BY (d.requested_at IS NULL), d.requested_at, d.created_at, d.meeting_id
+               LIMIT 1 FOR UPDATE OF d FOR SHARE OF m""",
             (tuple(identities),),
         )
         row = cur.fetchone()
@@ -57,8 +58,10 @@ def _claim(identities: list[tuple[str, str]], owner: str, eligibility: str) -> d
             return None
         cur.execute(
             """UPDATE meeting_digestions SET claim_owner = %s,
-               claim_until = clock_timestamp() + %s * interval '1 second', updated_at = clock_timestamp()
-               WHERE meeting_id = %s RETURNING *""", (owner, LEASE_SECONDS, row["meeting_id"]),
+               claim_until = clock_timestamp() + %s * interval '1 second', updated_at = clock_timestamp(),
+               participant_snapshot = %s, participants_revision = %s
+               WHERE meeting_id = %s RETURNING *""",
+            (owner, LEASE_SECONDS, Json(row["manual_participants"]), row["participants_revision"], row["meeting_id"]),
         )
         return _serialize(dict(cur.fetchone()))
 
