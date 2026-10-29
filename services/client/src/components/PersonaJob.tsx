@@ -5,21 +5,11 @@ import type { GraphJob, JobRunResult } from '../api';
 import { useApiRead } from '../hooks/useApiRead';
 import { usePolling } from '../hooks/usePolling';
 import { formatSchedule } from '../utils/schedule';
+import { personaOutcome } from '../utils/personaOutcome';
 
 function source(job: GraphJob): string | undefined {
   const inputs = job.input_params.graph_inputs as Record<string, unknown> | undefined;
   return typeof inputs?.source === 'string' ? inputs.source : undefined;
-}
-
-function outcome(result: JobRunResult): string {
-  if (!result.success) return 'Persona review failed. Open the execution for details.';
-  try {
-    const report = JSON.parse(result.output).profiles;
-    if (report?.outcome === 'continued') return 'Progress saved. Run again or let scheduled runs continue the remaining work.';
-    if (report?.outcome === 'idle') return 'No unreviewed meeting transcripts are ready for this job.';
-    if (report?.outcome === 'done') return `Reviewed one meeting and updated ${report.profiles ?? 0} profiles.`;
-  } catch { /* Older jobs may return plain text. */ }
-  return 'Persona run finished. Open the execution to review its result.';
 }
 
 export function PersonaJob({ onChanged }: { onChanged: () => void }) {
@@ -71,12 +61,12 @@ export function PersonaJob({ onChanged }: { onChanged: () => void }) {
         {jobs.map(job => <option key={job.id} value={job.id}>{job.name}</option>)}
       </select></label>}
       <p><Link className="text-link" to={`/jobs/${selected.id}`}>{selected.name}</Link> · {formatSchedule(selected.schedule_config)}{source(selected) ? ` · Connection: ${source(selected)}` : ' · All saved meeting connections'}</p>
-      <p className="text-muted-sm">Only unreviewed transcripts are processed. Completed reviews are kept.</p>
+      <p className="text-muted-sm">Reviews unreviewed transcripts and updates assessments from saved observations. Completed transcript reviews are kept.</p>
       {!selected.runs_on_device && <p className="text-muted-sm">This job does not run automatically on this device. You can run it here once or change its <Link className="text-link" to={`/jobs/${selected.id}`}>job settings</Link>.</p>}
       {running && <p role="status">Reviewing saved context. You can watch <Link className="text-link" to={`/jobs/${selected.id}?tab=executions`}>job executions</Link>.</p>}
     </>}
     {failed && <p role="alert">The run result could not be read. Check job executions before trying again.</p>}
-    {result && <p role={result.value.success ? 'status' : 'alert'}>{outcome(result.value)}{' '}
+    {result && <p role={personaOutcome(result.value).failed ? 'alert' : 'status'}>{personaOutcome(result.value).message}{' '}
       <Link className="text-link" to={`/jobs/${result.jobId}?tab=executions${result.value.execution_id ? `&execution=${result.value.execution_id}` : ''}`}>View execution{result.value.execution_id ? ` #${result.value.execution_id}` : 's'}</Link>
     </p>}
   </section>;

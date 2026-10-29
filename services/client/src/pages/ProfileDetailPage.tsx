@@ -10,6 +10,8 @@ import { safeHttpUrl } from '../utils/links';
 import { ProfileMetadata } from '../components/ProfileMetadata';
 import { ProfileIdentity } from '../components/ProfileIdentity';
 import { ProfileNotes } from '../components/ProfileNotes';
+import { ProfileAssessment } from '../components/ProfileAssessment';
+import { ProfileHistory } from '../components/ProfileHistory';
 import { ProfileRelationships } from '../components/ProfileRelationships';
 import { DetailPageHeader } from '../components/DetailPageHeader';
 
@@ -41,10 +43,12 @@ export function ProfileDetailPage() {
   const [metadataEditing, setMetadataEditing] = useState(false);
   const [metadataSaving, setMetadataSaving] = useState(false);
   const metadataForm = useRef<HTMLFormElement>(null);
+  const evidencePanel = useRef<HTMLDetailsElement>(null);
   const [identityBusy, setIdentityBusy] = useState(false);
   const [notesBusy, setNotesBusy] = useState(false);
   const [relationshipsBusy, setRelationshipsBusy] = useState(false);
-  const otherBusy = notesBusy || relationshipsBusy;
+  const [assessmentBusy, setAssessmentBusy] = useState(false);
+  const otherBusy = notesBusy || relationshipsBusy || assessmentBusy;
   useEffect(() => {
     if (profile && profile.id !== id) navigate(`/profiles/${profile.id}`, { replace: true });
   }, [profile, id, navigate]);
@@ -117,17 +121,22 @@ export function ProfileDetailPage() {
               editing={metadataEditing} onEditingChange={setMetadataEditing} onSavingChange={setMetadataSaving} formRef={metadataForm}
               onBusyChange={setMetadataBusy} onReload={() => refresh({ showLoading: false })} />
           </div>
+          <ProfileAssessment key={`assessment-${profile.id}`} profile={profile} disabled={Boolean(edit) || metadataBusy || identityBusy || notesBusy || relationshipsBusy || correction.loading || deletion.loading}
+            onBusyChange={setAssessmentBusy} onReload={() => refresh({ showLoading: false })} />
+          <ProfileNotes key={`sections-${profile.id}`} profile={profile} disabled={Boolean(edit) || metadataBusy || identityBusy || relationshipsBusy || assessmentBusy || correction.loading || deletion.loading}
+            onBusyChange={setNotesBusy} onReload={() => refresh({ showLoading: false })} />
+          <ProfileRelationships profile={profile} disabled={Boolean(edit) || metadataBusy || identityBusy || notesBusy || assessmentBusy || correction.loading || deletion.loading}
+            onBusyChange={setRelationshipsBusy} onReload={() => refresh({ showLoading: false })} />
           <ProfileIdentity key={`identity-${profile.id}`} profile={profile} disabled={Boolean(edit) || metadataBusy || otherBusy || correction.loading || deletion.loading}
             onBusyChange={setIdentityBusy} onReload={() => refresh({ showLoading: false })}
             onSaved={winner => { if (winner.id !== id) navigate(`/profiles/${winner.id}`, { replace: true }); else refresh({ showLoading: false }); }} />
-          <ProfileNotes profile={profile} disabled={Boolean(edit) || metadataBusy || identityBusy || relationshipsBusy || correction.loading || deletion.loading}
-            onBusyChange={setNotesBusy} onReload={() => refresh({ showLoading: false })} />
-          <ProfileRelationships profile={profile} disabled={Boolean(edit) || metadataBusy || identityBusy || notesBusy || correction.loading || deletion.loading}
-            onBusyChange={setRelationshipsBusy} onReload={() => refresh({ showLoading: false })} />
+          <ProfileHistory key={`history-${profile.id}`} profileId={profile.id} revision={profile.revision}
+            onViewEvidence={() => { if (evidencePanel.current) evidencePanel.current.open = true; }} />
           {notice && <p className="card" role="alert">{notice}</p>}
           {profile.claims.length === 0 && !Object.values(profile.metadata_provenance || {}).some(source => source && 'meeting_id' in source)
             && <p className="card text-muted-sm">No meeting evidence yet. Evidence appears as linked meetings are processed.</p>}
-          {profile.claims.length > 0 && <h3 className="section-title">Meeting evidence</h3>}
+          {profile.claims.length > 0 && <details ref={evidencePanel} id="profile-evidence" className="profile-evidence">
+            <summary className="card">Evidence and observations ({profile.claims.length})</summary>
           {CATEGORIES.map(([category, label]) => {
             const claims = profile.claims.filter(claim => claim.category === category);
             return claims.length === 0 ? null : <section key={category} aria-label={label}>
@@ -175,6 +184,7 @@ export function ProfileDetailPage() {
               })}
             </section>;
           })}
+          </details>}
         </>
       )}
     </div>

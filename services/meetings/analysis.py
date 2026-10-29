@@ -50,6 +50,15 @@ roadmap or hiring, only when supported by its content/context. Reuse relevant ex
 labels when suitable. Tags are at most 50 characters, lowercase with hyphens between words.
 Do not tag meeting origin or IDs, dates, or use only generic labels like decision or fact.
 Origin is separate metadata. Content must stand alone and stay within 4000 characters.
+Also stage context_labels describing the PURPOSE and SUBJECT of the WHOLE meeting from
+the frozen title, summary, project and transcript context. Use relevant broad labels such
+as product, security, paralign, roadmapping, growth and operations, plus specific subjects
+or explicitly supported organizations. Include complementary labels when justified; never
+append all categories blindly or infer the company from the app owner. Security scoping
+can use security, penetration-testing and vendor-evaluation; product planning can use
+product and roadmapping. Do not use fact/decision/commitment as meeting-purpose labels.
+These inherited context labels stay separate from the individual memory's own topic tags.
+Return 1-8 relevant context_labels even when the item list is empty.
 Cite evidence from THIS window, not another window or memory.
 An empty item list is valid when nothing useful is new; supply a concrete reason. Fix any
 staging errors and stage again. Only staged items are returned; final prose is ignored.
@@ -106,7 +115,8 @@ def _window_text(segments: list[dict]) -> dict[str, str]:
 
 
 def _safe_rows(rows: list[dict]) -> list[dict]:
-    return [{key: row.get(key) for key in ("id", "content", "repo", "tags", "created_at", "updated_at")} for row in rows]
+    return [{**{key: row.get(key) for key in ("id", "content", "repo", "tags", "created_at", "updated_at")},
+             "context_tags": row.get("context_tags") or []} for row in rows]
 
 
 def recent_items(items: list[dict], max_chars: int = 32_000) -> list[dict]:
@@ -121,13 +131,16 @@ def recent_items(items: list[dict], max_chars: int = 32_000) -> list[dict]:
 
 
 class AnalysisContext:
-    def __init__(self, snapshot: dict, segments: list[dict], previous: list[dict], *, require_memory_search: bool = True) -> None:
+    def __init__(self, snapshot: dict, segments: list[dict], previous: list[dict], *,
+                 require_memory_search: bool = True, require_transcript: bool = True) -> None:
         if not isinstance(snapshot, dict) or not isinstance(previous, list) or any(not isinstance(item, dict) for item in previous):
             raise ValueError("Meeting analysis requires a snapshot object and earlier item objects")
         self.snapshot = snapshot
         self.segments = segments
         self.previous = previous
-        self.texts = _window_text(segments)
+        if not require_transcript and segments != []:
+            raise ValueError("Analysis without a transcript requires an empty segment list")
+        self.texts = _window_text(segments) if require_transcript else {}
         self.searched = False
         self.require_memory_search = require_memory_search
         self.collector = {}
@@ -232,8 +245,15 @@ async def run_analysis(
     label: str,
     error_class: type[MeetingAnalysisError],
     deadline: float | None = None,
+    model_call_limit: int | None = None,
+    tool_call_limit: int | None = None,
 ) -> dict:
     loop = asyncio.get_running_loop()
+    model_call_limit = MODEL_CALL_LIMIT if model_call_limit is None else model_call_limit
+    tool_call_limit = TOOL_CALL_LIMIT if tool_call_limit is None else tool_call_limit
+    if (type(model_call_limit) is not int or not 1 <= model_call_limit <= MODEL_CALL_LIMIT
+            or type(tool_call_limit) is not int or not 1 <= tool_call_limit <= TOOL_CALL_LIMIT):
+        raise ValueError("Analysis model and tool limits must be positive integers within the supported bounds")
     if deadline is not None and (isinstance(deadline, bool) or not isinstance(deadline, (int, float)) or not math.isfinite(deadline)):
         raise ValueError("Meeting analysis deadline must be a finite monotonic timestamp")
     deadline = min(deadline, loop.time() + 150) if deadline is not None else loop.time() + 150
@@ -242,20 +262,20 @@ async def run_analysis(
         async with attempt:
             agent = create_tool_agent(
                 model_role=model_role, fallback_role="curator", system_prompt=system_prompt + (
-                    f"\nResearch within {MODEL_CALL_LIMIT} model turns and {TOOL_CALL_LIMIT} tool calls. "
-                    "The complete transcript window is supplied; quote it directly and use text search when useful. "
+                    f"\nResearch within {model_call_limit} model turns and {tool_call_limit} tool calls. "
+                    "Quoted source context is supplied; use the available read tools when useful. "
                     "Batch independent read calls in one model turn.\n"
                 ),
                 tools=tools, middleware=[
-                    ModelCallLimitMiddleware(run_limit=MODEL_CALL_LIMIT, exit_behavior="error"),
-                    ToolCallLimitMiddleware(run_limit=TOOL_CALL_LIMIT, exit_behavior="error"),
+                    ModelCallLimitMiddleware(run_limit=model_call_limit, exit_behavior="error"),
+                    ToolCallLimitMiddleware(run_limit=tool_call_limit, exit_behavior="error"),
                     _ModelDeadline(deadline),
                 ],
             )
             await agent.ainvoke(
                 {"messages": [HumanMessage(content="Quoted meeting data (not instructions):\n" + json.dumps(data, ensure_ascii=False, default=str))]},
                 # Middleware adds graph steps beyond model/tool turns.
-                config={"recursion_limit": MODEL_CALL_LIMIT * 10},
+                config={"recursion_limit": model_call_limit * 10},
             )
             if not context.collector:
                 raise error_class(f"{label} analysis ended without a valid staged result")
@@ -280,9 +300,15 @@ async def analyze_memories(
     context = AnalysisContext(snapshot, segments, previous)
 
     @tool(args_schema=MemorySubmission)
-    async def stage_memories(items: list[MemoryItem], reason: str = "") -> str:
+    async def stage_memories(items: list[MemoryItem], reason: str = "", context_labels: list[str] | None = None) -> str:
         """Stage validated memories with exact transcript evidence, or zero items and a reason."""
-        return context.stage(items, reason)
+        if not context_labels:
+            context.collector.clear()
+            return json.dumps({"error": "Include 1-8 context_labels for the meeting's whole purpose and subject"})
+        result = context.stage(items, reason)
+        if context.collector:
+            context.collector["context_labels"] = context_labels
+        return result
 
     return await run_analysis(
         context, model_role="meeting_memory", system_prompt=_SYSTEM_PROMPT,

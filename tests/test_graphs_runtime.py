@@ -64,6 +64,17 @@ def test_optional_meeting_source_allows_omission_and_validates_present_values():
             validate_inputs("meeting_ingest", {"source": source})
 
 
+@pytest.mark.parametrize("profile_id", ["", "not-a-profile-id", "123"])
+def test_persona_profile_id_rejected_at_both_dispatch_and_job_creation(profile_id):
+    from services.jobs.service import validate_input_params
+
+    inputs = {"profile_id": profile_id}
+    with pytest.raises(ValueError, match="profile_id"):
+        validate_inputs("persona", inputs)
+    with pytest.raises(ValueError, match="profile_id"):
+        validate_input_params({"graph_type": "persona", "graph_inputs": inputs, "timeout": 600})
+
+
 @pytest.mark.parametrize("type_name", [None, 1, [], {}, "unknown?"])
 def test_malformed_schema_type_has_descriptive_error(type_name):
     registry = {"broken": SimpleNamespace(INPUT_SCHEMA={"field": type_name})}

@@ -194,8 +194,11 @@ flow and restart the dashboard with the updated code:
 Stop meeting runners on other devices before upgrading, and update every runner before
 resuming the shared jobs. Migration `f8a0b1c2d3e4` adds independent persona leases, editable
 profile context, directed relationships and meeting vocabulary. Migration `9d2f6a8c1b40`
-adds field-level metadata provenance and protects existing human metadata. Both preserve
-completed persona receipts; existing relationship links are backfilled without model calls.
+adds field-level metadata provenance and protects existing human metadata. Migration
+`c7a8e9f0b1d2` adds meeting labels, protected assessment sections, resumable assessment work
+and profile history. Existing notes remain human-controlled; saved evidence becomes eligible
+for assessment by the persona job. These migrations preserve completed persona receipts;
+existing relationship links are backfilled without model calls.
 
 ```sh
 ./db.sh production --confirm-database <production-database-name>
@@ -245,18 +248,31 @@ The memory agent prioritizes important information, material decisions, risks, b
 explicit action items. A commitment includes the task, owner, due phrase and dependencies
 when supported by the transcript; missing owners or deadlines are never invented.
 
+Meetings have their own purpose and subject labels, such as `product`, `security`, `paralign`,
+`roadmapping`, `growth` and `operations`. New memory extraction proposes these labels in its
+existing agent call. On a saved meeting, edit labels directly or use **Suggest labels** to
+classify its saved title and summary, review the suggestion, and save it. This does not fetch
+or replay a transcript. Human labels, including an explicit clear, take precedence.
+Memories inherit these labels as separate meeting context, so older memories become easier
+to find without rewriting their content, publication receipts or embeddings. Own memory tags
+remain independently editable. Tag filters match both sets. Semantic searches retain their
+existing bounded candidate set; a tag filter does not perform an exhaustive vector-store scan.
+
 The independent persona job reads complete saved transcripts directly from PostgreSQL; it
 does not need a Granola connection or successful memory generation. Previously published
 memories provide optional context. Open **Profiles** in the sidebar to browse people across
-meetings. Each profile has its own page, with priorities, inferred drivers, communication
-patterns, strengths, development areas and directed perceptions/interactions. Meeting profile
-cards link to the same records.
-Each claim includes its confidence, whether it is self-reported, observed or inferred, and
-exact transcript evidence. Profile retries preserve completed memories.
+meetings. Its main sections are **Overview**, **Drivers and motivations**, **Strengths**,
+**Development areas**, **Working style**, and **Relationships**. An agent synthesizes these
+assessments from saved, current observations, rather than presenting observations as the
+assessment itself. Supporting evidence remains available in a collapsed section, with
+confidence, attribution and exact transcript quotations. Meeting profile cards link to the
+same records. Profile retries preserve completed memories.
 On **Profiles**, **Run personas** invokes the configured persona job through the same path
 as **Run Now** in Jobs. The processing card links its execution and identifies missing or
 device-scoped job setup. A run uses saved, unreviewed transcripts and preserves checkpoints;
-memory indexing is not a prerequisite. Transcript capture still belongs to the Meetings job.
+memory indexing is not a prerequisite. The same job updates assessments when their saved
+evidence changes. A profile's build action uses its existing saved evidence without reading
+transcripts again. Transcript capture still belongs to the Meetings job.
 
 Profiles accumulate evidence as new meetings are digested. The profile list shows the number
 of available source meetings and when each profile was last updated. The list and detail pages
@@ -274,7 +290,7 @@ email explicitly. Merging preserves evidence and human corrections; conflicting 
 cause the merge to fail instead of silently choosing one.
 
 Optional human context includes nicknames, company, job role, start date, supervisor and other
-metadata, plus notes for drivers, strengths and development areas. Nicknames are searchable
+metadata, plus editable assessment sections. Nicknames are searchable
 labels, not proof of identity. Human notes and claim corrections remain authoritative during
 later analysis. Directed relationships have their own editable labels and notes: A → B and
 B → A are distinct. Neither gender nor marital status is inferred from names or voice.
@@ -282,6 +298,22 @@ The persona agent fills missing metadata from explicit statements with transcrip
 Existing values stay intact; conflicting information can be recorded as claims for review.
 Editing or clearing a field protects that field from automatic fills. Generated metadata is
 hidden if its source transcript becomes unavailable or its attribution changes.
+
+Agent changes apply automatically. **History** records changes to assessments, metadata and
+evidence, with before/after comparisons; it is not an approval queue. Existing profiles can
+build their initial assessment from already saved observations. Unchanged evidence is skipped
+before a model call, and cosmetic tag/star edits do not trigger synthesis. Subjective sections
+need multiple supporting claims; otherwise the section reports insufficient evidence.
+Editing or clearing a section makes it human-controlled until you explicitly allow automatic
+updates again. Generated sections and history respect withdrawn or corrected source evidence.
+Historical generated text may also be hidden when its original participant attribution version
+changes; the raw audit is retained, and the UI explains that restriction. Unaffected current
+assessments and evidence survive roster-only edits without additional model calls.
+
+The agent can discover canonical profile names through a bounded directory and paginated
+lookup, then read a selected profile's current details. A directory match never attributes an
+anonymous speaker or silently merges people. When merging manually, the profile selected as
+the target survives; the source identity redirects to it in future meetings.
 
 Automatic matching across meetings uses a reliable email identity: an explicit speaker
 email or an unambiguous match between a named speaker and the meeting's named attendee roster.
@@ -325,7 +357,9 @@ The model roles `meeting_memory` and `persona` use the existing factory, default
 `KIMI_K3` with curator settings as fallback. Configure them independently with
 `MEETING_MEMORY_MODEL_*` and `PERSONA_MODEL_*`. `PERSONA_CONTEXT_PROVIDER=meetings` selects
 the saved-meeting context adapter; Slack context is not implemented. Persona's optional
-`source` input filters stored connection names, not live API credentials.
+`source` input filters transcript extraction by stored connection name, not live API credentials.
+Assessment refreshes use the profile's saved evidence across connections. Use `profile_id`
+to target one saved profile without transcript extraction. Choose either `profile_id` or `source`.
 
 Each graph handles one pending context within a 540-second work budget. Agent stages retain
 their 150-second budget and model calls their 45-second bound. Memory/persona jobs require
@@ -338,6 +372,8 @@ To import immediately, use the graphs MCP tool:
 ```python
 run_graph(type="meeting_ingest", inputs={})
 run_graph(type="persona", inputs={})
+# Synthesize one existing profile from its saved evidence only:
+run_graph(type="persona", inputs={"profile_id": "<profile UUID>"})
 ```
 
 The optional `source` input restricts an explicitly targeted run to one connection, for

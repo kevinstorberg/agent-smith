@@ -171,6 +171,32 @@ describe('paginationToParams (tested through api methods)', () => {
 });
 
 describe('specific API methods', () => {
+  it('serializes topic filters, label preview and revision-checked label saves separately', async () => {
+    globalThis.fetch = mockFetch({ items: [], total: 0 });
+    await api.meetings.list({ labels: ['security', 'paralign'] });
+    await api.meetings.suggestLabels('meeting-id', 3);
+    await api.meetings.updateLabels('meeting-id', { expected_revision: 3, expected_meeting_revision: 8, labels: ['security'] });
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    expect(new URL(calls[0][0]).searchParams.getAll('labels')).toEqual(['security', 'paralign']);
+    expect(calls[1][0]).toBe('/api/meetings/meeting-id/labels/suggest');
+    expect(JSON.parse(calls[1][1].body)).toEqual({ expected_revision: 3 });
+    expect(calls[2][1].method).toBe('PATCH');
+    expect(JSON.parse(calls[2][1].body)).toEqual({ expected_revision: 3, expected_meeting_revision: 8, labels: ['security'] });
+  });
+
+  it('uses exact profile history IDs and sends rebuilds through the configured-job endpoint', async () => {
+    globalThis.fetch = mockFetch({ items: [], total: 0 });
+    await api.profiles.history('profile-id', { limit: 25, offset: 50 });
+    await api.profiles.historyOne('profile-id', 7);
+    await api.profiles.rebuild('profile-id', 4);
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    expect(new URL(calls[0][0]).pathname).toBe('/api/profiles/profile-id/history');
+    expect(new URL(calls[0][0]).searchParams.get('offset')).toBe('50');
+    expect(new URL(calls[1][0]).pathname).toBe('/api/profiles/profile-id/history/7');
+    expect(calls[2][0]).toBe('/api/profiles/profile-id/rebuild');
+    expect(JSON.parse(calls[2][1].body)).toEqual({ expected_revision: 4 });
+  });
+
   it('meetings.list includes search, filters and paging without imposing a connection', async () => {
     globalThis.fetch = mockFetch({ items: [], total: 0 });
     await api.meetings.list({ q: 'release plan', limit: 25, offset: 50 });

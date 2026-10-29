@@ -74,7 +74,7 @@ class DigestionRun(processing.ProcessingRun):
         artifact = copy.deepcopy(record["memory_artifact"]) or {
             "version": 1, "offset": 0, "items": [], "published_ids": [],
             "created_at": datetime.now(timezone.utc).isoformat(), "reason": "",
-            "model": resolve_model_id("meeting_memory", "curator"), "prompt_version": 2,
+            "model": resolve_model_id("meeting_memory", "curator"), "prompt_version": 3,
         }
         if not record["memory_artifact"]:
             from services.meetings.vocabulary_db import relevant
@@ -86,6 +86,11 @@ class DigestionRun(processing.ProcessingRun):
             raise ValueError("Unsupported meeting memory artifact version")
         segments = expanded_segments(record["transcript"]["segments"])
         artifact["total_units"] = len(segments)
+        if artifact["offset"] < len(segments) and "context_labels_revision" not in artifact:
+            from services.meetings.labels_db import snapshot as label_snapshot
+
+            label_state = await run_db(label_snapshot, meeting_id)
+            artifact["context_labels_revision"] = label_state["labels_revision"]
         await run_db(memory_db.save_progress, meeting_id, self.owner, record["transcript_hash"], artifact)
         snapshot = {**record["snapshot"], **({"vocabulary": artifact["vocabulary"]} if artifact.get("vocabulary") else {})}
         while artifact["offset"] < len(segments):
@@ -96,7 +101,16 @@ class DigestionRun(processing.ProcessingRun):
                 atom["id"] = str(uuid5(_MEMORY_NAMESPACE, f"{meeting_id}:{len(artifact['items'])}"))
                 artifact["items"].append(atom)
             artifact.update(offset=end, reason=result.get("reason", ""))
+            if result.get("context_labels"):
+                artifact["context_labels"] = result["context_labels"]
             await run_db(memory_db.save_progress, meeting_id, self.owner, record["transcript_hash"], artifact)
+        if artifact.get("context_labels"):
+            from services.meetings.labels_db import apply_from_memory
+
+            self.memory_report["labels_outcome"] = await run_db(
+                apply_from_memory, meeting_id, self.owner, record["transcript_hash"], record["snapshot"]["revision"],
+                artifact["context_labels_revision"], artifact["context_labels"],
+            )
         for item in artifact["items"]:
             if item["id"] in artifact["published_ids"]:
                 continue

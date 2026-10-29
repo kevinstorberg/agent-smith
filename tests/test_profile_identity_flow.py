@@ -36,7 +36,7 @@ def identities(source, feed):
 
 
 @pytest.fixture
-def profile_agent(agents, monkeypatch):
+def profile_agent(agents, monkeypatch, extraction_only):
     from services.meetings import profile_analysis
 
     calls = []

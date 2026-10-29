@@ -20,6 +20,13 @@ beforeEach(() => {
 });
 
 describe('PersonaJob', () => {
+  it('reports applied assessments even when no new meeting was reviewed', async () => {
+    vi.mocked(api.jobs.runNow).mockResolvedValue({ ...result('idle'), output: JSON.stringify({ profiles: { outcome: 'idle', profiles: 0 }, assessments: { outcome: 'done', profiles: 2 } }) });
+    renderWithProviders(<PersonaJob onChanged={vi.fn()} />);
+    await screen.findByRole('link', { name: 'Persona review' });
+    fireEvent.click(screen.getByRole('button', { name: 'Run personas' }));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Updated 2 profile assessments. Changes are saved in History.'));
+  });
   it('separates loading from missing configuration and offers explicit setup without creating a job', async () => {
     vi.mocked(api.jobs.forGraph).mockResolvedValue({ items: [], total: 0 });
     renderWithProviders(<PersonaJob onChanged={vi.fn()} />);
@@ -62,7 +69,7 @@ describe('PersonaJob', () => {
 
   it.each([
     ['continued', 'Progress saved. Run again or let scheduled runs continue'],
-    ['idle', 'No unreviewed meeting transcripts are ready'],
+    ['idle', 'No unreviewed meeting transcripts or assessment updates are ready'],
   ])('reports %s without claiming all profiles are complete', async (value, message) => {
     vi.mocked(api.jobs.runNow).mockResolvedValue(result(value));
     renderWithProviders(<PersonaJob onChanged={vi.fn()} />);
@@ -76,7 +83,7 @@ describe('PersonaJob', () => {
     renderWithProviders(<PersonaJob onChanged={vi.fn()} />);
     await screen.findByRole('link', { name: 'Persona review' });
     fireEvent.click(screen.getByRole('button', { name: 'Run personas' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Persona review failed.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Persona update failed.');
     expect(screen.queryByText('Private diagnostic')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Run personas' })).toBeEnabled();
   });

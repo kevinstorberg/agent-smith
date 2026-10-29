@@ -31,6 +31,8 @@ ITEM = {
 
 
 def call(name, **arguments):
+    if name == "stage_memories":
+        arguments.setdefault("context_labels", ["product", "roadmapping"])
     return AIMessage(content="", tool_calls=[{"name": name, "args": arguments, "id": str(uuid4()), "type": "tool_call"}])
 
 
@@ -112,7 +114,7 @@ async def test_real_react_loop_reads_fresh_context_and_returns_only_staged_items
     previous = [{**ITEM, "content": "Earlier staged context from another window."}]
     result = await analyze_memories(SNAPSHOT, SEGMENTS, previous)
 
-    assert result == {"items": [ITEM], "reason": "New release decision"}
+    assert result == {"items": [ITEM], "reason": "New release decision", "context_labels": ["product", "roadmapping"]}
     assert roles == [("meeting_memory", "curator")]
     assert instance.tool_names == ["search_previous_memories", "get_memory", "search_transcript", "stage_memories"]
     assert searches == [("release date", "test-project", 5), ("release date", None, 5)]
@@ -224,7 +226,9 @@ async def test_zero_memories_with_reason_is_valid_and_empty_backend_search_count
         call("stage_memories", items=[], reason="This window adds no durable information."),
         AIMessage(content="Done"),
     ])
-    assert await analyze_memories(SNAPSHOT, SEGMENTS, []) == {"items": [], "reason": "This window adds no durable information."}
+    assert await analyze_memories(SNAPSHOT, SEGMENTS, []) == {
+        "items": [], "reason": "This window adds no durable information.", "context_labels": ["product", "roadmapping"],
+    }
 
 
 @pytest.mark.asyncio
@@ -264,7 +268,7 @@ async def test_twenty_distinct_evidence_lookups_can_stage_and_tool_budget_resets
         replies.extend([call("stage_memories", items=items), AIMessage(content="Done")])
         instance, _ = model(replies)
         result = await analyze_memories(SNAPSHOT, segments, [])
-        assert result == {"items": items, "reason": ""}
+        assert result == {"items": items, "reason": "", "context_labels": ["product", "roadmapping"]}
         observations = [message for message in instance.seen[-1] if isinstance(message, ToolMessage)]
         evidence = [json.loads(message.content)["items"] for message in observations if message.name == "search_transcript"]
         assert len(observations) == extra_reads + 22

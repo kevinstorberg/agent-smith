@@ -10,6 +10,16 @@ os.environ["APP_ENV"] = "test"
 import pytest
 
 
+@pytest.fixture
+def extraction_only(monkeypatch):
+    from services.personas.service import PersonaRun
+
+    async def skip_assessment(self):
+        return None
+
+    monkeypatch.setattr(PersonaRun, "build_assessments", skip_assessment)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _setup_test_db():
     from services.db.create import create_database

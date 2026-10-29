@@ -107,6 +107,9 @@ def test_changing_speaker_assignment_retires_wrong_attribution_without_losing_me
     profile = profile_db.get_profile(participants[0]["id"])
     claim = profile["claims"][0]
     profile_db.correct_claim(profile["id"], claim["id"], profile["revision"], "correct", "Human clarification", "Participant correction")
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("""UPDATE participant_profiles SET assessment_dirty=false, assessment_attempts=3,
+            assessment_error='SyntheticFailure', assessment_next_attempt_at=now()+interval '1 hour' WHERE id=%s""", (profile["id"],))
     digestion_db.release_profile_owner(owner)
     before = digestion_db.get_record(meeting_id)
     response = client.get(path(meeting_id) + "/participants").json()
@@ -124,6 +127,13 @@ def test_changing_speaker_assignment_retires_wrong_attribution_without_losing_me
     internal = profile_db.load_profiles(participants)[0]
     assert internal["claims"][0]["superseded"] and internal["claims"][0]["id"] == claim["id"]
     assert internal["claims"][0]["correction"]["content"] == "Human clarification"
+    from services.personas import assessment_db, revisions
+
+    history = revisions.list_history(profile["id"])["items"][0]
+    assert history["actor"] == "system" and history["source_id"] == meeting_id
+    assert history["changes"]["claims"]["after"]["changed"] == [claim["id"]]
+    assert assessment_db.has_requested_work(profile["id"])
+    assert profile_db.get_profile(profile["id"])["assessment"]["attempts"] == 0
 
 
 def test_existing_profile_can_be_assigned_but_deleted_profile_cannot(client, claimed, participants):
@@ -141,7 +151,7 @@ def test_existing_profile_can_be_assigned_but_deleted_profile_cannot(client, cla
 
 
 @pytest.mark.asyncio
-async def test_older_meeting_manual_roster_reaches_real_graph_catalog_without_republishing_memories(source, feed, agents, monkeypatch):
+async def test_older_meeting_manual_roster_reaches_real_graph_catalog_without_republishing_memories(source, feed, agents, monkeypatch, extraction_only):
     from services.meetings import profile_analysis
 
     person = email_participant(f"alex-{source.account_key}@example.invalid", "Alex")

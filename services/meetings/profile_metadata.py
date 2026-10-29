@@ -31,6 +31,11 @@ def source_valid(source: dict, contexts: dict[str, dict]) -> bool:
                 and context["participants_revision"] == source.get("participants_revision"))
 
 
+def claim_source_valid(claim: dict, contexts: dict[str, dict]) -> bool:
+    source = {**claim, "participants_revision": claim.get("participants_revision", 0)}
+    return source_valid(source, contexts)
+
+
 def visible(row: dict, contexts: dict[str, dict]) -> tuple[dict, dict]:
     metadata, provenance = row.get("metadata", {}), row.get("metadata_provenance", {})
     fields, sources = {}, {}
@@ -79,6 +84,16 @@ def fill_missing(row: dict, patches: list[dict], record: dict, contexts: dict[st
     return metadata, provenance
 
 
+def rebase_attribution(row: dict, meeting_id: str, revision: int, contexts: dict, mappings: list[dict]) -> dict:
+    provenance = deepcopy(row.get("metadata_provenance", {}))
+    for source in provenance.values():
+        if (source.get("meeting_id") == meeting_id and source_valid(source, contexts) and source.get("evidence")
+                and all(mapping.get(evidence["segment_id"]) == str(row["id"])
+                        for mapping in mappings for evidence in source["evidence"])):
+            source["participants_revision"] = revision
+    return provenance
+
+
 def merge(source: dict, target: dict, contexts: dict[str, dict]) -> tuple[dict, dict]:
     source_visible, _ = visible(source, contexts)
     target_visible, _ = visible(target, contexts)
@@ -101,13 +116,16 @@ def merge(source: dict, target: dict, contexts: dict[str, dict]) -> tuple[dict, 
     return metadata, provenance
 
 
-def source_sql(source: str) -> str:
+def source_sql(source: str, *, legacy_claim: bool = False) -> str:
+    participants_revision = f"{source}->>'participants_revision'"
+    if legacy_claim:
+        participants_revision = f"(CASE WHEN {source} ? 'participants_revision' THEN {participants_revision} ELSE '0' END)"
     return f"""EXISTS (SELECT 1 FROM meeting_summaries metadata_source
         JOIN meeting_digestions metadata_context ON metadata_context.meeting_id = metadata_source.id
         WHERE metadata_source.id::text = {source}->>'meeting_id'
           AND metadata_source.available AND metadata_context.transcript_status = 'ready'
           AND metadata_context.transcript_hash = {source}->>'transcript_hash'
-          AND metadata_source.participants_revision::text = {source}->>'participants_revision')"""
+          AND metadata_source.participants_revision::text = {participants_revision})"""
 
 
 def visible_sql(alias: str) -> str:

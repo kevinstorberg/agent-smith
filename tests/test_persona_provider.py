@@ -12,7 +12,7 @@ from services.personas import factory
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", [None, "dependency", "conflict"])
-async def test_persona_provider_owns_storage_for_nonmeeting_context(monkeypatch, failure):
+async def test_persona_provider_owns_storage_for_nonmeeting_context(monkeypatch, failure, extraction_only):
     context_id = "synthetic-messages:thread-42"
     row = {
         "context_id": context_id, "context_hash": "frozen-synthetic-content",

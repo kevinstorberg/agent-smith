@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 METADATA_FIELDS = {"gender", "marital_status", "company", "job_role", "start_date", "supervisor", "other"}
-SECTION_FIELDS = {"drivers", "strengths", "development_areas"}
+SECTION_FIELDS = {"overview", "drivers", "strengths", "development_areas", "working_style", "relationships"}
 MAX_NOTE_LENGTH = 4000
 
 

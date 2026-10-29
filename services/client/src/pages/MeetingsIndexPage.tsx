@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { api } from '../api';
 import type { MeetingSummary } from '../api';
@@ -9,15 +9,19 @@ import { usePolling } from '../hooks/usePolling';
 import { makeRowClickable } from '../utils/a11y';
 import { MeetingVocabulary } from '../components/MeetingVocabulary';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { parseTags } from '../utils/tags';
 
 export function MeetingsIndexPage() {
   const navigate = useNavigate();
   const [searchText, setSearchText] = useState('');
   const debouncedQuery = useDebouncedValue(searchText.trim());
   const query = searchText.trim() ? debouncedQuery : '';
+  const [labelInput, setLabelInput] = useState('');
+  const labelText = useDebouncedValue(labelInput);
+  const labels = useMemo(() => parseTags(labelText), [labelText]);
   const { items, total, loading, error, limit, offset, setLimit, setOffset, refresh } = usePagination<MeetingSummary>(
-    (pageLimit, pageOffset) => api.meetings.list({ limit: pageLimit, offset: pageOffset, q: query || undefined }),
-    [query],
+    (pageLimit, pageOffset) => api.meetings.list({ limit: pageLimit, offset: pageOffset, q: query || undefined, ...(labels.length ? { labels } : {}) }),
+    [query, labels],
   );
   usePolling(() => refresh({ showLoading: false }));
 
@@ -39,6 +43,10 @@ export function MeetingsIndexPage() {
           <button className="btn" type="button" onClick={() => setSearchText('')}>Clear</button>
         )}
       </div>
+      <div className="search-bar"><input aria-label="Filter meetings by labels" placeholder="Labels (comma-separated)" maxLength={600}
+        value={labelInput} onChange={event => setLabelInput(event.target.value)} />
+        {labelInput && <button className="btn" onClick={() => setLabelInput('')}>Clear labels</button>}
+      </div>
 
       {loading ? <div className="loading">Loading meetings...</div> : error ? (
         <div className="card" role="alert">
@@ -55,7 +63,9 @@ export function MeetingsIndexPage() {
             <tbody>
               {items.map(meeting => (
                 <tr key={meeting.id} {...makeRowClickable(() => navigate(`/meetings/${meeting.id}`))} style={{ cursor: 'pointer' }}>
-                  <td>{meeting.title || 'Untitled meeting'}</td>
+                  <td>{meeting.title || 'Untitled meeting'}{Boolean(meeting.labels?.length) && <div className="flex-wrap" style={{ marginTop: 6 }}>
+                    {meeting.labels!.map(label => <span className="tag tag-sm" key={label}>{label}</span>)}
+                  </div>}</td>
                   <td>{meeting.source_name}</td>
                   <td>{meeting.provider}</td>
                   <td><DateCell date={meeting.meeting_start || meeting.provider_created_at} /></td>

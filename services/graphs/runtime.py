@@ -95,6 +95,9 @@ def validate_inputs(
             raise ValueError(
                 f"graph '{graph_type}' input '{field}' missing or wrong type"
             )
+    validate_values = getattr(mod, "validate_input_values", None)
+    if validate_values is not None:
+        validate_values(inputs)
 
 
 async def dispatch(graph_type: str, inputs: dict[str, Any]) -> str:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
@@ -9,6 +10,7 @@ from services.api.routers.base import delete_response, empty_to_none, require_fo
 from services.api.routers.profiles import profile_change, router as profiles_router
 from services.api.routers.meeting_vocabulary import router as vocabulary_router
 from services.meetings import db, digestion_db, management_db, memory_db, profile_db
+from services.meetings import labels_db
 
 router = APIRouter()
 router.include_router(profiles_router, prefix="/profiles", include_in_schema=False)
@@ -27,6 +29,29 @@ class MeetingParticipantsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=0, strict=True)
     participants: list[MeetingParticipantRequest] = Field(max_length=200)
+
+
+class MeetingLabelsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=0, strict=True)
+    labels: list[str] = Field(max_length=8)
+    expected_meeting_revision: int | None = Field(default=None, ge=0, strict=True)
+
+
+class MeetingLabelSuggestionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=0, strict=True)
+
+
+def _label_change(action, *args):
+    try:
+        return action(*args)
+    except labels_db.MeetingLabelsNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from None
+    except labels_db.MeetingLabelsConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
 
 
 def _meeting_change(action, *args):
@@ -49,11 +74,13 @@ def list_all(
     before: str = Query(""),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    labels: list[str] = Query(default_factory=list, max_length=8),
 ):
     try:
         return db.list_summaries(
             source=empty_to_none(source), project=empty_to_none(project), query=empty_to_none(q),
             after=empty_to_none(after), before=empty_to_none(before), limit=limit, offset=offset,
+            labels=labels or None,
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
@@ -70,6 +97,37 @@ def status(source: str = Query("", max_length=100)):
 def get_one(summary_id: UUID):
     key = str(summary_id)
     return require_found(db.get_summary(key), "Meeting summary", key)
+
+
+@router.patch("/{summary_id}/labels")
+def update_labels(summary_id: UUID, body: MeetingLabelsRequest):
+    return _label_change(labels_db.update, str(summary_id), body.expected_revision, body.labels, body.expected_meeting_revision)
+
+
+@router.post("/{summary_id}/labels/suggest")
+async def suggest_labels(summary_id: UUID, body: MeetingLabelSuggestionRequest):
+    from services.meetings.analysis import AnalysisBudgetExpired
+    from services.meetings.label_analysis import LabelAnalysisError, SUGGEST_SECONDS, suggest_labels as suggest
+    from services.meetings.service import run_db
+
+    key = str(summary_id)
+    attempt = asyncio.timeout(SUGGEST_SECONDS)
+    try:
+        async with attempt:
+            original = await run_db(_label_change, labels_db.snapshot, key, body.expected_revision)
+            result = await suggest(original, deadline=attempt.when())
+            latest = await run_db(_label_change, labels_db.snapshot, key, body.expected_revision)
+            if latest["revision"] != original["revision"]:
+                raise HTTPException(status_code=409, detail="Meeting summary changed; generate a new suggestion")
+    except AnalysisBudgetExpired:
+        raise HTTPException(status_code=504, detail="Label suggestions timed out; saved labels are unchanged") from None
+    except TimeoutError:
+        if not attempt.expired():
+            raise
+        raise HTTPException(status_code=504, detail="Label suggestions timed out; saved labels are unchanged") from None
+    except LabelAnalysisError as error:
+        raise HTTPException(status_code=502, detail=f"Label suggestions failed ({error.error_type}); saved labels are unchanged") from None
+    return {"labels": result["labels"], "labels_revision": original["labels_revision"], "meeting_revision": original["revision"]}
 
 
 @router.get("/{summary_id}/participants")

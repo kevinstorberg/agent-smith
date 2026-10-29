@@ -14,6 +14,7 @@ import { useApiRead } from '../hooks/useApiRead';
 import { safeHttpUrl } from '../utils/links';
 import { MeetingProcessing } from '../components/MeetingProcessing';
 import { DetailPageHeader } from '../components/DetailPageHeader';
+import { MeetingLabels } from '../components/MeetingLabels';
 import type { MeetingTranscript as Transcript, MeetingMemories as Memories, MeetingProfiles as Personas } from '../api';
 
 export function MeetingDetailPage() {
@@ -23,13 +24,14 @@ export function MeetingDetailPage() {
   const [transcript, setTranscript] = useState<Transcript | null>(null);
   const [memories, setMemories] = useState<Memories | null>(null);
   const [personas, setPersonas] = useState<Personas | null>(null);
+  const [labelsBusy, setLabelsBusy] = useState(false);
   const processingChanged = useCallback(() => setProcessingVersion(previous => previous + 1), []);
   const read = useCallback(() => {
     if (!id) return Promise.reject(new Error('Meeting not found'));
     return api.meetings.get(id);
   }, [id]);
   const { data: meeting, loading, error, refresh: load } = useApiRead(read);
-  usePolling(() => load({ showLoading: false }), { enabled: Boolean(id) });
+  usePolling(() => load({ showLoading: false }), { enabled: Boolean(id) && !labelsBusy });
 
   const sourceUrl = meeting ? safeHttpUrl(meeting.source_url) : null;
 
@@ -51,6 +53,7 @@ export function MeetingDetailPage() {
           <nav aria-label="Meeting sections" className="flex-wrap" style={{ marginBottom: 16 }}>
             {['Summary', 'Participants', 'Transcript', 'Memories', 'Profiles'].map(label => <a className="text-link" key={label} href={`#meeting-${label.toLowerCase()}`}>{label}</a>)}
           </nav>
+          <MeetingLabels key={`labels-${meeting.id}`} meeting={meeting} onReload={() => load({ showLoading: false })} onBusyChange={setLabelsBusy} />
           <MeetingProcessing meetingId={meeting.id} transcript={transcript} memories={memories} personas={personas} onChanged={processingChanged} />
           <details className="card"><summary>Meeting details · {meeting.source_name}</summary>
             <dl style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '8px 16px', margin: 0 }}>

@@ -7,7 +7,7 @@ from psycopg2.extras import Json
 
 from services.db import get_connection
 from services.graphs.runtime import dispatch
-from services.meetings import analysis, digestion_db
+from services.meetings import analysis, digestion_db, labels_db
 from services.memory import db, server
 from services.memory.backends import get_backend
 from tests.test_meeting_memory_agent import call, model as model
@@ -28,13 +28,18 @@ async def test_real_react_to_publication_preserves_topic_tags_and_action_details
     }]
     instance, _ = model([
         call("search_previous_memories", query="Paralign MFA security review"),
-        call("stage_memories", items=items), AIMessage(content="Done"),
+        call("stage_memories", items=items, context_labels=["Security", "Paralign", "vendor-evaluation"]), AIMessage(content="Done"),
     ])
     result = json.loads(await dispatch("meeting_ingest", {"source": source.name}))
     assert result["memories"]["outcome"] == "done"
     saved = db.list_memories(meeting_only=True)
     assert len(saved) == 1
     assert saved[0]["tags"] == ["paralign", "security", "multi-factor-authentication"]
+    assert saved[0]["context_tags"] == ["security", "paralign", "vendor-evaluation"]
+    assert labels_db.snapshot(saved[0]["source_id"])["labels_source"] == "agent"
+    artifact = digestion_db.get_record(saved[0]["source_id"])["memory_artifact"]
+    assert artifact["prompt_version"] == 3 and artifact["context_labels"] == saved[0]["context_tags"]
+    assert result["memories"]["labels_outcome"] == "applied"
     assert saved[0]["from_meeting"] and saved[0]["source_type"] == "meeting"
     assert items[0]["content"] in saved[0]["content"]
     assert len(instance.seen) == 3
@@ -68,10 +73,13 @@ async def test_legacy_checkpoint_replays_raw_tags_after_lost_receipt_without_ano
         raise AssertionError("A saved window must not invoke an agent again")
 
     monkeypatch.setattr(analysis, "analyze_memories", forbidden)
+    labels_db.update(ready, 0, ["product", "roadmapping"])
     result = json.loads(await dispatch("meeting_ingest", {"source": source.name}))
     assert result["memories"]["outcome"] == "done"
     assert digestion_db.get_record(ready)["memory_artifact"]["published_ids"] == [memory_id]
     assert db.get(memory_id)["tags"] == ["decision"]
+    assert db.get(memory_id)["context_tags"] == ["product", "roadmapping"]
+    assert "context_labels" not in digestion_db.get_record(ready)["memory_artifact"]
     assert json.loads(get_backend().get_row(memory_id)["metadata"]["tags"]) == tags
     with pytest.raises(db.MemoryConflictError):
         db.publish(memory_id, content, repo=record["snapshot"].get("project"), tags=["decision"],
