@@ -8,12 +8,13 @@ interface RefreshOptions {
 export function usePagination<T>(
   fetcher: (limit: number, offset: number) => Promise<Paginated<T>>,
   deps: unknown[] = [],
+  initialLimit = 10,
 ) {
   const [items, setItems] = useState<T[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [limit, setLimit] = useState(10);
+  const [limit, setLimit] = useState(initialLimit);
   const [offset, setOffset] = useState(0);
   const mountedRef = useRef(false);
   const requestIdRef = useRef(0);

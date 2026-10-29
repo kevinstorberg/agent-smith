@@ -25,6 +25,8 @@ export function MeetingDetailPage() {
   const [memories, setMemories] = useState<Memories | null>(null);
   const [personas, setPersonas] = useState<Personas | null>(null);
   const [labelsBusy, setLabelsBusy] = useState(false);
+  const [statement, setStatement] = useState<{ meetingId: string; id: string; text: string } | null>(null);
+  const [participantsBusy, setParticipantsBusy] = useState(false);
   const processingChanged = useCallback(() => setProcessingVersion(previous => previous + 1), []);
   const read = useCallback(() => {
     if (!id) return Promise.reject(new Error('Meeting not found'));
@@ -76,8 +78,10 @@ export function MeetingDetailPage() {
             </div>
             <div className="markdown-content"><ReactMarkdown>{meeting.summary_markdown || meeting.summary_text}</ReactMarkdown></div>
           </div>
-          <MeetingParticipants key={meeting.id} meetingId={meeting.id} onChanged={processingChanged} />
-          <MeetingTranscript key={`transcript-${meeting.id}`} meetingId={meeting.id} refreshVersion={processingVersion} onState={setTranscript} />
+          <MeetingParticipants key={meeting.id} meetingId={meeting.id} onChanged={processingChanged} statement={statement?.meetingId === meeting.id ? statement : null} onStatementClosed={() => setStatement(null)} onBusyChange={setParticipantsBusy} />
+          <MeetingTranscript key={`transcript-${meeting.id}`} meetingId={meeting.id} refreshVersion={processingVersion} onState={setTranscript}
+            assignmentDisabled={participantsBusy}
+            onAssign={segment => { setStatement({ meetingId: meeting.id, id: segment.id, text: segment.text }); document.getElementById('meeting-participants')?.scrollIntoView({ behavior: 'smooth' }); }} />
           <MeetingMemories key={`memories-${meeting.id}`} meetingId={meeting.id} refreshVersion={processingVersion} onState={setMemories} />
           <MeetingProfiles key={`profiles-${meeting.id}`} meetingId={meeting.id} refreshVersion={processingVersion} onState={setPersonas} />
           {Object.keys(meeting.metadata).length > 0 && (

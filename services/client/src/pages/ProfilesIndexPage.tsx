@@ -15,6 +15,7 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { PersonaJob } from '../components/PersonaJob';
 
 const SORT_OPTIONS = [
+  ['starred_name_asc', 'Starred first · Name A–Z'],
   ['created_at_desc', 'Newest profiles'], ['created_at_asc', 'Oldest profiles'],
   ['name_asc', 'Name A–Z'], ['name_desc', 'Name Z–A'],
   ['updated_at_desc', 'Recently updated'], ['updated_at_asc', 'Least recently updated'],
@@ -29,7 +30,7 @@ export function ProfilesIndexPage() {
   const debouncedTags = useDebouncedValue(tagText);
   const tags = useMemo(() => parseTags(debouncedTags), [debouncedTags]);
   const [starredOnly, setStarredOnly] = useState(false);
-  const [sort, setSort] = useState('created_at_desc');
+  const [sort, setSort] = useState('starred_name_asc');
   const [notice, setNotice] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -85,19 +86,21 @@ export function ProfilesIndexPage() {
           <button className="btn" type="button" disabled={create.loading} onClick={() => setCreating(false)}>Cancel</button>
         </div>
       </form>}
-      <div className="search-bar">
-        <input aria-label="Search profiles" placeholder="Search names, nicknames or email..." maxLength={1000}
-          value={searchText} onChange={event => setSearchText(event.target.value)} />
-        {searchText && <button className="btn" type="button" onClick={() => setSearchText('')}>Clear</button>}
-      </div>
-      <div className="filters" style={{ marginTop: 8 }}>
-        <input aria-label="Filter by tags" placeholder="Tags (comma-separated)" value={tagText}
-          onChange={event => setTagText(event.target.value)} />
-        <label><input type="checkbox" checked={starredOnly} onChange={event => { setStarredOnly(event.target.checked); setOffset(0); }} /> Starred only</label>
-        <label htmlFor="profile-sort">Sort</label>
-        <select id="profile-sort" className="pagination-select" value={sort} onChange={event => { setSort(event.target.value); setOffset(0); }}>
-          {SORT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>
+      <div className="profile-filters">
+        <div><label className="form-label" htmlFor="profile-query">Search profiles</label>
+          <div className="profile-search-input"><input id="profile-query" className="input" placeholder="Name, nickname or email" maxLength={1000}
+            value={searchText} onChange={event => setSearchText(event.target.value)} />
+            {searchText && <button className="btn" type="button" onClick={() => setSearchText('')}>Clear</button>}</div>
+        </div>
+        <div><label className="form-label" htmlFor="profile-filter-tags">Filter by tags</label>
+          <input id="profile-filter-tags" className="input" placeholder="Comma-separated tags" value={tagText} onChange={event => setTagText(event.target.value)} />
+        </div>
+        <div><label className="form-label" htmlFor="profile-sort">Sort</label>
+          <select id="profile-sort" className="input" value={sort} onChange={event => { setSort(event.target.value); setOffset(0); }}>
+            {SORT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </div>
+        <label className="checkbox-label profile-starred-filter"><input className="form-checkbox" type="checkbox" checked={starredOnly} onChange={event => { setStarredOnly(event.target.checked); setOffset(0); }} /> Starred only</label>
       </div>
       {tags.length > 0 && <p className="text-muted-sm">Matches all tags: {tags.join(', ')}</p>}
       {notice && <p role="alert" className="card">{notice}</p>}

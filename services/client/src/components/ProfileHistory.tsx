@@ -11,7 +11,7 @@ import { CODE_BOX } from './codeBox';
 import { profileChanges } from '../utils/profileChanges';
 import { usePolling } from '../hooks/usePolling';
 
-export function ProfileHistory({ profileId, revision, onViewEvidence }: { profileId: string; revision: number; onViewEvidence?: () => void }) {
+export function ProfileHistory({ profileId, revision, onViewEvidence, evidenceHref = '#profile-evidence' }: { profileId: string; revision: number; onViewEvidence?: () => void; evidenceHref?: string }) {
   const [open, setOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [mode, setMode] = useState<'changes' | 'before' | 'after'>('changes');
@@ -46,8 +46,8 @@ export function ProfileHistory({ profileId, revision, onViewEvidence }: { profil
             <h4 style={{ marginBottom: 8 }}>{field.label}</h4>
             {mode === 'changes' ? <ContentDiff before={field.before} after={field.after} /> : <pre style={CODE_BOX}>{field[mode] || 'Empty'}</pre>}
           </section>)}
-          {changes?.evidence && <p style={{ marginTop: 12 }}>Observations: {changes.evidence}. <a className="text-link" href="#profile-evidence" onClick={onViewEvidence}>View supporting evidence</a></p>}
-          {changes?.relationships && <p style={{ marginTop: 12 }}>Relationships updated. Review the current connections in Relationships.</p>}
+          {changes?.evidence && <p style={{ marginTop: 12 }}>Observations: {changes.evidence}. <Link className="text-link" to={evidenceHref} onClick={onViewEvidence}>View supporting evidence</Link></p>}
+          {changes?.relationships && <p style={{ marginTop: 12 }}>Relationships updated. Review the current connections in Relationships and perceptions.</p>}
           {changes?.fields.length === 0 && !changes.evidence && !changes.relationships && !detail.data.source_restricted && <p className="text-muted-sm" style={{ marginTop: 12 }}>Supporting context updated. No profile text changed.</p>}
         </>}
       </section>}

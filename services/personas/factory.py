@@ -46,8 +46,9 @@ class MeetingContextProvider:
         from services.meetings import profile_db
         from services.meetings.participants import meeting_participants
 
-        snapshot = {**record["snapshot"], "manual_participants": record.get("participant_snapshot", []),
-                    "participants_revision": record.get("participants_revision", 0)}
+        from services.meetings.speaker_db import context_snapshot
+
+        snapshot = context_snapshot(record)
         participants = profile_db.resolve_participants(meeting_participants(snapshot, record["segments"]))
         participants = profile_db.include_linked_profiles(participants)
         return snapshot, participants, profile_db.load_profiles(participants)

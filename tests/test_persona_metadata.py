@@ -35,6 +35,9 @@ def ready_metadata_meeting(source, external_id="metadata", *, texts=(TEXT,)):
         digestion_db.save_capture(meeting_id, owner, digestion_db.get_context(meeting_id), {
             "segments": [transcript_page(text).segments[0].to_dict(index) for index, text in enumerate(texts)],
         }, complete=True)
+        # Metadata-only fixtures exercise the historical direct extraction contract.
+        with get_connection() as connection, connection.cursor() as cursor:
+            cursor.execute("UPDATE meeting_digestions SET speaker_status='legacy' WHERE meeting_id=%s", (meeting_id,))
     finally:
         digestion_db.release(meeting_id, owner)
     return meeting_id

@@ -3,6 +3,12 @@ import { describe, it, expect, vi } from 'vitest';
 import { usePagination } from '../usePagination';
 
 describe('usePagination', () => {
+  it('uses a configured page size on the first request', async () => {
+    const fetcher = vi.fn().mockResolvedValue({ items: [], total: 0 });
+    renderHook(() => usePagination(fetcher, [], 20));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledWith(20, 0));
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
   it('requests changed criteria from page zero without first fetching the old offset', async () => {
     const fetcher = vi.fn().mockResolvedValue({ items: [], total: 20 });
     const { result, rerender } = renderHook(({ query }) => usePagination((limit, offset) => fetcher(query, limit, offset), [query]), {

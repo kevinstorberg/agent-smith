@@ -43,8 +43,9 @@ def browse_profiles():
 def test_profiles_list_pages_all_scopes_with_immutable_order_and_lean_summaries(client, browse_profiles):
     marker, rows = browse_profiles
     expected = sorted((row for row in rows if not row["deleted"]), key=lambda row: (-row["created_at"].timestamp(), row["id"]))
-    first = client.get("/api/profiles", params={"q": marker, "limit": 2}).json()
-    second = client.get("/api/profiles", params={"q": marker, "limit": 2, "offset": 2}).json()
+    params = {"q": marker, "limit": 2, "sort": "created_at_desc"}
+    first = client.get("/api/profiles", params=params).json()
+    second = client.get("/api/profiles", params={**params, "offset": 2}).json()
     assert first["total"] == second["total"] == 4
     assert [row["id"] for row in first["items"] + second["items"]] == [row["id"] for row in expected]
     assert {row["identity_scope"] for row in first["items"]} == {"email", "meeting"}
@@ -54,7 +55,7 @@ def test_profiles_list_pages_all_scopes_with_immutable_order_and_lean_summaries(
     older = expected[-1]
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("UPDATE participant_profiles SET updated_at = clock_timestamp(), revision = revision + 1 WHERE id = %s", (older["id"],))
-    after = client.get("/api/profiles", params={"q": marker, "limit": 2}).json()
+    after = client.get("/api/profiles", params=params).json()
     assert [row["id"] for row in after["items"]] == [row["id"] for row in first["items"]]
     assert client.get("/api/profiles", params={"q": marker, "offset": 100}).json() == {"items": [], "total": 4}
 
@@ -98,7 +99,7 @@ def test_profiles_canonical_and_legacy_paths_share_handlers_and_publish_one_sche
     assert not any(path.startswith("/api/meetings/profiles") for path in schema["paths"])
     operations = [operation["operationId"] for path, methods in schema["paths"].items()
                   if path.startswith("/api/profiles") for operation in methods.values()]
-    assert len(operations) == len(set(operations)) == 15
+    assert len(operations) == len(set(operations)) == 16
 
     claim_id = profile["claims"][0]["id"]
     corrected = client.post(canonical + "/claims/" + claim_id, json={

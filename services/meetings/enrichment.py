@@ -33,16 +33,22 @@ def memory_content(snapshot: dict, item: dict) -> str:
 
 
 class DigestionRun(processing.ProcessingRun):
-    def __init__(self, source: str | None, *, digest: bool = True) -> None:
+    def __init__(self, source: str | None, *, digest: bool = True, meeting_id: str | None = None) -> None:
         super().__init__(digestion_db.release_owner)
         self.configs = configured_sources(source)
         self.digest = digest
+        self.source = source
+        self.meeting_id = str(UUID(meeting_id)) if meeting_id is not None else None
         self.transcript_report: dict = {"outcome": "idle"}
         self.memory_report: dict = {"outcome": "idle"}
+        self.speaker_report: dict = {"outcome": "idle"}
 
     async def prepare(self) -> None:
         claim = digestion_db.claim_digestion if self.digest else digestion_db.claim_transcript
-        self.record = await run_db(claim, list(self.configs), self.owner)
+        if self.digest:
+            self.record = await run_db(digestion_db.claim_identification, self.source, self.owner, self.meeting_id)
+        if self.record is None and self.meeting_id is None:
+            self.record = await run_db(claim, list(self.configs), self.owner)
         if self.record is None:
             return
         meeting_id = self.record["meeting_id"]
@@ -59,7 +65,21 @@ class DigestionRun(processing.ProcessingRun):
         self.record = await run_db(digestion_db.get_record, meeting_id)
 
     def has_memory_work(self) -> bool:
-        return bool(self.digest and self.record and self.record["transcript_status"] == "ready" and self.record["memory_status"] == "pending")
+        return bool(self.meeting_id is None and self.digest and self.record and self.record["transcript_status"] == "ready"
+                    and self.record.get("speaker_status") != "pending" and self.record["memory_status"] == "pending")
+
+    def has_speaker_work(self) -> bool:
+        return bool(self.digest and self.record and self.record["transcript_status"] == "ready" and self.record["speaker_status"] == "pending")
+
+    async def identify_participants(self) -> None:
+        from services.meetings import speaker_db, speaker_runtime
+
+        if self.has_speaker_work():
+            try:
+                await speaker_db_guard(self, speaker_runtime.identify)
+            except (speaker_db.AttributionInputChanged, speaker_db.PersonaAttributionBusy):
+                self.speaker_report.update(outcome="continued")
+            self.record = await run_db(digestion_db.get_record, self.record["meeting_id"])
 
     async def generate_memories(self) -> None:
         if self.has_memory_work():
@@ -84,7 +104,26 @@ class DigestionRun(processing.ProcessingRun):
             artifact["vocabulary"] = await run_db(relevant, text)
         if artifact["version"] != 1:
             raise ValueError("Unsupported meeting memory artifact version")
+        if "attribution_snapshot" not in artifact and artifact.get("offset", 0) == 0:
+            from services.meetings.speaker_db import context_snapshot
+            from services.meetings.participants import meeting_participants
+            from services.meetings.profile_db import resolve_participants
+
+            attribution = context_snapshot(record)
+            artifact["attribution_snapshot"] = {"transcript_hash": record["transcript_hash"],
+                                                "participants_revision": attribution["participants_revision"]}
+            raw = meeting_participants(attribution, record["transcript"]["segments"])
+            catalog = await run_db(resolve_participants, raw)
+            artifact["attribution_identities"] = {
+                segment_id: {"display_name": person["display_name"], "email": person.get("email"),
+                             "profile_id": person["id"] if "deleted" in person else None,
+                             "source": person.get("identity_source")}
+                for person in catalog if not person.get("deleted") for segment_id in person["segment_ids"]
+            }
         segments = expanded_segments(record["transcript"]["segments"])
+        if "attribution_identities" in artifact:
+            identities = artifact["attribution_identities"]
+            segments = [{**segment, "effective_speaker": identities.get(segment["id"])} for segment in segments]
         artifact["total_units"] = len(segments)
         if artifact["offset"] < len(segments) and "context_labels_revision" not in artifact:
             from services.meetings.labels_db import snapshot as label_snapshot
@@ -125,3 +164,15 @@ class DigestionRun(processing.ProcessingRun):
         await run_db(memory_db.save_progress, meeting_id, self.owner, record["transcript_hash"], artifact, complete=True)
         record.update(memory_status="done", memory_artifact=artifact)
         self.memory_report.update(outcome="done", memories=len(artifact["items"]), memory_ids=artifact["published_ids"])
+
+
+async def speaker_db_guard(run: DigestionRun, work) -> None:
+    from services.meetings import speaker_db
+
+    async def stage(record: dict, *, deadline: float) -> None:
+        try:
+            await work(run, record, deadline=deadline)
+        except (speaker_db.AttributionInputChanged, speaker_db.PersonaAttributionBusy) as error:
+            run.speaker_report.update(outcome="continued", waiting_for="persona_review" if isinstance(error, speaker_db.PersonaAttributionBusy) else "updated_participants")
+
+    await run.run_stage("speaker", run.speaker_report, stage, speaker_db.record_failure, budget=AGENT_SECONDS)

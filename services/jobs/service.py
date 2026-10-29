@@ -91,7 +91,8 @@ def has_requested_work(job: dict) -> bool:
     if graph_type == "meeting_ingest":
         from services.meetings.digestion import configured_sources
 
-        return digestion_db.has_requested_work(list(configured_sources(inputs.get("source"))), digest=inputs.get("digest", True))
+        return (inputs.get("digest", True) and digestion_db.has_requested_identification(inputs.get("source"), inputs.get("meeting_id"))) or (
+            not inputs.get("meeting_id") and digestion_db.has_requested_work(list(configured_sources(inputs.get("source"))), digest=inputs.get("digest", True)))
     return False
 
 

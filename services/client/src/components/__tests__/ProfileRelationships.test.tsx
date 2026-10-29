@@ -48,13 +48,12 @@ it('removes only after explicit confirmation using the edge revision', async () 
   confirm.mockRestore();
 });
 
-it('keeps a rejected relationship claim visibly rejected with the human reason', () => {
+it('links to paged evidence instead of rendering relationship observations in the assessment', () => {
   const claim = { ...profileFixture.claims[0], status: 'rejected' as const, correction: { action: 'reject' as const, content: null, reason: 'The speaker clarified their intent.', corrected_at: profileFixture.updated_at } };
   renderWithProviders(<ProfileRelationships profile={{ ...profileFixture, relationships: [{ ...edge, claims: [claim] }] }} disabled={false} onBusyChange={busy} onReload={reload} />);
-  fireEvent.click(screen.getByText('Meeting evidence (1)'));
-  expect(screen.getByText('Rejected by you')).toBeVisible();
-  expect(screen.getByText(claim.content)).toHaveStyle({ textDecoration: 'line-through' });
-  expect(screen.getByText('Reason: The speaker clarified their intent.')).toBeVisible();
+  expect(screen.getByRole('link', { name: 'Meeting evidence (1)' })).toHaveAttribute('href', `/profiles/${other.id}?tab=evidence`);
+  expect(screen.queryByText(claim.content)).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Jordan' })).toHaveAttribute('href', `/profiles/${other.id}`);
 });
 
 it('locks the captured relationship draft until the save finishes', async () => {

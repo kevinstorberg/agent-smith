@@ -106,7 +106,7 @@ export function ProfileMetadata({ profile, disabled, onBusyChange, onReload, edi
       <p className="text-muted-sm">All fields are optional. Your changes take priority over future persona updates. Supervisor text does not create a linked relationship.</p>
       <label className="form-label" htmlFor="profile-tags">Tags</label>
       <input id="profile-tags" className="input" disabled={update.loading} style={{ width: '100%' }} value={tags} onChange={event => setTags(event.target.value)} placeholder="Tags (comma-separated)" />
-      <label style={{ display: 'block', marginTop: 8 }}><input type="checkbox" disabled={update.loading} checked={starred} onChange={event => setStarred(event.target.checked)} /> Starred</label>
+      <label className="checkbox-label profile-metadata-star"><input className="form-checkbox" type="checkbox" disabled={update.loading} checked={starred} onChange={event => setStarred(event.target.checked)} /> Starred</label>
       {controlledEditing === undefined && <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
         <button className="btn" type="submit" disabled={update.loading}>Save profile</button>
         <button className="btn" type="button" onClick={() => { setEditing(false); setNotice(null); }} disabled={update.loading}>Cancel</button>
@@ -118,21 +118,18 @@ export function ProfileMetadata({ profile, disabled, onBusyChange, onReload, edi
       {controlledEditing === undefined && <button className="btn btn-sm" onClick={() => setEditing(true)} disabled={disabled || update.loading}>Edit profile</button>}
     </div>}
     {!editing && <>
-      {Boolean(profile.nicknames?.length) && <p className="text-muted-sm" style={{ marginTop: 8 }}>Also known as: {profile.nicknames!.join(', ')}</p>}
-      {Object.keys(profile.metadata || {}).length > 0 && <details style={{ marginTop: 12 }}><summary>About this person</summary>
-        <dl className="profile-details">{[...METADATA_FIELDS, { key: 'other' as const, label: 'Other' }].filter(field => profile.metadata?.[field.key]).map(field => {
+      <dl className="profile-details">
+        <div><dt>Nicknames</dt><dd>{profile.nicknames?.length ? profile.nicknames.join(', ') : <span className="text-muted-sm">Not set</span>}</dd></div>
+        {[...METADATA_FIELDS, { key: 'other' as const, label: 'Other' }].map(field => {
           const source = profile.metadata_provenance?.[field.key];
           return <div key={field.key}>
-            <dt>{field.label}</dt><dd style={{ whiteSpace: 'pre-wrap' }}>{profile.metadata![field.key]}
+            <dt>{field.label}</dt><dd style={{ whiteSpace: 'pre-wrap' }}>{profile.metadata?.[field.key] || <span className="text-muted-sm">Not set</span>}
               {source?.human && <p className="text-muted-sm">Edited by you</p>}
-              {source && 'meeting_id' in source && <details><summary>Meeting source</summary>
-                {source.evidence.map((evidence, index) => <blockquote key={`${evidence.segment_id}-${index}`}>{evidence.quote}</blockquote>)}
-                <Link className="text-link" to={`/meetings/${encodeURIComponent(source.meeting_id)}#meeting-transcript`}>View source meeting</Link>
-              </details>}
+              {source && 'meeting_id' in source && <p className="text-muted-sm"><Link className="text-link" to={`/meetings/${encodeURIComponent(source.meeting_id)}#meeting-transcript`}>View source meeting</Link></p>}
             </dd>
           </div>;
-        })}</dl>
-      </details>}
+        })}
+      </dl>
     </>}
     {notice && <p role="alert">{notice}</p>}
   </section>;

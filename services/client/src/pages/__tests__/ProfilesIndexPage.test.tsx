@@ -111,7 +111,7 @@ describe('ProfilesIndexPage', () => {
     expect(screen.getByText('Meeting only')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
     expect(screen.getByText('0')).toBeInTheDocument();
-    expect(read).toHaveBeenCalledWith({ limit: 10, offset: 0, q: undefined, sort: 'created_at_desc' });
+    expect(read).toHaveBeenCalledWith({ limit: 10, offset: 0, q: undefined, sort: 'starred_name_asc' });
   });
 
   it('opens the canonical detail from click or keyboard', async () => {
@@ -129,11 +129,11 @@ describe('ProfilesIndexPage', () => {
     renderWithProviders(<ProfilesIndexPage />);
     await screen.findByText('Alex');
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: undefined, sort: 'created_at_desc' }));
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: undefined, sort: 'starred_name_asc' }));
     fireEvent.change(screen.getByLabelText('Search profiles'), { target: { value: ' alex@example.test ' } });
-    await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'alex@example.test', sort: 'created_at_desc' }));
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'alex@example.test', sort: 'starred_name_asc' }));
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
-    await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: undefined, sort: 'created_at_desc' }));
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: undefined, sort: 'starred_name_asc' }));
   });
 
   it('distinguishes loading, empty profiles, and empty search results', async () => {
@@ -161,12 +161,12 @@ describe('ProfilesIndexPage', () => {
     renderWithProviders(<ProfilesIndexPage />);
     await screen.findByText('Alex');
     fireEvent.change(screen.getByLabelText('Search profiles'), { target: { value: 'alex' } });
-    await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'alex', sort: 'created_at_desc' }));
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'alex', sort: 'starred_name_asc' }));
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: 'alex', sort: 'created_at_desc' }));
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: 'alex', sort: 'starred_name_asc' }));
     read.mockClear();
     await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS); });
-    expect(read).toHaveBeenCalledWith({ limit: 10, offset: 10, q: 'alex', sort: 'created_at_desc' });
+    expect(read).toHaveBeenCalledWith({ limit: 10, offset: 10, q: 'alex', sort: 'starred_name_asc' });
     expect(screen.queryByText('Loading profiles...')).not.toBeInTheDocument();
   });
 
@@ -177,7 +177,7 @@ describe('ProfilesIndexPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() => expect(read).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 })));
     fireEvent.change(screen.getByLabelText('Filter by tags'), { target: { value: 'team, priority,team' } });
-    await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: undefined, sort: 'created_at_desc', tags: ['team', 'priority'] }));
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: undefined, sort: 'starred_name_asc', tags: ['team', 'priority'] }));
     fireEvent.click(screen.getByLabelText('Starred only'));
     fireEvent.change(screen.getByLabelText('Sort'), { target: { value: 'name_asc' } });
     await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: undefined, sort: 'name_asc', tags: ['team', 'priority'], starred: true }));

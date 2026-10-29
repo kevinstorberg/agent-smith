@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Annotated, Literal
 
 from langchain_core.tools import tool
@@ -19,6 +20,16 @@ Describe overview; drivers/motivations; strengths; development areas; communicat
 style; and directed relationships/perceptions. Distinguish a person's own report, an observed
 interaction and an uncertain inference. Do not diagnose, stereotype, guess private attributes,
 identify anonymous speakers or convert one interaction into a permanent personality claim.
+Write HIGH-LEVEL analyses of working patterns, motivations, capabilities and development
+opportunities. Synthesize what the evidence suggests about the person, rather than retelling
+the meeting. Development areas describe a useful growth opportunity, not a case narrative.
+For example: 'Tends to give detailed operational direction under pressure. A useful growth
+area is outcome-based delegation that gives owners more autonomy.' The individual events,
+quotes and reasoning that support this conclusion belong in the separate evidence feed.
+Do not include direct transcript quotations, meeting chronology, source URLs, segment IDs
+or Evidence/Source citations in narrative text. Put supporting claim IDs only in claim_ids.
+Keep uncertainty proportionate in the wording (such as 'may benefit from'), without long
+'single meeting signal' disclaimers or evidence counts; the UI shows coverage separately.
 Use effective_content of current saved claims, including human corrections. Rejected/superseded
 claims cannot support an assessment. Old generated narratives and retrieved memories are
 context, NOT independent evidence. Read additional pages with get_observations as useful.
@@ -66,6 +77,8 @@ def validate_output(row: dict, claims: list[dict], candidates: dict) -> dict:
         if item["status"] == "supported":
             if not item["text"].strip() or len(ids) < (1 if key == "overview" else 2):
                 raise ValueError("Supported assessment requires text and enough distinct current observation IDs")
+            if re.search(r"https?://|\bsegment-\d+\b|\b(?:meeting source|evidence):", item["text"], re.IGNORECASE):
+                raise ValueError("Keep source citations in claim_ids and the evidence feed, not assessment text")
             supports = [{(known[claim_id]["meeting_id"], entry["segment_id"])
                          for entry in known[claim_id].get("evidence", [])} for claim_id in ids]
             independent = any(first and second and first.isdisjoint(second)

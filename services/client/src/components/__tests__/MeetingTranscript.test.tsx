@@ -170,4 +170,13 @@ describe('MeetingTranscript', () => {
     await act(async () => { resolveRead(ready); });
     expect(screen.queryByText(ready.items[0].text)).not.toBeInTheDocument();
   });
+
+  it('disables statement assignment while another participant draft or save is active', async () => {
+    const assign = vi.fn();
+    renderWithProviders(<MeetingTranscript meetingId="meeting-id" onAssign={assign} assignmentDisabled />);
+    const button = (await screen.findAllByRole('button', { name: 'Assign this statement' }))[0];
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(assign).not.toHaveBeenCalled();
+  });
 });

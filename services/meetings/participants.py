@@ -45,14 +45,22 @@ def speaker_key(speaker: dict) -> str:
     return hashlib.sha256(json.dumps(original, sort_keys=True).encode()).hexdigest()
 
 
-def _manual_roster(snapshot: dict, segments: list[dict]) -> tuple[dict[str, dict], dict[str, dict[str, dict]]]:
+def current_manual(participants: list[dict], segments: list[dict]) -> list[dict]:
+    keys = {speaker_key(segment.get("speaker") or {}) for segment in segments}
+    ids = {segment["id"] for segment in segments}
+    return [entry for entry in participants if (not entry.get("speaker_key") or entry["speaker_key"] in keys)
+            and (not entry.get("segment_id") or entry["segment_id"] in ids)]
+
+
+def _manual_roster(snapshot: dict, segments: list[dict]) -> tuple[dict, dict, dict]:
     manual = snapshot.get("manual_participants", [])
     if not isinstance(manual, list) or len(manual) > 200:
         raise ValueError("Manual participants must contain at most 200 entries")
     if not manual:
-        return {}, {}
+        return {}, {}, {}
     observed = {speaker_key(segment.get("speaker") or {}) for segment in segments}
-    overrides, roster = {}, {}
+    observed_ids = {segment["id"] for segment in segments}
+    overrides, statements, roster = {}, {}, {}
     for entry in manual:
         if not isinstance(entry, dict):
             raise ValueError("Manual participant must be an object")
@@ -78,22 +86,31 @@ def _manual_roster(snapshot: dict, segments: list[dict]) -> tuple[dict[str, dict
         if participant:
             participant = {**participant, "identity_source": "manual_assignment"}
         key = entry.get("speaker_key")
+        segment_id = entry.get("segment_id")
+        if key is not None and segment_id is not None:
+            raise ValueError("Choose a statement or a transcript speaker, not both")
+        if segment_id is not None:
+            if not isinstance(segment_id, str) or segment_id not in observed_ids:
+                raise ValueError("Manual participant references an unknown transcript statement")
+            if segment_id in statements:
+                raise ValueError("A transcript statement cannot have multiple manual participants")
+            statements[segment_id] = {"name": name, "participant": participant}
         if key is not None:
             if not isinstance(key, str) or not re.fullmatch(r"[a-f0-9]{64}", key) or key not in observed:
                 raise ValueError("Manual participant references an unknown transcript speaker")
             if key in overrides:
                 raise ValueError("A transcript speaker cannot have multiple manual participants")
             overrides[key] = {"name": name, "participant": participant}
-        elif participant:
+        elif participant and segment_id is None:
             roster.setdefault(name.casefold(), {})[participant["id"]] = participant
-    return overrides, roster
+    return overrides, statements, roster
 
 
 def _speaker_participant(meeting_id: str, speaker: dict, roster: dict, override: dict | None) -> dict | None:
     if override and override["participant"]:
         return override["participant"]
     if override:
-        speaker = {**speaker, "name": override["name"]}
+        speaker = {**speaker, "name": override["name"], "email": None}
     name = _text(speaker.get("name"))
     label = _text(speaker.get("diarization_label"))
     if re.fullmatch(r"speaker[ _-]*\d+", name, re.IGNORECASE):
@@ -119,17 +136,34 @@ def _speaker_participant(meeting_id: str, speaker: dict, roster: dict, override:
 
 def meeting_participants(snapshot: dict, segments: list[dict]) -> list[dict]:
     meeting_id = str(UUID(snapshot["id"]))
-    overrides, roster = _manual_roster(snapshot, segments)
+    overrides, statements, roster = _manual_roster(snapshot, segments)
     for attendee in snapshot.get("metadata", {}).get("attendees", []):
         name, email = _text(attendee.get("name")), _email(attendee.get("email"))
         if name and email:
             participant = email_participant(email, name)
             roster.setdefault(name.casefold(), {}).setdefault(participant["id"], participant)
     participants = {}
+    automatic = {item["segment_id"]: item for item in snapshot.get("statement_attributions", []) if item.get("confidence") == "high"}
     for segment in segments:
         speaker = segment.get("speaker") or {}
-        override = overrides.get(speaker_key(speaker)) if overrides else None
+        override = statements.get(segment["id"]) or overrides.get(speaker_key(speaker))
         participant = _speaker_participant(meeting_id, speaker, roster, override)
+        named = _text(speaker.get("name"))
+        provider_identity = bool(_email(speaker.get("email")) or named and named.casefold() not in _UNNAMED
+                                 and not re.fullmatch(r"speaker[ _-]*\d+", named, re.IGNORECASE))
+        generated = automatic.get(segment["id"])
+        if generated and not override and not provider_identity:
+            identified = {"name": generated["name"], "email": generated.get("email"), "source": "statement_attribution"}
+            person = None
+            if generated.get("email"):
+                person = email_participant(generated["email"], generated["name"])
+            if generated.get("profile_id"):
+                profile_id = str(UUID(generated["profile_id"]))
+                person = _participant(f"profile:{profile_id}", generated["name"], generated.get("email"),
+                                      "email" if generated.get("email") else "meeting", profile_id=profile_id)
+            participant = _speaker_participant(meeting_id, identified, {}, {"name": generated["name"], "participant": person})
+            if participant:
+                participant = {**participant, "identity_source": "automatic_statement"}
         if participant is None:
             continue
         person = participants.setdefault(participant["id"], {**participant, "segment_ids": []})

@@ -54,13 +54,10 @@ it('preserves a human-cleared section until automatic updates are explicitly all
   await waitFor(() => expect(api.profiles.update).toHaveBeenCalledWith(profileFixture.id, { expected_revision: 1, allow_agent_sections: ['overview'] }));
 });
 
-it('puts the narrative first and keeps only accepted observations under a collapsed disclosure', () => {
+it('shows the narrative with a link to evidence without rendering observation bodies', () => {
   renderWithProviders(<ProfileNotes profile={{ ...profileFixture, section_notes: { drivers: 'Alex values clear ownership and reliable commitments.' }, section_evidence: { drivers: { human: false, status: 'supported', claim_ids: [profileFixture.claims[0].id], coverage: { claim_count: 1, meeting_count: 1 } } } }} disabled={false} onBusyChange={busy} onReload={reload} />);
   expect(screen.getByText('Alex values clear ownership and reliable commitments.')).toBeVisible();
   expect(screen.getByText('Updated automatically · 1 observation from 1 meeting')).toBeInTheDocument();
-  const evidence = screen.getByText('Supporting evidence (1)').closest('details');
-  expect(evidence).not.toHaveAttribute('open');
-  expect(screen.getByText(profileFixture.claims[0].content)).not.toBeVisible();
-  fireEvent.click(screen.getByText('Supporting evidence (1)'));
-  expect(screen.getByText(profileFixture.claims[0].content)).toBeVisible();
+  expect(screen.getByRole('link', { name: 'Supporting evidence (1)' })).toHaveAttribute('href', `/profiles/${profileFixture.id}?tab=evidence`);
+  expect(screen.queryByText(profileFixture.claims[0].content)).not.toBeInTheDocument();
 });

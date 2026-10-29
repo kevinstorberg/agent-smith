@@ -95,7 +95,7 @@ def list_all(
     offset: int = Query(0, ge=0),
     tags: list[str] = Query(default_factory=list, max_length=profile_db.MAX_TAGS),
     starred: bool | None = Query(None),
-    sort: str = Query("created_at_desc"),
+    sort: str = Query(profile_db.DEFAULT_PROFILE_SORT),
 ):
     try:
         return profile_db.list_profiles(query=empty_to_none(q), limit=limit, offset=offset, tags=tags, starred=starred, sort=sort)
@@ -104,21 +104,27 @@ def list_all(
 
 
 @router.get("/{profile_id}")
-def get_one(profile_id: UUID):
+def get_one(profile_id: UUID, include_evidence: bool = True):
     key = str(profile_id)
-    return require_found(profile_db.get_profile(key), "Participant profile", key)
+    return require_found(profile_change(profile_db.get_profile, key, include_evidence=include_evidence), "Participant profile", key)
+
+
+@router.get("/{profile_id}/claims")
+def list_claims(profile_id: UUID, limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0)):
+    key = str(profile_id)
+    return require_found(profile_change(profile_db.list_claims, key, limit=limit, offset=offset), "Profile", key)
 
 
 @router.post("", status_code=201)
-def create_profile(body: CreateProfileRequest):
-    return profile_change(profile_db.create_profile, body.display_name, email=body.email)
+def create_profile(body: CreateProfileRequest, include_evidence: bool = True):
+    return profile_change(profile_db.create_profile, body.display_name, email=body.email, include_evidence=include_evidence)
 
 
 @router.patch("/{profile_id}")
-def update_metadata(profile_id: UUID, body: ProfileMetadataRequest):
+def update_metadata(profile_id: UUID, body: ProfileMetadataRequest, include_evidence: bool = True):
     key = str(profile_id)
-    require_found(profile_db.get_profile(key), "Participant profile", key)
-    return profile_change(profile_db.update_metadata, key, body.expected_revision,
+    require_found(profile_db.get_profile(key, include_evidence=False), "Participant profile", key)
+    return profile_change(profile_db.update_metadata, key, body.expected_revision, include_evidence=include_evidence,
                           **body.model_dump(include={"display_name", "tags", "starred", "metadata", "nicknames", "section_notes", "allow_agent_sections"}, exclude_unset=True))
 
 
@@ -159,21 +165,21 @@ async def rebuild(profile_id: UUID, body: ProfileRevisionRequest):
 
 
 @router.get("/{profile_id}/relationships")
-def list_relationships(profile_id: UUID):
+def list_relationships(profile_id: UUID, include_evidence: bool = True):
     key = str(profile_id)
-    profile = require_found(profile_db.get_profile(key), "Profile", key)
+    profile = require_found(profile_db.get_profile(key, include_evidence=include_evidence), "Profile", key)
     return {"items": profile["relationships"], "total": len(profile["relationships"])}
 
 
 @router.post("/{profile_id}/relationships", status_code=201)
-def create_relationship(profile_id: UUID, body: RelationshipCreate):
+def create_relationship(profile_id: UUID, body: RelationshipCreate, include_evidence: bool = True):
     return profile_change(relationship_db.create, str(profile_id), str(body.target_id), body.expected_revision,
-                          body.target_revision, body.label, body.notes)
+                          body.target_revision, body.label, body.notes, include_evidence=include_evidence)
 
 
 @router.patch("/{profile_id}/relationships/{relationship_id}")
-def edit_relationship(profile_id: UUID, relationship_id: UUID, body: RelationshipUpdate):
-    return profile_change(relationship_db.update, str(profile_id), str(relationship_id), body.expected_revision,
+def edit_relationship(profile_id: UUID, relationship_id: UUID, body: RelationshipUpdate, include_evidence: bool = True):
+    return profile_change(relationship_db.update, str(profile_id), str(relationship_id), body.expected_revision, include_evidence=include_evidence,
                           **body.model_dump(include={"label", "notes"}, exclude_unset=True))
 
 
@@ -185,25 +191,25 @@ def remove_relationship(profile_id: UUID, relationship_id: UUID, body: ProfileRe
 
 
 @router.post("/{profile_id}/merge")
-def merge_profiles(profile_id: UUID, body: MergeProfilesRequest):
+def merge_profiles(profile_id: UUID, body: MergeProfilesRequest, include_evidence: bool = True):
     key, target = str(profile_id), str(body.target_id)
-    require_found(profile_db.get_profile(key), "Participant profile", key)
-    require_found(profile_db.get_profile(target), "Participant profile", target)
-    return profile_change(profile_db.merge_profiles, key, target, body.expected_revision, body.target_revision)
+    require_found(profile_db.get_profile(key, include_evidence=False), "Participant profile", key)
+    require_found(profile_db.get_profile(target, include_evidence=False), "Participant profile", target)
+    return profile_change(profile_db.merge_profiles, key, target, body.expected_revision, body.target_revision, include_evidence=include_evidence)
 
 
 @router.post("/{profile_id}/aliases")
-def link_alias(profile_id: UUID, body: ProfileAliasRequest):
+def link_alias(profile_id: UUID, body: ProfileAliasRequest, include_evidence: bool = True):
     key = str(profile_id)
-    require_found(profile_db.get_profile(key), "Participant profile", key)
-    return profile_change(profile_db.link_alias, key, body.email, body.expected_revision)
+    require_found(profile_db.get_profile(key, include_evidence=False), "Participant profile", key)
+    return profile_change(profile_db.link_alias, key, body.email, body.expected_revision, include_evidence=include_evidence)
 
 
 @router.post("/{profile_id}/claims/{claim_id}")
-def correct_claim(profile_id: UUID, claim_id: UUID, body: ClaimCorrectionRequest):
+def correct_claim(profile_id: UUID, claim_id: UUID, body: ClaimCorrectionRequest, include_evidence: bool = True):
     key = str(profile_id)
-    require_found(profile_db.get_profile(key), "Participant profile", key)
-    return profile_change(profile_db.correct_claim, key, str(claim_id), body.expected_revision, body.action, body.content, body.reason)
+    require_found(profile_db.get_profile(key, include_evidence=False), "Participant profile", key)
+    return profile_change(profile_db.correct_claim, key, str(claim_id), body.expected_revision, body.action, body.content, body.reason, include_evidence=include_evidence)
 
 
 @router.delete("/{profile_id}")

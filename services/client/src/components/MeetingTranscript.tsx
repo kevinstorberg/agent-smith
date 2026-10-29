@@ -24,7 +24,10 @@ function transcriptTime(value: string): string {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-export function MeetingTranscript({ meetingId, refreshVersion, onState }: { meetingId: string; refreshVersion?: number; onState?: (state: Transcript) => void }) {
+export function MeetingTranscript({ meetingId, refreshVersion, onState, onAssign, assignmentDisabled = false }: {
+  meetingId: string; refreshVersion?: number; onState?: (state: Transcript) => void; onAssign?: (statement: TranscriptSegment) => void;
+  assignmentDisabled?: boolean;
+}) {
   const [transcript, setTranscript] = useState<Transcript | null>(null);
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -141,6 +144,8 @@ export function MeetingTranscript({ meetingId, refreshVersion, onState }: { meet
                   ? <Link className="text-link" to={`/profiles/${segment.effective_speaker.profile_id}`}>{segment.effective_speaker.display_name}</Link>
                   : segment.effective_speaker?.display_name || speakerName(segment.speaker)}</strong>
                 {segment.effective_speaker?.source === 'manual_assignment' && <span className="tag tag-sm">Assigned by you</span>}
+                {segment.effective_speaker?.source === 'automatic_statement' && <span className="tag tag-sm">Identified from context</span>}
+                {onAssign && <button className="btn btn-sm" disabled={assignmentDisabled} onClick={() => onAssign(segment)}>Assign this statement</button>}
                 {segment.start_time && (
                   <span className="text-muted-sm">
                     <time dateTime={segment.start_time}>{transcriptTime(segment.start_time)}</time>

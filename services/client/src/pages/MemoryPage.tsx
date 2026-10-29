@@ -124,8 +124,8 @@ export function MemoryPage() {
       </div>
 
       <div className="search-bar" style={{ marginTop: 8 }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
-          <input type="checkbox" checked={meetingsOnly} onChange={event => { setMeetingsOnly(event.target.checked); setOffset(0); }} />
+        <label className="checkbox-label">
+          <input className="form-checkbox" type="checkbox" checked={meetingsOnly} onChange={event => { setMeetingsOnly(event.target.checked); setOffset(0); }} />
           Meetings only
         </label>
         <input

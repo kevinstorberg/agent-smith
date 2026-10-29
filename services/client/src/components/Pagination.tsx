@@ -3,7 +3,8 @@ interface PaginationProps {
   limit: number;
   offset: number;
   onPageChange: (offset: number) => void;
-  onLimitChange: (limit: number) => void;
+  onLimitChange?: (limit: number) => void;
+  disabled?: boolean;
 }
 
 const LIMIT_OPTIONS = [10, 25, 50];
@@ -26,7 +27,7 @@ function buildPageNumbers(current: number, total: number): (number | 'ellipsis')
   return pages;
 }
 
-export function Pagination({ total, limit, offset, onPageChange, onLimitChange }: PaginationProps) {
+export function Pagination({ total, limit, offset, onPageChange, onLimitChange, disabled = false }: PaginationProps) {
   if (total === 0) return null;
 
   const totalPages = Math.ceil(total / limit);
@@ -48,7 +49,7 @@ export function Pagination({ total, limit, offset, onPageChange, onLimitChange }
       <div className="pagination-controls">
         <button
           className="pagination-btn"
-          disabled={currentPage <= 1}
+          disabled={disabled || currentPage <= 1}
           onClick={() => goToPage(currentPage - 1)}
         >
           Previous
@@ -60,6 +61,7 @@ export function Pagination({ total, limit, offset, onPageChange, onLimitChange }
             <button
               key={p}
               className={`pagination-btn${p === currentPage ? ' active' : ''}`}
+              disabled={disabled}
               onClick={() => goToPage(p)}
             >
               {p}
@@ -68,20 +70,21 @@ export function Pagination({ total, limit, offset, onPageChange, onLimitChange }
         )}
         <button
           className="pagination-btn"
-          disabled={currentPage >= totalPages}
+          disabled={disabled || currentPage >= totalPages}
           onClick={() => goToPage(currentPage + 1)}
         >
           Next
         </button>
-        <select
+        {onLimitChange && <select
           className="pagination-select"
           value={limit}
+          disabled={disabled}
           onChange={e => onLimitChange(Number(e.target.value))}
         >
           {LIMIT_OPTIONS.map(n => (
             <option key={n} value={n}>{n} / page</option>
           ))}
-        </select>
+        </select>}
       </div>
     </div>
   );

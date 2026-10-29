@@ -32,6 +32,11 @@ preserve changes in decisions and constraints rather than erasing earlier contex
 Use search_transcript when helpful to locate exact evidence within this window. Every proposed memory
 must cite a supplied segment_id and an exact, nonblank quote from that segment's text.
 Do not infer a named speaker from anonymous diarization labels or attendee membership.
+When a statement includes effective_speaker, use that resolved per-statement identity as
+the attribution authority. Preserve the raw transcript quote unchanged. One audio channel
+can contain several people, so use each statement's annotation rather than copying a name
+to neighboring statements. Unresolved annotations remain unknown; roster membership alone
+does not identify a speaker. Manual attribution takes priority over generated attribution.
 Do not invent facts, commitments, dates or identities. Clearly retain uncertainty/questions.
 
 Prioritize important information that will help future work: product/business context,

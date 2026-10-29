@@ -12,8 +12,9 @@ from services.meetings.db import ClaimLostError, _cursor, _serialize
 LEASE_SECONDS = 600
 _CLAIM_LOCK = "agent-smith:meeting-digestion"
 _PROFILE_LOCK = "agent-smith:persona"
-_MEMORY_ELIGIBILITY = "(d.transcript_status = 'pending' AND d.next_attempt_at <= clock_timestamp()) OR (d.transcript_status = 'ready' AND d.memory_status = 'pending' AND d.memory_next_attempt_at <= clock_timestamp())"
-_PROFILE_ELIGIBILITY = "d.transcript_status = 'ready' AND d.profile_status = 'pending' AND d.profile_next_attempt_at <= clock_timestamp()"
+_SPEAKER_ELIGIBILITY = "d.transcript_status = 'ready' AND d.speaker_status = 'pending' AND d.speaker_next_attempt_at <= clock_timestamp()"
+_MEMORY_ELIGIBILITY = f"(d.transcript_status = 'pending' AND d.next_attempt_at <= clock_timestamp()) OR ({_SPEAKER_ELIGIBILITY}) OR (d.transcript_status = 'ready' AND d.speaker_status != 'pending' AND d.memory_status = 'pending' AND d.memory_next_attempt_at <= clock_timestamp())"
+_PROFILE_ELIGIBILITY = "d.transcript_status = 'ready' AND d.speaker_status != 'pending' AND d.profile_status = 'pending' AND d.profile_next_attempt_at <= clock_timestamp()"
 _SNAPSHOT_FIELDS = (
     "id", "provider", "account_key", "external_id", "source_name", "project", "title",
     "summary_text", "source_url", "metadata", "provider_updated_at", "revision",
@@ -30,6 +31,20 @@ def claim_transcript(identities: list[tuple[str, str]], owner: str) -> dict | No
 
 def claim_digestion(identities: list[tuple[str, str]], owner: str) -> dict | None:
     return _claim(identities, owner, _MEMORY_ELIGIBILITY)
+
+
+def claim_identification(source: str | None, owner: str, meeting_id: str | None = None) -> dict | None:
+    if meeting_id is not None:
+        meeting_id = str(UUID(meeting_id))
+    eligibility = _SPEAKER_ELIGIBILITY + " AND (%s::uuid IS NULL OR d.meeting_id=%s::uuid)"
+    return _claim(None, owner, eligibility, source=source, extra_params=(meeting_id, meeting_id), snapshot_participants=False)
+
+
+def has_requested_identification(source: str | None = None, meeting_id: str | None = None) -> bool:
+    if meeting_id is not None:
+        meeting_id = str(UUID(meeting_id))
+    eligibility = _SPEAKER_ELIGIBILITY + " AND (%s::uuid IS NULL OR d.meeting_id=%s::uuid)"
+    return _has_requested(None, eligibility, source=source, extra_params=(meeting_id, meeting_id))
 
 
 def _work_scope(identities, source):
@@ -55,19 +70,19 @@ def has_requested_profile_work(source: str | None = None) -> bool:
     return _has_requested(None, _PROFILE_ELIGIBILITY, source=source, profile=True)
 
 
-def _has_requested(identities, eligibility, *, source=None, profile=False) -> bool:
+def _has_requested(identities, eligibility, *, source=None, profile=False, extra_params=()) -> bool:
     scope, params = _work_scope(identities, source)
     lease = "profile_claim_until" if profile else "claim_until"
     with _cursor() as cur:
         cur.execute(
             f"""SELECT EXISTS (SELECT 1 FROM meeting_digestions d JOIN meeting_summaries m ON m.id = d.meeting_id
                 WHERE m.available AND d.requested_at IS NOT NULL AND ({scope}) AND ({eligibility}))
-                AND NOT EXISTS (SELECT 1 FROM meeting_digestions WHERE {lease} > clock_timestamp()) AS due""", params,
+                AND NOT EXISTS (SELECT 1 FROM meeting_digestions WHERE {lease} > clock_timestamp()) AS due""", (*params, *extra_params),
         )
         return cur.fetchone()["due"]
 
 
-def _claim(identities, owner: str, eligibility: str, *, source=None, profile=False) -> dict | None:
+def _claim(identities, owner: str, eligibility: str, *, source=None, profile=False, extra_params=(), snapshot_participants=True) -> dict | None:
     if identities is not None and not identities:
         return None
     if not isinstance(owner, str) or not owner.strip() or len(owner) > 100:
@@ -88,7 +103,7 @@ def _claim(identities, owner: str, eligibility: str, *, source=None, profile=Fal
                  AND ({eligibility})
                ORDER BY (d.requested_at IS NULL), d.requested_at, d.created_at, d.meeting_id
                LIMIT 1 FOR UPDATE OF d FOR SHARE OF m""",
-            params,
+            (*params, *extra_params),
         )
         row = cur.fetchone()
         if row is None:
@@ -96,9 +111,10 @@ def _claim(identities, owner: str, eligibility: str, *, source=None, profile=Fal
         cur.execute(
             f"""UPDATE meeting_digestions SET {prefix}claim_owner = %s,
                {prefix}claim_until = clock_timestamp() + %s * interval '1 second', updated_at = clock_timestamp(),
-               participant_snapshot = %s, participants_revision = %s
+               participant_snapshot = CASE WHEN %s THEN %s ELSE participant_snapshot END,
+               participants_revision = CASE WHEN %s THEN %s ELSE participants_revision END
                WHERE meeting_id = %s RETURNING *""",
-            (owner, LEASE_SECONDS, Json(row["manual_participants"]), row["participants_revision"], row["meeting_id"]),
+            (owner, LEASE_SECONDS, snapshot_participants, Json(row["manual_participants"]), snapshot_participants, row["participants_revision"], row["meeting_id"]),
         )
         return _serialize(dict(cur.fetchone()))
 
@@ -211,7 +227,7 @@ def get_transcript(meeting_id: str, *, limit: int = 100, offset: int = 0) -> dic
         raise ValueError("Transcript limit must be 1-200 and offset nonnegative")
     with _cursor() as cur:
         cur.execute(
-            """SELECT m.id, m.manual_participants, m.metadata, transcript_status, error_type, captured_at, claim_until > clock_timestamp() AS running,
+            """SELECT m.id, m.manual_participants, m.metadata, transcript_status, error_type, captured_at, transcript_hash,speaker_artifact,claim_until > clock_timestamp() AS running,
                CASE WHEN transcript_status = 'ready' THEN jsonb_array_length(transcript->'segments') ELSE 0 END AS total,
                CASE WHEN transcript_status = 'ready' THEN
                  (SELECT coalesce(jsonb_agg(segment ORDER BY position), '[]'::jsonb)
@@ -223,9 +239,11 @@ def get_transcript(meeting_id: str, *, limit: int = 100, offset: int = 0) -> dic
         row = cur.fetchone()
         if row and row["transcript_status"] == "ready":
             from services.meetings.participants_db import effective_speakers
+            from services.meetings.speaker_db import committed
 
-            speakers = effective_speakers(cur, dict(row), row["items"])
-            row["items"] = [{**segment, "effective_speaker": speakers.get(segment["id"])} for segment in row["items"]]
+            speakers = effective_speakers(cur, {**dict(row), "statement_attributions": committed(dict(row))}, row["items"])
+            manual = {person["segment_id"]: person for person in row["manual_participants"] if person.get("segment_id")}
+            row["items"] = [{**segment, "effective_speaker": speakers.get(segment["id"]), "speaker_assignment": manual.get(segment["id"])} for segment in row["items"]]
     if row is None:
         return None
     if row["transcript_status"] is None:

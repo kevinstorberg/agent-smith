@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Link } from 'react-router';
 import { api, ApiError } from '../api';
@@ -6,8 +7,9 @@ import type { ParticipantProfile, ProfileSectionKey, ProfileUpdateInput } from '
 import { useApiMutation } from '../hooks/useApiMutation';
 import { formatProfileCoverage, PROFILE_SECTIONS } from '../utils/profileFields';
 
-export function ProfileNotes({ profile, disabled, onBusyChange, onReload }: {
+export function ProfileNotes({ profile, disabled, onBusyChange, onReload, sectionKeys, relationships }: {
   profile: ParticipantProfile; disabled: boolean; onBusyChange: (busy: boolean) => void; onReload: () => void;
+  sectionKeys?: ProfileSectionKey[]; relationships?: ReactNode;
 }) {
   const [edit, setEdit] = useState<{ key: ProfileSectionKey; value: string; revision: number; conflicted: boolean } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -22,11 +24,11 @@ export function ProfileNotes({ profile, disabled, onBusyChange, onReload }: {
     },
   });
   useEffect(() => { onBusyChange(Boolean(edit) || save.loading); }, [edit, save.loading, onBusyChange]);
-  return <section aria-label="Profile assessment" className="profile-assessment-sections">
-    {PROFILE_SECTIONS.map(([key, label]) => {
+  return <section aria-label={sectionKeys?.length === 1 && sectionKeys[0] === 'overview' ? 'Profile overview' : 'Profile assessment'} className="profile-assessment-sections">
+    {PROFILE_SECTIONS.filter(([key]) => !sectionKeys || sectionKeys.includes(key)).map(([key, label]) => {
       const text = profile.section_notes?.[key];
       const source = profile.section_evidence?.[key];
-      const observations = profile.claims.filter(claim => claim.status !== 'rejected' && source?.claim_ids?.includes(claim.id));
+      const observationCount = source?.claim_count ?? source?.claim_ids?.length ?? source?.coverage?.claim_count ?? 0;
       return <section className="card" aria-label={`${label} assessment`} key={key}>
         <div className="page-header profiles-header"><h3 className="section-title">{label}</h3>
           {edit?.key !== key && <button className="btn btn-sm" disabled={disabled || Boolean(edit) || save.loading} onClick={() => {
@@ -58,14 +60,9 @@ export function ProfileNotes({ profile, disabled, onBusyChange, onReload }: {
             </> : source && <span className="text-muted-sm">{source.status === 'insufficient_evidence' ? 'More evidence needed' : 'Updated automatically'}
               {source.coverage && ` · ${formatProfileCoverage(source.coverage)}`}</span>}
           </div>
-          {observations.length > 0 && <details style={{ marginTop: 12 }}><summary>Supporting evidence ({observations.length})</summary>
-            {observations.map(claim => <article key={claim.id} style={{ marginTop: 12 }}>
-              <p>{claim.status === 'corrected' ? claim.correction?.content || claim.content : claim.content}</p>
-              <p className="text-muted-sm">{claim.confidence} confidence · {claim.epistemic === 'inference' ? 'Hypothesis' : claim.epistemic === 'self_report' ? 'Self-reported' : 'Observed'}</p>
-              <Link className="text-link" to={`/meetings/${claim.meeting_id}#meeting-transcript`}>Source meeting</Link>
-            </article>)}
-          </details>}
+          {observationCount > 0 && <p className="profile-evidence-link"><Link className="text-link" to={`/profiles/${profile.id}?tab=evidence`}>Supporting evidence ({observationCount})</Link></p>}
         </>}
+        {key === 'relationships' && relationships}
       </section>;
     })}
     {notice && <p className="card" role="alert">{notice}</p>}

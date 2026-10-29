@@ -23,12 +23,14 @@ class MeetingParticipantRequest(BaseModel):
     email: str | None = Field(None, max_length=320)
     profile_id: UUID | None = None
     speaker_key: str | None = Field(None, pattern=r"^[0-9a-f]{64}$")
+    segment_id: str | None = Field(None, min_length=1, max_length=200)
 
 
 class MeetingParticipantsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=0, strict=True)
     participants: list[MeetingParticipantRequest] = Field(max_length=200)
+    expected_transcript_hash: str | None = Field(None, pattern=r"^[0-9a-f]{64}$")
 
 
 class MeetingLabelsRequest(BaseModel):
@@ -139,7 +141,14 @@ def get_participants(summary_id: UUID):
 @router.put("/{summary_id}/participants")
 def update_participants(summary_id: UUID, body: MeetingParticipantsRequest):
     entries = [person.model_dump(mode="json", exclude_none=True) for person in body.participants]
-    return _meeting_change(management_db.update_participants, str(summary_id), body.expected_revision, entries)
+    return _meeting_change(management_db.update_participants, str(summary_id), body.expected_revision, entries, body.expected_transcript_hash)
+
+
+@router.post("/{summary_id}/identify-participants")
+def identify_participants(summary_id: UUID):
+    from services.meetings.speaker_db import request_identification
+
+    return _meeting_change(request_identification, str(summary_id))
 
 
 @router.post("/{summary_id}/process")

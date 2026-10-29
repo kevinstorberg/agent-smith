@@ -18,13 +18,14 @@ beforeEach(() => {
 });
 
 describe('ProfileMetadata', () => {
-  it('shows generated metadata with exact evidence and distinguishes human-owned fields', () => {
+  it('shows all metadata fields with source links and distinguishes human-owned fields', () => {
     renderWithProviders(<ProfileMetadata profile={{ ...profileFixture, metadata: { company: 'Paralign', job_role: 'Engineering lead' },
       metadata_provenance: { company: { meeting_id: 'meeting-source', transcript_hash: 'hash', participants_revision: 0,
         evidence: [{ segment_id: 'segment-4', quote: 'I work at Paralign.' }] }, job_role: { human: true } } }}
       disabled={false} onBusyChange={busy} onReload={reload} />);
     expect(screen.getByText('Paralign')).toBeInTheDocument();
-    expect(screen.getByText('I work at Paralign.')).toBeInTheDocument();
+    expect(screen.queryByText('I work at Paralign.')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Not set')).toHaveLength(6);
     expect(screen.getByText('Edited by you')).toBeInTheDocument();
     expect(screen.getByText('View source meeting')).toHaveAttribute('href', '/meetings/meeting-source#meeting-transcript');
   });

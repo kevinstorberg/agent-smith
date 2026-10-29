@@ -6,10 +6,10 @@ interface Props {
 }
 
 export function ProfileStar({ name, starred, disabled, onClick }: Props) {
-  return <button className="btn btn-sm" aria-label={`${starred ? 'Unstar' : 'Star'} ${name}`} aria-pressed={starred}
-    disabled={disabled} style={{ color: starred ? 'var(--warning)' : 'var(--text-muted)' }}
+  return <button className="profile-star" aria-label={`${starred ? 'Unstar' : 'Star'} ${name}`} aria-pressed={starred}
+    disabled={disabled}
     onKeyDown={event => event.stopPropagation()}
     onClick={event => { event.stopPropagation(); onClick(); }}>
-    {starred ? '★' : '☆'}
+    <span aria-hidden="true">{starred ? '★' : '☆'}</span>
   </button>;
 }

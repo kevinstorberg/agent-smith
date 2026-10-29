@@ -34,6 +34,8 @@ def ready_meeting(source, external_id="one"):
     }, complete=True)
     record = digestion_db.get_record(meeting_id)
     memory_db.save_progress(meeting_id, owner, record["transcript_hash"], {"items": [], "reason": "No novel memory"}, complete=True)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE meeting_digestions SET speaker_status='legacy' WHERE meeting_id=%s", (meeting_id,))
     digestion_db.release(meeting_id, owner)
     return meeting_id
 

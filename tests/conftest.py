@@ -88,6 +88,16 @@ def clean_meeting_rows(account_key: str):
         cur.execute("DELETE FROM meeting_sync_state WHERE account_key = %s", (account_key,))
 
 
+@pytest.fixture
+def unidentified_speakers(monkeypatch):
+    from services.meetings import speaker_analysis
+
+    async def no_assignments(*args, **kwargs):
+        return {"assignments": [], "reason": "No grounded speaker identity"}
+
+    monkeypatch.setattr(speaker_analysis, "identify_statements", no_assignments)
+
+
 def clean_audit_rows(*patterns: str):
     from services.db import get_connection
     with get_connection() as conn:

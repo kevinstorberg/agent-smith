@@ -68,6 +68,18 @@ describe('parseError (tested through api methods)', () => {
 });
 
 describe('GET requests', () => {
+  it('reads compact profiles and loads only the requested evidence page', async () => {
+    globalThis.fetch = mockFetch({});
+    await api.profiles.get('profile/id');
+    await api.profiles.claims('profile/id', { limit: 20, offset: 40 });
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    const detail = new URL(calls[0][0]);
+    expect(detail.pathname).toBe('/api/profiles/profile%2Fid');
+    expect(Object.fromEntries(detail.searchParams)).toEqual({ include_evidence: 'false' });
+    const claims = new URL(calls[1][0]);
+    expect(claims.pathname).toBe('/api/profiles/profile%2Fid/claims');
+    expect(Object.fromEntries(claims.searchParams)).toEqual({ limit: '20', offset: '40' });
+  });
   it('constructs correct URL with path', async () => {
     globalThis.fetch = mockFetch({ id: 1, title: 'test' });
     await api.plans.get(42);
@@ -105,6 +117,17 @@ describe('POST requests', () => {
 });
 
 describe('PUT requests', () => {
+  it('stamps statement assignments with the captured transcript and queues explicit identification', async () => {
+    globalThis.fetch = mockFetch({ status: 'queued' });
+    const body = { expected_revision: 3, expected_transcript_hash: 'captured-hash', participants: [{ name: 'Alex', segment_id: 'segment-2' }] };
+    await api.meetings.updateParticipants('meeting-id', body);
+    await api.meetings.identifyParticipants('meeting-id');
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    expect(JSON.parse(calls[0][1].body)).toEqual(body);
+    expect(calls[0][1].method).toBe('PUT');
+    expect(calls[1][0]).toBe('/api/meetings/meeting-id/identify-participants');
+    expect(calls[1][1].method).toBe('POST');
+  });
   it('sends PUT method', async () => {
     globalThis.fetch = mockFetch({ id: 1 });
     await api.plans.update(1, { title: 'Updated' });
@@ -262,7 +285,7 @@ describe('specific API methods', () => {
     expect(new URL(calls[0][0]).pathname).toBe('/api/meetings/meeting-id/profiles');
     expect(new URL(calls[1][0]).pathname).toBe('/api/profiles/profile-id');
     expect(calls[2][0]).toBe('/api/meetings/meeting-id/profiles/retry');
-    expect(calls[3][0]).toBe('/api/profiles/profile-id/claims/claim-id');
+    expect(calls[3][0]).toBe('/api/profiles/profile-id/claims/claim-id?include_evidence=false');
     expect(JSON.parse(calls[3][1].body)).toEqual(body);
     expect(calls[4][0]).toBe('/api/profiles/profile-id');
     expect(calls[4][1].method).toBe('DELETE');
@@ -287,7 +310,7 @@ describe('specific API methods', () => {
     await api.profiles.create({ display_name: 'Jordan Rivera', email: 'jordan@example.test' });
     await api.profiles.update('profile-id', { expected_revision: 1, display_name: 'Jordan Rivera updated' });
     const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
-    expect(calls[0][0]).toBe('/api/profiles');
+    expect(calls[0][0]).toBe('/api/profiles?include_evidence=false');
     expect(calls[0][1].method).toBe('POST');
     expect(JSON.parse(calls[0][1].body)).toEqual({ display_name: 'Jordan Rivera' });
     expect(JSON.parse(calls[1][1].body)).toEqual({ display_name: 'Jordan Rivera', email: 'jordan@example.test' });
@@ -313,7 +336,7 @@ describe('specific API methods', () => {
     await api.meetings.vocabulary.update('term', { expected_revision: 8, definition: '' });
     await api.meetings.vocabulary.remove('term', 9);
     const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
-    expect(calls.map(call => call[0])).toEqual(['/api/profiles/person/relationships', '/api/profiles/person/relationships/edge', '/api/profiles/person/relationships/edge', '/api/meetings/vocabulary', '/api/meetings/vocabulary/term', '/api/meetings/vocabulary/term']);
+    expect(calls.map(call => call[0])).toEqual(['/api/profiles/person/relationships?include_evidence=false', '/api/profiles/person/relationships/edge?include_evidence=false', '/api/profiles/person/relationships/edge', '/api/meetings/vocabulary', '/api/meetings/vocabulary/term', '/api/meetings/vocabulary/term']);
     expect(JSON.parse(calls[0][1].body)).toEqual({ target_id: 'target', target_revision: 5, expected_revision: 3, label: 'reports to', notes: '' });
     expect(JSON.parse(calls[2][1].body)).toEqual({ expected_revision: 4 });
     expect(JSON.parse(calls[4][1].body)).toEqual({ expected_revision: 8, definition: '' });
@@ -332,12 +355,12 @@ describe('specific API methods', () => {
     await api.profiles.merge('source', { expected_revision: 2, target_id: 'target', target_revision: 3 });
     await api.profiles.linkEmail('target', { expected_revision: 4, email: 'known@example.test' });
     const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
-    expect(calls[1][0]).toBe('/api/profiles/source');
+    expect(calls[1][0]).toBe('/api/profiles/source?include_evidence=false');
     expect(calls[1][1].method).toBe('PATCH');
     expect(JSON.parse(calls[1][1].body)).toEqual({ expected_revision: 1, tags: ['team'], starred: true });
-    expect(calls[2][0]).toBe('/api/profiles/source/merge');
+    expect(calls[2][0]).toBe('/api/profiles/source/merge?include_evidence=false');
     expect(JSON.parse(calls[2][1].body)).toEqual({ expected_revision: 2, target_id: 'target', target_revision: 3 });
-    expect(calls[3][0]).toBe('/api/profiles/target/aliases');
+    expect(calls[3][0]).toBe('/api/profiles/target/aliases?include_evidence=false');
     expect(JSON.parse(calls[3][1].body)).toEqual({ expected_revision: 4, email: 'known@example.test' });
   });
 

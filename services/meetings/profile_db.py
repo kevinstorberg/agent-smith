@@ -21,11 +21,13 @@ _WRITE_LOCK = "agent-smith:profile-write"
 MAX_TAGS = 20
 MAX_TAG_LENGTH = 100
 MAX_PROFILE_NAME_LENGTH = 200
+DEFAULT_PROFILE_SORT = "starred_name_asc"
 PROFILE_SORTS = {
-    f"{name}_{direction}": (column, direction.upper())
+    f"{name}_{direction}": f"{column} {direction.upper()}"
     for name, column in (("name", "lower({alias}.display_name)"), ("created_at", "{alias}.created_at"), ("updated_at", "{alias}.updated_at"))
     for direction in ("asc", "desc")
 }
+PROFILE_SORTS[DEFAULT_PROFILE_SORT] = "{alias}.starred DESC, lower({alias}.display_name) ASC"
 _CANONICAL_JOIN = """FROM participant_profiles requested JOIN participant_profiles canonical
     ON canonical.id = COALESCE(requested.merged_into, requested.id)"""
 
@@ -48,11 +50,14 @@ def profile_write_cursor():
             raise ProfileRevisionConflict("Profiles are busy; try again.") from None
 
 
-def canonical_rows(cur, profile_ids: list[str], *, lock: bool = False, metadata_only: bool = False) -> dict[str, dict | None]:
+def canonical_rows(cur, profile_ids: list[str], *, lock: bool = False, metadata_only: bool = False,
+                   include_history: bool = True) -> dict[str, dict | None]:
     keys = list(dict.fromkeys(str(UUID(str(profile_id))) for profile_id in profile_ids))
     if not keys:
         return {}
     columns = "canonical.id, canonical.identity_key, canonical.display_name, canonical.email, canonical.identity_scope, canonical.merged_into, canonical.deleted" if metadata_only else "canonical.*"
+    if not metadata_only and not include_history:
+        columns = "to_jsonb(canonical) - 'merge_history' AS profile"
     cur.execute(
         f"SELECT requested.id AS requested_id, {columns} {_CANONICAL_JOIN} WHERE requested.id IN %s"
         + (" FOR UPDATE OF canonical" if lock else ""), (tuple(keys),),
@@ -61,29 +66,59 @@ def canonical_rows(cur, profile_ids: list[str], *, lock: bool = False, metadata_
     for found in cur.fetchall():
         row = dict(found)
         requested_id = str(row.pop("requested_id"))
+        if not metadata_only and not include_history:
+            row = row["profile"]
         if row["merged_into"] is not None:
             raise ProfileRevisionConflict("Profile identity changed; reload the canonical profile")
         result[requested_id] = row
     return result
 
 
-def _canonical(cur, profile_id: str, *, lock: bool = False) -> dict | None:
-    return canonical_rows(cur, [profile_id], lock=lock)[str(UUID(profile_id))]
+def _canonical(cur, profile_id: str, *, lock: bool = False, include_history: bool = True) -> dict | None:
+    return canonical_rows(cur, [profile_id], lock=lock, include_history=include_history)[str(UUID(profile_id))]
 
 
-def _detail(cur, row: dict) -> dict:
+def _compact_profile(profile: dict) -> dict:
+    fields = ("id", "display_name", "email", "identity_scope", "revision", "deleted", "created_at", "updated_at",
+              "tags", "starred", "aliases", "emails", "nicknames", "metadata", "section_notes", "assessment", "relationships")
+    result = {key: profile[key] for key in fields if key in profile}
+    claims = profile["claims"]
+    provenance = profile.get("metadata_provenance", {})
+    meetings = {claim["meeting_id"] for claim in claims}
+    meetings.update(source["meeting_id"] for source in provenance.values() if source.get("meeting_id"))
+    result.update(claims=[], evidence_loaded=False, claim_count=len(claims), meeting_count=len(meetings))
+    result["metadata_provenance"] = {
+        key: {"human": True} if source.get("human") else {
+            "meeting_id": source["meeting_id"], "evidence": [], "evidence_count": len(source.get("evidence", [])),
+        }
+        for key, source in provenance.items()
+    }
+    proof_fields = ("human", "status", "coverage", "generated_at")
+    result["section_evidence"] = {
+        key: {**{field: proof[field] for field in proof_fields if field in proof}, "claim_count": len(proof.get("claim_ids", []))}
+        for key, proof in profile.get("section_evidence", {}).items()
+    }
+    return result
+
+
+def _detail(cur, row: dict, *, include_evidence: bool = True) -> dict:
+    if type(include_evidence) is not bool:
+        raise ValueError("Profile include_evidence must be a boolean")
+    if not include_evidence:
+        row = {key: value for key, value in row.items() if key != "merge_history"}
     cur.execute("SELECT id, display_name, email, identity_scope FROM participant_profiles WHERE merged_into = %s ORDER BY id", (row["id"],))
     aliases = [_serialize(dict(alias)) for alias in cur.fetchall()]
     from services.meetings.relationship_db import for_profiles
 
     visible = _visible(cur, [row])[0]
     emails = sorted({value.strip().casefold() for value in [row.get("email"), *(alias.get("email") for alias in aliases)] if value})
-    relationships = for_profiles(cur, [row])
+    relationships = for_profiles(cur, [row], include_evidence=include_evidence)
     from services.personas.assessment_db import describe
 
     contexts = _source_contexts(cur, [row], {claim["meeting_id"] for claim in row["claims"] if claim.get("meeting_id")})
-    return {**visible, "aliases": aliases, "emails": emails, "relationships": relationships[str(row["id"])],
-            "assessment": describe(row, sections.effective_claims(row, contexts))}
+    result = {**visible, "aliases": aliases, "emails": emails, "relationships": relationships[str(row["id"])],
+              "assessment": describe(row, sections.effective_claims(row, contexts))}
+    return result if include_evidence else _compact_profile(result)
 
 
 def _catalog(participants: list[dict]) -> dict[str, dict]:
@@ -199,10 +234,37 @@ def load_profiles(participants: list[dict]) -> list[dict]:
         return [{**row, "relationships": relationships[row["id"]]} for row in visible]
 
 
-def get_profile(profile_id: str) -> dict | None:
+def get_profile(profile_id: str, *, include_evidence: bool = True) -> dict | None:
     with _cursor() as cur:
-        row = _canonical(cur, profile_id)
-        return _detail(cur, row) if row and not row["deleted"] else None
+        row = _canonical(cur, profile_id, include_history=include_evidence)
+        return _detail(cur, row, include_evidence=include_evidence) if row and not row["deleted"] else None
+
+
+def list_claims(profile_id: str, *, limit: int = 20, offset: int = 0) -> dict | None:
+    key = str(UUID(profile_id))
+    if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
+        raise ValueError("Profile claim limit must be 1-100 and offset must be nonnegative")
+    with _cursor() as cur:
+        cur.execute(f"""WITH profile AS (
+                SELECT canonical.id, canonical.revision, canonical.deleted, canonical.merged_into, canonical.claims
+                {_CANONICAL_JOIN} WHERE requested.id = %s
+            ), visible AS (
+                SELECT claim.value, claim.ordinality FROM profile
+                CROSS JOIN LATERAL jsonb_array_elements(profile.claims) WITH ORDINALITY claim(value, ordinality)
+                WHERE NOT profile.deleted AND profile.merged_into IS NULL
+                  AND claim.value->>'superseded' IS DISTINCT FROM 'true'
+                  AND {profile_metadata.source_sql('claim.value', legacy_claim=True)}
+            ) SELECT profile.id AS profile_id, profile.revision, profile.deleted, profile.merged_into,
+                (SELECT count(*) FROM visible) AS total,
+                coalesce((SELECT jsonb_agg(page.value ORDER BY page.ordinality) FROM (
+                    SELECT value, ordinality FROM visible ORDER BY ordinality LIMIT %s OFFSET %s
+                ) page), '[]'::jsonb) AS items FROM profile""", (key, limit, offset))
+        row = cur.fetchone()
+        if row is None or row["deleted"]:
+            return None
+        if row["merged_into"] is not None:
+            raise ProfileRevisionConflict("Profile identity changed; reload the canonical profile")
+        return _serialize({key: row[key] for key in ("profile_id", "revision", "items", "total")})
 
 
 def _profile_name(value: str) -> str:
@@ -218,7 +280,7 @@ def _email_matches(cur, identity: dict) -> list[dict]:
     return [dict(found) for found in cur.fetchall()]
 
 
-def create_profile(display_name: str, email: str | None = None) -> dict:
+def create_profile(display_name: str, email: str | None = None, *, include_evidence: bool = True) -> dict:
     from services.meetings.participants import email_participant
 
     name = _profile_name(display_name)
@@ -238,7 +300,7 @@ def create_profile(display_name: str, email: str | None = None) -> dict:
         )
         row = dict(cur.fetchone())
         revisions.record(cur, None, row, actor="human", source="manual")
-        return _detail(cur, row)
+        return _detail(cur, row, include_evidence=include_evidence)
 
 
 def _tags(tags: list[str]) -> list[str]:
@@ -254,11 +316,11 @@ def _tags(tags: list[str]) -> list[str]:
 
 
 def list_profiles(query: str | None = None, limit: int = 20, offset: int = 0, *,
-                  tags: list[str] | None = None, starred: bool | None = None, sort: str = "created_at_desc") -> dict:
+                  tags: list[str] | None = None, starred: bool | None = None, sort: str = DEFAULT_PROFILE_SORT) -> dict:
     if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
         raise ValueError("Profile limit must be 1-100 and offset must be nonnegative")
     if not isinstance(sort, str) or sort not in PROFILE_SORTS:
-        raise ValueError("Profile sort must select name, created_at or updated_at with asc or desc")
+        raise ValueError("Profile sort must select starred_name_asc, name, created_at or updated_at with asc or desc")
     if starred is not None and type(starred) is not bool:
         raise ValueError("Profile starred filter must be a boolean")
     normalized_tags = _tags(tags) if tags is not None else []
@@ -280,7 +342,7 @@ def list_profiles(query: str | None = None, limit: int = 20, offset: int = 0, *,
         clauses.append("p.starred = %s")
         params.append(starred)
     where = " AND ".join(clauses)
-    column, direction = PROFILE_SORTS[sort]
+    order = PROFILE_SORTS[sort]
     with _cursor() as cur:
         cur.execute(f"SELECT count(*) AS count FROM participant_profiles p WHERE {where}", params)
         total = cur.fetchone()["count"]
@@ -294,7 +356,7 @@ def list_profiles(query: str | None = None, limit: int = 20, offset: int = 0, *,
                    visible.claim_count, visible.meeting_count
                FROM (
                    SELECT p.* FROM participant_profiles p WHERE {where}
-                   ORDER BY {column.format(alias='p')} {direction}, p.id ASC LIMIT %s OFFSET %s
+                   ORDER BY {order.format(alias='p')}, p.id ASC LIMIT %s OFFSET %s
                ) page CROSS JOIN LATERAL (
                    WITH claim_sources AS (
                        SELECT claim->>'meeting_id' AS id FROM jsonb_array_elements(page.claims) claim
@@ -308,7 +370,7 @@ def list_profiles(query: str | None = None, limit: int = 20, offset: int = 0, *,
                               WHERE page.metadata ? source.key AND source.value->>'human' IS DISTINCT FROM 'true'
                                 AND {profile_metadata.source_sql('source.value')}
                           ) meeting_sources) AS meeting_count
-               ) visible ORDER BY {column.format(alias='page')} {direction}, page.id ASC""",
+               ) visible ORDER BY {order.format(alias='page')}, page.id ASC""",
             (*params, limit, offset),
         )
         return {"items": [_serialize(dict(row)) for row in cur.fetchall()], "total": total}
@@ -496,7 +558,8 @@ def _editable(cur, profile_id: str, expected_revision: int) -> dict:
     return row
 
 
-def correct_claim(profile_id: str, claim_id: str, expected_revision: int, action: str, content: str | None, reason: str) -> dict:
+def correct_claim(profile_id: str, claim_id: str, expected_revision: int, action: str, content: str | None, reason: str,
+                  *, include_evidence: bool = True) -> dict:
     UUID(profile_id)
     UUID(claim_id)
     _expected_revision(expected_revision)
@@ -519,7 +582,7 @@ def correct_claim(profile_id: str, claim_id: str, expected_revision: int, action
                     (Json(claims), row["id"]))
         updated = dict(cur.fetchone())
         revisions.record(cur, row, updated, actor="human", source="manual")
-        return _detail(cur, updated)
+        return _detail(cur, updated, include_evidence=include_evidence)
 
 
 def delete_profile(profile_id: str, expected_revision: int) -> None:
@@ -534,7 +597,8 @@ def delete_profile(profile_id: str, expected_revision: int) -> None:
 def update_metadata(profile_id: str, expected_revision: int, *, display_name: str | None = None,
                     tags: list[str] | None = None, starred: bool | None = None,
                     metadata: dict | None = None, nicknames: list[str] | None = None,
-                    section_notes: dict | None = None, allow_agent_sections: list[str] | None = None) -> dict:
+                    section_notes: dict | None = None, allow_agent_sections: list[str] | None = None,
+                    include_evidence: bool = True) -> dict:
     _expected_revision(expected_revision)
     if all(value is None for value in (display_name, tags, starred, metadata, nicknames, section_notes, allow_agent_sections)):
         raise ValueError("Provide profile fields to update")
@@ -573,7 +637,7 @@ def update_metadata(profile_id: str, expected_revision: int, *, display_name: st
             updated = dict(cur.fetchone())
             revisions.record(cur, row, updated, actor="human", source="manual")
             row = updated
-        return _detail(cur, row)
+        return _detail(cur, row, include_evidence=include_evidence)
 
 
 def _attributes(row: dict) -> dict:
@@ -594,7 +658,8 @@ def _merge_claims(target: list[dict], source: list[dict]) -> tuple[list[dict], l
     return list(combined.values()), list(dict.fromkeys(claim["id"] for claim in source if claim["id"] not in existing_ids))
 
 
-def merge_profiles(source_id: str, target_id: str, expected_revision: int, target_revision: int) -> dict:
+def merge_profiles(source_id: str, target_id: str, expected_revision: int, target_revision: int,
+                   *, include_evidence: bool = True) -> dict:
     _expected_revision(expected_revision)
     _expected_revision(target_revision)
     with profile_write_cursor() as cur:
@@ -645,10 +710,10 @@ def merge_profiles(source_id: str, target_id: str, expected_revision: int, targe
         )
         revisions.record(cur, source, {**source, "claims": [], "merged_into": target["id"], "revision": source["revision"] + 1},
                          actor="human", source="merge", source_id=str(target["id"]))
-        return _detail(cur, winner)
+        return _detail(cur, winner, include_evidence=include_evidence)
 
 
-def link_alias(profile_id: str, email: str, expected_revision: int) -> dict:
+def link_alias(profile_id: str, email: str, expected_revision: int, *, include_evidence: bool = True) -> dict:
     from services.meetings.participants import email_participant
 
     _expected_revision(expected_revision)
@@ -660,7 +725,7 @@ def link_alias(profile_id: str, email: str, expected_revision: int) -> dict:
             owners = canonical_rows(cur, [str(found["id"]) for found in existing], lock=True)
             if any(found["deleted"] or owners[str(found["id"])]["deleted"] or owners[str(found["id"])]["id"] != row["id"] for found in existing):
                 raise ProfileRevisionConflict("This email belongs to another or deleted profile; merge existing profiles instead of linking it")
-            return _detail(cur, row)
+            return _detail(cur, row, include_evidence=include_evidence)
         cur.execute(
             """INSERT INTO participant_profiles (id, identity_key, display_name, email, identity_scope, merged_into)
                VALUES (%s, %s, %s, %s, 'email', %s)""",
@@ -680,7 +745,7 @@ def link_alias(profile_id: str, email: str, expected_revision: int) -> dict:
         updated = dict(cur.fetchone())
         revisions.record(cur, row, updated, actor="human", source="manual",
                          extra={"emails": {"before": None, "after": {"added": [alias["email"]]}}})
-        return _detail(cur, updated)
+        return _detail(cur, updated, include_evidence=include_evidence)
 
 
 def meeting_profiles(meeting_id: str) -> dict | None:

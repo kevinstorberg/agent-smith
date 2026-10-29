@@ -11,7 +11,8 @@ from services.meetings.db import _serialize
 from services.meetings.profile_fields import text
 
 
-def for_profiles(cur, profiles: list[dict], *, include_dismissed: bool = False, include_overrides: bool = False) -> dict[str, list[dict]]:
+def for_profiles(cur, profiles: list[dict], *, include_dismissed: bool = False, include_overrides: bool = False,
+                 include_evidence: bool = True) -> dict[str, list[dict]]:
     ids = tuple(str(row["id"]) for row in profiles)
     result = {key: [] for key in ids}
     if not ids:
@@ -28,7 +29,7 @@ def for_profiles(cur, profiles: list[dict], *, include_dismissed: bool = False, 
     edges = [dict(row) for row in cur.fetchall()]
     if not edges:
         return result
-    cur.execute("SELECT * FROM participant_profiles WHERE id IN %s", (tuple({row["subject_id"] for row in edges}),))
+    cur.execute("SELECT id, claims FROM participant_profiles WHERE id IN %s", (tuple({row["subject_id"] for row in edges}),))
     subjects = {row["id"]: row for row in profile_db._visible(cur, [dict(row) for row in cur.fetchall()], include_overrides=include_overrides)}
     target_ids = {claim["target_id"] for row in subjects.values() for claim in row["claims"] if claim.get("target_id")}
     canonical = profile_db.canonical_rows(cur, list(target_ids), metadata_only=True)
@@ -44,26 +45,27 @@ def for_profiles(cur, profiles: list[dict], *, include_dismissed: bool = False, 
         if include_overrides:
             item["claims_available_via"] = {"tool": "get_profile", "profile_id": item["subject_id"]}
         else:
-            item["claims"] = claims
+            item["claims"] = claims if include_evidence else []
         for key in (item["subject_id"], item["target_id"]):
             if key in result:
                 result[key].append(item)
     return result
 
 
-def _detail(cur, relationship_id: str) -> dict:
+def _detail(cur, relationship_id: str, *, include_evidence: bool = True) -> dict:
     cur.execute("SELECT subject_id FROM profile_relationships WHERE id = %s", (relationship_id,))
     row = cur.fetchone()
     if row is None:
         raise ValueError("Relationship no longer exists; refresh the profile")
-    items = for_profiles(cur, [{"id": row["subject_id"]}], include_dismissed=True)
+    items = for_profiles(cur, [{"id": row["subject_id"]}], include_dismissed=True, include_evidence=include_evidence)
     found = next((item for group in items.values() for item in group if item["id"] == relationship_id), None)
     if found is None:
         raise ValueError("Relationship is unavailable because a profile changed")
     return found
 
 
-def create(profile_id: str, target_id: str, expected_revision: int, target_revision: int, label: str = "", notes: str = "") -> dict:
+def create(profile_id: str, target_id: str, expected_revision: int, target_revision: int, label: str = "", notes: str = "",
+           *, include_evidence: bool = True) -> dict:
     label, notes = text(label, "Relationship label", 200), text(notes, "Relationship notes")
     with profile_db.profile_write_cursor() as cur:
         subject = profile_db._editable(cur, profile_id, expected_revision)
@@ -80,7 +82,7 @@ def create(profile_id: str, target_id: str, expected_revision: int, target_revis
         if row is None:
             raise profile_db.ProfileRevisionConflict("These people already have a relationship; edit that relationship instead")
         _touch_profiles(cur, (subject["id"], target["id"]), None, dict(row))
-        return _detail(cur, str(row["id"]))
+        return _detail(cur, str(row["id"]), include_evidence=include_evidence)
 
 
 def _editable(cur, profile_id: str, relationship_id: str, expected_revision: int) -> dict:
@@ -118,7 +120,8 @@ def _touch_profiles(cur, ids, previous: dict | None, current: dict) -> None:
                          extra={"relationships": change})
 
 
-def update(profile_id: str, relationship_id: str, expected_revision: int, *, label: str | None = None, notes: str | None = None) -> dict:
+def update(profile_id: str, relationship_id: str, expected_revision: int, *, label: str | None = None,
+           notes: str | None = None, include_evidence: bool = True) -> dict:
     if label is None and notes is None:
         raise ValueError("Provide a relationship label or notes")
     with profile_db.profile_write_cursor() as cur:
@@ -134,7 +137,7 @@ def update(profile_id: str, relationship_id: str, expected_revision: int, *, lab
                         (new_label, new_notes, Json(history), edge["id"]))
             updated = dict(cur.fetchone())
             _touch_profiles(cur, (edge["subject_id"], edge["target_id"]), edge, updated)
-        return _detail(cur, str(edge["id"]))
+        return _detail(cur, str(edge["id"]), include_evidence=include_evidence)
 
 
 def delete(profile_id: str, relationship_id: str, expected_revision: int) -> None:

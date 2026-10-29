@@ -18,14 +18,15 @@ def progress(row: dict | None, stage: str, *, total_units: int | None = None) ->
     artifact = row.get(stage + "_artifact") or {}
     return {
         "processed_units": artifact.get("offset", 0), "total_units": artifact.get("total_units", total_units),
-        "staged_count": len(artifact.get("items", [])) + (len(artifact.get("metadata_updates", [])) if stage == "profile" else 0),
-        "saved_count": len(artifact.get("published_ids" if stage == "memory" else "profile_ids", [])),
+        "staged_count": len(artifact.get("draft_assignments", [])) if stage == "speaker" else len(artifact.get("items", [])) + (len(artifact.get("metadata_updates", [])) if stage == "profile" else 0),
+        "saved_count": sum(item.get("confidence") == "high" for item in artifact.get("assignments", [])) if stage == "speaker"
+        else len(artifact.get("published_ids" if stage == "memory" else "profile_ids", [])),
         "attempts": row.get(stage + "_attempts", 0), "next_attempt_at": row.get(stage + "_next_attempt_at"),
     }
 
 
 def _stage(stage: str) -> str:
-    if stage not in {"memory", "profile"}:
+    if stage not in {"memory", "profile", "speaker"}:
         raise ValueError("Unknown meeting stage")
     return stage
 
