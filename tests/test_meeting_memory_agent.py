@@ -231,12 +231,55 @@ async def test_plain_final_json_without_staging_is_not_a_result(backend, model):
 
 
 @pytest.mark.asyncio
-async def test_tool_loop_is_bounded_and_limit_failure_is_safe(backend, model):
-    instance, _ = model([call("search_previous_memories", query="release") for _ in range(11)])
-    with pytest.raises(MemoryAnalysisError, match="ToolCallLimitExceededError"):
+async def test_twenty_distinct_evidence_lookups_can_stage_and_tool_budget_resets_per_window(backend, model):
+    segments = [{"id": f"segment-{index}", "text": f"The team agreed to checkpoint {index:02d}.", "speaker": {}}
+                for index in range(20)]
+    items = [{"content": segment["text"], "kind": "decision",
+              "evidence": [{"segment_id": segment["id"], "quote": segment["text"]}]} for segment in segments]
+    lookups = [{"name": "search_transcript", "args": {"query": f"checkpoint {index:02d}."},
+                "id": f"evidence-{index}", "type": "tool_call"} for index in range(20)]
+    for extra_reads in (18, 0):
+        replies = [call("search_previous_memories", query="checkpoints"), AIMessage(content="", tool_calls=lookups)]
+        if extra_reads:
+            replies.append(AIMessage(content="", tool_calls=[
+                {"name": "get_memory", "args": {"memory_id": backend[3]["id"]}, "id": f"read-{index}", "type": "tool_call"}
+                for index in range(extra_reads)
+            ]))
+        replies.extend([call("stage_memories", items=items), AIMessage(content="Done")])
+        instance, _ = model(replies)
+        result = await analyze_memories(SNAPSHOT, segments, [])
+        assert result == {"items": items, "reason": ""}
+        observations = [message for message in instance.seen[-1] if isinstance(message, ToolMessage)]
+        evidence = [json.loads(message.content)["items"] for message in observations if message.name == "search_transcript"]
+        assert len(observations) == extra_reads + 22
+        assert {matches[0]["segment_id"] for matches in evidence} == {segment["id"] for segment in segments}
+        assert all(len(matches) == 1 for matches in evidence)
+    assert len(backend[0]) == 4 and len(backend[1]) == 18 and backend[2] == []
+
+
+@pytest.mark.asyncio
+async def test_tool_loop_completes_forty_calls_and_blocks_forty_first_before_body(backend, model):
+    def batch(start):
+        return AIMessage(content="", tool_calls=[
+            {"name": "get_memory", "args": {"memory_id": backend[3]["id"]}, "id": f"read-{index}", "type": "tool_call"}
+            for index in range(start, start + 20)
+        ])
+
+    instance, _ = model([batch(0), batch(20), call("get_memory", memory_id=backend[3]["id"])])
+    with pytest.raises(MemoryAnalysisError, match="ToolCallLimitExceededError") as caught:
         await analyze_memories(SNAPSHOT, SEGMENTS, [])
-    assert len(instance.seen) == 11
-    assert len(backend[0]) == 20  # Two bounded searches per allowed tool invocation.
+    assert caught.value.error_type == "ToolCallLimitExceededError"
+    assert len(instance.seen) == 3 and len(backend[1]) == 40
+    assert backend[0] == backend[2] == []
+
+
+@pytest.mark.asyncio
+async def test_twenty_first_model_call_remains_blocked_with_larger_tool_budget(backend, model):
+    instance, _ = model([call("get_memory", memory_id=backend[3]["id"]) for _ in range(21)])
+    with pytest.raises(MemoryAnalysisError, match="ModelCallLimitExceededError") as caught:
+        await analyze_memories(SNAPSHOT, SEGMENTS, [])
+    assert caught.value.error_type == "ModelCallLimitExceededError"
+    assert len(instance.seen) == len(backend[1]) == 20
 
 
 @pytest.mark.asyncio
