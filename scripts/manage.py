@@ -20,6 +20,7 @@ from scripts.shared.database_safety import production_database_url, validate_cer
 from scripts.shared.env import environment
 from scripts.shared.local_postgres import temporary_postgres
 from scripts.shared.processes import instance_lock, supervise, wait_for_lock_release
+from scripts.shared.automated_tests import AUTOMATED_TESTS_ENV, require_model_calls_allowed
 
 CLIENT = ROOT / "services/client"
 MODES = {"dev": "development", "development": "development", "prod": "production", "production": "production", "test": "test"}
@@ -189,7 +190,7 @@ def audit(args: argparse.Namespace, extra: list[str]) -> None:
     python = python_executable()
     checked([python, "-m", "ruff", "check", "."])
     with temporary_postgres() as url:
-        env = environment(ROOT, "test")
+        env = environment(ROOT, "test", inherited={**os.environ, AUTOMATED_TESTS_ENV: "1"})
         env["DATABASE_URL_TEST"] = url
         # Both SQL and local vector memory are discarded with the owned temporary cluster.
         import tempfile
@@ -238,6 +239,8 @@ def main() -> int:
         elif args.command == "upgrade":
             upgrade_database(args)
         else:
+            if args.command == "evals":
+                require_model_calls_allowed()
             env = selected_environment(args.env)
             if args.command == "evals":
                 env["AGENT_SMITH_EVAL_RUN"] = "1"

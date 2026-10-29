@@ -71,7 +71,7 @@ def test_adapter_is_built_from_the_resolved_config(model_env, captured_adapter_k
     assert captured["streaming"] is False
     assert "stream_usage" not in captured
     assert "extra_body" not in captured
-    assert [type(callback).__name__ for callback in captured["callbacks"]] == ["_TruncationGuard"]
+    assert [type(callback).__name__ for callback in captured["callbacks"]] == ["_ModelGuard"]
 
 
 def test_grader_role_builds_from_its_own_preset(model_env, captured_adapter_kwargs):

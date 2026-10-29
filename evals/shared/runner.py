@@ -4,6 +4,7 @@ import os
 import sys
 
 from scripts.shared.fs import compose_strings
+from scripts.shared.automated_tests import require_model_calls_allowed
 
 EXCLUDE_RULES = {"memory"}
 
@@ -29,6 +30,7 @@ def _collect_stream(chunks) -> str:
 
 
 def run_agent(model: str, prompt: str, extra_context: str | None = None) -> str:
+    require_model_calls_allowed()
     system = _load_rules_context()
     if extra_context:
         system = f"{system}\n\n{extra_context}"

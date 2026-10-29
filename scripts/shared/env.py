@@ -4,6 +4,8 @@ import os
 import re
 from pathlib import Path
 
+from scripts.shared.automated_tests import sanitize_automated_environment
+
 
 def read_env_file(path: Path) -> dict[str, str]:
     if not path.is_file():
@@ -32,6 +34,7 @@ def environment(harness_root: Path, app_env: str, inherited: dict[str, str] | No
     if app_env == "development" and "DASHBOARD_PORT" not in overrides and "DASHBOARD_PORT" not in inherited:
         result["DASHBOARD_PORT"] = "7655"
     result.setdefault("MEMORY_STORE_PATH", str(harness_root / "memory_store" / app_env))
+    sanitize_automated_environment(result)
     return result
 
 
@@ -43,7 +46,9 @@ def _load_env_file(path: Path, override: bool = False) -> None:
 
 def load_dotenv(harness_root: Path) -> None:
     app_env = os.environ.get("APP_ENV", "development")
-    os.environ.update(environment(harness_root, app_env))
+    values = environment(harness_root, app_env)
+    sanitize_automated_environment(os.environ)
+    os.environ.update(values)
 
 
 _NON_PREFIX_CHARACTERS = re.compile(r"[^A-Z0-9]+")

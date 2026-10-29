@@ -5,6 +5,7 @@ from pathlib import Path
 
 from deepeval.metrics import GEval
 from deepeval.test_case import LLMTestCase, LLMTestCaseParams
+from scripts.shared.automated_tests import require_model_calls_allowed
 from services.rubric import rule_to_eval_steps
 
 JUDGE_MODEL = os.environ.get("EVAL_JUDGE_MODEL", "gpt-5.4")
@@ -23,6 +24,7 @@ def evaluate(
     rule_content: str | None = None,
     judge_prompt: str = "",
 ) -> dict:
+    require_model_calls_allowed()
     assert judge_prompt, "judge_prompt is required."
     if rule_content is None:
         assert rule_path, "Either rule_path or rule_content must be provided."
