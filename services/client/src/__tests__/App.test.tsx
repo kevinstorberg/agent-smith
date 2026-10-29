@@ -29,6 +29,10 @@ vi.mock('../pages/MeetingDetailPage', () => ({
   MeetingDetailPage: () => <div data-testid="meeting-detail">MeetingDetail</div>,
 }));
 
+vi.mock('../pages/ProfileDetailPage', () => ({
+  ProfileDetailPage: () => <div data-testid="profile-detail">ProfileDetail</div>,
+}));
+
 vi.mock('../pages/EvalsPage', () => ({
   EvalsPage: () => <div data-testid="evals-page">EvalsPage</div>,
 }));
@@ -131,6 +135,11 @@ describe('App', () => {
 
     renderApp(['/meetings/9d85d0c6-bf5d-41b9-9a7d-c1e082180b8e']);
     expect(screen.getByTestId('meeting-detail')).toBeInTheDocument();
+  });
+
+  it('renders a participant profile within the meetings routes', () => {
+    renderApp(['/meetings/profiles/profile-id']);
+    expect(screen.getByTestId('profile-detail')).toBeInTheDocument();
   });
 
   it('renders evals page at /evals', () => {

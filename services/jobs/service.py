@@ -11,6 +11,8 @@ its default config (which would leave it unschedulable forever).
 """
 from __future__ import annotations
 
+import math
+
 from services.db import get_connection
 from services.jobs.models.config import JobConfigModel
 from services.jobs.models.job import BackgroundJobModel
@@ -51,6 +53,14 @@ def validate_input_params(input_params: dict | None) -> None:
         validate_inputs(graph_type, graph_inputs)
     except KeyError as exc:
         raise ValueError(exc.args[0]) from exc
+    if graph_type == "meeting_ingest" and graph_inputs.get("digest", True):
+        from services.config import JOB_DEFAULT_TIMEOUT
+        from services.meetings.enrichment import JOB_TIMEOUT_SECONDS
+
+        timeout = params.get("timeout", JOB_DEFAULT_TIMEOUT)
+        if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+                or not math.isfinite(timeout) or timeout < JOB_TIMEOUT_SECONDS):
+            raise ValueError(f"Meeting digestion jobs require a timeout of at least {JOB_TIMEOUT_SECONDS} seconds")
 
 
 def create_job_with_default_config(

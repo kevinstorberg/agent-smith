@@ -6,8 +6,9 @@ import re
 from datetime import datetime, timezone
 from uuid import UUID, uuid4, uuid5
 
-from services.meetings import digestion_db, memory_db
+from services.meetings import digestion_db, memory_db, profile_db
 from services.meetings.digestion import capture_claimed, configured_sources
+from services.meetings.participants import meeting_participants
 from services.meetings.service import run_db
 
 JOB_TIMEOUT_SECONDS = 600
@@ -64,6 +65,7 @@ class DigestionRun:
         self.record: dict | None = None
         self.transcript_report: dict = {"outcome": "idle"}
         self.memory_report: dict = {"outcome": "idle"}
+        self.profile_report: dict = {"outcome": "idle"}
         self.deadline = 0.0
 
     async def __aenter__(self):
@@ -105,26 +107,31 @@ class DigestionRun:
         return bool(self.digest and self.record and self.record["transcript_status"] == "ready" and self.record["memory_status"] == "pending")
 
     async def generate_memories(self) -> None:
-        if not self.has_memory_work():
-            return
-        record = self.record
-        meeting_id = record["meeting_id"]
-        self.memory_report = {"outcome": "continued", "meeting_id": meeting_id}
+        if self.has_memory_work():
+            await self._run_stage(self.memory_report, self._memory_work, memory_db.record_failure)
+
+    def has_profile_work(self) -> bool:
+        return bool(self.digest and self.record and self.record["transcript_status"] == "ready"
+                    and self.record["memory_status"] == "done" and self.record["profile_status"] == "pending")
+
+    async def build_profiles(self) -> None:
+        if self.has_profile_work():
+            await self._run_stage(self.profile_report, self._profile_work, profile_db.record_failure)
+
+    async def _run_stage(self, report: dict, work, record_failure) -> None:
+        report.update(outcome="continued", meeting_id=self.record["meeting_id"])
         if self.remaining < 50:
             return
         attempt = asyncio.timeout(min(AGENT_SECONDS, self.remaining - 10))
         try:
             async with attempt:
-                await self._memory_work(record)
-        except TimeoutError:
-            if not attempt.expired():
-                await self._memory_failure("TimeoutError")
+                await work(self.record)
         except Exception as error:
-            await self._memory_failure(_failure_category(error))
-
-    async def _memory_failure(self, error_type: str) -> None:
-        await run_db(memory_db.record_failure, self.record["meeting_id"], self.owner, error_type)
-        self.memory_report.update(outcome="failed", error_type=error_type)
+            if isinstance(error, TimeoutError) and attempt.expired():
+                return
+            category = _failure_category(error)
+            await run_db(record_failure, self.record["meeting_id"], self.owner, category)
+            report.update(outcome="failed", error_type=category)
 
     async def _memory_work(self, record: dict) -> None:
         from services.graphs.model_config import resolve_model_id
@@ -161,3 +168,39 @@ class DigestionRun:
         await run_db(memory_db.save_progress, meeting_id, self.owner, record["transcript_hash"], artifact, complete=True)
         record.update(memory_status="done", memory_artifact=artifact)
         self.memory_report.update(outcome="done", memories=len(artifact["items"]), memory_ids=artifact["published_ids"])
+
+    async def _profile_work(self, record: dict) -> None:
+        from services.graphs.model_config import resolve_model_id
+        from services.meetings.profile_analysis import analyze_profiles
+
+        meeting_id = record["meeting_id"]
+        participants = meeting_participants(record["snapshot"], record["transcript"]["segments"])
+        profiles = await run_db(profile_db.load_profiles, participants)
+        artifact = copy.deepcopy(record["profile_artifact"]) or {
+            "version": 1, "offset": 0, "items": [], "reason": "",
+            "model": resolve_model_id("meeting_profile", "curator"), "prompt_version": 1,
+            "expected_revisions": {profile["id"]: profile["revision"] for profile in profiles},
+        }
+        if artifact["version"] != 1:
+            raise ValueError("Unsupported meeting profile artifact version")
+        if artifact["expected_revisions"] != {profile["id"]: profile["revision"] for profile in profiles}:
+            await run_db(profile_db.reset_progress, meeting_id, self.owner, record["transcript_hash"])
+            raise profile_db.ProfileRevisionConflict("Participant profile changed; rebuild the profile candidate")
+        segments = expanded_segments(record["transcript"]["segments"])
+        while artifact["offset"] < len(segments):
+            window, end = transcript_window(segments, artifact["offset"])
+            result = await analyze_profiles(
+                record["snapshot"], window, artifact["items"], participants=participants,
+                profiles=profiles, memories=record["memory_artifact"].get("items", []), deadline=self.deadline,
+            )
+            artifact["items"].extend(result["items"])
+            artifact.update(offset=end, reason=result.get("reason", ""))
+            await run_db(profile_db.save_progress, meeting_id, self.owner, record["transcript_hash"], artifact)
+        try:
+            profile_ids = await run_db(profile_db.apply_profiles, meeting_id, self.owner, record["transcript_hash"], artifact, participants)
+        except profile_db.ProfileRevisionConflict:
+            # Human corrections win; rebuild only the uncommitted profile stage.
+            await run_db(profile_db.reset_progress, meeting_id, self.owner, record["transcript_hash"])
+            raise
+        record.update(profile_status="done", profile_artifact=artifact)
+        self.profile_report.update(outcome="done", profiles=len(profile_ids), profile_ids=profile_ids)

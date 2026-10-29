@@ -52,7 +52,7 @@ def feed(source, monkeypatch):
 
 @pytest.fixture
 def agents(monkeypatch):
-    from services.meetings import analysis
+    from services.meetings import analysis, profile_analysis
     from services.memory import db as vector_db
 
     class Calls:
@@ -77,6 +77,10 @@ def agents(monkeypatch):
 
     calls = Calls()
     monkeypatch.setattr(analysis, "analyze_memories", calls.analyze)
+    async def no_profile_claims(*args, **kwargs):
+        return {"items": [], "reason": "No grounded participant claims"}
+
+    monkeypatch.setattr(profile_analysis, "analyze_profiles", no_profile_claims)
     monkeypatch.setattr(vector_db, "publish", calls.publish)
     return calls
 

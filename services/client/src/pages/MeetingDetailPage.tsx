@@ -5,19 +5,12 @@ import { api } from '../api';
 import { CopyButton } from '../components/CopyButton';
 import { MeetingTranscript } from '../components/MeetingTranscript';
 import { MeetingMemories } from '../components/MeetingMemories';
+import { MeetingProfiles } from '../components/MeetingProfiles';
 import { CODE_BOX } from '../components/codeBox';
 import { DateCell } from '../components/table';
 import { usePolling } from '../hooks/usePolling';
 import { useApiRead } from '../hooks/useApiRead';
-
-function sourceLink(value: string): string | null {
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null;
-  } catch {
-    return null;
-  }
-}
+import { safeHttpUrl } from '../utils/links';
 
 export function MeetingDetailPage() {
   const { id } = useParams();
@@ -28,7 +21,7 @@ export function MeetingDetailPage() {
   const { data: meeting, loading, error, refresh: load } = useApiRead(read);
   usePolling(() => load({ showLoading: false }), { enabled: Boolean(id) });
 
-  const sourceUrl = meeting ? sourceLink(meeting.source_url) : null;
+  const sourceUrl = meeting ? safeHttpUrl(meeting.source_url) : null;
 
   return (
     <div>
@@ -66,6 +59,7 @@ export function MeetingDetailPage() {
           </div>
           <MeetingTranscript key={meeting.id} meetingId={meeting.id} />
           <MeetingMemories key={`memories-${meeting.id}`} meetingId={meeting.id} />
+          <MeetingProfiles key={`profiles-${meeting.id}`} meetingId={meeting.id} />
           {Object.keys(meeting.metadata).length > 0 && (
             <details className="card">
               <summary>Additional metadata</summary>

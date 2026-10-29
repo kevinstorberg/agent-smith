@@ -214,10 +214,32 @@ exact evidence quotes, processing status and retry action; the same records are 
 **Memory**. Previously imported meetings are not backfilled. Pending work resumes without
 regenerating completed windows or republishing acknowledged memories.
 
+After memories are saved, a second tool-calling agent builds participant profiles in the same
+graph run. It receives the newly generated memories directly and can retrieve older memories
+and canonical profiles. Open a profile from the meeting's **Participant profiles** card to
+see priorities, inferred drivers, communication patterns and directed perceptions/interactions.
+Each claim includes its confidence, whether it is self-reported, observed or inferred, and
+exact transcript evidence. Profile retries preserve completed memories.
+
+Profiles merge across meetings only through a reliable email identity: an explicit speaker
+email or an unambiguous match between a named speaker and the meeting's named attendee roster.
+Names without an email and anonymous speaker labels remain meeting-scoped. A shared microphone
+without a distinguishable speaker does not create a person; silent attendees are not profiled.
+No names or email aliases are guessed.
+
+Use **Correct** or **Reject** on a profile claim to retain a human override with a reason.
+Later analysis reads those overrides. Revision checks prevent a background analysis from
+overwriting a concurrent edit; it rebuilds only its unfinished profile candidate. **Delete
+profile** removes its claims and leaves an identity tombstone so later meetings cannot recreate
+it automatically. Source-unavailable claims are hidden in the reader; human overrides remain
+constraints for later analysis. Generated meeting-memory cards preserve the original output;
+edits/deletions on Memory manage the published record separately.
+
 The `meeting_memory` model role uses the existing model factory. Its default is `KIMI_K3`,
 with the curator credential as fallback; override `MEETING_MEMORY_MODEL_*` for a separate
 connection or model. Each run handles one pending meeting within a 540-second work budget,
-including up to 60 seconds for imports and 150 seconds for memory generation. Use the
+including up to 60 seconds for imports and 150 seconds for each agent. The `meeting_profile`
+role has the same factory/configuration convention via `MEETING_PROFILE_MODEL_*`. Use the
 600-second job timeout to leave time for cleanup. An initial account backlog drains over
 successive runs. No second job is required.
 

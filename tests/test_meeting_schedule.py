@@ -145,12 +145,13 @@ async def test_fifteen_minute_schedule_fires_twice_and_restart_uses_actual_histo
             return TranscriptPage((TranscriptSegment("A durable decision", {}),))
 
     monkeypatch.setitem(factory._PROVIDER_BUILDERS, "test", Provider)
-    from services.meetings import analysis
+    from services.meetings import analysis, profile_analysis
 
     async def no_new_memories(*args, **kwargs):
         return {"items": [], "reason": "No new durable information"}
 
     monkeypatch.setattr(analysis, "analyze_memories", no_new_memories)
+    monkeypatch.setattr(profile_analysis, "analyze_profiles", no_new_memories)
     job_id = configure_schedule(source.name, DEVICE_NAME)
     clock = {"now": datetime.now(timezone.utc)}
     monkeypatch.setattr(scheduler_module, "_utcnow", lambda: clock["now"])
