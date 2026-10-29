@@ -223,6 +223,23 @@ export interface MeetingProfiles extends MeetingGeneration {
   items: MeetingProfileSummary[];
 }
 
+export interface MeetingParticipantInput {
+  name: string;
+  email?: string | null;
+  profile_id?: string | null;
+  speaker_key?: string | null;
+}
+
+export interface MeetingParticipants {
+  revision: number;
+  items: MeetingParticipantInput[];
+  provider_participants: { name?: string; email?: string }[];
+  speakers: { key: string; label: string; segment_count: number }[];
+  running: boolean;
+  enrolled: boolean;
+  stale_speaker_keys?: string[];
+}
+
 export interface ProfileClaimCorrection {
   action: 'correct' | 'reject';
   content: string | null;
@@ -251,6 +268,21 @@ export interface ParticipantProfile extends MeetingProfileSummary {
   deleted: boolean;
   claims: ProfileClaim[];
   updated_at: string;
+  tags: string[];
+  starred: boolean;
+  aliases: Pick<ParticipantProfile, 'id' | 'display_name' | 'email' | 'identity_scope'>[];
+}
+
+export interface ProfileSummary extends Pick<ParticipantProfile, 'id' | 'display_name' | 'email' | 'identity_scope' | 'revision' | 'updated_at' | 'tags' | 'starred'> {
+  created_at: string;
+  claim_count: number;
+  meeting_count: number;
+}
+
+export interface ProfileUpdateInput {
+  expected_revision: number;
+  tags?: string[];
+  starred?: boolean;
 }
 
 export interface ClaimCorrectionInput {
@@ -533,11 +565,29 @@ export const api = {
     retryMemories: (id: string) => post<{ success: boolean }>(`/meetings/${encodeURIComponent(id)}/memories/retry`, {}),
     profiles: (id: string) => get<MeetingProfiles>(`/meetings/${encodeURIComponent(id)}/profiles`),
     retryProfiles: (id: string) => post<{ success: boolean }>(`/meetings/${encodeURIComponent(id)}/profiles/retry`, {}),
-    profile: (id: string) => get<ParticipantProfile>(`/meetings/profiles/${encodeURIComponent(id)}`),
+    participants: (id: string) => get<MeetingParticipants>(`/meetings/${encodeURIComponent(id)}/participants`),
+    updateParticipants: (id: string, body: { expected_revision: number; participants: MeetingParticipantInput[] }) =>
+      put<MeetingParticipants>(`/meetings/${encodeURIComponent(id)}/participants`, body),
+    process: (id: string) => post<{ status: 'queued' | 'running' | 'done' }>(`/meetings/${encodeURIComponent(id)}/process`, {}),
+  },
+  profiles: {
+    list: (params?: PaginationParams & { q?: string; tags?: string[]; starred?: boolean; sort?: string }) => get<Paginated<ProfileSummary>>('/profiles', {
+      ...paginationToParams(params),
+      ...(params?.q ? { q: params.q } : {}),
+      ...(params?.tags?.length ? { tags: params.tags } : {}),
+      ...(params?.starred !== undefined ? { starred: String(params.starred) } : {}),
+      ...(params?.sort ? { sort: params.sort } : {}),
+    }),
+    get: (id: string) => get<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}`),
+    update: (id: string, body: ProfileUpdateInput) => patch<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}`, body),
+    merge: (id: string, body: { target_id: string; expected_revision: number; target_revision: number }) =>
+      post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/merge`, body),
+    linkEmail: (id: string, body: { email: string; expected_revision: number }) =>
+      post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/aliases`, body),
     correctClaim: (id: string, claimId: string, body: ClaimCorrectionInput) =>
-      post<ParticipantProfile>(`/meetings/profiles/${encodeURIComponent(id)}/claims/${encodeURIComponent(claimId)}`, body),
-    deleteProfile: (id: string, expectedRevision: number) =>
-      del<{ deleted: boolean; id: string }>(`/meetings/profiles/${encodeURIComponent(id)}`, { expected_revision: expectedRevision }),
+      post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/claims/${encodeURIComponent(claimId)}`, body),
+    remove: (id: string, expectedRevision: number) =>
+      del<{ deleted: boolean; id: string }>(`/profiles/${encodeURIComponent(id)}`, { expected_revision: expectedRevision }),
   },
   memory: {
     search: (q: string, opts?: PaginationParams & { repo?: string; tags?: string[]; sort?: string }) =>

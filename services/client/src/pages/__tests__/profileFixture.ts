@@ -8,6 +8,9 @@ export const profileFixture: ParticipantProfile = {
   revision: 1,
   deleted: false,
   updated_at: '2026-10-28T12:00:00Z',
+  tags: [],
+  starred: false,
+  aliases: [],
   claims: [{
     id: '97221ea0-a995-42c6-90c0-d242fb2ddd54',
     category: 'perception', epistemic: 'inference', confidence: 'medium',

@@ -1,32 +1,38 @@
 from __future__ import annotations
 
-from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from services.api.routers.base import delete_response, empty_to_none, require_found
-from services.meetings import db, digestion_db, memory_db, profile_db
+from services.api.routers.profiles import profile_change, router as profiles_router
+from services.meetings import db, digestion_db, management_db, memory_db, profile_db
 
 router = APIRouter()
+router.include_router(profiles_router, prefix="/profiles", include_in_schema=False)
 
 
-class ProfileRevisionRequest(BaseModel):
+class MeetingParticipantRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    expected_revision: int = Field(ge=1, strict=True)
+    name: str = Field(min_length=1, max_length=200)
+    email: str | None = Field(None, max_length=320)
+    profile_id: UUID | None = None
+    speaker_key: str | None = Field(None, pattern=r"^[0-9a-f]{64}$")
 
 
-class ClaimCorrectionRequest(ProfileRevisionRequest):
-    action: Literal["correct", "reject"]
-    content: str | None = Field(None, max_length=2000)
-    reason: str = Field(min_length=1, max_length=2000)
+class MeetingParticipantsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=0, strict=True)
+    participants: list[MeetingParticipantRequest] = Field(max_length=200)
 
 
-def _profile_change(action, *args):
+def _meeting_change(action, *args):
     try:
         return action(*args)
-    except profile_db.ProfileRevisionConflict as error:
+    except management_db.MeetingNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from None
+    except (management_db.MeetingManagementConflict, profile_db.ProfileRevisionConflict) as error:
         raise HTTPException(status_code=409, detail=str(error)) from None
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
@@ -62,6 +68,23 @@ def status(source: str = Query("", max_length=100)):
 def get_one(summary_id: UUID):
     key = str(summary_id)
     return require_found(db.get_summary(key), "Meeting summary", key)
+
+
+@router.get("/{summary_id}/participants")
+def get_participants(summary_id: UUID):
+    key = str(summary_id)
+    return require_found(management_db.get_participants(key), "Meeting", key)
+
+
+@router.put("/{summary_id}/participants")
+def update_participants(summary_id: UUID, body: MeetingParticipantsRequest):
+    entries = [person.model_dump(mode="json", exclude_none=True) for person in body.participants]
+    return _meeting_change(management_db.update_participants, str(summary_id), body.expected_revision, entries)
+
+
+@router.post("/{summary_id}/process")
+def process_meeting(summary_id: UUID):
+    return _meeting_change(management_db.request_processing, str(summary_id))
 
 
 @router.get("/{summary_id}/transcript")
@@ -120,26 +143,5 @@ def get_meeting_profiles(summary_id: UUID):
 def retry_profiles(summary_id: UUID):
     key = str(summary_id)
     require_found(db.get_summary(key), "Meeting summary", key)
-    _profile_change(profile_db.retry_profiles, key)
+    profile_change(profile_db.retry_profiles, key)
     return {"success": True}
-
-
-@router.get("/profiles/{profile_id}")
-def get_profile(profile_id: UUID):
-    key = str(profile_id)
-    return require_found(profile_db.get_profile(key), "Participant profile", key)
-
-
-@router.post("/profiles/{profile_id}/claims/{claim_id}")
-def correct_profile_claim(profile_id: UUID, claim_id: UUID, body: ClaimCorrectionRequest):
-    key = str(profile_id)
-    require_found(profile_db.get_profile(key), "Participant profile", key)
-    return _profile_change(profile_db.correct_claim, key, str(claim_id), body.expected_revision, body.action, body.content, body.reason)
-
-
-@router.delete("/profiles/{profile_id}")
-def delete_profile(profile_id: UUID, body: ProfileRevisionRequest):
-    key = str(profile_id)
-    require_found(profile_db.get_profile(key), "Participant profile", key)
-    _profile_change(profile_db.delete_profile, key, body.expected_revision)
-    return delete_response(key)

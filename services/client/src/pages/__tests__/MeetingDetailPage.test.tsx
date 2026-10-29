@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, screen } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { POLL_INTERVAL_MS } from '../../constants';
 import { MeetingDetailPage } from '../MeetingDetailPage';
@@ -9,7 +9,10 @@ vi.mock('react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router')>();
   return { ...actual, useParams: () => ({ id: meetingFixture.id }) };
 });
-vi.mock('../../api', () => ({ api: { meetings: { get: vi.fn(), transcript: vi.fn(), deleteTranscript: vi.fn(), retryTranscript: vi.fn(), memories: vi.fn(), retryMemories: vi.fn(), profiles: vi.fn(), retryProfiles: vi.fn() } } }));
+vi.mock('../../api', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../api')>();
+  return { ...actual, api: { meetings: { get: vi.fn(), transcript: vi.fn(), deleteTranscript: vi.fn(), retryTranscript: vi.fn(), memories: vi.fn(), retryMemories: vi.fn(), profiles: vi.fn(), retryProfiles: vi.fn(), participants: vi.fn(), updateParticipants: vi.fn(), process: vi.fn() }, profiles: { list: vi.fn() } } };
+});
 import { api } from '../../api';
 
 const mockGet = vi.mocked(api.meetings.get);
@@ -20,6 +23,8 @@ beforeEach(() => {
   vi.mocked(api.meetings.transcript).mockResolvedValue({ status: 'not_imported', items: [], total: 0, limit: 100, offset: 0, error_type: null, captured_at: null });
   vi.mocked(api.meetings.memories).mockResolvedValue({ status: 'not_imported', items: [], reason: null, error_type: null, updated_at: null });
   vi.mocked(api.meetings.profiles).mockResolvedValue({ status: 'not_imported', items: [], reason: null, error_type: null });
+  vi.mocked(api.meetings.participants).mockResolvedValue({ revision: 0, items: [], provider_participants: [], speakers: [], running: false, enrolled: false });
+  vi.mocked(api.meetings.process).mockResolvedValue({ status: 'queued' });
 });
 
 afterEach(() => vi.useRealTimers());
@@ -90,5 +95,20 @@ describe('MeetingDetailPage', () => {
 
     await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS); });
     expect(await screen.findByText('Updated summary')).toBeInTheDocument();
+  });
+
+  it('queues an older meeting and refreshes all generated sections without dead-end instructions', async () => {
+    renderWithProviders(<MeetingDetailPage />);
+    await screen.findByRole('heading', { name: 'Product planning' });
+    expect(screen.queryByText(/not processed retroactively/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/not enabled for this older meeting/)).not.toBeInTheDocument();
+    const before = vi.mocked(api.meetings.transcript).mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Process meeting' }));
+    await waitFor(() => expect(api.meetings.process).toHaveBeenCalledWith(meetingFixture.id));
+    expect(await screen.findByText(/Queued for the next meeting job/)).toBeInTheDocument();
+    await waitFor(() => expect(vi.mocked(api.meetings.transcript).mock.calls.length).toBeGreaterThan(before));
+    expect(vi.mocked(api.meetings.memories).mock.calls.length).toBeGreaterThan(1);
+    expect(vi.mocked(api.meetings.profiles).mock.calls.length).toBeGreaterThan(1);
+    expect(screen.getByText('Ship the next release.')).toBeInTheDocument();
   });
 });

@@ -3,13 +3,25 @@ import { NavLink } from 'react-router';
 import { api } from '../api';
 import { useNotification } from '../context/useNotification';
 
-const HARNESS_LINKS = [
+const NAV_SECTIONS = [{ id: 'harness', links: [
   { path: '/harness/agents', label: 'Agents' },
   { path: '/harness/hooks', label: 'Hooks' },
   { path: '/harness/rules', label: 'Rules' },
   { path: '/harness/skills', label: 'Skills' },
   { path: '/harness/tools', label: 'Tools' },
-];
+] }, { id: 'resources', links: [
+  { path: '/memory', label: 'Memory' },
+  { path: '/meetings', label: 'Meetings' },
+  { path: '/profiles', label: 'Profiles' },
+  { path: '/plans', label: 'Plans' },
+  { path: '/jobs', label: 'Jobs' },
+  { path: '/proposals', label: 'Proposals' },
+  { path: '/audit', label: 'Audit' },
+  { path: '/chat', label: 'Chat' },
+] }, { id: 'evals', links: [
+  { path: '/eval-configs', label: 'Evals' },
+  { path: '/evals', label: 'Results' },
+] }];
 
 function navClass({ isActive }: { isActive: boolean }): string {
   return `sidebar-link${isActive ? ' active' : ''}`;
@@ -61,28 +73,11 @@ export function Sidebar() {
         <div className="sidebar-title">Agent Smith</div>
       </div>
 
-      <div className="sidebar-section">
-        {HARNESS_LINKS.map(link => (
-          <NavLink key={link.path} to={link.path} className={navClass}>
-            {link.label}
-          </NavLink>
+      {NAV_SECTIONS.map(section => <div className="sidebar-section" key={section.id}>
+        {[...section.links].sort((left, right) => left.label.localeCompare(right.label)).map(link => (
+          <NavLink key={link.path} to={link.path} className={navClass}>{link.label}</NavLink>
         ))}
-      </div>
-
-      <div className="sidebar-section">
-        <NavLink to="/memory" className={navClass}>Memory</NavLink>
-        <NavLink to="/meetings" className={navClass}>Meetings</NavLink>
-        <NavLink to="/plans" className={navClass}>Plans</NavLink>
-        <NavLink to="/jobs" className={navClass}>Jobs</NavLink>
-        <NavLink to="/proposals" className={navClass}>Proposals</NavLink>
-        <NavLink to="/audit" className={navClass}>Audit</NavLink>
-        <NavLink to="/chat" className={navClass}>Chat</NavLink>
-      </div>
-
-      <div className="sidebar-section">
-        <NavLink to="/eval-configs" className={navClass}>Evals</NavLink>
-        <NavLink to="/evals" className={navClass}>Results</NavLink>
-      </div>
+      </div>)}
 
       <div className="sidebar-section">
         <div className="sidebar-actions">

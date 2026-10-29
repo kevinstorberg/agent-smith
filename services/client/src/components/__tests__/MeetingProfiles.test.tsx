@@ -25,12 +25,13 @@ describe('MeetingProfiles', () => {
     renderWithProviders(<MeetingProfiles meetingId="meeting-id" />);
     expect(screen.getByText('Loading participant profiles...')).toBeInTheDocument();
     const profile = await screen.findByRole('link', { name: 'Alex' });
-    expect(profile).toHaveAttribute('href', `/meetings/profiles/${profileFixture.id}`);
+    expect(profile).toHaveAttribute('href', `/profiles/${profileFixture.id}`);
+    expect(screen.getByRole('heading', { name: 'Profiles' })).toBeInTheDocument();
     expect(screen.getByText(/alex@example.test/)).toBeInTheDocument();
   });
 
   it.each([
-    ['not_imported', 'Profile generation is not enabled for this older meeting.'],
+    ['not_imported', 'Profile generation has not started. Use Process meeting'],
     ['pending', 'Profile generation is queued for the next meeting import run.'],
     ['running', 'Generating participant profiles...'],
     ['failed', 'Profile generation failed.'],

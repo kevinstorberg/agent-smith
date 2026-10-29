@@ -77,7 +77,7 @@ describe('MeetingTranscript', () => {
   });
 
   it.each([
-    ['not_imported', 'Transcript not imported.'],
+    ['not_imported', 'Transcript not imported yet. Use Process meeting'],
     ['pending', 'Transcript capture is pending.'],
     ['capturing', 'Importing transcript...'],
     ['unsupported', 'This meeting connection does not support transcripts.'],

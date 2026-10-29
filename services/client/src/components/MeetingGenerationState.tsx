@@ -13,7 +13,7 @@ export function MeetingGenerationState({ result, output, blockedMessage, retryin
   const subject = output === 'memories' ? 'Memory generation' : 'Profile generation';
   return (
     <>
-      {result.status === 'not_imported' && <p className="text-muted-sm">{subject} is not enabled for this older meeting. Existing meetings are not processed retroactively.</p>}
+      {result.status === 'not_imported' && <p className="text-muted-sm">{subject} has not started. Use Process meeting in Participants to queue this meeting.</p>}
       {result.status === 'pending' && <p className="text-muted-sm">{subject} is queued for the next meeting import run.</p>}
       {result.status === 'running' && <p className="text-muted-sm">{output === 'memories' ? 'Generating meeting memories...' : 'Generating participant profiles...'}</p>}
       {result.status === 'blocked' && <p className="text-muted-sm">{blockedMessage}</p>}

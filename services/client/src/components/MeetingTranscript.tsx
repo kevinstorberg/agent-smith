@@ -5,7 +5,7 @@ import { useApiMutation } from '../hooks/useApiMutation';
 import { usePolling } from '../hooks/usePolling';
 
 const STATUS_MESSAGES: Record<Exclude<Transcript['status'], 'ready'>, string> = {
-  not_imported: 'Transcript not imported. Existing meetings are not imported retroactively.',
+  not_imported: 'Transcript not imported yet. Use Process meeting in Participants to queue capture.',
   pending: 'Transcript capture is pending.',
   capturing: 'Importing transcript...',
   unsupported: 'This meeting connection does not support transcripts.',

@@ -5,6 +5,7 @@ import { Pagination } from '../components/Pagination';
 import { CopyButton } from '../components/CopyButton';
 import { useNotification } from '../context/useNotification';
 import { usePolling } from '../hooks/usePolling';
+import { parseTags } from '../utils/tags';
 
 type Mode = 'list' | 'search';
 
@@ -40,7 +41,7 @@ export function MemoryPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const tagsArray = useMemo(
-    () => filterTags.split(',').map(t => t.trim()).filter(Boolean),
+    () => parseTags(filterTags),
     [filterTags],
   );
   const sortOptions = mode === 'search' ? SEARCH_SORT_OPTIONS : LIST_SORT_OPTIONS;
@@ -108,7 +109,7 @@ export function MemoryPage() {
   const saveEdit = async (id: string) => {
     setSaving(true);
     try {
-      const tags = editTags.split(',').map(t => t.trim()).filter(Boolean);
+      const tags = parseTags(editTags);
       await api.memory.update(id, {
         content: editContent,
         repo: editRepo || undefined,

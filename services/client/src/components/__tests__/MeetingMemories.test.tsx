@@ -48,7 +48,7 @@ describe('MeetingMemories', () => {
   });
 
   it.each([
-    ['not_imported', 'Memory generation is not enabled for this older meeting.'],
+    ['not_imported', 'Memory generation has not started. Use Process meeting'],
     ['pending', 'Memory generation is queued for the next meeting import run.'],
     ['running', 'Generating meeting memories...'],
     ['failed', 'Memory generation failed.'],

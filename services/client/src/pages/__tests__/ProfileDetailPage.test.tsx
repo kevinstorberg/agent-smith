@@ -1,9 +1,10 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '../../test-utils';
 import { ProfileDetailPage } from '../ProfileDetailPage';
 import { profileFixture } from './profileFixture';
 import type { ParticipantProfile } from '../../api';
+import { POLL_INTERVAL_MS } from '../../constants';
 
 const navigate = vi.fn();
 vi.mock('react-router', async importOriginal => {
@@ -12,21 +13,26 @@ vi.mock('react-router', async importOriginal => {
 });
 vi.mock('../../api', async importOriginal => {
   const actual = await importOriginal<typeof import('../../api')>();
-  return { ...actual, api: { meetings: { profile: vi.fn(), correctClaim: vi.fn(), deleteProfile: vi.fn() } } };
+  return { ...actual, api: { profiles: { get: vi.fn(), correctClaim: vi.fn(), remove: vi.fn(), update: vi.fn(), list: vi.fn(), merge: vi.fn(), linkEmail: vi.fn() } } };
 });
 import { api, ApiError } from '../../api';
 
-const read = vi.mocked(api.meetings.profile);
-const correct = vi.mocked(api.meetings.correctClaim);
-const remove = vi.mocked(api.meetings.deleteProfile);
+const read = vi.mocked(api.profiles.get);
+const correct = vi.mocked(api.profiles.correctClaim);
+const remove = vi.mocked(api.profiles.remove);
 
 beforeEach(() => {
   vi.clearAllMocks();
   read.mockResolvedValue(profileFixture);
   correct.mockResolvedValue(profileFixture);
   remove.mockResolvedValue({ deleted: true, id: profileFixture.id });
+  vi.mocked(api.profiles.update).mockResolvedValue(profileFixture);
+  vi.mocked(api.profiles.list).mockResolvedValue({ items: [], total: 0 });
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 describe('ProfileDetailPage', () => {
   it('groups claims, labels hypotheses and directed perceptions, and cites exact evidence', async () => {
@@ -124,7 +130,7 @@ describe('ProfileDetailPage', () => {
     confirm.mockReturnValue(true);
     fireEvent.click(button);
     await waitFor(() => expect(remove).toHaveBeenCalledWith(profileFixture.id, 1));
-    expect(navigate).toHaveBeenCalledWith('/meetings');
+    expect(navigate).toHaveBeenCalledWith('/profiles');
   });
 
   it('keeps failures generic and offers navigation for an unavailable profile', async () => {
@@ -132,6 +138,61 @@ describe('ProfileDetailPage', () => {
     renderWithProviders(<ProfileDetailPage />);
     expect(await screen.findByRole('alert')).toHaveTextContent('It may be unavailable or deleted.');
     expect(screen.queryByText(/PRIVATE_PROFILE_DETAIL/)).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Back to meetings' })).toHaveAttribute('href', '/meetings');
+    expect(screen.getByRole('link', { name: 'Back to profiles' })).toHaveAttribute('href', '/profiles');
+  });
+
+  it('refreshes cumulative evidence without hiding the current profile', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let finishPoll: (profile: ParticipantProfile) => void = () => undefined;
+    read.mockResolvedValueOnce(profileFixture).mockReturnValueOnce(new Promise(resolve => { finishPoll = resolve; }));
+    renderWithProviders(<ProfileDetailPage />);
+    await screen.findByText('Revision 1');
+
+    await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS); });
+    expect(screen.getByRole('heading', { name: 'Alex' })).toBeInTheDocument();
+    expect(screen.queryByText('Loading participant profile...')).not.toBeInTheDocument();
+    const updated: ParticipantProfile = { ...profileFixture, revision: 2, claims: [
+      ...profileFixture.claims,
+      { ...profileFixture.claims[0], id: 'later-claim', category: 'priority', content: 'A priority learned from a later meeting.', meeting_id: 'later-meeting' },
+    ] };
+    await act(async () => { finishPoll(updated); });
+    expect(await screen.findByText('A priority learned from a later meeting.')).toBeInTheDocument();
+    expect(screen.getByText('Revision 2')).toBeInTheDocument();
+  });
+
+  it('keeps the correction draft and captured revision when an earlier poll finishes during editing', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let finishPoll: (profile: ParticipantProfile) => void = () => undefined;
+    read.mockResolvedValueOnce(profileFixture).mockReturnValueOnce(new Promise(resolve => { finishPoll = resolve; }));
+    correct.mockRejectedValueOnce(new ApiError('Changed profile', 409));
+    renderWithProviders(<ProfileDetailPage />);
+    await screen.findByText('Revision 1');
+    await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS); });
+    fireEvent.click(screen.getByRole('button', { name: 'Correct claim' }));
+    fireEvent.change(screen.getByLabelText('Corrected claim'), { target: { value: 'My correction draft.' } });
+    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'My correction reason.' } });
+    const updated = { ...profileFixture, revision: 2 };
+    read.mockResolvedValue(updated);
+    await act(async () => { finishPoll(updated); });
+    expect(screen.getByText('Revision 2')).toBeInTheDocument();
+    expect(screen.getByLabelText('Corrected claim')).toHaveValue('My correction draft.');
+    await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS); });
+    expect(read).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
+    await waitFor(() => expect(correct).toHaveBeenCalledWith(profileFixture.id, profileFixture.claims[0].id, {
+      expected_revision: 1, action: 'correct', content: 'My correction draft.', reason: 'My correction reason.',
+    }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Review the latest version and submit again.');
+    expect(screen.getByLabelText('Corrected claim')).toHaveValue('My correction draft.');
+  });
+
+  it('redirects an old identity to its canonical profile and edits the canonical ID', async () => {
+    const winner = { ...profileFixture, id: 'canonical-profile' };
+    read.mockResolvedValue(winner);
+    renderWithProviders(<ProfileDetailPage />);
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/profiles/canonical-profile', { replace: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Star Alex' }));
+    await waitFor(() => expect(api.profiles.update).toHaveBeenCalledWith('canonical-profile', { expected_revision: 1, starred: true }));
   });
 });

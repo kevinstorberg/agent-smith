@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import { render } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useLocation } from 'react-router';
 import App from '../App';
 
 // Mock all page components as stubs
@@ -31,6 +31,10 @@ vi.mock('../pages/MeetingDetailPage', () => ({
 
 vi.mock('../pages/ProfileDetailPage', () => ({
   ProfileDetailPage: () => <div data-testid="profile-detail">ProfileDetail</div>,
+}));
+
+vi.mock('../pages/ProfilesIndexPage', () => ({
+  ProfilesIndexPage: () => <div data-testid="profiles-index">ProfilesIndex</div>,
 }));
 
 vi.mock('../pages/EvalsPage', () => ({
@@ -69,10 +73,16 @@ vi.mock('../components/NotificationBar', () => ({
   NotificationBar: () => <div data-testid="notification-bar">NotificationBar</div>,
 }));
 
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location">{location.pathname}{location.search}{location.hash}</output>;
+}
+
 function renderApp(initialEntries: string[]) {
   return render(
     <MemoryRouter initialEntries={initialEntries}>
       <App />
+      <LocationProbe />
     </MemoryRouter>,
   );
 }
@@ -137,8 +147,17 @@ describe('App', () => {
     expect(screen.getByTestId('meeting-detail')).toBeInTheDocument();
   });
 
-  it('renders a participant profile within the meetings routes', () => {
-    renderApp(['/meetings/profiles/profile-id']);
+  it('renders Profiles as a top-level resource', () => {
+    const { unmount } = renderApp(['/profiles']);
+    expect(screen.getByTestId('profiles-index')).toBeInTheDocument();
+    unmount();
+    renderApp(['/profiles/profile-id']);
+    expect(screen.getByTestId('profile-detail')).toBeInTheDocument();
+  });
+
+  it('redirects an old meeting profile link while preserving query and hash', async () => {
+    renderApp(['/meetings/profiles/profile-id?from=meeting#claim-1']);
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/profiles/profile-id?from=meeting#claim-1'));
     expect(screen.getByTestId('profile-detail')).toBeInTheDocument();
   });
 
