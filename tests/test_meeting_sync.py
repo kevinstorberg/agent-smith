@@ -10,6 +10,7 @@ from psycopg2.extras import RealDictCursor
 
 from services.db import get_connection
 from services.meetings import db, service
+from services.meetings import digestion_db
 from services.meetings.config import load_source_config
 from services.meetings.types import InvalidCursorError, MeetingProviderError, MeetingSummary, NotePage, NoteReference
 from tests.conftest import clean_meeting_rows
@@ -30,11 +31,13 @@ class Provider:
         self.summaries = {item.external_id: item for item in summaries}
         self.pages = pages if pages is not None else {None: page(*summaries)}
         self.list_calls = []
+        self.list_cutoffs = []
         self.get_calls = []
         self.closed = False
 
-    async def list_page(self, cursor=None):
+    async def list_page(self, cursor=None, *, updated_after=None):
         self.list_calls.append(cursor)
+        self.list_cutoffs.append(updated_after)
         result = self.pages[cursor]
         if isinstance(result, Exception):
             raise result
@@ -79,6 +82,7 @@ async def test_full_scan_then_selective_scan_imports_changed_and_new_older_notes
     first = await service.sync_source(source.name, provider=first_provider)
     assert first["created"] == 2
     assert first_provider.get_calls == ["one", "two"]
+    assert first_provider.list_cutoffs == [None, None]
     assert first_provider.closed
     replay_provider = Provider([first_note, second_note])
     replay = await service.sync_source(source.name, provider=replay_provider)
@@ -97,18 +101,57 @@ async def test_full_scan_then_selective_scan_imports_changed_and_new_older_notes
 
 
 @pytest.mark.asyncio
-async def test_daily_deep_scan_detects_content_change_with_same_source_timestamp(source):
+async def test_daily_old_notes_are_not_refetched_without_a_new_source_timestamp(source):
     original = note()
     await service.sync_source(source.name, provider=Provider([original]))
+    previous_start = state(source)["last_pull_started_at"]
     require_deep_scan(source)
     changed = replace(original, summary_text="Content changed without updated_at advancing")
     provider = Provider([changed])
     result = await service.sync_source(source.name, provider=provider)
     row = db.list_summaries(source=source.name)["items"][0]
+    assert result["updated"] == 0
+    assert result["deep"] is False
+    assert provider.get_calls == []
+    assert row["summary_text"] == original.summary_text
+    assert row["revision"] == 1
+    assert provider.list_cutoffs == [previous_start - timedelta(seconds=60)]
+
+
+@pytest.mark.asyncio
+async def test_explicit_project_change_updates_same_version_once_and_preserves_receipts(source):
+    original = note()
+    await service.sync_source(source.name, provider=Provider([original]))
+    summary_id = db.list_summaries(source=source.name)["items"][0]["id"]
+    receipt = digestion_db.get_record(summary_id)
+    changed = replace(source, project="explicit-project")
+
+    class RestartingProvider(Provider):
+        expired = False
+
+        async def list_page(self, cursor=None, *, updated_after=None):
+            self.list_calls.append(cursor)
+            self.list_cutoffs.append(updated_after)
+            if cursor == "expired":
+                self.expired = True
+                raise InvalidCursorError("Cursor expired", 400)
+            return page(original, next_cursor=None if self.expired else "expired")
+
+    provider = RestartingProvider([original])
+    result = await service.sync_source(source.name, config=changed, provider=provider)
+    updated = db.get_summary(summary_id)
     assert result["updated"] == 1
+    assert updated["project"] == "explicit-project"
+    assert updated["revision"] == 2
+    assert provider.list_calls == [None, "expired", None]
+    assert provider.list_cutoffs == [None] * 3
     assert provider.get_calls == ["one"]
-    assert row["summary_text"] == changed.summary_text
-    assert row["revision"] == 2
+    assert digestion_db.get_record(summary_id) == receipt
+    next_pull = Provider([original])
+    await service.sync_source(source.name, config=changed, provider=next_pull)
+    assert next_pull.list_cutoffs[0] is not None
+    assert next_pull.get_calls == []
+    assert db.get_summary(summary_id)["revision"] == 2
 
 
 @pytest.mark.asyncio
@@ -140,6 +183,134 @@ async def test_budget_exhaustion_resumes_midpage_without_refetching_committed_it
 
 
 @pytest.mark.asyncio
+async def test_incremental_budget_resume_keeps_start_cutoff_and_committed_offset(source):
+    await service.sync_source(source.name, provider=Provider([]))
+    previous_start = state(source)["last_pull_started_at"]
+    first, second, third = note(), note("two"), note("three")
+    pages = {None: page(first, second, next_cursor="next"), "next": page(third)}
+
+    class PausingProvider(Provider):
+        async def get_summary(self, external_id):
+            if external_id == "two":
+                await asyncio.Event().wait()
+            return await super().get_summary(external_id)
+
+    provider = PausingProvider([first, second, third], pages)
+    result = await service.sync_source(source.name, provider=provider, run_budget_seconds=1)
+    assert result["outcome"] == "continued"
+    checkpoint = state(source)
+    assert checkpoint["last_pull_started_at"] == previous_start
+    started = datetime.fromisoformat(checkpoint["scan"]["started_at"])
+    cutoff = previous_start - timedelta(seconds=60)
+    assert datetime.fromisoformat(checkpoint["scan"]["updated_after"]) == cutoff
+    resumed = Provider([first, second, third], pages)
+    await service.sync_source(source.name, provider=resumed)
+    assert provider.list_cutoffs == resumed.list_cutoffs == [cutoff]
+    assert resumed.list_calls == ["next"]
+    assert resumed.get_calls == ["two", "three"]
+    assert state(source)["last_pull_started_at"] == started
+
+
+@pytest.mark.asyncio
+async def test_success_anchors_to_start_not_finish_or_later_provider_update(source, monkeypatch):
+    original_new_scan = service._new_scan
+    started = datetime.now(timezone.utc) - timedelta(hours=2)
+
+    def new_scan(state):
+        return {**original_new_scan(state), "started_at": started.isoformat()}
+
+    monkeypatch.setattr(service, "_new_scan", new_scan)
+    await service.sync_source(source.name, provider=Provider([]))
+    started += timedelta(hours=1)
+    changed_during_pull = replace(note(), provider_updated_at=started + timedelta(minutes=5))
+    await service.sync_source(source.name, provider=Provider([changed_during_pull]))
+    assert state(source)["last_pull_started_at"] == started
+    assert state(source)["last_completed_at"] > changed_during_pull.provider_updated_at
+    next_pull = Provider([])
+    await service.sync_source(source.name, provider=next_pull)
+    assert next_pull.list_cutoffs == [started - timedelta(seconds=60)]
+
+
+@pytest.mark.asyncio
+async def test_failed_or_cancelled_incremental_pull_does_not_advance_boundary(source):
+    await service.sync_source(source.name, provider=Provider([]))
+    previous_start = state(source)["last_pull_started_at"]
+    failed = Provider([], {None: MeetingProviderError("Synthetic failure")})
+    with pytest.raises(MeetingProviderError):
+        await service.sync_source(source.name, provider=failed)
+    assert state(source)["last_pull_started_at"] == previous_start
+    entered = asyncio.Event()
+
+    class WaitingProvider(Provider):
+        async def list_page(self, cursor=None, *, updated_after=None):
+            self.list_cutoffs.append(updated_after)
+            entered.set()
+            await asyncio.Event().wait()
+
+    waiting = WaitingProvider([])
+    task = asyncio.create_task(service.sync_source(source.name, provider=waiting))
+    await asyncio.wait_for(entered.wait(), 5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert state(source)["last_pull_started_at"] == previous_start
+    assert state(source)["claim_owner"] is None
+    assert failed.list_cutoffs == waiting.list_cutoffs == [previous_start - timedelta(seconds=60)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["listing", "missing"])
+async def test_legacy_checkpoint_upgrade_skips_unchanged_details_and_drops_omission_sweep(source, phase):
+    original = note()
+    await service.sync_source(source.name, provider=Provider([original]))
+    db.claim_source(source, "legacy")
+    legacy = service._new_scan({})
+    legacy.pop("version")
+    legacy.pop("updated_after")
+    legacy.update(deep=True, phase=phase, page=[{"id": "one", "updated_at": STAMP.isoformat() if phase == "listing" else None, "deleted_at": None}])
+    db.save_progress(source, "legacy", legacy)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE meeting_sync_state SET last_pull_started_at = NULL WHERE account_key = %s", (source.account_key,))
+    db.release_source(source, "legacy", "continued")
+    provider = Provider([original])
+    await service.sync_source(source.name, provider=provider)
+    assert provider.list_calls == provider.get_calls == []
+    assert state(source)["last_pull_started_at"] == datetime.fromisoformat(legacy["started_at"])
+    assert db.get_stored_refs(source)["one"]["available"]
+
+
+@pytest.mark.asyncio
+async def test_legacy_source_without_safe_boundary_gets_one_metadata_baseline(source):
+    original = note()
+    await service.sync_source(source.name, provider=Provider([original]))
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE meeting_sync_state SET last_pull_started_at = NULL WHERE account_key = %s", (source.account_key,))
+    provider = Provider([original])
+    await service.sync_source(source.name, provider=provider)
+    assert provider.list_cutoffs == [None]
+    assert provider.get_calls == []
+    next_pull = Provider([original])
+    await service.sync_source(source.name, provider=next_pull)
+    assert next_pull.list_cutoffs[0] is not None
+    assert next_pull.get_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field,value", [("version", 2), ("version", True), ("started_at", "2026-01-01"), ("updated_after", "2026-01-01"), ("updated_after", "9999-01-01T00:00:00Z")])
+async def test_invalid_checkpoint_fails_before_provider_requests(source, field, value):
+    db.claim_source(source, "seed")
+    checkpoint = service._new_scan({})
+    checkpoint[field] = value
+    db.save_progress(source, "seed", checkpoint)
+    db.release_source(source, "seed", "continued")
+    provider = Provider([])
+    with pytest.raises(ValueError, match="checkpoint"):
+        await service.sync_source(source.name, provider=provider)
+    assert provider.list_calls == provider.get_calls == []
+    assert state(source)["last_pull_started_at"] is None
+
+
+@pytest.mark.asyncio
 async def test_note_not_ready_retries_next_run_and_then_imports(source):
     summary = note()
     pending = Provider([], {None: page(summary)})
@@ -165,19 +336,19 @@ async def test_new_note_missing_three_times_finishes_with_warning_without_empty_
 
 
 @pytest.mark.asyncio
-async def test_deep_scan_rechecks_notes_missing_from_listing_before_hiding_them(source):
+async def test_incremental_listing_absence_never_rechecks_or_hides_old_notes(source):
     summary = note()
     await service.sync_source(source.name, provider=Provider([summary]))
     summary_id = db.list_summaries(source=source.name)["items"][0]["id"]
     require_deep_scan(source)
-    for attempt in range(1, 4):
+    for _ in range(3):
         provider = Provider([])
         result = await service.sync_source(source.name, provider=provider)
-        assert provider.get_calls == ["one"]
-        assert db.get_stored_refs(source)["one"]["missing_count"] == attempt
-        assert (db.get_summary(summary_id) is not None) is (attempt < 3)
-    assert result["outcome"] == "completed_with_warnings"
-    assert db.get_summary(summary_id, include_unavailable=True)["revision"] == 2
+        assert provider.get_calls == []
+        assert db.get_stored_refs(source)["one"]["missing_count"] == 0
+        assert db.get_summary(summary_id) is not None
+    assert result["outcome"] == "completed"
+    assert db.get_summary(summary_id)["revision"] == 1
 
 
 @pytest.mark.asyncio
@@ -213,12 +384,15 @@ async def test_pagination_cursor_cycle_fails_with_visible_safe_diagnostics(sourc
 @pytest.mark.asyncio
 async def test_invalid_cursor_restarts_once_and_recovers_without_duplicate_summaries(source):
     first, second = note(), note("two")
+    await service.sync_source(source.name, provider=Provider([]))
+    cutoff = state(source)["last_pull_started_at"] - timedelta(seconds=60)
 
     class CursorExpiryProvider(Provider):
         expired = False
 
-        async def list_page(self, cursor=None):
+        async def list_page(self, cursor=None, *, updated_after=None):
             self.list_calls.append(cursor)
+            self.list_cutoffs.append(updated_after)
             if cursor == "expired":
                 self.expired = True
                 raise InvalidCursorError("Cursor expired", 400)
@@ -229,6 +403,8 @@ async def test_invalid_cursor_restarts_once_and_recovers_without_duplicate_summa
     provider = CursorExpiryProvider([first, second])
     await service.sync_source(source.name, provider=provider)
     assert provider.list_calls == [None, "expired", None, "fresh"]
+    assert provider.list_cutoffs == [cutoff] * 4
+    assert provider.get_calls == ["one", "two"]
     rows = db.list_summaries(source=source.name)["items"]
     assert len(rows) == 2
     assert all(row["revision"] == 1 for row in rows)
@@ -248,10 +424,10 @@ async def test_concurrent_source_run_skips_busy_and_closes_both_providers(source
     entered, release = asyncio.Event(), asyncio.Event()
 
     class WaitingProvider(Provider):
-        async def list_page(self, cursor=None):
+        async def list_page(self, cursor=None, *, updated_after=None):
             entered.set()
             await release.wait()
-            return await super().list_page(cursor)
+            return await super().list_page(cursor, updated_after=updated_after)
 
     first_provider, second_provider = WaitingProvider([]), Provider([])
     first = asyncio.create_task(service.sync_source(source.name, provider=first_provider))

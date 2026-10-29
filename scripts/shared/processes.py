@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import signal
 import subprocess
+import sys
 import time
 from typing import Iterator
 
@@ -66,13 +67,22 @@ def supervise(commands: list[tuple[list[str], Path]], env: dict[str, str], front
     previous = {sig: signal.signal(sig, request_stop) for sig in (signal.SIGINT, signal.SIGTERM)}
     try:
         for index, (command, cwd) in enumerate(commands):
-            child_env = frontend_env if index and frontend_env is not None else env
+            child_env = dict(frontend_env if index and frontend_env is not None else env)
+            if index == 0:
+                child_env.setdefault("PYTHONFAULTHANDLER", "1")
             processes.append(subprocess.Popen(command, cwd=cwd, env=child_env, start_new_session=True))
         while not stopping:
-            for process in processes:
+            for index, process in enumerate(processes):
                 code = process.poll()
+                if stopping:
+                    break
                 if code is not None:
-                    return (code or 1) if code >= 0 else 128 - code
+                    exit_status = (code or 1) if code >= 0 else 128 - code
+                    role = "API" if index == 0 else "frontend"
+                    signal_detail = f", signal={signal.Signals(-code).name} ({-code})" if code < 0 else ""
+                    print(f"Agent Smith: {role} child (pid={process.pid}) exited unexpectedly: "
+                          f"returncode={code}{signal_detail}, launcher_exit={exit_status}", file=sys.stderr, flush=True)
+                    return exit_status
             time.sleep(0.1)
         return 0
     finally:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -86,6 +86,39 @@ async def test_meeting_provider_lists_scoped_pages_and_paces_requests():
         assert dict(requests[0].url.params) == {"page_size": "30", "folder_id": "fol_4y6LduVdwSKC27"}
         assert requests[1].url.params["cursor"] == "next"
         assert clock.sleeps == [0.25]
+    finally:
+        await provider.aclose()
+
+
+@pytest.mark.asyncio
+async def test_meeting_provider_sends_frozen_utc_timestamp_filter_with_every_cursor():
+    requests = []
+
+    def handler(request):
+        requests.append(dict(request.url.params))
+        return httpx.Response(200, json={"notes": [], "hasMore": len(requests) == 1, "cursor": "next"})
+
+    provider, _ = _provider(handler, replace(CONFIG, provider_options={"space_id": "spa_8kTq2mWxLp4Rz7"}))
+    cutoff = datetime(2026, 1, 27, 17, 30, 12, 345000, tzinfo=timezone(timedelta(hours=2)))
+    try:
+        first = await provider.list_page(updated_after=cutoff)
+        await provider.list_page(first.next_cursor, updated_after=cutoff)
+        assert [params["updated_after"] for params in requests] == ["2026-01-27T15:30:12.345000Z"] * 2
+        assert all(params["space_id"] == "spa_8kTq2mWxLp4Rz7" for params in requests)
+        assert requests[1]["cursor"] == "next"
+    finally:
+        await provider.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cutoff", [datetime(2026, 1, 1), "2026-01-01", True, 123])
+async def test_meeting_provider_rejects_unsafe_cutoff_before_requesting(cutoff):
+    requests = []
+    provider, _ = _provider(lambda request: requests.append(request))
+    try:
+        with pytest.raises(ValueError, match="timezone-aware datetime"):
+            await provider.list_page(updated_after=cutoff)
+        assert requests == []
     finally:
         await provider.aclose()
 

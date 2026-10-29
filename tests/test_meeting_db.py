@@ -94,7 +94,7 @@ def test_claim_blocks_alias_and_stale_writes_after_takeover(config, summary):
 def test_changed_configuration_restarts_checkpoint_when_claim_released(config):
     db.claim_source(config, "first")
     db.save_progress(config, "first", {"id": "old", "cursor": "private-cursor"})
-    db.finish_scan(config, "first", True, {})
+    db.finish_scan(config, "first", {"phase": "done", "started_at": datetime.now(timezone.utc).isoformat()})
     db.save_progress(config, "first", {"id": "old", "cursor": "private-cursor"})
     changed = replace(config, project="new-project")
     assert db.claim_source(changed, "second") is None
@@ -103,7 +103,39 @@ def test_changed_configuration_restarts_checkpoint_when_claim_released(config):
     db.release_source(config, "first", "continued")
     state = db.claim_source(changed, "second")
     assert state["scan"] == {}
-    assert state["last_deep_completed_at"] is None
+    assert state["last_pull_started_at"] is None
+
+
+def test_source_rename_keeps_boundary_checkpoint_and_relabels_stored_rows(config, summary):
+    db.claim_source(config, "first")
+    saved = db.save_progress(config, "first", {}, summary=summary)
+    started = datetime.now(timezone.utc) - timedelta(minutes=5)
+    db.finish_scan(config, "first", {"phase": "done", "started_at": started.isoformat()})
+    checkpoint = {"id": "continuing", "cursor": "next"}
+    db.save_progress(config, "first", checkpoint)
+    db.release_source(config, "first", "continued")
+    renamed = replace(config, name="renamed-" + uuid4().hex)
+    state = db.claim_source(renamed, "next")
+    assert state["last_pull_started_at"] == started
+    assert state["scan"] == checkpoint
+    assert db.get_summary(saved["id"])["source_name"] == renamed.name
+    assert db.get_summary(saved["id"])["revision"] == 1
+
+
+@pytest.mark.parametrize("checkpoint", [{}, {"phase": "listing", "started_at": "2026-01-01T00:00:00Z"}, {"phase": "done", "started_at": "2026-01-01"}])
+def test_incomplete_or_unsafe_scan_cannot_advance_pull_boundary(config, checkpoint):
+    db.claim_source(config, "run")
+    with pytest.raises(ValueError):
+        db.finish_scan(config, "run", checkpoint)
+    db.release_source(config, "run", "failed")
+    assert db.claim_source(config, "retry")["last_pull_started_at"] is None
+
+
+def test_meeting_pull_watermark_schema_is_nullable_timezone_aware():
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("""SELECT data_type, is_nullable, column_default FROM information_schema.columns
+                       WHERE table_name = 'meeting_sync_state' AND column_name = 'last_pull_started_at'""")
+        assert cur.fetchone() == ("timestamp with time zone", "YES", None)
 
 
 def test_checkpoint_and_summary_roll_back_together(config, summary, monkeypatch):

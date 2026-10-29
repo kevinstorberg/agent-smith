@@ -34,7 +34,7 @@ def feed(source, monkeypatch):
             self.closed = False
             feed.clients.append(self)
 
-        async def list_page(self, cursor=None):
+        async def list_page(self, cursor=None, *, updated_after=None):
             return page(*feed.summaries.values())
 
         async def get_summary(self, external_id):

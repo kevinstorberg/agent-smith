@@ -55,6 +55,9 @@ MEMORY_STORE_PATH: str = os.environ.get("MEMORY_STORE_PATH", str(_repo_root / "m
 MEMORY_EMBEDDING_MODEL: str = os.environ.get(
     "MEMORY_EMBEDDING_MODEL", "all-MiniLM-L6-v2"
 )
+MEMORY_EMBEDDING_DEVICE: str = os.environ.get("MEMORY_EMBEDDING_DEVICE", "cpu").strip()
+if not MEMORY_EMBEDDING_DEVICE:
+    raise SystemExit("MEMORY_EMBEDDING_DEVICE must name a device, such as cpu or mps.")
 MEMORY_EMBEDDING_DIMENSION: int = int(
     os.environ.get("MEMORY_EMBEDDING_DIMENSION", "384")
 )

@@ -5,33 +5,57 @@ import os
 import uuid
 from copy import deepcopy
 from datetime import datetime, timezone
+from threading import Lock
 
 from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
 from langchain_classic.retrievers.time_weighted_retriever import (
     TimeWeightedVectorStoreRetriever,
 )
 from langchain_huggingface import HuggingFaceEmbeddings
 
 from services.memory.backends import get_backend
-from services.config import MEMORY_EMBEDDING_MODEL
+from services.config import MEMORY_EMBEDDING_DEVICE, MEMORY_EMBEDDING_MODEL
 
 MODEL_NAME = MEMORY_EMBEDDING_MODEL
 DECAY_RATE = float(os.environ.get("MEMORY_DECAY_RATE", "0.01"))
 DEFAULT_LIMIT = int(os.environ.get("MEMORY_DEFAULT_LIMIT", "20"))
 SEARCH_FETCH_CEILING = int(os.environ.get("MEMORY_SEARCH_FETCH_CEILING", "200"))
 
-_embeddings: HuggingFaceEmbeddings | None = None
+_embeddings: Embeddings | None = None
 _retriever: TimeWeightedVectorStoreRetriever | None = None
+_embeddings_lock = Lock()
+_retriever_lock = Lock()
 
 
 class MemoryConflictError(RuntimeError):
     pass
 
 
-def _get_embeddings() -> HuggingFaceEmbeddings:
+class _SerializedEmbeddings(Embeddings):
+    def __init__(self, model: Embeddings):
+        self._model = model
+        self._lock = Lock()
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        with self._lock:
+            return self._model.embed_documents(texts)
+
+    def embed_query(self, text: str) -> list[float]:
+        with self._lock:
+            return self._model.embed_query(text)
+
+
+def _get_embeddings() -> Embeddings:
     global _embeddings
     if _embeddings is None:
-        _embeddings = HuggingFaceEmbeddings(model_name=MODEL_NAME)
+        with _embeddings_lock:
+            if _embeddings is None:
+                model = HuggingFaceEmbeddings(
+                    model_name=MODEL_NAME,
+                    model_kwargs={"device": MEMORY_EMBEDDING_DEVICE},
+                )
+                _embeddings = _SerializedEmbeddings(model)
     return _embeddings
 
 
@@ -81,34 +105,38 @@ def _get_retriever() -> TimeWeightedVectorStoreRetriever:
     if _retriever is not None:
         return _retriever
 
-    backend = get_backend()
-    vectorstore = backend.get_vectorstore(_get_embeddings())
+    with _retriever_lock:
+        if _retriever is not None:
+            return _retriever
 
-    _retriever = TimeWeightedVectorStoreRetriever(
-        vectorstore=vectorstore,
-        decay_rate=DECAY_RATE,
-        k=10,
-        search_kwargs={"k": 50},
-    )
-
-    rows = backend.load_all()
-    for i, row in enumerate(rows):
-        meta = row.get("metadata", {})
-        doc = Document(
-            page_content=row.get("text", ""),
-            metadata={
-                **meta,
-                "last_accessed_at": _parse_datetime(meta.get("last_accessed_at")),
-                "buffer_idx": i,
-            },
+        backend = get_backend()
+        vectorstore = backend.get_vectorstore(_get_embeddings())
+        retriever = TimeWeightedVectorStoreRetriever(
+            vectorstore=vectorstore,
+            decay_rate=DECAY_RATE,
+            k=10,
+            search_kwargs={"k": 50},
         )
-        _retriever.memory_stream.append(doc)
 
-    object.__setattr__(
-        _retriever,
-        "get_salient_docs",
-        lambda query: _id_based_salient_docs(_retriever, query),
-    )
+        rows = backend.load_all()
+        for i, row in enumerate(rows):
+            meta = row.get("metadata", {})
+            doc = Document(
+                page_content=row.get("text", ""),
+                metadata={
+                    **meta,
+                    "last_accessed_at": _parse_datetime(meta.get("last_accessed_at")),
+                    "buffer_idx": i,
+                },
+            )
+            retriever.memory_stream.append(doc)
+
+        object.__setattr__(
+            retriever,
+            "get_salient_docs",
+            lambda query: _id_based_salient_docs(retriever, query),
+        )
+        _retriever = retriever
 
     return _retriever
 

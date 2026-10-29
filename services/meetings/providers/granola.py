@@ -47,8 +47,12 @@ class GranolaProvider:
         self._clock = clock
         self._next_request_at = 0.0
 
-    async def list_page(self, cursor: str | None = None) -> NotePage:
+    async def list_page(self, cursor: str | None = None, *, updated_after: datetime | None = None) -> NotePage:
         params = dict(self._params)
+        if updated_after is not None:
+            if not isinstance(updated_after, datetime) or updated_after.utcoffset() is None:
+                raise ValueError("Meeting updated_after must be a timezone-aware datetime")
+            params["updated_after"] = updated_after.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
         if cursor is not None:
             _text(cursor, "cursor", limit=4096, nonempty=True)
             params["cursor"] = cursor
