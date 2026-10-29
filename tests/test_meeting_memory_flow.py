@@ -292,3 +292,24 @@ async def test_stale_worker_cannot_write_or_clear_replacement_lease(source, read
         assert digestion_db.get_record(ready)["claim_owner"] == replacement
     finally:
         digestion_db.release(ready, replacement)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("category,expected", [("APITimeoutError", "APITimeoutError"), ("private error category secret-token", "MemoryAnalysisError")])
+async def test_safe_agent_cause_reaches_job_and_ledger_without_private_message(source, ready, agents, monkeypatch, caplog, category, expected):
+    from services.meetings import analysis
+
+    async def failed(*args, **kwargs):
+        raise analysis.MemoryAnalysisError("private model response secret-token", error_type=category)
+
+    monkeypatch.setattr(analysis, "analyze_memories", failed)
+    scheduled = job(source)
+    result = await execute_job(scheduled)
+    assert not result["success"]
+    report = json.loads(result["error"].split("MeetingSyncError: ", 1)[1])
+    assert report["memories"]["error_type"] == expected
+    record = digestion_db.get_record(ready)
+    assert record["memory_error"] == expected and record["memory_attempts"] == 1 and record["claim_owner"] is None
+    assert "private" not in result["error"] + caplog.text and "secret-token" not in result["error"] + caplog.text
+    executions, total = list_executions_for_job(scheduled["id"])
+    assert total == 1 and executions[0]["status"] == "failed"

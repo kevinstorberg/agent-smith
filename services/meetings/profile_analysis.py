@@ -6,7 +6,7 @@ from typing import Annotated
 from langchain_core.tools import tool
 from pydantic import Field
 
-from services.meetings.analysis import AnalysisContext, recent_items, run_analysis
+from services.meetings.analysis import AnalysisContext, MeetingAnalysisError, recent_items, run_analysis
 from services.meetings.outputs import ProfileClaim as ProfileClaim, ProfileSubmission as ProfileSubmission
 from services.meetings.service import run_db
 
@@ -41,7 +41,7 @@ errors and stage again. Only staged output is returned; final prose is ignored.
 """
 
 
-class ProfileAnalysisError(RuntimeError):
+class ProfileAnalysisError(MeetingAnalysisError):
     pass
 
 

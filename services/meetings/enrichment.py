@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import re
 from datetime import datetime, timezone
 from uuid import UUID, uuid4, uuid5
 
@@ -18,6 +19,13 @@ AGENT_SECONDS = 150
 WINDOW_CHARS = 24_000
 WINDOW_SEGMENTS = 100
 _MEMORY_NAMESPACE = UUID("31576a65-6526-5da7-a4c2-c4ef174a665b")
+
+
+def _failure_category(error: Exception) -> str:
+    category = getattr(error, "error_type", None)
+    if not isinstance(category, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,99}", category):
+        return type(error).__name__
+    return category
 
 
 def expanded_segments(segments: list[dict]) -> list[dict]:
@@ -121,8 +129,9 @@ class DigestionRun:
         except Exception as error:
             if isinstance(error, TimeoutError) and attempt.expired():
                 return
-            await run_db(record_failure, self.record["meeting_id"], self.owner, type(error).__name__)
-            report.update(outcome="failed", error_type=type(error).__name__)
+            category = _failure_category(error)
+            await run_db(record_failure, self.record["meeting_id"], self.owner, category)
+            report.update(outcome="failed", error_type=category)
 
     async def _memory_work(self, record: dict) -> None:
         from services.graphs.model_config import resolve_model_id
