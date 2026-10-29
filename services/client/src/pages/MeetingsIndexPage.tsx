@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { api } from '../api';
 import type { MeetingSummary } from '../api';
 import { Pagination } from '../components/Pagination';
@@ -13,6 +13,13 @@ import { parseTags } from '../utils/tags';
 
 export function MeetingsIndexPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const vocabularyActive = searchParams.get('tab') === 'vocabulary';
+  const tabSearch = (tab: 'meetings' | 'vocabulary') => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', tab);
+    return `?${next}`;
+  };
   const [searchText, setSearchText] = useState('');
   const debouncedQuery = useDebouncedValue(searchText.trim());
   const query = searchText.trim() ? debouncedQuery : '';
@@ -23,13 +30,17 @@ export function MeetingsIndexPage() {
     (pageLimit, pageOffset) => api.meetings.list({ limit: pageLimit, offset: pageOffset, q: query || undefined, ...(labels.length ? { labels } : {}) }),
     [query, labels],
   );
-  usePolling(() => refresh({ showLoading: false }));
+  usePolling(() => refresh({ showLoading: false }), { enabled: !vocabularyActive });
 
   return (
     <div>
       <h2 className="page-title" style={{ marginBottom: 8 }}>Meetings</h2>
-      <p className="text-muted-sm" style={{ marginBottom: 16 }}>Saved summaries from all meeting connections.</p>
-      <MeetingVocabulary />
+      <p className="text-muted-sm" style={{ marginBottom: 16 }}>Saved summaries from all meeting connections and the vocabulary used to form memories.</p>
+      <nav className="resource-tabs" aria-label="Meeting views">
+        <Link id="meeting-tab-meetings" to={tabSearch('meetings')} aria-current={!vocabularyActive ? 'page' : undefined}>Meetings</Link>
+        <Link id="meeting-tab-vocabulary" to={tabSearch('vocabulary')} aria-current={vocabularyActive ? 'page' : undefined}>Vocabulary</Link>
+      </nav>
+      <div hidden={vocabularyActive} role="region" aria-labelledby="meeting-tab-meetings">
 
       <div className="search-bar">
         <input
@@ -89,6 +100,10 @@ export function MeetingsIndexPage() {
           />
         </>
       )}
+      </div>
+      <div hidden={!vocabularyActive} role="region" aria-labelledby="meeting-tab-vocabulary">
+        <MeetingVocabulary />
+      </div>
     </div>
   );
 }

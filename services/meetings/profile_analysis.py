@@ -132,6 +132,8 @@ def _agent_profile(profile: dict) -> dict:
     relationships = []
     for edge in profile.get("relationships", []):
         current = {key: value for key, value in edge.items() if key not in {"claims", "history"}}
+        if "analysis_evidence" in edge:
+            current["analysis_evidence"] = {key: edge["analysis_evidence"][key] for key in ("human", "status", "claim_count", "coverage", "generated_at") if key in edge["analysis_evidence"]}
         for field in ("claims", "history"):
             if field in edge:
                 current.setdefault("claim_count" if field == "claims" else "history_count", len(edge[field]))

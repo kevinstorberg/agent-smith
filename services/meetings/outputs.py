@@ -14,6 +14,11 @@ def _nonblank(value: str) -> str:
 
 
 _Content = Annotated[str, AfterValidator(_nonblank)]
+ProfileCategory = Literal["driver", "strength", "development_area", "role", "priority", "communication", "decision_pattern", "perception", "interaction", "relationship", "uncertainty"]
+ProfileEpistemic = Literal["self_report", "observed", "inference"]
+ProfileConfidence = Literal["low", "medium", "high"]
+ProfileReviewStatus = Literal["active", "corrected", "rejected"]
+ProfileClaimSort = Literal["oldest", "newest"]
 
 
 class _Output(BaseModel):
@@ -51,9 +56,9 @@ class MemorySubmission(_Output):
 class ProfileClaim(_Output):
     subject_id: str = Field(min_length=1, max_length=200)
     target_id: str | None = Field(default=None, min_length=1, max_length=200)
-    category: Literal["driver", "strength", "development_area", "role", "priority", "communication", "decision_pattern", "perception", "interaction", "relationship", "uncertainty"]
-    epistemic: Literal["self_report", "observed", "inference"]
-    confidence: Literal["low", "medium", "high"]
+    category: ProfileCategory
+    epistemic: ProfileEpistemic
+    confidence: ProfileConfidence
     content: _Content = Field(min_length=1, max_length=2000)
     rationale: str = Field(default="", max_length=2000)
     evidence: list[Evidence] = Field(min_length=1, max_length=10)

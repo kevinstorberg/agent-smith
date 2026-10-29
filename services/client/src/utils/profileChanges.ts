@@ -24,12 +24,21 @@ export function profileChanges(revision: ProfileRevision): { fields: Change[]; e
         if (before !== after) fields.push({ key: `ownership.${key}`, label: `${label} · Automatic updates`, before: before ? 'Protected by your edit' : 'Allowed', after: after ? 'Protected by your edit' : 'Allowed' });
       }
     } else if (field === 'relationships') {
-      const before = object(change.before), after = object(change.after);
-      for (const [key, label] of [['label', 'Relationship label'], ['notes', 'Relationship notes']]) {
-        if (text(before[key]) !== text(after[key])) fields.push({ key: `relationships.${key}`, label, before: text(before[key]), after: text(after[key]) });
+      const snapshots = (value: unknown) => (Array.isArray(value) ? value : [value]).map(object).filter(edge => edge.id != null);
+      const beforeRows = snapshots(change.before), afterRows = snapshots(change.after);
+      const ids = new Set([...beforeRows, ...afterRows].map(edge => edge.id));
+      for (const id of ids) {
+        const before = beforeRows.find(edge => edge.id === id) || {}, after = afterRows.find(edge => edge.id === id) || {};
+        const context = after.id ? after : before;
+        const prefix = context.subject_name && context.target_name ? `${text(context.subject_name)} → ${text(context.target_name)} · ` : '';
+        for (const [key, label] of [['label', 'Relationship label'], ['notes', 'Relationship assessment']]) {
+          if (text(before[key]) !== text(after[key])) fields.push({ key: `relationships.${String(id)}.${key}`, label: `${prefix}${label}`, before: text(before[key]), after: text(after[key]) });
+        }
+        const protectedBefore = object(before.analysis_evidence).human === true, protectedAfter = object(after.analysis_evidence).human === true;
+        if (protectedBefore !== protectedAfter) fields.push({ key: `relationships.${String(id)}.ownership`, label: `${prefix}Automatic updates`, before: protectedBefore ? 'Protected by your edit' : 'Allowed', after: protectedAfter ? 'Protected by your edit' : 'Allowed' });
+        const status = (value: Record<string, unknown>) => value.id == null ? 'Not linked' : value.dismissed ? 'Removed' : 'Active';
+        if (status(before) !== status(after)) fields.push({ key: `relationships.${String(id)}.status`, label: `${prefix}Relationship status`, before: status(before), after: status(after) });
       }
-      const status = (value: Record<string, unknown>) => value.id == null ? 'Not linked' : value.dismissed ? 'Removed' : 'Active';
-      if ((before.id || after.id) && status(before) !== status(after)) fields.push({ key: 'relationships.status', label: 'Relationship status', before: status(before), after: status(after) });
     } else {
       const label = ({ display_name: 'Name', email: 'Primary email', identity_scope: 'Identity matching', nicknames: 'Nicknames', tags: 'Tags', starred: 'Starred', deleted: 'Deleted' } as Record<string, string>)[field];
       if (label) fields.push({ key: field, label, before: text(change.before), after: text(change.after) });

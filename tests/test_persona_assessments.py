@@ -290,7 +290,7 @@ async def test_persona_assessment_scheduled_graph_automatically_uses_saved_claim
     calls = []
     async def synthesize(row, claims, **kwargs):
         calls.append(row["id"])
-        return {"sections": output({"profile": row, "claims": claims})}
+        return {"sections": output({"profile": row, "claims": claims}), "relationships": assessment_db.relationship_insufficient(row)}
     monkeypatch.setattr(MeetingContextProvider, "claim", lambda self, owner, **kwargs: None)
     monkeypatch.setattr(assessment, "synthesize", synthesize)
     for _ in range(3):
@@ -361,11 +361,11 @@ async def test_persona_assessment_real_react_saved_claims_and_memory_research(ob
     instance, roles = model([
         call("get_observations", offset=0, limit=20),
         call("search_previous_memories", query="reliability"),
-        call("stage_assessment", sections=candidates, reason="Saved evidence"),
+        call("stage_assessment", sections=candidates, relationships=assessment_db.relationship_insufficient(snapshot["profile"]), reason="Saved evidence"),
         AIMessage(content="Final prose is not saved"),
     ])
     result = await assessment.synthesize(snapshot["profile"], snapshot["claims"])
-    assert result == {"sections": candidates, "reason": "Saved evidence"}
+    assert result == {"sections": candidates, "relationships": assessment_db.relationship_insufficient(snapshot["profile"]), "reason": "Saved evidence"}
     assert roles == [("persona", "curator")]
     assert instance.tool_names == ["search_previous_memories", "get_memory", "get_observations", "stage_assessment"]
     data = next(message.content for message in instance.seen[0] if isinstance(message, HumanMessage))
@@ -386,7 +386,7 @@ async def test_persona_assessment_invalid_stage_clears_accepted_result(observed,
         broken["drivers"]["claim_ids"] = [str(uuid4()), str(uuid4())]
     else:
         broken["drivers"]["status"] = "invented"
-    instance, _ = model([call("stage_assessment", sections=valid), call("stage_assessment", sections=broken), AIMessage(content="Done")])
+    instance, _ = model([call("stage_assessment", sections=valid, relationships=assessment_db.relationship_insufficient(snapshot["profile"])), call("stage_assessment", sections=broken, relationships=assessment_db.relationship_insufficient(snapshot["profile"])), AIMessage(content="Done")])
     with pytest.raises(assessment.AssessmentError, match="without a valid"):
         await assessment.synthesize(snapshot["profile"], snapshot["claims"])
     assert any(isinstance(message, ToolMessage) and ("error" in message.content or "Invalid assessment schema" in message.content)
@@ -404,7 +404,7 @@ async def test_persona_assessment_graph_profile_mode_skips_transcript_and_duplic
     calls = []
     async def synthesize(row, claims, **kwargs):
         calls.append(row["id"])
-        return {"sections": output({"profile": row, "claims": claims})}
+        return {"sections": output({"profile": row, "claims": claims}), "relationships": assessment_db.relationship_insufficient(row)}
     monkeypatch.setattr(MeetingContextProvider, "claim", forbidden)
     monkeypatch.setattr(assessment, "synthesize", synthesize)
     report = json.loads(await dispatch("persona", {"profile_id": observed["id"]}))

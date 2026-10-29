@@ -42,7 +42,7 @@ describe('ProfilesIndexPage', () => {
     read.mockResolvedValue({ items: profiles, total: 25 });
     renderWithProviders(<ProfilesIndexPage />);
     await screen.findByText('Alex');
-    await screen.findByRole('link', { name: 'Persona review' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run personas' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() => expect(read).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 })));
     fireEvent.click(screen.getByRole('button', { name: 'Run personas' }));

@@ -58,8 +58,11 @@ export function MeetingVocabulary() {
     } });
   };
 
-  return <details className="card">
-    <summary>Meeting vocabulary</summary>
+  return <section className="card" aria-label="Meeting vocabulary">
+    <div className="page-header profiles-header">
+      <h3 className="section-title">Vocabulary</h3>
+      {!draft && <button className="btn btn-primary" disabled={busy || loading} onClick={() => start()}>Add term</button>}
+    </div>
     <p className="text-muted-sm" style={{ marginTop: 12 }}>Terms and meanings that guide new meeting memories.</p>
     {loading && <p role="status">Loading vocabulary...</p>}
     {error && <p role="alert">Could not load vocabulary. <button className="btn btn-sm" onClick={() => refresh()}>Retry</button></p>}
@@ -79,7 +82,7 @@ export function MeetingVocabulary() {
         <button className="btn" type="submit" disabled={change.loading || Boolean(conflicted && (loading || error || !latest))}>{change.loading ? 'Saving...' : 'Save term'}</button>
         <button className="btn" type="button" disabled={change.loading} onClick={() => { setDraft(null); setNotice(null); }}>Cancel</button>
       </div>
-    </form> : <button className="btn" disabled={busy || loading} onClick={() => start()}>Add term</button>}
+    </form> : null}
     {!loading && !error && !data?.items.length && <p className="text-muted-sm">No vocabulary terms yet.</p>}
     <ul className="management-list">
       {data?.items.map(entry => <li key={entry.id} className="management-row">
@@ -95,5 +98,5 @@ export function MeetingVocabulary() {
         </div>}
       </li>)}
     </ul>
-  </details>;
+  </section>;
 }

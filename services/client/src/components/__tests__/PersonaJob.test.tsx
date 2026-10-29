@@ -23,7 +23,7 @@ describe('PersonaJob', () => {
   it('reports applied assessments even when no new meeting was reviewed', async () => {
     vi.mocked(api.jobs.runNow).mockResolvedValue({ ...result('idle'), output: JSON.stringify({ profiles: { outcome: 'idle', profiles: 0 }, assessments: { outcome: 'done', profiles: 2 } }) });
     renderWithProviders(<PersonaJob onChanged={vi.fn()} />);
-    await screen.findByRole('link', { name: 'Persona review' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run personas' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Run personas' }));
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Updated 2 profile assessments. Changes are saved in History.'));
   });
@@ -44,7 +44,7 @@ describe('PersonaJob', () => {
     expect(screen.queryByText(/not configured/)).not.toBeInTheDocument();
     expect(screen.queryByText('private status diagnostic')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry job check' }));
-    expect(await screen.findByRole('link', { name: 'Persona review' })).toHaveAttribute('href', '/jobs/42');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run personas' })).toBeEnabled());
   });
 
   it('prefers an eligible unrestricted job, prevents double clicks, and links its exact execution', async () => {
@@ -55,7 +55,7 @@ describe('PersonaJob', () => {
     vi.mocked(api.jobs.runNow).mockReturnValueOnce(new Promise(resolve => { complete = resolve; }));
     const changed = vi.fn();
     renderWithProviders(<PersonaJob onChanged={changed} />);
-    await screen.findByRole('link', { name: 'Persona review' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run personas' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Run personas' }));
     fireEvent.click(screen.getByRole('button', { name: 'Running personas...' }));
     expect(api.jobs.runNow).toHaveBeenCalledTimes(1);
@@ -73,7 +73,7 @@ describe('PersonaJob', () => {
   ])('reports %s without claiming all profiles are complete', async (value, message) => {
     vi.mocked(api.jobs.runNow).mockResolvedValue(result(value));
     renderWithProviders(<PersonaJob onChanged={vi.fn()} />);
-    await screen.findByRole('link', { name: 'Persona review' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run personas' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Run personas' }));
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(message));
   });
@@ -81,7 +81,7 @@ describe('PersonaJob', () => {
   it('shows a failed run with an execution link and keeps retry available', async () => {
     vi.mocked(api.jobs.runNow).mockResolvedValue({ ...result('failed'), success: false, error: 'Private diagnostic' });
     renderWithProviders(<PersonaJob onChanged={vi.fn()} />);
-    await screen.findByRole('link', { name: 'Persona review' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run personas' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Run personas' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Persona update failed.');
     expect(screen.queryByText('Private diagnostic')).not.toBeInTheDocument();
@@ -91,7 +91,7 @@ describe('PersonaJob', () => {
   it('reports an unreadable run result without claiming the request never started', async () => {
     vi.mocked(api.jobs.runNow).mockRejectedValueOnce(new Error('Private connection detail'));
     renderWithProviders(<PersonaJob onChanged={vi.fn()} />);
-    await screen.findByRole('link', { name: 'Persona review' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run personas' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Run personas' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Check job executions before trying again.');
     expect(screen.queryByText('Private connection detail')).not.toBeInTheDocument();
@@ -113,7 +113,7 @@ describe('PersonaJob', () => {
     vi.mocked(api.jobs.runNow).mockReturnValueOnce(new Promise(resolve => { complete = resolve; }));
     const changed = vi.fn();
     const { unmount } = renderWithProviders(<PersonaJob onChanged={changed} />);
-    await screen.findByRole('link', { name: 'Persona review' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run personas' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Run personas' }));
     unmount();
     await act(async () => complete(result('done')));

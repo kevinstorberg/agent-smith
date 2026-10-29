@@ -56,19 +56,22 @@ describe('ProfileDetailPage', () => {
     expect(screen.getByRole('button', { name: 'Edit' })).toBeDisabled();
   });
 
-  it('shows five assessments and one relationships card containing narrative, canonical links and controls', async () => {
-    read.mockResolvedValue({ ...compact, relationships: [edge], section_notes: { ...compact.section_notes, relationships: 'Alex and Jordan coordinate planning.' } });
+  it('puts current relationship assessments in their own view and keeps combined text historical only', async () => {
+    read.mockResolvedValue({ ...compact, relationships: [edge], section_notes: { ...compact.section_notes, relationships: 'Previous combined assessment.' } });
     renderPage('assessment');
-    const card = await screen.findByRole('region', { name: 'Relationships and perceptions assessment' });
-    const relations = within(card);
-    expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(5);
-    expect(relations.getByText('Alex and Jordan coordinate planning.')).toBeVisible();
+    await screen.findByRole('heading', { name: 'Strengths' });
+    expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(4);
+    expect(screen.queryByText('Previous combined assessment.')).not.toBeInTheDocument();
+    await open('Relationships');
+    const relations = within(screen.getByRole('region', { name: 'Profile relationships' }));
+    expect(relations.getByText(edge.notes)).toBeVisible();
     expect(relations.getByRole('link', { name: 'Jordan' })).toHaveAttribute('href', `/profiles/${edge.target_id}`);
-    expect(relations.getByRole('button', { name: 'Add relationship' })).toBeVisible();
     expect(relations.getByRole('button', { name: 'Edit relationship' })).toBeVisible();
-    expect(relations.getByRole('button', { name: 'Remove relationship' })).toBeVisible();
-    expect(screen.queryByRole('heading', { name: 'Relationships' })).not.toBeInTheDocument();
     expect(claims).not.toHaveBeenCalled();
+    await open('Overview');
+    fireEvent.click(screen.getByText('History'));
+    fireEvent.click(await screen.findByText('Previous combined relationship assessment'));
+    expect(screen.getByText('Previous combined assessment.')).toBeVisible();
   });
 
   it('loads evidence lazily in fixed pages of 20 and uses URL navigation', async () => {
@@ -80,12 +83,12 @@ describe('ProfileDetailPage', () => {
     await open('Evidence');
     expect(await screen.findByText('Saved observation 20')).toBeVisible();
     expect(claims).toHaveBeenCalledTimes(1);
-    expect(claims).toHaveBeenLastCalledWith(compact.id, { limit: 20, offset: 0 });
+    expect(claims).toHaveBeenLastCalledWith(compact.id, { limit: 20, offset: 0, sort: 'newest' });
     expect(screen.queryByText('Saved observation 21')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     expect(await screen.findByText('Saved observation 21')).toBeVisible();
-    expect(claims).toHaveBeenLastCalledWith(compact.id, { limit: 20, offset: 20 });
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(claims).toHaveBeenLastCalledWith(compact.id, { limit: 20, offset: 20, sort: 'newest' });
+    expect(screen.getAllByRole('combobox')).toHaveLength(4);
     expect(screen.getByTestId('location')).toHaveTextContent('?tab=evidence');
   });
 
@@ -103,19 +106,22 @@ describe('ProfileDetailPage', () => {
     expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
   });
 
-  it('retains an assessment draft across tabs and prevents overlapping relationship edits', async () => {
+  it('retains an assessment draft across views and prevents competing relationship changes', async () => {
     read.mockResolvedValue({ ...compact, relationships: [edge] });
     renderPage('assessment');
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit relationships and perceptions' }));
-    fireEvent.change(screen.getByLabelText('Relationships and perceptions'), { target: { value: 'My assessment draft' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit strengths' }));
+    fireEvent.change(screen.getByLabelText('Strengths'), { target: { value: 'My assessment draft' } });
+    await open('Relationships');
     expect(screen.getByRole('button', { name: 'Add relationship' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Edit relationship' })).toBeDisabled();
-    await open('Overview');
     await open('Assessment');
-    expect(screen.getByLabelText('Relationships and perceptions')).toHaveValue('My assessment draft');
+    expect(screen.getByLabelText('Strengths')).toHaveValue('My assessment draft');
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await open('Relationships');
     fireEvent.click(screen.getByRole('button', { name: 'Edit relationship' }));
-    expect(screen.getByRole('button', { name: 'Edit relationships and perceptions' })).toBeDisabled();
+    await open('Overview');
+    await open('Relationships');
+    expect(screen.getByLabelText('Relationship assessment')).toHaveValue(edge.notes);
     expect(screen.getByRole('button', { name: 'Refresh assessment' })).toBeDisabled();
   });
 
@@ -148,7 +154,7 @@ describe('ProfileDetailPage', () => {
     await open('View supporting evidence');
     expect(await screen.findByRole('region', { name: 'Evidence and observations' })).toBeVisible();
     expect(screen.getByTestId('location')).toHaveTextContent('?tab=evidence');
-    expect(claims).toHaveBeenCalledWith(compact.id, { limit: 20, offset: 0 });
+    expect(claims).toHaveBeenCalledWith(compact.id, { limit: 20, offset: 0, sort: 'newest' });
   });
 
   it('suppresses metadata quotes outside Evidence while keeping its source link', async () => {

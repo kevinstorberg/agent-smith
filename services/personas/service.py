@@ -72,12 +72,15 @@ class PersonaRun(processing.ProcessingRun):
         try:
             async with asyncio.timeout_at(deadline):
                 row, claims = snapshot["profile"], snapshot["claims"]
-                if not claims or not assessment_db.insufficient(row):
+                directed = assessment_db.relationship_insufficient(row)
+                can_assess_edges = any(sum(claim.get("canonical_target_id") == item["target_id"] for claim in claims) >= 2 for item in directed)
+                if not claims or not assessment_db.insufficient(row) and not can_assess_edges:
                     candidates = assessment_db.insufficient(row)
                 else:
                     result = await assessment.synthesize(row, claims, deadline=deadline)
                     candidates = result["sections"]
-                await run_db(assessment_db.apply, self.owner, snapshot, candidates)
+                    directed = result.get("relationships", [])
+                await run_db(assessment_db.apply, self.owner, snapshot, candidates, directed)
             self.assessment_report.update(outcome="done", profiles=1)
         except Exception as error:
             category = processing.failure_category(error)

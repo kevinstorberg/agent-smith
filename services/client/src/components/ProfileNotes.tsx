@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Link } from 'react-router';
 import { api, ApiError } from '../api';
@@ -7,9 +6,9 @@ import type { ParticipantProfile, ProfileSectionKey, ProfileUpdateInput } from '
 import { useApiMutation } from '../hooks/useApiMutation';
 import { formatProfileCoverage, PROFILE_SECTIONS } from '../utils/profileFields';
 
-export function ProfileNotes({ profile, disabled, onBusyChange, onReload, sectionKeys, relationships }: {
+export function ProfileNotes({ profile, disabled, onBusyChange, onReload, sectionKeys }: {
   profile: ParticipantProfile; disabled: boolean; onBusyChange: (busy: boolean) => void; onReload: () => void;
-  sectionKeys?: ProfileSectionKey[]; relationships?: ReactNode;
+  sectionKeys?: ProfileSectionKey[];
 }) {
   const [edit, setEdit] = useState<{ key: ProfileSectionKey; value: string; revision: number; conflicted: boolean } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -25,7 +24,7 @@ export function ProfileNotes({ profile, disabled, onBusyChange, onReload, sectio
   });
   useEffect(() => { onBusyChange(Boolean(edit) || save.loading); }, [edit, save.loading, onBusyChange]);
   return <section aria-label={sectionKeys?.length === 1 && sectionKeys[0] === 'overview' ? 'Profile overview' : 'Profile assessment'} className="profile-assessment-sections">
-    {PROFILE_SECTIONS.filter(([key]) => !sectionKeys || sectionKeys.includes(key)).map(([key, label]) => {
+    {PROFILE_SECTIONS.filter(([key]) => key !== 'relationships' && (!sectionKeys || sectionKeys.includes(key))).map(([key, label]) => {
       const text = profile.section_notes?.[key];
       const source = profile.section_evidence?.[key];
       const observationCount = source?.claim_count ?? source?.claim_ids?.length ?? source?.coverage?.claim_count ?? 0;
@@ -62,7 +61,6 @@ export function ProfileNotes({ profile, disabled, onBusyChange, onReload, sectio
           </div>
           {observationCount > 0 && <p className="profile-evidence-link"><Link className="text-link" to={`/profiles/${profile.id}?tab=evidence`}>Supporting evidence ({observationCount})</Link></p>}
         </>}
-        {key === 'relationships' && relationships}
       </section>;
     })}
     {notice && <p className="card" role="alert">{notice}</p>}

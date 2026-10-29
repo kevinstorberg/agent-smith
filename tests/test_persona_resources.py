@@ -118,7 +118,10 @@ def test_relationship_merge_preserves_selected_profile_and_human_context(client,
     assert merged["id"] == second["id"]
     assert profile_db.get_profile(first["id"])["id"] == second["id"]
     assert len(merged["relationships"]) == 1
-    assert all(value in merged["relationships"][0]["notes"] for value in ("First context", "Second context", "Peer"))
+    assert merged["relationships"][0]["notes"] == "Second context"
+    with get_connection() as connection, connection.cursor() as cursor:
+        cursor.execute("SELECT history FROM profile_relationships WHERE id=%s", (merged["relationships"][0]["id"],))
+        assert "First context" in str(cursor.fetchone()[0])
 
 
 def test_persona_updates_reuse_people_and_preserve_human_fields_and_relationship_notes(client, source, claimed, participants):

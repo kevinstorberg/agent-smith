@@ -61,10 +61,10 @@ export function ProfilesIndexPage() {
     <div>
       <div className="page-header profiles-header">
         <h2 className="page-title">Profiles</h2>
-        <button className="btn btn-primary" disabled={creating} onClick={() => { setCreating(true); setName(''); setEmail(''); setCreateNotice(null); }}>New profile</button>
+        <div className="profile-header-actions"><PersonaJob onChanged={() => refresh({ showLoading: false })} />
+        <button className="btn btn-primary" disabled={creating} onClick={() => { setCreating(true); setName(''); setEmail(''); setCreateNotice(null); }}>New profile</button></div>
       </div>
       <p className="text-muted-sm" style={{ marginBottom: 16 }}>Manage people and their evidence from your meeting history.</p>
-      <PersonaJob onChanged={() => refresh({ showLoading: false })} />
       {creating && <form aria-label="New profile" className="card profile-create" onSubmit={event => {
         event.preventDefault();
         if (!name.trim()) { setCreateNotice('A profile name is required.'); return; }

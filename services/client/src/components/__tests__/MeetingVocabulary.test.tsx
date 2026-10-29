@@ -14,7 +14,6 @@ const vocabulary = api.meetings.vocabulary;
 
 function open() {
   renderWithProviders(<MeetingVocabulary />);
-  fireEvent.click(screen.getByText('Meeting vocabulary'));
 }
 
 beforeEach(() => {
@@ -26,13 +25,13 @@ beforeEach(() => {
 });
 
 describe('MeetingVocabulary', () => {
-  it('loads vocabulary inside a collapsed settings card', async () => {
+  it('shows the vocabulary directly with its primary add action', async () => {
     renderWithProviders(<MeetingVocabulary />);
-    const summary = screen.getByText('Meeting vocabulary');
-    expect(summary.closest('details')).not.toHaveAttribute('open');
-    fireEvent.click(summary);
+    expect(screen.getByRole('region', { name: 'Meeting vocabulary' }).querySelector('details')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Vocabulary' })).toBeVisible();
     expect(await screen.findByText('Lifetime value')).toBeInTheDocument();
     expect(screen.getByText('Terms and meanings that guide new meeting memories.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add term' })).toHaveClass('btn-primary');
   });
 
   it('creates a normalized term and refreshes the saved list', async () => {

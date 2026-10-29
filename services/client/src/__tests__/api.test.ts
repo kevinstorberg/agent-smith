@@ -68,6 +68,16 @@ describe('parseError (tested through api methods)', () => {
 });
 
 describe('GET requests', () => {
+  it('serializes evidence filters and per-edge ownership without losing false or omitted values', async () => {
+    globalThis.fetch = mockFetch({});
+    await api.profiles.claims('person', { limit: 20, offset: 40, q: 'delivery date', epistemic: 'inference', category: 'perception', confidence: 'high', status: 'corrected', target_id: 'target', sort: 'newest' });
+    await api.profiles.updateRelationship('person', 'edge', { expected_revision: 3, allow_agent_notes: true });
+    await api.profiles.createRelationship('person', { expected_revision: 4, target_id: 'target', target_revision: 2, label: '' });
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    expect(Object.fromEntries(new URL(calls[0][0]).searchParams)).toEqual({ limit: '20', offset: '40', q: 'delivery date', epistemic: 'inference', category: 'perception', confidence: 'high', status: 'corrected', target_id: 'target', sort: 'newest' });
+    expect(JSON.parse(calls[1][1].body)).toEqual({ expected_revision: 3, allow_agent_notes: true });
+    expect(JSON.parse(calls[2][1].body)).not.toHaveProperty('notes');
+  });
   it('reads compact profiles and loads only the requested evidence page', async () => {
     globalThis.fetch = mockFetch({});
     await api.profiles.get('profile/id');
