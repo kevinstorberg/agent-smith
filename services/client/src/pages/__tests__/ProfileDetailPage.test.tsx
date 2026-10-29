@@ -55,6 +55,16 @@ describe('ProfileDetailPage', () => {
     expect(screen.queryByRole('link', { name: 'Open original meeting' })).not.toBeInTheDocument();
   });
 
+  it('explains that a manual profile can collect linked meeting evidence', async () => {
+    read.mockResolvedValue({ ...profileFixture, email: null, identity_scope: 'manual', claims: [] });
+    renderWithProviders(<ProfileDetailPage />);
+    expect(await screen.findByText(/Manually created profile/)).toBeInTheDocument();
+    expect(screen.getByText(/No meeting evidence yet/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit profile' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Link known email' })).toBeInTheDocument();
+    expect(screen.queryByText(/Identified in this meeting only/)).not.toBeInTheDocument();
+  });
+
   it('requires a reason and corrected content before submitting', async () => {
     renderWithProviders(<ProfileDetailPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Correct claim' }));

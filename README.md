@@ -41,8 +41,10 @@ Agents connect to individual MCP endpoints at
 Tool requests use POST with `Accept: application/json, text/event-stream`.
 Optional GET event streams require `Accept: text/event-stream`; requests without it
 receive 406. The local servers do not require OAuth, so unsupported discovery URLs
-under `/.well-known/` return 404. Warnings and errors remain visible while routine
-stateless transport cleanup messages are quieted.
+under `/.well-known/` return 404. Expected OAuth/OpenID discovery probes on unauthenticated
+servers are recorded at DEBUG level; their HTTP responses are unchanged. Other 404s,
+406 negotiation failures, warnings and errors remain visible. Routine stateless transport
+cleanup messages are quieted.
 
 ## Structure
 
@@ -128,8 +130,8 @@ environment's `.env.*` file.
 
 The `meeting_ingest` graph imports meeting summaries, selected metadata and complete transcript
 snapshots into PostgreSQL. It uses a configured provider factory; Granola is the first adapter.
-Imported context stays separate from generated memories. This graph has no agent and creates
-no tickets or memories.
+Imported context stays separate from generated memories. After capture, tool-calling agents
+generate meeting memories and cumulative participant profiles. The graph does not create tickets.
 
 Set source configuration and the real API key only in the gitignored `.env.production`:
 
@@ -232,7 +234,10 @@ refresh automatically; background updates preserve an open correction draft. Del
 stay hidden, and claims from unavailable meetings do not contribute to the visible counts.
 
 Search profiles by name or linked email, filter by tags or stars, and choose a name or date
-sort. Tags and stars belong to the profile and survive later meeting updates. The detail page
+sort. Use **New profile** to add a person directly, with a name and optional email. Name-only
+profiles are manual identities; link an email or assign the profile to a meeting speaker to
+connect later evidence. **Edit profile** changes the name, tags and star without changing the
+person's identity or saved evidence. Tags and stars survive later meeting updates. The detail page
 lets you merge two profiles into one person. Both identities remain linked to the surviving
 profile, including in future meetings and historical meeting links. You can also link another
 email explicitly. Merging preserves evidence and human corrections; conflicting histories

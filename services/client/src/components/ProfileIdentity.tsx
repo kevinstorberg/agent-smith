@@ -4,6 +4,7 @@ import { api, ApiError } from '../api';
 import type { ParticipantProfile, ProfileSummary } from '../api';
 import { useApiRead } from '../hooks/useApiRead';
 import { useApiMutation } from '../hooks/useApiMutation';
+import { PROFILE_SCOPE_LABELS } from '../utils/profiles';
 
 interface Props {
   profile: ParticipantProfile;
@@ -50,13 +51,13 @@ export function ProfileIdentity({ profile, disabled, onBusyChange, onReload, onS
   };
   const submitMerge = () => {
     if (!selected) { setNotice('Select the profile that should receive this profile.'); return; }
-    if (confirm(`Merge ${profile.display_name} (${profile.email || 'meeting-only identity'}) into ${selected.display_name} (${selected.email || 'meeting-only identity'})? Claims and linked identities will be combined. Future meetings will update ${selected.display_name}.`)) merge.mutate(selected);
+    if (confirm(`Merge ${profile.display_name} (${profile.email || PROFILE_SCOPE_LABELS[profile.identity_scope]}) into ${selected.display_name} (${selected.email || PROFILE_SCOPE_LABELS[selected.identity_scope]})? Claims and linked identities will be combined. Future meetings will update ${selected.display_name}.`)) merge.mutate(selected);
   };
 
   return <section className="card" aria-label="Profile identities">
     <h3 className="section-title">Linked identities</h3>
     {profile.aliases.length > 0 && <ul style={{ marginLeft: 20, marginBottom: 12 }}>
-      {profile.aliases.map(alias => <li key={alias.id}>{alias.display_name}{alias.email ? ` · ${alias.email}` : ' · Meeting only'}</li>)}
+      {profile.aliases.map(alias => <li key={alias.id}>{alias.display_name} · {alias.email || PROFILE_SCOPE_LABELS[alias.identity_scope]}</li>)}
     </ul>}
     {!mode ? <div style={{ display: 'flex', gap: 8 }}>
       <button className="btn" onClick={() => open('email')} disabled={disabled}>Link known email</button>
@@ -77,7 +78,7 @@ export function ProfileIdentity({ profile, disabled, onBusyChange, onReload, onS
           <select id="profile-merge-target" className="pagination-select" value={selected?.id || ''} disabled={targets.loading || saving}
             onChange={event => setSelected(targets.data?.items.find(item => item.id === event.target.value) || null)}>
             <option value="">{targets.loading ? 'Loading profiles...' : 'Select a profile'}</option>
-            {targets.data?.items.filter(item => item.id !== profile.id).map(item => <option key={item.id} value={item.id}>{item.display_name} · {item.email || 'Meeting only'}</option>)}
+            {targets.data?.items.filter(item => item.id !== profile.id).map(item => <option key={item.id} value={item.id}>{item.display_name} · {item.email || PROFILE_SCOPE_LABELS[item.identity_scope]}</option>)}
           </select>
           {selected && <p><Link to={`/profiles/${selected.id}`} target="_blank" rel="noopener noreferrer">Review {selected.display_name} before merging</Link></p>}
           <p className="text-muted-sm">Choose the profile to keep. Its evidence and the known identities from both profiles will be combined.</p>

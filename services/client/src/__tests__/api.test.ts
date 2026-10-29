@@ -244,6 +244,20 @@ describe('specific API methods', () => {
     expect(unfiltered.search).toBe('');
   });
 
+  it('creates profiles with optional email and patches a name with the captured revision', async () => {
+    globalThis.fetch = mockFetch({ id: 'profile-id', identity_scope: 'manual' });
+    await api.profiles.create({ display_name: 'Jordan Rivera' });
+    await api.profiles.create({ display_name: 'Jordan Rivera', email: 'jordan@example.test' });
+    await api.profiles.update('profile-id', { expected_revision: 1, display_name: 'Jordan Rivera updated' });
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[0][0]).toBe('/api/profiles');
+    expect(calls[0][1].method).toBe('POST');
+    expect(JSON.parse(calls[0][1].body)).toEqual({ display_name: 'Jordan Rivera' });
+    expect(JSON.parse(calls[1][1].body)).toEqual({ display_name: 'Jordan Rivera', email: 'jordan@example.test' });
+    expect(calls[2][1].method).toBe('PATCH');
+    expect(JSON.parse(calls[2][1].body)).toEqual({ expected_revision: 1, display_name: 'Jordan Rivera updated' });
+  });
+
   it('serializes profile tags, false star filters, sorting and revision-checked identity actions', async () => {
     globalThis.fetch = mockFetch({});
     await api.profiles.list({ tags: ['team', 'priority'], starred: false, sort: 'name_desc' });

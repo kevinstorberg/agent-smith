@@ -81,8 +81,8 @@ export function ProfileDetailPage() {
   };
 
   return (
-    <div>
-      <div className="page-header">
+    <div className="profile-detail">
+      <div className="page-header profiles-header">
         <h2 className="page-title">{loading || error ? 'Profile' : profile?.display_name}</h2>
         <Link className="btn" to="/profiles">Back to profiles</Link>
       </div>
@@ -92,8 +92,10 @@ export function ProfileDetailPage() {
         <>
           <div className="card">
             {profile.email && <p>{profile.email}</p>}
-            <p className="text-muted-sm">{profile.identity_scope === 'email' ? 'Identity linked by email.' : 'Identified in this meeting only; no cross-meeting identity match.'}</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
+            <p className="text-muted-sm">{profile.identity_scope === 'email' ? 'Identity linked by email.' : profile.identity_scope === 'manual'
+              ? 'Manually created profile. Link a known email or assign this person in a meeting to connect their evidence.'
+              : 'Identified in this meeting only; no cross-meeting identity match.'}</p>
+            <div className="flex-wrap" style={{ alignItems: 'center', gap: 12, marginTop: 8 }}>
               <span className="tag">Revision {profile.revision}</span><DateCell date={profile.updated_at} />
               <button className="btn btn-danger" style={{ marginLeft: 'auto' }} onClick={remove} disabled={Boolean(edit) || metadataBusy || identityBusy || correction.loading || deletion.loading}>
                 {deletion.loading ? 'Deleting...' : 'Delete profile'}
@@ -106,7 +108,7 @@ export function ProfileDetailPage() {
             onBusyChange={setIdentityBusy} onReload={() => refresh({ showLoading: false })}
             onSaved={winner => { if (winner.id !== id) navigate(`/profiles/${winner.id}`, { replace: true }); else refresh({ showLoading: false }); }} />
           {notice && <p className="card" role="alert">{notice}</p>}
-          {profile.claims.length === 0 && <p className="card text-muted-sm">No claims with available source meetings.</p>}
+          {profile.claims.length === 0 && <p className="card text-muted-sm">No meeting evidence yet. Evidence appears as linked meetings are processed.</p>}
           {CATEGORIES.map(([category, label]) => {
             const claims = profile.claims.filter(claim => claim.category === category);
             return claims.length === 0 ? null : <section key={category} aria-label={label}>
