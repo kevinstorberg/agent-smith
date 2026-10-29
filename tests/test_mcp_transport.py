@@ -76,9 +76,15 @@ async def test_every_mcp_endpoint_serves_a_session_id_from_before_a_restart(capl
                 assert response.status_code == 200, f"{path} answered {response.status_code}: {response.text}"
                 assert _json_rpc_payload(response)["result"]["tools"], f"{path} listed no tools"
 
-            response = await client.get(f"{path}/", headers={"Accept": "application/json"})
-            assert response.status_code == 406
-            assert "text/event-stream" in response.json()["error"]["message"]
+                response = await client.get(f"{path}/", headers={"Accept": "application/json"})
+                assert response.status_code == 406
+                assert "text/event-stream" in response.json()["error"]["message"]
+
+                response = await client.get(f"{path}/", headers={"Accept": "text/event-stream", "Mcp-Protocol-Version": "1900-01-01"})
+                assert response.status_code == 400
+
+                response = await client.post(f"{path}/", headers={"Accept": "text/plain"}, json={})
+                assert response.status_code == 406
 
             response = await client.get(f"{path}/.well-known/openid-configuration")
             assert response.status_code == 404
