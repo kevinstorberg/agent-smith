@@ -39,6 +39,28 @@ afterEach(() => {
 });
 
 describe('MeetingTranscript', () => {
+  it('refreshes effective assignments across loaded pages without resetting transcript pagination or raw speakers', async () => {
+    let identified = false;
+    mockRead.mockImplementation(async (_id, params) => ({ ...ready, total: 200, offset: params?.offset || 0,
+      items: Array.from({ length: 100 }, (_, index) => ({ ...ready.items[0], id: `segment-${(params?.offset || 0) + index}`,
+        text: `Line ${(params?.offset || 0) + index}`, speaker: { name: 'Me', source: 'microphone' },
+        effective_speaker: identified ? { profile_id: 'known-profile', display_name: 'Confirmed person', email: 'person@example.test', source: 'manual_assignment' as const } : null,
+      })),
+    }));
+    const { rerender } = renderWithProviders(<MeetingTranscript meetingId="meeting-id" refreshVersion={0} />);
+    await screen.findByText('Line 99');
+    fireEvent.click(screen.getByRole('button', { name: 'Load more transcript' }));
+    await screen.findByText('Line 199');
+    identified = true;
+    rerender(<MeetingTranscript meetingId="meeting-id" refreshVersion={1} />);
+    expect(screen.getByText('Line 199')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByRole('link', { name: 'Confirmed person' })).toHaveLength(200));
+    expect(screen.getByText('Line 199')).toBeInTheDocument();
+    expect(screen.getAllByText('Original: Me · microphone')).toHaveLength(200);
+    expect(screen.queryByRole('button', { name: 'Load more transcript' })).not.toBeInTheDocument();
+    expect(mockRead.mock.calls.map(call => call[1]?.offset)).toEqual([0, 100, 0, 100]);
+  });
+
   it('renders transcript text, supplied speaker attribution and source timestamps', async () => {
     renderWithProviders(<MeetingTranscript meetingId="meeting-id" />);
     expect(screen.getByText('Loading transcript...')).toBeInTheDocument();

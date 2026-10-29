@@ -7,6 +7,7 @@ import { DateCell } from '../components/table';
 import { usePagination } from '../hooks/usePagination';
 import { usePolling } from '../hooks/usePolling';
 import { makeRowClickable } from '../utils/a11y';
+import { MeetingVocabulary } from '../components/MeetingVocabulary';
 
 export function MeetingsIndexPage() {
   const navigate = useNavigate();
@@ -27,6 +28,7 @@ export function MeetingsIndexPage() {
     <div>
       <h2 className="page-title" style={{ marginBottom: 8 }}>Meetings</h2>
       <p className="text-muted-sm" style={{ marginBottom: 16 }}>Saved summaries from all meeting connections.</p>
+      <MeetingVocabulary />
 
       <form className="search-bar" onSubmit={event => { event.preventDefault(); search(searchText); }}>
         <input
@@ -49,6 +51,7 @@ export function MeetingsIndexPage() {
         </div>
       ) : (
         <>
+          <div className="profiles-table" role="region" aria-label="Meetings list" tabIndex={0}>
           <table className="table">
             <thead>
               <tr><th>Title</th><th>Connection</th><th>Provider</th><th>Meeting date</th><th>Last updated</th></tr>
@@ -70,6 +73,7 @@ export function MeetingsIndexPage() {
               )}
             </tbody>
           </table>
+          </div>
           <Pagination
             total={total}
             limit={limit}

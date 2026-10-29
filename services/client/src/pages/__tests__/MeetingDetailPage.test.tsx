@@ -35,13 +35,14 @@ describe('MeetingDetailPage', () => {
 
     expect(screen.getByText('Loading meeting...')).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Product planning' })).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/Meeting details ·/));
     expect(screen.getByRole('heading', { name: 'Decisions' })).toBeInTheDocument();
     expect(screen.getByText('Ship the next release.')).toBeInTheDocument();
     expect(screen.getByText('granola')).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
     expect(screen.getByText(/Alex/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open original meeting' })).toHaveAttribute('href', meetingFixture.source_url);
-    expect(screen.getByRole('link', { name: 'Back to meetings' })).toHaveAttribute('href', '/meetings');
+    expect(screen.getByRole('button', { name: /Back to meetings/ })).toBeInTheDocument();
     expect(mockGet).toHaveBeenCalledWith(meetingFixture.id);
   });
 
@@ -66,7 +67,7 @@ describe('MeetingDetailPage', () => {
     renderWithProviders(<MeetingDetailPage />);
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Meeting not found');
-    expect(screen.getByRole('link', { name: 'Back to meetings' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Back to meetings/ })).toBeInTheDocument();
   });
 
   it('keeps the saved summary visible if the transcript reader fails', async () => {
@@ -97,15 +98,46 @@ describe('MeetingDetailPage', () => {
     expect(await screen.findByText('Updated summary')).toBeInTheDocument();
   });
 
+  it('keeps participant drafts and loaded transcript pages through a failed summary refresh', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let failRefresh: (failure: Error) => void = () => undefined;
+    mockGet.mockResolvedValueOnce(meetingFixture).mockReturnValueOnce(new Promise((_, reject) => { failRefresh = reject; }));
+    vi.mocked(api.profiles.list).mockResolvedValue({ items: [], total: 0 });
+    vi.mocked(api.meetings.transcript).mockImplementation(async (_id, params) => ({
+      status: 'ready', total: 101, offset: params?.offset || 0, limit: 100, error_type: null, captured_at: meetingFixture.updated_at,
+      items: Array.from({ length: params?.offset ? 1 : 100 }, (_, index) => ({
+        id: `segment-${(params?.offset || 0) + index}`, text: `Saved transcript line ${(params?.offset || 0) + index}`,
+        speaker: {}, start_time: null, end_time: null,
+      })),
+    }));
+    renderWithProviders(<MeetingDetailPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more transcript' }));
+    await screen.findByText('Saved transcript line 100');
+    fireEvent.click(screen.getByRole('button', { name: 'Add participant' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'My participant draft' } });
+    await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS); });
+    await act(async () => { failRefresh(new Error('Temporary failure')); });
+    expect(await screen.findByText(/Could not refresh this meeting/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveValue('My participant draft');
+    expect(screen.getByText('Saved transcript line 100')).toBeInTheDocument();
+    mockGet.mockResolvedValue(meetingFixture);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByText(/Could not refresh this meeting/)).not.toBeInTheDocument());
+    expect(screen.getByLabelText('Name')).toHaveValue('My participant draft');
+    expect(screen.getByText('Saved transcript line 100')).toBeInTheDocument();
+    expect(api.meetings.transcript).toHaveBeenCalledTimes(2);
+  });
+
   it('queues an older meeting and refreshes all generated sections without dead-end instructions', async () => {
     renderWithProviders(<MeetingDetailPage />);
     await screen.findByRole('heading', { name: 'Product planning' });
     expect(screen.queryByText(/not processed retroactively/)).not.toBeInTheDocument();
     expect(screen.queryByText(/not enabled for this older meeting/)).not.toBeInTheDocument();
     const before = vi.mocked(api.meetings.transcript).mock.calls.length;
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Process meeting' })).not.toBeDisabled());
     fireEvent.click(screen.getByRole('button', { name: 'Process meeting' }));
     await waitFor(() => expect(api.meetings.process).toHaveBeenCalledWith(meetingFixture.id));
-    expect(await screen.findByText(/Queued for the next meeting job/)).toBeInTheDocument();
+    expect(await screen.findByText(/Missing work is queued for your meeting and persona jobs/)).toBeInTheDocument();
     await waitFor(() => expect(vi.mocked(api.meetings.transcript).mock.calls.length).toBeGreaterThan(before));
     expect(vi.mocked(api.meetings.memories).mock.calls.length).toBeGreaterThan(1);
     expect(vi.mocked(api.meetings.profiles).mock.calls.length).toBeGreaterThan(1);

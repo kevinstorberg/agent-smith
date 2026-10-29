@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import { Link } from 'react-router';
 import { api } from '../api';
 import type { MemoryItem } from '../api';
 import { Pagination } from '../components/Pagination';
 import { CopyButton } from '../components/CopyButton';
 import { useNotification } from '../context/useNotification';
 import { usePolling } from '../hooks/usePolling';
+import { useApiRead } from '../hooks/useApiRead';
 import { parseTags } from '../utils/tags';
 
 type Mode = 'list' | 'search';
@@ -24,15 +26,13 @@ const SEARCH_SORT_OPTIONS = [
 export function MemoryPage() {
   const { notify } = useNotification();
   const [query, setQuery] = useState('');
-  const [items, setItems] = useState<MemoryItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<Mode>('list');
   const [limit, setLimit] = useState(10);
   const [offset, setOffset] = useState(0);
   const [filterRepo, setFilterRepo] = useState('');
   const [filterTags, setFilterTags] = useState('');
   const [sort, setSort] = useState('created_at_desc');
+  const [meetingsOnly, setMeetingsOnly] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [editRepo, setEditRepo] = useState('');
@@ -46,34 +46,25 @@ export function MemoryPage() {
   );
   const sortOptions = mode === 'search' ? SEARCH_SORT_OPTIONS : LIST_SORT_OPTIONS;
 
-  const fetchData = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
-    if (showLoading) setLoading(true);
+  const read = useCallback(() => {
     const opts = {
       limit,
       offset,
+      meeting_only: meetingsOnly,
       ...(filterRepo ? { repo: filterRepo } : {}),
       ...(tagsArray.length ? { tags: tagsArray } : {}),
       ...(sort ? { sort } : {}),
     };
-    try {
-      const res = mode === 'search' && query.trim()
-        ? await api.memory.search(query, opts)
-        : await api.memory.list(opts);
-      setItems(res.items);
-      setTotal(res.total);
-    } catch {
-      if (showLoading) {
-        setItems([]);
-        setTotal(0);
-      }
-    } finally {
-      if (showLoading) setLoading(false);
-    }
-  }, [mode, query, limit, offset, filterRepo, tagsArray, sort]);
+    return mode === 'search' && query.trim()
+      ? api.memory.search(query, opts)
+      : api.memory.list(opts);
+  }, [mode, query, limit, offset, meetingsOnly, filterRepo, tagsArray, sort]);
+  const { data, loading, error, refresh } = useApiRead(read);
+  const items = data?.items || [];
+  const total = data?.total || 0;
 
-  useEffect(() => { fetchData(); }, [fetchData]);
   usePolling(
-    () => fetchData({ showLoading: false }),
+    () => refresh({ showLoading: false }),
     { enabled: !editingId && !saving && !confirmDeleteId },
   );
 
@@ -116,7 +107,7 @@ export function MemoryPage() {
         tags: tags.length ? tags : undefined,
       });
       setEditingId(null);
-      await fetchData();
+      await refresh();
     } catch (err) {
       notify(`Save failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
@@ -128,7 +119,7 @@ export function MemoryPage() {
     try {
       await api.memory.remove(id);
       setConfirmDeleteId(null);
-      await fetchData();
+      await refresh();
     } catch (err) {
       notify(`Delete failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
@@ -137,7 +128,7 @@ export function MemoryPage() {
 
 
   return (
-    <div>
+    <div className="memory-page">
       <h2 className="page-title" style={{ marginBottom: 16 }}>Memory</h2>
 
       <div className="search-bar">
@@ -154,6 +145,10 @@ export function MemoryPage() {
       </div>
 
       <div className="search-bar" style={{ marginTop: 8 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+          <input type="checkbox" checked={meetingsOnly} onChange={event => { setMeetingsOnly(event.target.checked); setOffset(0); }} />
+          Meetings only
+        </label>
         <input
           className="input"
           placeholder="Filter by repo"
@@ -187,18 +182,21 @@ export function MemoryPage() {
       )}
 
       {loading && <div className="loading">Loading...</div>}
+      {error && <div role="alert" className="card">
+        Could not load memories. <button className="btn btn-sm" onClick={() => refresh()}>Retry</button>
+      </div>}
 
-      {!loading && items.length === 0 && (
+      {!loading && !error && items.length === 0 && (
         <div className="loading">
           {mode === 'search'
             ? 'No results found'
-            : (filterRepo || tagsArray.length > 0)
+            : (meetingsOnly || filterRepo || tagsArray.length > 0)
               ? 'No memories match the current filters'
               : 'No memories yet'}
         </div>
       )}
 
-      {!loading && items.map(item => {
+      {!loading && !error && items.map(item => {
         const isEditing = editingId === item.id;
 
         return (
@@ -261,6 +259,8 @@ export function MemoryPage() {
             </div>
 
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: isEditing ? 12 : 0 }}>
+              {item.from_meeting && <span className="tag tag-info">Meeting</span>}
+              {item.from_meeting && item.source_id && <Link className="text-muted-sm" to={`/meetings/${encodeURIComponent(item.source_id)}`}>Source meeting</Link>}
               {item.repo && <span className="tag tag-info">{item.repo}</span>}
               {item.tags?.map(t => <span key={t} className="tag">{t}</span>)}
               {item.created_at && (
@@ -290,7 +290,7 @@ export function MemoryPage() {
         );
       })}
 
-      {!loading && (
+      {!loading && !error && (
         <Pagination
           total={total}
           limit={limit}

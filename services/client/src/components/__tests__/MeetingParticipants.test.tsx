@@ -31,14 +31,15 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('MeetingParticipants', () => {
-  it('queues an older meeting through the existing job and notifies the parent', async () => {
+  it('shows speaker context and opens its explicit assignment with the group preselected', async () => {
+    read.mockResolvedValue({ ...empty, speakers: [{ ...empty.speakers[0], source: 'microphone', attribution: 'me', sample: 'A useful recorded statement.' }] });
     renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
-    await screen.findByText(/Provider Person/);
-    fireEvent.click(screen.getByRole('button', { name: 'Process meeting' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Queued for the next meeting job.');
-    expect(process).toHaveBeenCalledWith('meeting-id');
-    expect(changed).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('link', { name: 'meeting job' })).toHaveAttribute('href', '/jobs');
+    fireEvent.click(await screen.findByRole('button', { name: 'Assign speaker' }));
+    expect(screen.getByText('A useful recorded statement.')).toBeInTheDocument();
+    expect(screen.getByText(/microphone · me/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Transcript speaker')).toHaveValue(speakerKey);
+    expect(process).not.toHaveBeenCalled();
+    await screen.findByRole('option', { name: 'Alex · alex@example.test' });
   });
 
   it('keeps the provider roster read-only and appends an explicit manual speaker assignment', async () => {
@@ -60,6 +61,7 @@ describe('MeetingParticipants', () => {
   it('selects an existing canonical profile explicitly', async () => {
     renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Add participant' }));
+    await screen.findByRole('option', { name: 'Alex · alex@example.test' });
     fireEvent.change(screen.getByLabelText('Find an existing profile'), { target: { value: ' Alex ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Find profiles' }));
     await screen.findByRole('option', { name: 'Alex · alex@example.test' });
@@ -86,7 +88,7 @@ describe('MeetingParticipants', () => {
     renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
     expect(await screen.findByRole('button', { name: 'Add participant' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Remove participant' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Processing...' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Assign speaker' })).toBeDisabled();
     expect(screen.getByText(/changes are available after processing finishes/)).toBeInTheDocument();
   });
 

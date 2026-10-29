@@ -55,4 +55,18 @@ describe('ProfileMetadata', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit profile' }));
     expect(screen.getByLabelText('Name')).toHaveValue('Alex');
   });
+
+  it('patches only edited optional metadata keys and deduplicates nickname aliases', async () => {
+    const { rerender } = renderWithProviders(<ProfileMetadata profile={{ ...profileFixture, metadata: { company: 'Original', job_role: 'Engineer' } }} disabled={false} onBusyChange={busy} onReload={reload} />);
+    vi.mocked(api.profiles.update).mockRejectedValueOnce(new ApiError('Conflict', 409));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit profile' }));
+    fireEvent.change(screen.getByLabelText('Company'), { target: { value: ' My company ' } });
+    fireEvent.change(screen.getByLabelText('Nicknames'), { target: { value: 'Alex, alex, Lex' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save profile' }));
+    await screen.findByRole('alert');
+    rerender(<ProfileMetadata profile={{ ...profileFixture, revision: 2, metadata: { company: 'Other company', job_role: 'Manager' } }} disabled={false} onBusyChange={busy} onReload={reload} />);
+    expect(screen.getByLabelText('Company')).toHaveValue(' My company ');
+    fireEvent.click(screen.getByRole('button', { name: 'Save profile' }));
+    await waitFor(() => expect(api.profiles.update).toHaveBeenLastCalledWith(profileFixture.id, expect.objectContaining({ expected_revision: 2, metadata: { company: 'My company' }, nicknames: ['Alex', 'Lex'] })));
+  });
 });

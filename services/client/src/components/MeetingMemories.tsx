@@ -1,11 +1,12 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api';
-import type { MeetingMemory } from '../api';
+import type { MeetingMemory, MeetingMemories as Memories } from '../api';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { useApiRead } from '../hooks/useApiRead';
 import { usePolling } from '../hooks/usePolling';
 import { MeetingGenerationState } from './MeetingGenerationState';
+import { useRefreshSignal } from '../hooks/useRefreshSignal';
 
 const KIND_LABELS: Record<MeetingMemory['kind'], string> = {
   fact: 'Fact', decision: 'Decision', commitment: 'Commitment', constraint: 'Constraint',
@@ -20,9 +21,11 @@ const BLOCKED_MESSAGES: Record<string, string> = {
   transcript_failed: 'Transcript capture failed. Retry transcript capture before generating memories.',
 };
 
-export function MeetingMemories({ meetingId }: { meetingId: string }) {
+export function MeetingMemories({ meetingId, refreshVersion, onState }: { meetingId: string; refreshVersion?: number; onState?: (state: Memories) => void }) {
   const read = useCallback(() => api.meetings.memories(meetingId), [meetingId]);
   const { data: memories, loading, error, refresh: load } = useApiRead(read);
+  useRefreshSignal(refreshVersion, load);
+  useEffect(() => { if (memories) onState?.(memories); }, [memories, onState]);
 
   const retry = useApiMutation({
     mutationFn: () => api.meetings.retryMemories(meetingId),
@@ -34,7 +37,7 @@ export function MeetingMemories({ meetingId }: { meetingId: string }) {
   });
 
   return (
-    <section className="card" aria-label="Meeting memories">
+    <section id="meeting-memories" className="card" aria-label="Meeting memories">
       <h3 className="section-title">Generated memories</h3>
       {!memories && loading && <p className="text-muted-sm">Loading meeting memories...</p>}
       {error && (

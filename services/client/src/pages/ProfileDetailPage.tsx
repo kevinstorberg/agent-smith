@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { api, ApiError } from '../api';
 import type { ClaimCorrectionInput, ProfileClaim } from '../api';
@@ -9,10 +9,15 @@ import { usePolling } from '../hooks/usePolling';
 import { safeHttpUrl } from '../utils/links';
 import { ProfileMetadata } from '../components/ProfileMetadata';
 import { ProfileIdentity } from '../components/ProfileIdentity';
+import { ProfileNotes } from '../components/ProfileNotes';
+import { ProfileRelationships } from '../components/ProfileRelationships';
+import { DetailPageHeader } from '../components/DetailPageHeader';
 
 const CATEGORIES: [ProfileClaim['category'], string][] = [
   ['driver', 'Drivers'], ['priority', 'Priorities'], ['communication', 'Communication'],
   ['decision_pattern', 'Decision patterns'], ['perception', 'Perceptions'], ['interaction', 'Interactions'], ['uncertainty', 'Uncertainties'],
+  ['strength', 'Strengths'], ['development_area', 'Development areas'], ['relationship', 'Relationship evidence'],
+  ['role', 'Roles and organizations'],
 ];
 const EPISTEMIC = { self_report: 'Self-reported', observed: 'Observed', inference: 'Hypothesis' };
 
@@ -33,7 +38,13 @@ export function ProfileDetailPage() {
   const [edit, setEdit] = useState<Edit | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [metadataBusy, setMetadataBusy] = useState(false);
+  const [metadataEditing, setMetadataEditing] = useState(false);
+  const [metadataSaving, setMetadataSaving] = useState(false);
+  const metadataForm = useRef<HTMLFormElement>(null);
   const [identityBusy, setIdentityBusy] = useState(false);
+  const [notesBusy, setNotesBusy] = useState(false);
+  const [relationshipsBusy, setRelationshipsBusy] = useState(false);
+  const otherBusy = notesBusy || relationshipsBusy;
   useEffect(() => {
     if (profile && profile.id !== id) navigate(`/profiles/${profile.id}`, { replace: true });
   }, [profile, id, navigate]);
@@ -57,7 +68,7 @@ export function ProfileDetailPage() {
     onSuccess: () => navigate('/profiles'),
     onError: failedChange,
   });
-  usePolling(() => refresh({ showLoading: false }), { enabled: !edit && !metadataBusy && !identityBusy && !correction.loading && !deletion.loading });
+  usePolling(() => refresh({ showLoading: false }), { enabled: !edit && !metadataBusy && !identityBusy && !otherBusy && !correction.loading && !deletion.loading });
 
   const startEdit = (claim: ProfileClaim, action: Edit['action']) => {
     if (!profile) return;
@@ -82,33 +93,40 @@ export function ProfileDetailPage() {
 
   return (
     <div className="profile-detail">
+      <DetailPageHeader backTo={{ label: 'profiles', path: '/profiles' }} onNavigateBack={() => navigate('/profiles')}
+        editing={metadataEditing} saving={metadataSaving} showActions={Boolean(profile)}
+        disabled={Boolean(edit) || identityBusy || otherBusy || correction.loading || deletion.loading || (!metadataEditing && metadataBusy)}
+        onEdit={() => setMetadataEditing(true)} onSave={() => metadataForm.current?.requestSubmit()}
+        onCancel={() => setMetadataEditing(false)} onDelete={remove} />
       <div className="page-header profiles-header">
-        <h2 className="page-title">{loading || error ? 'Profile' : profile?.display_name}</h2>
-        <Link className="btn" to="/profiles">Back to profiles</Link>
+        <h2 className="page-title">{profile?.display_name || 'Profile'}</h2>
       </div>
-      {loading ? <div className="loading">Loading participant profile...</div> : error ? (
-        <div className="card" role="alert"><p>Could not load this participant profile. It may be unavailable or deleted.</p><button className="btn" onClick={() => refresh()}>Retry</button></div>
-      ) : profile && (
+      {error && <div className="card" role="alert"><p>{profile ? 'Could not refresh this profile. Your current view and drafts are retained.' : 'Could not load this participant profile. It may be unavailable or deleted.'}</p><button className="btn" onClick={() => refresh({ showLoading: false })}>Retry</button></div>}
+      {loading && !profile ? <div className="loading">Loading participant profile...</div> : profile && (
         <>
           <div className="card">
+            {(profile.metadata?.job_role || profile.metadata?.company) && <p>{[profile.metadata.job_role, profile.metadata.company].filter(Boolean).join(' · ')}</p>}
             {profile.email && <p>{profile.email}</p>}
             <p className="text-muted-sm">{profile.identity_scope === 'email' ? 'Identity linked by email.' : profile.identity_scope === 'manual'
               ? 'Manually created profile. Link a known email or assign this person in a meeting to connect their evidence.'
               : 'Identified in this meeting only; no cross-meeting identity match.'}</p>
             <div className="flex-wrap" style={{ alignItems: 'center', gap: 12, marginTop: 8 }}>
               <span className="tag">Revision {profile.revision}</span><DateCell date={profile.updated_at} />
-              <button className="btn btn-danger" style={{ marginLeft: 'auto' }} onClick={remove} disabled={Boolean(edit) || metadataBusy || identityBusy || correction.loading || deletion.loading}>
-                {deletion.loading ? 'Deleting...' : 'Delete profile'}
-              </button>
             </div>
-            <ProfileMetadata key={`metadata-${profile.id}`} profile={profile} disabled={Boolean(edit) || identityBusy || correction.loading || deletion.loading}
+            <ProfileMetadata key={`metadata-${profile.id}`} profile={profile} disabled={Boolean(edit) || identityBusy || otherBusy || correction.loading || deletion.loading}
+              editing={metadataEditing} onEditingChange={setMetadataEditing} onSavingChange={setMetadataSaving} formRef={metadataForm}
               onBusyChange={setMetadataBusy} onReload={() => refresh({ showLoading: false })} />
           </div>
-          <ProfileIdentity key={`identity-${profile.id}`} profile={profile} disabled={Boolean(edit) || metadataBusy || correction.loading || deletion.loading}
+          <ProfileIdentity key={`identity-${profile.id}`} profile={profile} disabled={Boolean(edit) || metadataBusy || otherBusy || correction.loading || deletion.loading}
             onBusyChange={setIdentityBusy} onReload={() => refresh({ showLoading: false })}
             onSaved={winner => { if (winner.id !== id) navigate(`/profiles/${winner.id}`, { replace: true }); else refresh({ showLoading: false }); }} />
+          <ProfileNotes profile={profile} disabled={Boolean(edit) || metadataBusy || identityBusy || relationshipsBusy || correction.loading || deletion.loading}
+            onBusyChange={setNotesBusy} onReload={() => refresh({ showLoading: false })} />
+          <ProfileRelationships profile={profile} disabled={Boolean(edit) || metadataBusy || identityBusy || notesBusy || correction.loading || deletion.loading}
+            onBusyChange={setRelationshipsBusy} onReload={() => refresh({ showLoading: false })} />
           {notice && <p className="card" role="alert">{notice}</p>}
           {profile.claims.length === 0 && <p className="card text-muted-sm">No meeting evidence yet. Evidence appears as linked meetings are processed.</p>}
+          {profile.claims.length > 0 && <h3 className="section-title">Meeting evidence</h3>}
           {CATEGORIES.map(([category, label]) => {
             const claims = profile.claims.filter(claim => claim.category === category);
             return claims.length === 0 ? null : <section key={category} aria-label={label}>
@@ -145,12 +163,12 @@ export function ProfileDetailPage() {
                     <label className="form-label" htmlFor="claim-reason">Reason</label>
                     <textarea id="claim-reason" className="input" style={{ width: '100%', minHeight: 60 }} maxLength={2000} value={edit.reason} onChange={event => setEdit({ ...edit, reason: event.target.value })} />
                     <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                      <button className="btn btn-primary" onClick={save} disabled={correction.loading || loading}>{correction.loading ? 'Saving...' : edit.action === 'correct' ? 'Save correction' : 'Confirm rejection'}</button>
+                      <button className="btn" onClick={save} disabled={correction.loading || loading}>{correction.loading ? 'Saving...' : edit.action === 'correct' ? 'Save correction' : 'Confirm rejection'}</button>
                       <button className="btn" onClick={() => { setEdit(null); setNotice(null); }} disabled={correction.loading}>Cancel</button>
                     </div>
                   </div> : <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                    <button className="btn btn-sm" onClick={() => startEdit(claim, 'correct')} disabled={Boolean(edit) || metadataBusy || identityBusy || deletion.loading}>Correct claim</button>
-                    <button className="btn btn-sm" onClick={() => startEdit(claim, 'reject')} disabled={Boolean(edit) || metadataBusy || identityBusy || deletion.loading}>Reject claim</button>
+                    <button className="btn btn-sm" onClick={() => startEdit(claim, 'correct')} disabled={Boolean(edit) || metadataBusy || identityBusy || otherBusy || deletion.loading}>Correct claim</button>
+                    <button className="btn btn-sm" onClick={() => startEdit(claim, 'reject')} disabled={Boolean(edit) || metadataBusy || identityBusy || otherBusy || deletion.loading}>Reject claim</button>
                   </div>}
                 </article>;
               })}

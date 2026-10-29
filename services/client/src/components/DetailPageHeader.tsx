@@ -2,13 +2,14 @@ export interface DetailPageHeaderProps {
   backTo: { label: string; path: string };
   editing: boolean;
   saving: boolean;
-  onEdit: () => void;
-  onSave: () => void;
-  onCancel: () => void;
+  onEdit?: () => void;
+  onSave?: () => void;
+  onCancel?: () => void;
   onDelete?: () => void;
   onNavigateBack?: () => void;
   deleteConfirmMessage?: string;
   showActions?: boolean;
+  disabled?: boolean;
 }
 
 /**
@@ -26,6 +27,7 @@ export function DetailPageHeader({
   onNavigateBack,
   deleteConfirmMessage,
   showActions = true,
+  disabled = false,
 }: DetailPageHeaderProps) {
   const handleDelete = () => {
     if (deleteConfirmMessage && !confirm(deleteConfirmMessage)) {
@@ -43,7 +45,7 @@ export function DetailPageHeader({
   };
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
       <button
         style={{
           color: 'var(--text-muted)',
@@ -62,13 +64,14 @@ export function DetailPageHeader({
         <div style={{ display: 'flex', gap: 8 }}>
           {!editing && (
             <>
-              <button className="btn" onClick={onEdit}>
+              <button className="btn" onClick={onEdit} disabled={disabled}>
                 Edit
               </button>
               {onDelete && (
                 <button
                   className="btn btn-danger"
                   onClick={handleDelete}
+                  disabled={disabled}
                 >
                   Delete
                 </button>
@@ -80,11 +83,11 @@ export function DetailPageHeader({
               <button
                 className="btn"
                 onClick={onSave}
-                disabled={saving}
+                disabled={saving || disabled}
               >
                 {saving ? 'Saving...' : 'Save'}
               </button>
-              <button className="btn" onClick={onCancel}>
+              <button className="btn" onClick={onCancel} disabled={saving || disabled}>
                 Cancel
               </button>
             </>

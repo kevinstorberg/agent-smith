@@ -35,6 +35,11 @@ function ProfileRoute() {
   return <ProfileDetailPage key={id} />;
 }
 
+function MeetingRoute() {
+  const { id } = useParams();
+  return <MeetingDetailPage key={id} />;
+}
+
 export default function App() {
   return (
     <NotificationProvider>
@@ -57,7 +62,7 @@ export default function App() {
           <Route path="/harness/:type/:id" element={<HarnessDetailPage />} />
           <Route path="/memory" element={<MemoryPage />} />
           <Route path="/meetings" element={<MeetingsIndexPage />} />
-          <Route path="/meetings/:id" element={<MeetingDetailPage />} />
+          <Route path="/meetings/:id" element={<MeetingRoute />} />
           <Route path="/meetings/profiles/:id" element={<LegacyProfileRedirect />} />
           <Route path="/profiles" element={<ProfilesIndexPage />} />
           <Route path="/profiles/:id" element={<ProfileRoute />} />

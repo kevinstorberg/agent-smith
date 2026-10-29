@@ -32,7 +32,7 @@ describe('ProfileIdentity', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Merge profile' }));
     await screen.findByRole('option', { name: 'Jordan · jordan@example.test' });
     fireEvent.change(screen.getByLabelText('Find merge target'), { target: { value: ' Jordan ' } });
-    fireEvent.submit(screen.getByRole('button', { name: 'Find profiles' }).closest('form')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Find profiles' }));
     await waitFor(() => expect(api.profiles.list).toHaveBeenLastCalledWith({ q: 'Jordan', limit: 25 }));
     fireEvent.change(screen.getByLabelText('Keep this profile'), { target: { value: target.id } });
     fireEvent.click(screen.getByRole('button', { name: 'Merge into selected profile' }));
@@ -66,7 +66,7 @@ describe('ProfileIdentity', () => {
   it('links a user-provided known email without guessing from a speaker name', async () => {
     renderWithProviders(<ProfileIdentity profile={{ ...profileFixture, identity_scope: 'meeting', email: null }} disabled={false}
       onBusyChange={busy} onReload={reload} onSaved={saved} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Link known email' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add email' }));
     fireEvent.change(screen.getByLabelText('Known email'), { target: { value: 'known@example.test' } });
     fireEvent.submit(screen.getByRole('button', { name: 'Link email' }).closest('form')!);
     await waitFor(() => expect(api.profiles.linkEmail).toHaveBeenCalledWith(profileFixture.id, { email: 'known@example.test', expected_revision: 1 }));
@@ -77,7 +77,7 @@ describe('ProfileIdentity', () => {
     const detail = 'This email belongs to another or deleted profile; merge existing profiles instead of linking it';
     vi.mocked(api.profiles.linkEmail).mockRejectedValueOnce(new ApiError(detail, 409));
     renderWithProviders(<ProfileIdentity profile={profileFixture} disabled={false} onBusyChange={busy} onReload={reload} onSaved={saved} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Link known email' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add email' }));
     fireEvent.change(screen.getByLabelText('Known email'), { target: { value: 'existing@example.test' } });
     fireEvent.submit(screen.getByRole('button', { name: 'Link email' }).closest('form')!);
     expect(await screen.findByRole('alert')).toHaveTextContent(detail);

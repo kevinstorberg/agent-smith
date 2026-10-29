@@ -258,6 +258,32 @@ describe('specific API methods', () => {
     expect(JSON.parse(calls[2][1].body)).toEqual({ expected_revision: 1, display_name: 'Jordan Rivera updated' });
   });
 
+  it('serializes meeting-only filtering for both list and semantic search', async () => {
+    globalThis.fetch = mockFetch({ items: [], total: 0 });
+    await api.memory.list({ meeting_only: true, tags: ['decision'], offset: 10 });
+    await api.memory.search('release', { meeting_only: true, repo: 'project', sort: 'relevance' });
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    expect(Object.fromEntries(new URL(calls[0][0]).searchParams)).toEqual({ meeting_only: 'true', tags: 'decision', offset: '10' });
+    expect(Object.fromEntries(new URL(calls[1][0]).searchParams)).toEqual({ q: 'release', meeting_only: 'true', repo: 'project', sort: 'relevance' });
+  });
+
+  it('keeps relationship and vocabulary revisions distinct in write requests', async () => {
+    globalThis.fetch = mockFetch({});
+    await api.profiles.createRelationship('person', { target_id: 'target', target_revision: 5, expected_revision: 3, label: 'reports to', notes: '' });
+    await api.profiles.updateRelationship('person', 'edge', { expected_revision: 2, notes: 'Updated context' });
+    await api.profiles.removeRelationship('person', 'edge', 4);
+    await api.meetings.vocabulary.create({ term: 'custom phrase', definition: 'Known meaning' });
+    await api.meetings.vocabulary.update('term', { expected_revision: 8, definition: '' });
+    await api.meetings.vocabulary.remove('term', 9);
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.map(call => call[0])).toEqual(['/api/profiles/person/relationships', '/api/profiles/person/relationships/edge', '/api/profiles/person/relationships/edge', '/api/meetings/vocabulary', '/api/meetings/vocabulary/term', '/api/meetings/vocabulary/term']);
+    expect(JSON.parse(calls[0][1].body)).toEqual({ target_id: 'target', target_revision: 5, expected_revision: 3, label: 'reports to', notes: '' });
+    expect(JSON.parse(calls[2][1].body)).toEqual({ expected_revision: 4 });
+    expect(JSON.parse(calls[4][1].body)).toEqual({ expected_revision: 8, definition: '' });
+    expect(calls[5][1].method).toBe('DELETE');
+    expect(JSON.parse(calls[5][1].body)).toEqual({ expected_revision: 9 });
+  });
+
   it('serializes profile tags, false star filters, sorting and revision-checked identity actions', async () => {
     globalThis.fetch = mockFetch({});
     await api.profiles.list({ tags: ['team', 'priority'], starred: false, sort: 'name_desc' });

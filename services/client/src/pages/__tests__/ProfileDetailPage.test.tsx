@@ -35,6 +35,58 @@ afterEach(() => {
 });
 
 describe('ProfileDetailPage', () => {
+  it('uses the shared header for profile editing, saving and cancellation', async () => {
+    let finishSave: (profile: ParticipantProfile) => void = () => undefined;
+    vi.mocked(api.profiles.update).mockReturnValueOnce(new Promise(resolve => { finishSave = resolve; }));
+    renderWithProviders(<ProfileDetailPage />);
+    const edit = await screen.findByRole('button', { name: 'Edit' });
+    const header = edit.parentElement!.parentElement!;
+    expect(header).toContainElement(screen.getByRole('button', { name: /Back to profiles/ }));
+    expect(header).toContainElement(screen.getByRole('button', { name: 'Delete' }));
+    expect(edit).toHaveClass('btn');
+    expect(edit).not.toHaveClass('btn-primary');
+    fireEvent.click(edit);
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save profile' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Alex Morgan' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.profiles.update).toHaveBeenCalledWith(profileFixture.id, {
+      expected_revision: 1, display_name: 'Alex Morgan', tags: [], starred: false,
+    }));
+    expect(screen.getByLabelText('Name')).toBeDisabled();
+    expect(screen.getByLabelText('Company')).toBeDisabled();
+    expect(screen.getByLabelText('Other')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Saving...' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    await act(async () => { finishSave(profileFixture); });
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Unsaved draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+    expect(api.profiles.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains a note draft when the conflict refresh fails, then recovers without remounting', async () => {
+    let failRefresh: (failure: Error) => void = () => undefined;
+    read.mockResolvedValueOnce(profileFixture).mockReturnValueOnce(new Promise((_, reject) => { failRefresh = reject; }));
+    vi.mocked(api.profiles.update).mockRejectedValueOnce(new ApiError('Changed profile', 409));
+    renderWithProviders(<ProfileDetailPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit strengths notes' }));
+    fireEvent.change(screen.getByLabelText('Your strengths notes'), { target: { value: 'Keep this human note.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    await act(async () => { failRefresh(new Error('Temporary failure')); });
+    expect(await screen.findByText(/Could not refresh this profile/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Your strengths notes')).toHaveValue('Keep this human note.');
+    expect(screen.getByRole('heading', { name: 'Alex' })).toBeInTheDocument();
+    read.mockResolvedValue({ ...profileFixture, revision: 2 });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Revision 2')).toBeInTheDocument();
+    expect(screen.getByLabelText('Your strengths notes')).toHaveValue('Keep this human note.');
+    fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
+    await waitFor(() => expect(api.profiles.update).toHaveBeenLastCalledWith(profileFixture.id, { expected_revision: 2, section_notes: { strengths: 'Keep this human note.' } }));
+  });
+
   it('groups claims, labels hypotheses and directed perceptions, and cites exact evidence', async () => {
     renderWithProviders(<ProfileDetailPage />);
     expect(await screen.findByRole('heading', { name: 'Alex' })).toBeInTheDocument();
@@ -60,8 +112,8 @@ describe('ProfileDetailPage', () => {
     renderWithProviders(<ProfileDetailPage />);
     expect(await screen.findByText(/Manually created profile/)).toBeInTheDocument();
     expect(screen.getByText(/No meeting evidence yet/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Edit profile' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Link known email' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add email' })).toBeInTheDocument();
     expect(screen.queryByText(/Identified in this meeting only/)).not.toBeInTheDocument();
   });
 
@@ -134,7 +186,7 @@ describe('ProfileDetailPage', () => {
   it('confirms profile deletion and submits the visible revision', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     renderWithProviders(<ProfileDetailPage />);
-    const button = await screen.findByRole('button', { name: 'Delete profile' });
+    const button = await screen.findByRole('button', { name: 'Delete' });
     fireEvent.click(button);
     expect(remove).not.toHaveBeenCalled();
     confirm.mockReturnValue(true);
@@ -148,7 +200,8 @@ describe('ProfileDetailPage', () => {
     renderWithProviders(<ProfileDetailPage />);
     expect(await screen.findByRole('alert')).toHaveTextContent('It may be unavailable or deleted.');
     expect(screen.queryByText(/PRIVATE_PROFILE_DETAIL/)).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Back to profiles' })).toHaveAttribute('href', '/profiles');
+    fireEvent.click(screen.getByRole('button', { name: /Back to profiles/ }));
+    expect(navigate).toHaveBeenCalledWith('/profiles');
   });
 
   it('refreshes cumulative evidence without hiding the current profile', async () => {

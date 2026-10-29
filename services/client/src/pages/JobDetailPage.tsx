@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router';
 import { api } from '../api';
 import type { Job, JobExecution } from '../api';
 import { DetailPageHeader } from '../components/DetailPageHeader';
@@ -67,6 +67,9 @@ export function JobDetailPage() {
   const navigate = useNavigate();
   const { notify } = useNotification();
   const isNew = id === 'new' || !id;
+  const [searchParams] = useSearchParams();
+  const personaPreset = isNew && searchParams.get('graph') === 'persona';
+  const presetApplied = useRef(false);
 
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(!isNew);
@@ -80,6 +83,14 @@ export function JobDetailPage() {
     editing, saving, editValues, setEditValue,
     startEditing: startEdit, cancelEditing: cancelEdit, setSaving,
   } = useDetailPageEdit<Job>({ initialData: job, isNew, onCancel: () => navigate('/jobs') });
+  useEffect(() => {
+    if (personaPreset && !presetApplied.current) {
+      presetApplied.current = true;
+      setEditValue('name', 'Persona enrichment');
+      setEditValue('input_params', { graph_type: 'persona', graph_inputs: {}, timeout: 600 });
+      setDeviceScope('all_devices');
+    }
+  }, [personaPreset, setEditValue]);
 
   const loadJob = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
     if (isNew) return;
@@ -153,10 +164,11 @@ export function JobDetailPage() {
 
   const changeGraph = (graph: string) => {
     const params: Record<string, unknown> = { ...inputParams, graph_type: graph };
-    if (isNew && graph.trim() === 'meeting_ingest' && Number(params.timeout ?? 300) < 600) params.timeout = 600;
+    const meetingGraph = ['meeting_ingest', 'persona'].includes(graph.trim());
+    if (isNew && meetingGraph && Number(params.timeout ?? 300) < 600) params.timeout = 600;
     setEditValue('input_params', params);
     if (isNew && !deviceScopeTouched) {
-      setDeviceScope(graph.trim() === 'meeting_ingest' ? 'all_devices' : 'this_device');
+      setDeviceScope(meetingGraph ? 'all_devices' : 'this_device');
     }
   };
 
@@ -262,7 +274,9 @@ export function JobDetailPage() {
                 value={String(inputParams.graph_type ?? '')}
                 onChange={e => changeGraph(e.target.value)}
                 placeholder="meeting_ingest"
+                list="meeting-graph-presets"
               />
+              <datalist id="meeting-graph-presets"><option value="meeting_ingest">Meeting transcripts and memories</option><option value="persona">Persona enrichment</option></datalist>
               <label style={styles.label} htmlFor="job-graph-inputs">Graph inputs (JSON)</label>
               <textarea
                 id="job-graph-inputs"
@@ -273,6 +287,9 @@ export function JobDetailPage() {
               />
               {String(inputParams.graph_type ?? '').trim() === 'meeting_ingest' && (
                 <p className="text-muted-sm">Use {'{}'} to import all configured meeting connections. Set Timeout to 600 seconds for transcript and memory processing.</p>
+              )}
+              {String(inputParams.graph_type ?? '').trim() === 'persona' && (
+                <p className="text-muted-sm">Use {'{}'} to enrich profiles from all saved meeting connections. Persona jobs use saved transcripts, run independently of memory generation, and need a 600-second timeout.</p>
               )}
             </>
           ) : (

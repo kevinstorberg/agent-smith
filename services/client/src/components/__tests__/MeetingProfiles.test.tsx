@@ -26,15 +26,15 @@ describe('MeetingProfiles', () => {
     expect(screen.getByText('Loading participant profiles...')).toBeInTheDocument();
     const profile = await screen.findByRole('link', { name: 'Alex' });
     expect(profile).toHaveAttribute('href', `/profiles/${profileFixture.id}`);
-    expect(screen.getByRole('heading', { name: 'Profiles' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Personas' })).toBeInTheDocument();
     expect(screen.getByText(/alex@example.test/)).toBeInTheDocument();
   });
 
   it.each([
-    ['not_imported', 'Profile generation has not started. Use Process meeting'],
-    ['pending', 'Profile generation is queued for the next meeting import run.'],
+    ['not_imported', 'Persona enrichment has not started. Use Process meeting'],
+    ['pending', 'Persona enrichment is queued for the next persona job run.'],
     ['running', 'Generating participant profiles...'],
-    ['failed', 'Profile generation failed.'],
+    ['failed', 'Persona enrichment failed.'],
   ] as const)('shows %s without publishing staged profiles', async (status, message) => {
     read.mockResolvedValue({ ...done, status, error_type: 'PRIVATE_DETAIL' });
     renderWithProviders(<MeetingProfiles meetingId="meeting-id" />);
@@ -46,8 +46,8 @@ describe('MeetingProfiles', () => {
   it.each([
     ['transcript_pending', 'complete saved transcript'],
     ['transcript_deleted', 'saved transcript was deleted'],
-    ['memories_pending', 'waiting for meeting memories'],
-    ['memories_failed', 'Memory generation failed'],
+    ['memories_pending', 'Memory generation runs independently'],
+    ['memories_failed', 'Memory generation runs independently'],
   ])('explains blocked generation: %s', async (reason, text) => {
     read.mockResolvedValue({ ...done, status: 'blocked', items: [], reason });
     renderWithProviders(<MeetingProfiles meetingId="meeting-id" />);
@@ -68,11 +68,11 @@ describe('MeetingProfiles', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     read.mockResolvedValue({ ...done, status: 'failed', items: [] });
     renderWithProviders(<MeetingProfiles meetingId="meeting-id" />);
-    await screen.findByText('Profile generation failed.');
+    await screen.findByText('Persona enrichment failed.');
     read.mockResolvedValue({ ...done, status: 'pending', items: [] });
     fireEvent.click(screen.getByRole('button', { name: 'Retry generation' }));
     await waitFor(() => expect(retry).toHaveBeenCalledWith('meeting-id'));
-    await screen.findByText('Profile generation is queued for the next meeting import run.');
+    await screen.findByText('Persona enrichment is queued for the next persona job run.');
     read.mockResolvedValue(done);
     await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS); });
     expect(await screen.findByRole('link', { name: 'Alex' })).toBeInTheDocument();

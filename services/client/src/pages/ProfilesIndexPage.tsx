@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { api, ApiError } from '../api';
 import type { ProfileSummary } from '../api';
 import { Pagination } from '../components/Pagination';
@@ -86,7 +86,7 @@ export function ProfilesIndexPage() {
         </div>
       </form>}
       <form className="search-bar" onSubmit={event => { event.preventDefault(); search(searchText); }}>
-        <input aria-label="Search profiles" placeholder="Search by name or email..." maxLength={1000}
+        <input aria-label="Search profiles" placeholder="Search names, nicknames or email..." maxLength={1000}
           value={searchText} onChange={event => setSearchText(event.target.value)} />
         <button className="btn btn-primary" type="submit">Search</button>
         {query && <button className="btn" type="button" onClick={() => { setSearchText(''); search(''); }}>Clear</button>}
@@ -115,8 +115,10 @@ export function ProfilesIndexPage() {
             <tbody>
               {items.map(profile => <tr key={profile.id} {...makeRowClickable(() => navigate(`/profiles/${profile.id}`))} style={{ cursor: 'pointer' }}>
                 <td><ProfileStar name={profile.display_name} starred={profile.starred} disabled={star.loading} onClick={() => star.mutate(profile)} /></td>
-                <td>{profile.display_name}</td>
-                <td>{profile.email || '—'}</td>
+                <td><Link className="text-link" to={`/profiles/${profile.id}`} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>{profile.display_name}</Link>
+                  {(profile.metadata?.job_role || profile.metadata?.company) && <p className="text-muted-sm">{[profile.metadata.job_role, profile.metadata.company].filter(Boolean).join(' · ')}</p>}
+                </td>
+                <td>{profile.email || '—'}{(profile.emails?.length || 0) > 1 && <p className="text-muted-sm">+{profile.emails!.length - 1} more</p>}</td>
                 <td>{PROFILE_SCOPE_LABELS[profile.identity_scope]}</td>
                 <td><BadgeCell items={profile.tags} /></td>
                 <td>{profile.meeting_count}</td>

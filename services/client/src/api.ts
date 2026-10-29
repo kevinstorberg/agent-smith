@@ -136,6 +136,9 @@ export interface McpServer {
 }
 
 export interface MemoryItem {
+  from_meeting?: boolean;
+  source_type?: string | null;
+  source_id?: string | null;
   id: string;
   content: string;
   repo?: string;
@@ -182,8 +185,16 @@ export interface TranscriptSegment {
     attribution?: string | null;
     diarization_label?: string | null;
   };
+  effective_speaker?: EffectiveSpeaker | null;
   start_time: string | null;
   end_time: string | null;
+}
+
+export interface EffectiveSpeaker {
+  profile_id: string | null;
+  display_name: string;
+  email: string | null;
+  source: 'manual_assignment' | 'speaker_email' | 'attendee_match' | 'speaker_label';
 }
 
 export interface MeetingTranscript extends Paginated<TranscriptSegment> {
@@ -205,6 +216,10 @@ export interface MeetingGeneration {
   status: 'not_imported' | 'pending' | 'running' | 'done' | 'failed' | 'blocked';
   reason: string | null;
   error_type: string | null;
+  progress?: {
+    processed_units: number; total_units: number | null; staged_count: number; saved_count: number;
+    attempts: number; next_attempt_at: string | null;
+  };
 }
 
 export interface MeetingMemories extends MeetingGeneration {
@@ -234,7 +249,8 @@ export interface MeetingParticipants {
   revision: number;
   items: MeetingParticipantInput[];
   provider_participants: { name?: string; email?: string }[];
-  speakers: { key: string; label: string; segment_count: number }[];
+  speakers: { key: string; label: string; segment_count: number; source?: string | null; attribution?: string | null;
+    sample?: string; assignment?: MeetingParticipantInput | null; effective_speaker?: EffectiveSpeaker | null }[];
   running: boolean;
   enrolled: boolean;
   stale_speaker_keys?: string[];
@@ -249,7 +265,7 @@ export interface ProfileClaimCorrection {
 
 export interface ProfileClaim {
   id: string;
-  category: 'driver' | 'priority' | 'communication' | 'decision_pattern' | 'perception' | 'interaction' | 'uncertainty';
+  category: 'driver' | 'priority' | 'communication' | 'decision_pattern' | 'perception' | 'interaction' | 'uncertainty' | 'strength' | 'development_area' | 'relationship' | 'role';
   epistemic: 'self_report' | 'observed' | 'inference';
   confidence: 'low' | 'medium' | 'high';
   content: string;
@@ -271,12 +287,37 @@ export interface ParticipantProfile extends MeetingProfileSummary {
   tags: string[];
   starred: boolean;
   aliases: Pick<ParticipantProfile, 'id' | 'display_name' | 'email' | 'identity_scope'>[];
+  emails?: string[];
+  nicknames?: string[];
+  metadata?: ProfileMetadataFields;
+  section_notes?: ProfileSectionNotes;
+  relationships?: ProfileRelationship[];
+}
+
+export interface ProfileMetadataFields {
+  gender?: string; marital_status?: string; company?: string; job_role?: string;
+  start_date?: string; supervisor?: string; other?: string;
+}
+
+export interface ProfileSectionNotes { drivers?: string; strengths?: string; development_areas?: string }
+
+export interface ProfileRelationship {
+  id: string; subject_id: string; target_id: string; subject_name: string; target_name: string;
+  label: string; notes: string; revision: number; dismissed: boolean; claims: ProfileClaim[];
+  created_at: string; updated_at: string;
+}
+
+export interface MeetingVocabulary {
+  id: string; term: string; definition: string; revision: number; created_at: string; updated_at: string;
 }
 
 export interface ProfileSummary extends Pick<ParticipantProfile, 'id' | 'display_name' | 'email' | 'identity_scope' | 'revision' | 'updated_at' | 'tags' | 'starred'> {
   created_at: string;
   claim_count: number;
   meeting_count: number;
+  emails?: string[];
+  nicknames?: string[];
+  metadata?: ProfileMetadataFields;
 }
 
 export interface ProfileUpdateInput {
@@ -284,6 +325,9 @@ export interface ProfileUpdateInput {
   display_name?: string;
   tags?: string[];
   starred?: boolean;
+  metadata?: ProfileMetadataFields;
+  nicknames?: string[];
+  section_notes?: ProfileSectionNotes;
 }
 
 export interface ClaimCorrectionInput {
@@ -570,6 +614,12 @@ export const api = {
     updateParticipants: (id: string, body: { expected_revision: number; participants: MeetingParticipantInput[] }) =>
       put<MeetingParticipants>(`/meetings/${encodeURIComponent(id)}/participants`, body),
     process: (id: string) => post<{ status: 'queued' | 'running' | 'done' }>(`/meetings/${encodeURIComponent(id)}/process`, {}),
+    vocabulary: {
+      list: () => get<Paginated<MeetingVocabulary>>('/meetings/vocabulary'),
+      create: (body: { term: string; definition: string }) => post<MeetingVocabulary>('/meetings/vocabulary', body),
+      update: (id: string, body: { expected_revision: number; term?: string; definition?: string }) => patch<MeetingVocabulary>(`/meetings/vocabulary/${encodeURIComponent(id)}`, body),
+      remove: (id: string, expected_revision: number) => del<{ deleted: boolean; id: string }>(`/meetings/vocabulary/${encodeURIComponent(id)}`, { expected_revision }),
+    },
   },
   profiles: {
     create: (body: { display_name: string; email?: string }) => post<ParticipantProfile>('/profiles', body),
@@ -586,25 +636,33 @@ export const api = {
       post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/merge`, body),
     linkEmail: (id: string, body: { email: string; expected_revision: number }) =>
       post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/aliases`, body),
+    createRelationship: (id: string, body: { target_id: string; target_revision: number; expected_revision: number; label: string; notes: string }) =>
+      post<ProfileRelationship>(`/profiles/${encodeURIComponent(id)}/relationships`, body),
+    updateRelationship: (id: string, relationshipId: string, body: { expected_revision: number; label?: string; notes?: string }) =>
+      patch<ProfileRelationship>(`/profiles/${encodeURIComponent(id)}/relationships/${encodeURIComponent(relationshipId)}`, body),
+    removeRelationship: (id: string, relationshipId: string, expected_revision: number) =>
+      del<{ deleted: boolean; id: string }>(`/profiles/${encodeURIComponent(id)}/relationships/${encodeURIComponent(relationshipId)}`, { expected_revision }),
     correctClaim: (id: string, claimId: string, body: ClaimCorrectionInput) =>
       post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/claims/${encodeURIComponent(claimId)}`, body),
     remove: (id: string, expectedRevision: number) =>
       del<{ deleted: boolean; id: string }>(`/profiles/${encodeURIComponent(id)}`, { expected_revision: expectedRevision }),
   },
   memory: {
-    search: (q: string, opts?: PaginationParams & { repo?: string; tags?: string[]; sort?: string }) =>
+    search: (q: string, opts?: PaginationParams & { repo?: string; tags?: string[]; sort?: string; meeting_only?: boolean }) =>
       get<Paginated<MemoryItem>>('/memory/search', {
         q,
         ...(opts?.repo ? { repo: opts.repo } : {}),
         ...(opts?.tags && opts.tags.length ? { tags: opts.tags } : {}),
         ...(opts?.sort ? { sort: opts.sort } : {}),
+        ...(opts?.meeting_only !== undefined ? { meeting_only: String(opts.meeting_only) } : {}),
         ...paginationToParams(opts),
       }),
-    list: (opts?: PaginationParams & { repo?: string; tags?: string[]; sort?: string }) =>
+    list: (opts?: PaginationParams & { repo?: string; tags?: string[]; sort?: string; meeting_only?: boolean }) =>
       get<Paginated<MemoryItem>>('/memory/list', {
         ...(opts?.repo ? { repo: opts.repo } : {}),
         ...(opts?.tags && opts.tags.length ? { tags: opts.tags } : {}),
         ...(opts?.sort ? { sort: opts.sort } : {}),
+        ...(opts?.meeting_only !== undefined ? { meeting_only: String(opts.meeting_only) } : {}),
         ...paginationToParams(opts),
       }),
     get: (id: string) => get<MemoryItem>(`/memory/${id}`),
