@@ -16,10 +16,10 @@ from services.jobs.models.execution import list_executions_for_job
 from services.jobs.models.job import create_job, get_job, get_job_by_name
 from services.jobs.scheduler import JobScheduler
 from services.jobs.scoping import job_runs_on_device
-from services.meetings import db, factory
+from services.meetings import db, digestion_db, factory
 from services.meetings.config import load_source_config
 from services.meetings.schedule import configure_schedule
-from services.meetings.types import MeetingSummary, NotePage, NoteReference
+from services.meetings.types import MeetingSummary, NotePage, NoteReference, TranscriptPage, TranscriptSegment
 from tests.conftest import clean_meeting_rows
 
 
@@ -141,6 +141,9 @@ async def test_fifteen_minute_schedule_fires_twice_and_restart_uses_actual_histo
         async def aclose(self):
             self.closed = True
 
+        async def get_transcript_page(self, external_id, cursor=None):
+            return TranscriptPage((TranscriptSegment("A durable decision", {}),))
+
     monkeypatch.setitem(factory._PROVIDER_BUILDERS, "test", Provider)
     job_id = configure_schedule(source.name, DEVICE_NAME)
     clock = {"now": datetime.now(timezone.utc)}
@@ -164,9 +167,11 @@ async def test_fifteen_minute_schedule_fires_twice_and_restart_uses_actual_histo
     assert total == 2
     assert all(row["status"] == "success" for row in executions)
     assert all(row["device"] == DEVICE_NAME for row in executions)
-    assert len(providers) == 2 and all(provider.closed for provider in providers)
+    assert len(providers) == 3 and all(provider.closed for provider in providers)
     assert providers[0].get_calls == [summary.external_id]
-    assert providers[1].get_calls == []
+    assert providers[1].get_calls == [summary.external_id, summary.external_id]
+    assert providers[2].get_calls == []
+    assert digestion_db.get_transcript(first_id)["status"] == "ready"
     assert get_job(job_id)["schedule_config"] == {"minutes": 15}
     last_started = datetime.fromisoformat(executions[0]["started_at"])
     restarted = JobScheduler(device_name=DEVICE_NAME)

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from services.meetings.types import MeetingSummary
+from services.meetings.types import MeetingSummary, TranscriptPage, TranscriptSegment
 
 
 def _summary(metadata):
@@ -43,3 +43,22 @@ def test_meeting_hash_detects_changed_membership_and_ignores_ingestion_timestamp
     first = _summary({"attendees": [{"email": "a@example.test"}]})
     assert first.payload_hash() != replace(first, metadata={"attendees": [{"email": "b@example.test"}]}).payload_hash()
     assert first.payload_hash() == replace(first, provider_updated_at=datetime(2026, 2, 1, tzinfo=timezone.utc)).payload_hash()
+
+
+def test_transcript_segment_serializes_stable_evidence_id_without_mutating_speaker():
+    stamp = datetime(2026, 1, 27, 15, 30, tzinfo=timezone.utc)
+    segment = TranscriptSegment("A decision", {"diarization_label": "Speaker A"}, stamp)
+    result = segment.to_dict(7)
+    assert result == {
+        "id": "segment-7", "text": "A decision", "speaker": {"diarization_label": "Speaker A"},
+        "start_time": stamp.isoformat(), "end_time": None,
+    }
+    result["speaker"]["name"] = "Not established"
+    assert "name" not in segment.speaker
+    assert TranscriptPage((segment,)).segments == (segment,)
+
+
+@pytest.mark.parametrize("index", [-1, True, None, "1"])
+def test_transcript_segment_rejects_invalid_evidence_index(index):
+    with pytest.raises(ValueError, match="nonnegative integer"):
+        TranscriptSegment("A decision", {}).to_dict(index)

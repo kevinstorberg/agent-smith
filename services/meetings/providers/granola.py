@@ -19,6 +19,8 @@ from services.meetings.types import (
     MeetingSummary,
     NotePage,
     NoteReference,
+    TranscriptPage,
+    TranscriptSegment,
 )
 
 _API_URL = "https://public-api.granola.ai/v1"
@@ -60,13 +62,7 @@ class GranolaProvider:
         notes = data.get("notes")
         if not isinstance(notes, list):
             _invalid("notes", "must be an array")
-        if type(data.get("hasMore")) is not bool:
-            _invalid("hasMore", "must be a boolean")
-        next_cursor = data.get("cursor")
-        if next_cursor is not None:
-            _text(next_cursor, "cursor", limit=4096, nonempty=True)
-        if data["hasMore"] and (not next_cursor or next_cursor == cursor):
-            _invalid("cursor", "must advance when hasMore is true")
+        next_cursor = _next_cursor(data, cursor)
         references = []
         for index, note in enumerate(notes):
             note = _object(note, f"notes[{index}]")
@@ -75,7 +71,7 @@ class GranolaProvider:
                 updated_at=_timestamp(note.get("updated_at"), "updated_at"),
                 deleted_at=_optional_timestamp(note.get("deleted_at"), "deleted_at"),
             ))
-        return NotePage(notes=tuple(references), next_cursor=next_cursor if data["hasMore"] else None)
+        return NotePage(notes=tuple(references), next_cursor=next_cursor)
 
     async def get_summary(self, external_id: str) -> MeetingSummary | None:
         external_id = _note_id(external_id)
@@ -106,6 +102,24 @@ class GranolaProvider:
             provider_deleted_at=_optional_timestamp(data.get("deleted_at"), "deleted_at"),
             metadata=_metadata(data),
         )
+
+    async def get_transcript_page(self, external_id: str, cursor: str | None = None) -> TranscriptPage:
+        external_id = _note_id(external_id)
+        params: dict[str, str | int] = {"page_size": 100}
+        if cursor is not None:
+            params["cursor"] = _text(cursor, "cursor", limit=4096, nonempty=True)
+        try:
+            response = await self._request(f"/notes/{external_id}/transcript", params=params)
+        except MeetingProviderError as error:
+            if cursor and error.status_code == 400:
+                raise InvalidCursorError("Granola rejected the transcript cursor", status_code=400) from None
+            raise
+        data = _object(response, "transcript")
+        segments = data.get("transcript")
+        if not isinstance(segments, list) or len(segments) > 100:
+            _invalid("transcript", "must be an array of at most 100 segments")
+        next_cursor = _next_cursor(data, cursor)
+        return TranscriptPage(tuple(_transcript_segment(segment, index) for index, segment in enumerate(segments)), next_cursor)
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -172,7 +186,37 @@ def _list_params(options: dict) -> dict:
 
 
 def _invalid(field: str, reason: str) -> None:
-    raise MeetingProviderError(f"Granola response field {field}: {reason}")
+    raise MeetingProviderError(f"Granola response field {field}: {reason}") from None
+
+
+def _next_cursor(data: dict, cursor: str | None) -> str | None:
+    if type(data.get("hasMore")) is not bool:
+        _invalid("hasMore", "must be a boolean")
+    next_cursor = data.get("cursor")
+    if next_cursor is not None:
+        _text(next_cursor, "cursor", limit=4096, nonempty=True)
+    if data["hasMore"] and (not next_cursor or next_cursor == cursor):
+        _invalid("cursor", "must advance when hasMore is true")
+    return next_cursor if data["hasMore"] else None
+
+
+def _transcript_segment(value: object, index: int) -> TranscriptSegment:
+    field = f"transcript[{index}]"
+    data = _object(value, field)
+    speaker = data.get("speaker")
+    projected = {} if speaker is None else _project(speaker, f"{field}.speaker", ("source", "attribution", "diarization_label", "name"))
+    start = _optional_timestamp(data.get("start_time"), f"{field}.start_time")
+    end = _optional_timestamp(data.get("end_time"), f"{field}.end_time")
+    if start is not None and end is not None and end < start:
+        _invalid(f"{field}.end_time", "must not be earlier than start_time")
+    segment = TranscriptSegment(_text(data.get("text"), f"{field}.text", limit=2_000_000), projected, start, end)
+    try:
+        size = len(json.dumps(segment.to_dict(index), ensure_ascii=False).encode("utf-8"))
+    except UnicodeError:
+        _invalid(field, "must contain valid Unicode")
+    if size > 2_000_000:
+        _invalid(field, "exceeds 2000000 bytes")
+    return segment
 
 
 def _object(value: object, field: str) -> dict:

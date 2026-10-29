@@ -31,6 +31,29 @@ class NotePage:
 
 
 @dataclass(frozen=True)
+class TranscriptSegment:
+    text: str
+    speaker: dict[str, str | None]
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+
+    def to_dict(self, index: int) -> dict:
+        if type(index) is not int or index < 0:
+            raise ValueError("Transcript segment index must be a nonnegative integer")
+        return {
+            "id": f"segment-{index}", "text": self.text, "speaker": dict(self.speaker),
+            "start_time": self.start_time.isoformat() if self.start_time else None,
+            "end_time": self.end_time.isoformat() if self.end_time else None,
+        }
+
+
+@dataclass(frozen=True)
+class TranscriptPage:
+    segments: tuple[TranscriptSegment, ...]
+    next_cursor: str | None = None
+
+
+@dataclass(frozen=True)
 class MeetingSummary:
     external_id: str
     title: str | None
@@ -72,5 +95,7 @@ class MeetingProvider(Protocol):
     async def list_page(self, cursor: str | None = None) -> NotePage: ...
 
     async def get_summary(self, external_id: str) -> MeetingSummary | None: ...
+
+    async def get_transcript_page(self, external_id: str, cursor: str | None = None) -> TranscriptPage: ...
 
     async def aclose(self) -> None: ...

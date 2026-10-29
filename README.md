@@ -126,9 +126,10 @@ environment's `.env.*` file.
 
 ## Meeting Context
 
-The `meeting_ingest` graph imports meeting summaries and selected metadata into PostgreSQL.
-It uses a configured provider factory; Granola is the first adapter. Imported context stays
-separate from generated memories. This graph has no agent and creates no tickets or memories.
+The `meeting_ingest` graph imports meeting summaries, selected metadata and complete transcript
+snapshots into PostgreSQL. It uses a configured provider factory; Granola is the first adapter.
+Imported context stays separate from generated memories. This graph has no agent and creates
+no tickets or memories.
 
 Set source configuration and the real API key only in the gitignored `.env.production`:
 
@@ -145,7 +146,8 @@ Leave `provider_options` empty to list everything accessible to the key. Granola
 `folder_id`, `space_id`, and `page_size` (1-30). Access follows the [Granola key scopes](https://docs.granola.ai/help-center/sharing/integrations/granola-api):
 personal access covers notes the key owner can read; workspace keys cover public notes and
 API-enabled spaces, and cannot read unshared private notes or folders. Summary imports exclude
-private note text, transcripts, attachments, and arbitrary provider fields.
+private note text, attachments and arbitrary provider fields. Transcript snapshots are captured
+separately using the same configured connection and its existing permissions.
 
 Keep `account_key` stable when rotating credentials; use a new `account_key` for a different account.
 Adding another provider requires an adapter and factory registration, then a configuration
@@ -161,6 +163,7 @@ prerequisites below. Output contains counts and verification flags, without meet
 .venv/bin/python -m scripts.meetings probe --source granola
 .venv/bin/python -m scripts.meetings verify-live --source granola --isolated-db --stage scan
 .venv/bin/python -m scripts.meetings verify-live --source granola --isolated-db --stage context
+.venv/bin/python -m scripts.meetings verify-live --source granola --isolated-db --stage transcript
 ```
 
 After deploying the reviewed change, apply its migration through the existing confirmation
@@ -189,9 +192,20 @@ for periodic imports. Startup does not create meeting jobs or upgrade production
 Source progress is also available through `meeting_sync_status` on `/mcp/meetings/`.
 
 Open **Meetings** in the sidebar (`/meetings`) to browse and search saved summaries from all
-connections. Select a meeting to read its summary, connection/provider details, timestamps,
-revision and source link. Meeting context is shared across devices and is separate from the
-generated memories shown on the Memory page.
+connections. Select a meeting to read its summary, transcript, connection/provider details,
+timestamps, revision and source link. Meeting context is shared across devices and is separate
+from the generated memories shown on the Memory page.
+
+Transcript capture starts when a meeting is first stored after this feature is enabled. This
+includes older meetings from a newly connected account that have not already been imported.
+Previously stored meetings, summary edits and repeated imports do not start another capture;
+there is no automatic historical backfill. Unfinished captures retain their progress for a
+later scheduled run. Keep the same all-connections, all-devices job and existing API key.
+
+Meeting details show transcript capture status and safe failure information. A complete
+snapshot is shown only after every provider page has been captured and validated. Pending,
+unavailable, unsupported and failed captures remain distinct from an empty transcript; a
+summary is never presented as a transcript. Anonymous or uncertain speakers stay unidentified.
 
 To import immediately, use the graphs MCP tool:
 
@@ -224,6 +238,8 @@ available. Three unresolved detail observations hide a previously stored summary
 deletion tombstones hide it immediately. A successful later fetch restores availability.
 Listing absence alone does not delete context. Existing content remains stored for diagnosis;
 there is no automatic retention purge, full revision history, or replication of source ACLs.
+When a source meeting becomes unavailable or is deleted, its transcript is hidden and
+unfinished capture stops. Stored transcript data is retained rather than automatically purged.
 
 ## Chat Rooms
 

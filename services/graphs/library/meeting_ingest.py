@@ -1,6 +1,7 @@
 """Import all configured meeting connections, or one optional named source."""
 from __future__ import annotations
 
+import json
 from typing import NotRequired, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -14,9 +15,14 @@ class State(TypedDict):
 
 
 async def _sync_summaries(state: State) -> dict:
-    from services.meetings.service import sync_sources
+    from services.meetings.digestion import capture_transcripts
+    from services.meetings.service import MeetingSyncError, sync_sources
 
-    return {"result": await sync_sources(state.get("source"))}
+    result = await sync_sources(state.get("source"), run_budget_seconds=120, raise_on_failure=False)
+    result["transcript"] = await capture_transcripts(state.get("source"))
+    if result.get("outcome") == "failed" or result["transcript"]["outcome"] == "failed":
+        raise MeetingSyncError(json.dumps(result, sort_keys=True)) from None
+    return {"result": result}
 
 
 def build_graph():

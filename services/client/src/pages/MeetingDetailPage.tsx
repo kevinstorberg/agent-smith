@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import { api } from '../api';
 import type { MeetingSummary } from '../api';
 import { CopyButton } from '../components/CopyButton';
+import { MeetingTranscript } from '../components/MeetingTranscript';
 import { CODE_BOX } from '../components/codeBox';
 import { DateCell } from '../components/table';
 import { usePolling } from '../hooks/usePolling';
@@ -83,6 +84,7 @@ export function MeetingDetailPage() {
             </div>
             <div className="markdown-content"><ReactMarkdown>{meeting.summary_markdown || meeting.summary_text}</ReactMarkdown></div>
           </div>
+          <MeetingTranscript key={meeting.id} meetingId={meeting.id} />
           {Object.keys(meeting.metadata).length > 0 && (
             <details className="card">
               <summary>Additional metadata</summary>

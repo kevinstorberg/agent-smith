@@ -9,7 +9,7 @@ vi.mock('react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router')>();
   return { ...actual, useParams: () => ({ id: meetingFixture.id }) };
 });
-vi.mock('../../api', () => ({ api: { meetings: { get: vi.fn() } } }));
+vi.mock('../../api', () => ({ api: { meetings: { get: vi.fn(), transcript: vi.fn(), deleteTranscript: vi.fn(), retryTranscript: vi.fn() } } }));
 import { api } from '../../api';
 
 const mockGet = vi.mocked(api.meetings.get);
@@ -17,6 +17,7 @@ const mockGet = vi.mocked(api.meetings.get);
 beforeEach(() => {
   vi.clearAllMocks();
   mockGet.mockResolvedValue(meetingFixture);
+  vi.mocked(api.meetings.transcript).mockResolvedValue({ status: 'not_imported', items: [], total: 0, limit: 100, offset: 0, error_type: null, captured_at: null });
 });
 
 afterEach(() => vi.useRealTimers());
@@ -59,6 +60,15 @@ describe('MeetingDetailPage', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Meeting not found');
     expect(screen.getByRole('link', { name: 'Back to meetings' })).toBeInTheDocument();
+  });
+
+  it('keeps the saved summary visible if the transcript reader fails', async () => {
+    vi.mocked(api.meetings.transcript).mockRejectedValue(new Error('Transcript reader unavailable'));
+    renderWithProviders(<MeetingDetailPage />);
+
+    expect(await screen.findByText('Ship the next release.')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load transcript');
+    expect(screen.getByRole('heading', { name: 'Product planning' })).toBeInTheDocument();
   });
 
   it('refreshes saved summaries periodically', async () => {

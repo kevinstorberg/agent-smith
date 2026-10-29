@@ -80,7 +80,7 @@ async def verify_live(source: str, stage: str) -> dict:
         status = db.source_status(source)
         if not status or not status[0]["scan_started_at"]:
             raise RuntimeError("Live scan verification did not retain a resumable checkpoint")
-    await dispatch("meeting_ingest", {"source": source})
+    graph_result = json.loads(await dispatch("meeting_ingest", {"source": source}))
     if stage == "scan":
         status = db.source_status(source)
         if not status or status[0]["scan_started_at"] or not status[0]["last_completed_at"]:
@@ -90,9 +90,32 @@ async def verify_live(source: str, stage: str) -> dict:
     if not items:
         raise RuntimeError("Live meeting verification found no stored summaries")
     stored = items[0]
+    if stage == "transcript":
+        from services.meetings import digestion_db
+
+        captured_id = graph_result.get("transcript", {}).get("meeting_id")
+        stored = db.get_summary(captured_id) if captured_id else None
+        if stored is None or (digestion_db.get_transcript(captured_id) or {}).get("status") != "ready":
+            raise RuntimeError("Live transcript verification did not capture a complete transcript")
     provider = build_meeting_provider(config)
     try:
         summary = await provider.get_summary(stored["external_id"])
+        if stage == "transcript":
+            expected_segments, cursor, seen = [], None, set()
+            async with asyncio.timeout(120):
+                while True:
+                    page = await provider.get_transcript_page(stored["external_id"], cursor)
+                    start = len(expected_segments)
+                    expected_segments.extend(segment.to_dict(start + index) for index, segment in enumerate(page.segments))
+                    cursor = page.next_cursor
+                    if cursor is None:
+                        break
+                    if cursor in seen:
+                        raise RuntimeError("Live transcript cursor did not advance")
+                    seen.add(cursor)
+            record = digestion_db.get_record(stored["id"])
+            if not expected_segments or record["transcript"]["segments"] != expected_segments:
+                raise RuntimeError("Live transcript normalized readback mismatch")
     finally:
         await provider.aclose()
     if summary is None:
@@ -133,6 +156,8 @@ async def verify_live(source: str, stage: str) -> dict:
         result["bounded_resume_verified"] = True
     if stage == "context":
         result["context_reader_verified"] = True
+    if stage == "transcript":
+        result.update(transcript_verified=True, transcript_segments=len(expected_segments))
     return result
 
 
@@ -161,7 +186,7 @@ def main() -> None:
     parser.add_argument("command", choices=["probe", "verify-live", "schedule"])
     parser.add_argument("--source", required=True)
     parser.add_argument("--isolated-db", action="store_true")
-    parser.add_argument("--stage", choices=["one-summary", "scan", "context"], default="one-summary")
+    parser.add_argument("--stage", choices=["one-summary", "scan", "context", "transcript"], default="one-summary")
     parser.add_argument("--device")
     parser.add_argument("--interval-minutes", type=float, default=15)
     args = parser.parse_args()
