@@ -75,11 +75,11 @@ def create(profile_id: str, target_id: str, expected_revision: int, target_revis
             ON CONFLICT (subject_id, target_id) DO UPDATE SET label = EXCLUDED.label,
               notes = EXCLUDED.notes, dismissed = false, human_confirmed = true, revision = profile_relationships.revision + 1,
               updated_at = clock_timestamp() WHERE profile_relationships.dismissed
-            RETURNING id""", (subject["id"], target["id"], label, notes))
+            RETURNING *""", (subject["id"], target["id"], label, notes))
         row = cur.fetchone()
         if row is None:
             raise profile_db.ProfileRevisionConflict("These people already have a relationship; edit that relationship instead")
-        _touch_profiles(cur, (subject["id"], target["id"]))
+        _touch_profiles(cur, (subject["id"], target["id"]), None, dict(row))
         return _detail(cur, str(row["id"]))
 
 
@@ -101,8 +101,21 @@ def _editable(cur, profile_id: str, relationship_id: str, expected_revision: int
     return dict(edge)
 
 
-def _touch_profiles(cur, ids) -> None:
-    cur.execute("UPDATE participant_profiles SET revision = revision + 1, updated_at = clock_timestamp() WHERE id IN %s", (tuple(ids),))
+def _touch_profiles(cur, ids, previous: dict | None, current: dict) -> None:
+    from services.personas import revisions
+
+    cur.execute("SELECT * FROM participant_profiles WHERE id IN %s ORDER BY id FOR UPDATE", (tuple(ids),))
+    before = {row["id"]: dict(row) for row in cur.fetchall()}
+    cur.execute("""UPDATE participant_profiles SET revision = revision + 1, assessment_dirty = true,
+        assessment_attempts = 0, assessment_error = NULL, assessment_next_attempt_at = now(),
+        updated_at = clock_timestamp() WHERE id IN %s RETURNING *""", (tuple(ids),))
+    after = [dict(row) for row in cur.fetchall()]
+    fields = ("id", "subject_id", "target_id", "label", "notes", "dismissed", "human_confirmed")
+    change = {side: _serialize({key: edge[key] for key in fields}) if edge is not None else None
+              for side, edge in (("before", previous), ("after", current))}
+    for row in after:
+        revisions.record(cur, before[row["id"]], row, actor="human", source="manual",
+                         extra={"relationships": change})
 
 
 def update(profile_id: str, relationship_id: str, expected_revision: int, *, label: str | None = None, notes: str | None = None) -> dict:
@@ -117,17 +130,19 @@ def update(profile_id: str, relationship_id: str, expected_revision: int, *, lab
                                            "timestamp": datetime.now(timezone.utc).isoformat()}]
             _validate_history(history)
             cur.execute("""UPDATE profile_relationships SET label = %s, notes = %s, history = %s, human_confirmed = true,
-                revision = revision + 1, updated_at = clock_timestamp() WHERE id = %s""",
+                revision = revision + 1, updated_at = clock_timestamp() WHERE id = %s RETURNING *""",
                         (new_label, new_notes, Json(history), edge["id"]))
-            _touch_profiles(cur, (edge["subject_id"], edge["target_id"]))
+            updated = dict(cur.fetchone())
+            _touch_profiles(cur, (edge["subject_id"], edge["target_id"]), edge, updated)
         return _detail(cur, str(edge["id"]))
 
 
 def delete(profile_id: str, relationship_id: str, expected_revision: int) -> None:
     with profile_db.profile_write_cursor() as cur:
         edge = _editable(cur, profile_id, relationship_id, expected_revision)
-        cur.execute("UPDATE profile_relationships SET dismissed = true, revision = revision + 1, updated_at = clock_timestamp() WHERE id = %s", (edge["id"],))
-        _touch_profiles(cur, (edge["subject_id"], edge["target_id"]))
+        cur.execute("UPDATE profile_relationships SET dismissed = true, revision = revision + 1, updated_at = clock_timestamp() WHERE id = %s RETURNING *", (edge["id"],))
+        updated = dict(cur.fetchone())
+        _touch_profiles(cur, (edge["subject_id"], edge["target_id"]), edge, updated)
 
 
 def ensure_claim_links(cur, claims: list[dict]) -> None:

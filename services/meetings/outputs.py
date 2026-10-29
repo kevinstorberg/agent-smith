@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal, get_args
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-MemoryKind = Literal["fact", "decision", "commitment", "constraint", "preference", "lesson", "question"]
-_TOPIC_TAG_LIMIT = 50
+from services.meetings.topics import MemoryKind as MemoryKind, TOPIC_LENGTH, TOPIC_LIMIT, normalize_topics
 
 
 def _nonblank(value: str) -> str:
@@ -29,27 +28,24 @@ class Evidence(_Output):
 class MemoryItem(_Output):
     content: _Content = Field(min_length=1, max_length=4000)
     kind: MemoryKind
-    tags: list[Annotated[str, Field(min_length=1, max_length=_TOPIC_TAG_LIMIT)]] = Field(min_length=1, max_length=8)
+    tags: list[Annotated[str, Field(min_length=1, max_length=TOPIC_LENGTH)]] = Field(min_length=1, max_length=TOPIC_LIMIT)
     evidence: list[Evidence] = Field(min_length=1, max_length=10)
 
     @field_validator("tags")
     @classmethod
     def topical_tags(cls, values: list[str]) -> list[str]:
-        tags = []
-        for value in values:
-            tag = "-".join(value.strip().lower().split())
-            if not tag or len(tag) > _TOPIC_TAG_LIMIT or tag == "meeting-memory" or tag.startswith("meeting:"):
-                raise ValueError("Use short topic tags, not meeting origin identifiers")
-            if tag not in tags:
-                tags.append(tag)
-        if not set(tags).difference(get_args(MemoryKind)):
-            raise ValueError("Include a topic, not only memory classifications")
-        return tags
+        return normalize_topics(values, allow_empty=False)
 
 
 class MemorySubmission(_Output):
     items: list[MemoryItem] = Field(max_length=20)
     reason: str = Field(default="", max_length=2000)
+    context_labels: list[Annotated[str, Field(min_length=1, max_length=TOPIC_LENGTH)]] = Field(default_factory=list, max_length=TOPIC_LIMIT)
+
+    @field_validator("context_labels")
+    @classmethod
+    def meeting_topics(cls, values: list[str]) -> list[str]:
+        return normalize_topics(values)
 
 
 class ProfileClaim(_Output):

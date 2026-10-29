@@ -77,7 +77,7 @@ async def test_profile_react_uses_shared_research_fresh_profiles_and_same_run_me
 
     assert result == {"items": [CLAIM], "reason": "New explicit priority"}
     assert roles == [("persona", "curator")]
-    assert instance.tool_names == ["search_previous_memories", "get_memory", "search_transcript", "get_profile", "search_profiles", "stage_profiles"]
+    assert instance.tool_names == ["search_previous_memories", "get_memory", "search_transcript", "get_profile", "search_profiles", "list_profile_names", "stage_profiles"]
     assert reads == [[ALICE], [ALICE, BOB]] and writes == [] and backend[2] == []
     assert len(instance.seen) == 5
     assert any(isinstance(message, ToolMessage) and "Human correction" in message.content for message in instance.seen[2])

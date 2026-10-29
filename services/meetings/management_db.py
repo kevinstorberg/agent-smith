@@ -124,10 +124,13 @@ def _normalize_participants(cur, participants: list[dict], speakers: set[str]) -
     return normalized
 
 
-def _retire_changed_attribution(cur, meeting: dict, digestion: dict, participants: list[dict]) -> None:
+def _retire_changed_attribution(cur, meeting: dict, digestion: dict, participants: list[dict]) -> list[str]:
+    from services.meetings import profile_metadata
+    from services.personas import revisions, sections
+
     segments = digestion["transcript"].get("segments", [])
     if not segments:
-        return
+        return []
     available_keys = {speaker_key(segment.get("speaker") or {}) for segment in segments}
     old = [item for item in meeting["manual_participants"] if not item.get("speaker_key") or item["speaker_key"] in available_keys]
     base = digestion["snapshot"]
@@ -135,30 +138,56 @@ def _retire_changed_attribution(cur, meeting: dict, digestion: dict, participant
     mappings = [{segment_id: person["id"] for person in catalog for segment_id in person["segment_ids"]} for catalog in catalogs]
     changed = {key for key in mappings[0] | mappings[1] if mappings[0].get(key) != mappings[1].get(key)}
     changed_people = {mappings[0][key] for key in changed if key in mappings[0]}
-    if not changed:
-        return
     cur.execute(
-        """SELECT * FROM participant_profiles p WHERE p.merged_into IS NULL AND EXISTS
-           (SELECT 1 FROM jsonb_array_elements(p.claims) claim WHERE claim->>'meeting_id' = %s)
-           ORDER BY id FOR UPDATE""", (str(meeting["id"]),),
+        """SELECT * FROM participant_profiles p WHERE NOT p.deleted AND p.merged_into IS NULL AND EXISTS
+           (SELECT 1 FROM jsonb_array_elements(p.claims) claim WHERE claim->>'meeting_id' = %s
+            UNION ALL SELECT 1 FROM jsonb_each(p.metadata_provenance) field WHERE field.value->>'meeting_id' = %s)
+           ORDER BY id FOR UPDATE""", (str(meeting["id"]), str(meeting["id"])),
     )
     rows = [dict(row) for row in cur.fetchall()]
     target_ids = {claim.get("target_id") for row in rows for claim in row["claims"] if claim.get("target_id")}
     targets = profile_db.canonical_rows(cur, target_ids, metadata_only=True) if target_ids else {}
+    contexts = profile_db._source_contexts(cur, rows,
+        {claim["meeting_id"] for row in rows for claim in row["claims"] if claim.get("meeting_id")})
+    future = copy.deepcopy(contexts)
+    meeting_id, revision = str(meeting["id"]), meeting["participants_revision"] + 1
+    if meeting_id in future:
+        future[meeting_id]["participants_revision"] = revision
+    clean_rebased = []
     for row in rows:
         claims = copy.deepcopy(row["claims"])
-        altered = False
+        retired = False
         for claim in claims:
             target = targets.get(claim.get("target_id")) or {}
-            if claim.get("meeting_id") == str(meeting["id"]) and not claim.get("superseded") and (
-                any(evidence["segment_id"] in changed for evidence in claim["evidence"])
-                or str(target.get("id", claim.get("target_id"))) in changed_people
-            ):
-                claim["superseded"] = True
-                altered = True
-        if altered:
+            if claim.get("meeting_id") == meeting_id and not claim.get("superseded"):
+                if (any(evidence["segment_id"] in changed for evidence in claim["evidence"])
+                        or str(target.get("id", claim.get("target_id"))) in changed_people):
+                    claim["superseded"] = True
+                    retired = True
+                elif profile_metadata.claim_source_valid(claim, contexts):
+                    claim["participants_revision"] = revision
+        provenance = profile_metadata.rebase_attribution(row, meeting_id, revision, contexts, mappings)
+        evidence = sections.rebase_attribution(row, claims, contexts, future, meeting_id, revision)
+        new = {**row, "claims": claims, "metadata_provenance": provenance, "section_evidence": evidence}
+        valid = sections.effective_claims(new, future)
+        invalidated = (retired or any(source.get("meeting_id") == meeting_id and not profile_metadata.source_valid(source, future)
+                                    for source in provenance.values())
+                       or any(proof.get("status") == "supported" and not proof.get("human")
+                              and not sections.proof_valid(proof, valid, future) for proof in evidence.values()))
+        if any(new[key] != row[key] for key in ("claims", "metadata_provenance", "section_evidence")) or invalidated:
             profile_db._validate_claim_size(claims)
-            cur.execute("UPDATE participant_profiles SET claims = %s, revision = revision + 1, updated_at = clock_timestamp() WHERE id = %s", (Json(claims), row["id"]))
+            dirty = row["assessment_dirty"] or invalidated
+            cur.execute("""UPDATE participant_profiles SET claims = %s, metadata_provenance = %s, section_evidence = %s,
+                assessment_dirty = %s, assessment_attempts = CASE WHEN %s THEN 0 ELSE assessment_attempts END,
+                assessment_error = CASE WHEN %s THEN NULL ELSE assessment_error END,
+                assessment_next_attempt_at = CASE WHEN %s THEN now() ELSE assessment_next_attempt_at END,
+                revision = revision + 1, updated_at = clock_timestamp() WHERE id = %s RETURNING *""",
+                        (Json(claims), Json(provenance), Json(evidence), dirty, dirty, dirty, dirty, row["id"]))
+            updated = dict(cur.fetchone())
+            revisions.record(cur, row, updated, actor="system", source="meeting", source_id=meeting_id)
+            if not dirty and row["assessment_input_hash"]:
+                clean_rebased.append(str(row["id"]))
+    return clean_rebased
 
 
 def update_participants(meeting_id: str, expected_revision: int, participants: list[dict]) -> dict:
@@ -170,9 +199,16 @@ def update_participants(meeting_id: str, expected_revision: int, participants: l
         entries = _normalize_participants(cur, participants, {group["key"] for group in _speaker_groups(cur, meeting_id)})
         if entries == meeting["manual_participants"]:
             return _participants(cur, meeting_id)
-        if digestion and digestion["transcript_status"] == "ready":
-            _retire_changed_attribution(cur, meeting, digestion, entries)
+        rebased = _retire_changed_attribution(cur, meeting, digestion, entries) if digestion and digestion["transcript_status"] == "ready" else []
         cur.execute("UPDATE meeting_summaries SET manual_participants = %s, participants_revision = participants_revision + 1 WHERE id = %s", (Json(entries), meeting_id))
+        if rebased:
+            from services.personas import assessment_db, sections
+
+            for profile_id in rebased:
+                row = profile_db._canonical(cur, profile_id)
+                visible, claims = assessment_db._snapshot(cur, row)
+                cur.execute("UPDATE participant_profiles SET assessment_input_hash=%s WHERE id=%s",
+                            (sections.input_hash(visible, claims), profile_id))
         if digestion:
             cur.execute(
                 """UPDATE meeting_digestions SET profile_status = 'pending', profile_artifact = '{}'::jsonb,

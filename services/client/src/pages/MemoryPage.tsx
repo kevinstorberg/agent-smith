@@ -241,6 +241,7 @@ export function MemoryPage() {
               {item.from_meeting && <span className="tag tag-info">Meeting</span>}
               {item.from_meeting && item.source_id && <Link className="text-muted-sm" to={`/meetings/${encodeURIComponent(item.source_id)}`}>Source meeting</Link>}
               {item.repo && <span className="tag tag-info">{item.repo}</span>}
+              {item.context_tags?.filter(tag => !item.tags?.includes(tag)).map(tag => <span key={`context-${tag}`} className="tag" title="Meeting topic">{tag}</span>)}
               {item.tags?.map(t => <span key={t} className="tag">{t}</span>)}
               {item.created_at && (
                 <span className="text-muted-sm">

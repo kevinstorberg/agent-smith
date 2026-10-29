@@ -32,6 +32,10 @@ class MemoryConflictError(RuntimeError):
     pass
 
 
+class MemoryContextUnavailable(RuntimeError):
+    pass
+
+
 class _SerializedEmbeddings(Embeddings):
     def __init__(self, model: Embeddings):
         self._model = model
@@ -175,7 +179,7 @@ def _filter_and_sort(
         out = [r for r in out if r.get("repo") == repo]
     if tags:
         wanted = set(tags)
-        out = [r for r in out if wanted.issubset(set(r.get("tags") or []))]
+        out = [r for r in out if wanted.issubset(set(r.get("tags") or []) | set(r.get("context_tags") or []))]
     if sort in _SORT_KEYS:
         field, reverse = _SORT_KEYS[sort]
         out = sorted(out, key=lambda r: r.get(field) or "", reverse=reverse)
@@ -232,6 +236,25 @@ def _doc_to_row(doc: Document) -> dict:
 def _raw_to_row(record: dict) -> dict:
     meta = record.get("metadata", {})
     return _to_row(content=record.get("text", ""), id=record.get("id", meta.get("id", "")), meta=meta)
+
+
+def _with_context_tags(rows: list[dict]) -> list[dict]:
+    from services.meetings import labels_db
+    from services.meetings.db import MeetingStorageError
+
+    sources = {}
+    for row in rows:
+        if not row.get("from_meeting"):
+            continue
+        try:
+            sources[row["source_id"]] = str(uuid.UUID(row.get("source_id")))
+        except (ValueError, TypeError, AttributeError):
+            continue
+    try:
+        labels = labels_db.for_memories(list(set(sources.values()))) if sources else {}
+    except MeetingStorageError:
+        raise MemoryContextUnavailable("Meeting context labels could not be read; retry when the database is available") from None
+    return [{**row, "context_tags": labels.get(sources.get(row.get("source_id")), []) if row.get("from_meeting") else []} for row in rows]
 
 
 def _cached_index(retriever: TimeWeightedVectorStoreRetriever, id: str) -> int | None:
@@ -338,7 +361,8 @@ def search_fresh(query: str, repo: str | None = None, tags: list[str] | None = N
     _validate_scope(repo, tags)
     vectorstore = get_backend().get_vectorstore(_get_embeddings())
     docs = vectorstore.similarity_search(query, k=min(200, max(20, limit * 5)))
-    return _filter_and_sort([_doc_to_row(doc) for doc in docs], repo=repo, tags=tags, sort=None)[:limit]
+    rows = _with_context_tags([_doc_to_row(doc) for doc in docs])
+    return _filter_and_sort(rows, repo=repo, tags=tags, sort=None)[:limit]
 
 
 
@@ -376,7 +400,7 @@ def search(
 
     retriever.k = SEARCH_FETCH_CEILING
     docs = retriever.invoke(query)
-    rows = [_doc_to_row(doc) for doc in docs]
+    rows = _with_context_tags([_doc_to_row(doc) for doc in docs])
     result = _filter_and_sort(rows, repo=repo, tags=tags, sort=sort, meeting_only=meeting_only)
     return result[: int(limit)] if limit is not None else result
 
@@ -391,7 +415,7 @@ def list_memories(
     # Read the retriever's stream, which add/update/delete keep current, instead of a full
     # backend load per call: on Pinecone that load is ~5 MB and exhausted the monthly egress
     # quota. Like search, it sees other processes' writes only after this process restarts.
-    rows = [_doc_to_row(doc) for doc in _get_retriever().memory_stream]
+    rows = _with_context_tags([_doc_to_row(doc) for doc in _get_retriever().memory_stream])
     result = _filter_and_sort(rows, repo=repo, tags=tags, sort=sort, meeting_only=meeting_only)
     return result[: int(limit)] if limit is not None else result
 
@@ -399,7 +423,7 @@ def list_memories(
 def get(id: str) -> dict | None:
     assert id and id.strip(), "ID must not be empty."
     row = get_backend().get_row(id)
-    return _raw_to_row(row) if row else None
+    return _with_context_tags([_raw_to_row(row)])[0] if row else None
 
 
 def delete(id: str) -> None:

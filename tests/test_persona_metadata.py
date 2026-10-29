@@ -140,10 +140,10 @@ def test_agent_fills_missing_visible_metadata_without_replacing_known_or_human_f
 
 
 def test_metadata_requires_expected_canonical_revision(metadata_claimed, participants):
-    created = profile_db.create_profile("A manually identified person")
     with get_connection() as connection, connection.cursor() as cursor:
-        cursor.execute("UPDATE participant_profiles SET id=%s, identity_key=%s WHERE id=%s",
-                       (participants[0]["id"], participants[0]["identity_key"], created["id"]))
+        person = participants[0]
+        cursor.execute("INSERT INTO participant_profiles (id,identity_key,display_name,identity_scope) VALUES (%s,%s,%s,'manual')",
+                       (person["id"], person["identity_key"], "A manually identified person"))
     with pytest.raises(profile_db.ProfileRevisionConflict):
         profile_db.apply_profiles(*metadata_claimed, artifact(participants), participants)
     assert profile_db.get_profile(participants[0]["id"])["metadata"] == {}

@@ -310,10 +310,18 @@ def _serialize(row: dict) -> dict:
 def list_summaries(
     source: str | None = None, project: str | None = None, query: str | None = None,
     after: str | None = None, before: str | None = None, limit: int = 20, offset: int = 0,
+    labels: list[str] | None = None,
 ) -> dict:
     if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
         raise ValueError("Meeting limit must be 1-100 and offset must be nonnegative")
     clauses, params = ["available = true"], []
+    if labels is not None:
+        from services.meetings.topics import normalize_topics
+
+        labels = normalize_topics(labels)
+        if labels:
+            clauses.append("labels @> %s::text[]")
+            params.append(labels)
     for field, value in (("source_name", source), ("project", project)):
         if value is not None:
             if not isinstance(value, str) or not value.strip():

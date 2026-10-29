@@ -7,6 +7,7 @@ import { parseTags } from '../utils/tags';
 import { BadgeCell } from './table';
 import { ProfileStar } from './ProfileStar';
 import { Link } from 'react-router';
+import { PROFILE_METADATA_FIELDS as METADATA_FIELDS } from '../utils/profileFields';
 
 interface Props {
   profile: ParticipantProfile;
@@ -18,12 +19,6 @@ interface Props {
   onSavingChange?: (saving: boolean) => void;
   formRef?: Ref<HTMLFormElement>;
 }
-
-const METADATA_FIELDS: { key: keyof ProfileMetadataFields; label: string; type?: string }[] = [
-  { key: 'company', label: 'Company' }, { key: 'job_role', label: 'Job role / title' },
-  { key: 'start_date', label: 'Start date', type: 'date' }, { key: 'supervisor', label: 'Supervisor' },
-  { key: 'gender', label: 'Gender' }, { key: 'marital_status', label: 'Marital status' },
-];
 
 export function ProfileMetadata({ profile, disabled, onBusyChange, onReload, editing: controlledEditing, onEditingChange, onSavingChange, formRef }: Props) {
   const [localEditing, setLocalEditing] = useState(false);

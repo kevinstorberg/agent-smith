@@ -1133,10 +1133,9 @@ pre {
 .management-list { list-style: none; display: grid; gap: 12px; }
 .management-row,
 .relationship-row { border-top: 1px solid var(--border); padding: 12px 0; overflow-wrap: anywhere; }
-.profile-field-grid,
-.profile-notes-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; margin-bottom: 12px; }
+.profile-field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; margin-bottom: 12px; }
 .profile-field-grid { margin-top: 12px; }
-.profile-notes-grid .card { margin-bottom: 0; }
+.profile-assessment-sections .section-title { margin-bottom: 0; }
 .identity-emails { list-style: none; display: grid; gap: 4px; margin-bottom: 12px; overflow-wrap: anywhere; }
 .profile-details { display: grid; gap: 8px; margin-top: 12px; }
 .profile-details dt { color: var(--text-muted); font-size: 12px; }

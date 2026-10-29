@@ -82,8 +82,12 @@ def has_requested_work(job: dict) -> bool:
 
     if graph_type == "persona":
         from services.personas.factory import build_context_provider
+        from services.personas import assessment_db
 
-        return build_context_provider().has_requested_work(source=inputs.get("source"))
+        if inputs.get("profile_id"):
+            return assessment_db.has_requested_work(inputs["profile_id"])
+        return (build_context_provider().has_requested_work(source=inputs.get("source"))
+                or assessment_db.has_requested_work())
     if graph_type == "meeting_ingest":
         from services.meetings.digestion import configured_sources
 

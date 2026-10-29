@@ -43,12 +43,13 @@ def memory_search(query: str, repo: str = "", limit: int = db.DEFAULT_LIMIT,
         query:  Natural language search query.
         repo:   Restrict results to this project/repo (optional).
         limit:  Maximum number of results to return.
-        tags:   Require these topic tags (e.g. ["product", "paralign", "security"]).
+        tags:   Require topics from own tags or inherited meeting context_tags (e.g. ["product", "security"]).
         meeting_only: Return only memories originating from meetings, independent of tags.
 
     Returns:
         List of matching memories ordered by relevance, each with id, content,
-        repo, topic tags, from_meeting, source_type/source_id and timestamps.
+        repo, editable tags, inherited context_tags, from_meeting, source_type/source_id and timestamps.
+        Filtering applies to the existing bounded semantic candidate set, not an exhaustive index scan.
     """
     return db.search(query=query, repo=empty_to_none(repo), limit=limit, tags=tags, meeting_only=meeting_only)
 
@@ -62,11 +63,12 @@ def memory_list(repo: str = "", limit: int = db.DEFAULT_LIMIT,
     Args:
         repo:   Filter to this project/repo (optional).
         limit:  Maximum number of memories to return.
-        tags:   Require these topic tags (e.g. ["security", "paralign"]).
+        tags:   Require topics from own tags or inherited meeting context_tags (e.g. ["security", "paralign"]).
         meeting_only: Return only memories originating from meetings, independent of tags.
 
     Returns:
-        Memories with id, content, repo, topic tags, from_meeting, source_type/source_id and timestamps.
+        Memories with id, content, repo, editable tags, inherited context_tags,
+        from_meeting, source_type/source_id and timestamps. Reads use the current cached memory stream.
     """
     return db.list_memories(repo=empty_to_none(repo), limit=limit, tags=tags, meeting_only=meeting_only)
 

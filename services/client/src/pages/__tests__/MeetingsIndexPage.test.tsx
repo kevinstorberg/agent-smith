@@ -24,6 +24,13 @@ beforeEach(() => {
 });
 
 describe('MeetingsIndexPage', () => {
+  it('renders meeting topics and filters them while typing from the first page', async () => {
+    mockList.mockResolvedValue({ items: [{ ...meetingFixture, labels: ['product', 'roadmapping'] }], total: 1 });
+    renderWithProviders(<MeetingsIndexPage />);
+    expect(await screen.findByText('roadmapping')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Filter meetings by labels'), { target: { value: 'product, roadmapping' } });
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: undefined, labels: ['product', 'roadmapping'] }));
+  });
   it('shows summaries from multiple connections without a source or device filter', async () => {
     renderWithProviders(<MeetingsIndexPage />);
 

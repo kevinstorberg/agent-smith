@@ -52,6 +52,18 @@ afterEach(() => {
 });
 
 describe('MemoryPage', () => {
+  it('shows inherited meeting topics once without copying them into the editable memory tags', async () => {
+    mockList.mockResolvedValue({ items: [{ ...fakeMemories[0], context_tags: ['security', 'architecture'], from_meeting: true }], total: 1 });
+    renderWithProviders(<MemoryPage />);
+    expect(await screen.findByText('security')).toHaveAttribute('title', 'Meeting topic');
+    expect(screen.getAllByText('architecture')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(screen.getByDisplayValue('architecture, convention')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue(/security/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('mem-1', expect.objectContaining({ tags: ['architecture', 'convention'] })));
+  });
+
   it('applies the meeting filter before paging and preserves the search, repo, tags, and sort options', async () => {
     mockList.mockResolvedValue({ items: fakeMemories, total: 40 });
     mockSearch.mockResolvedValue({ items: fakeMemories, total: 40 });

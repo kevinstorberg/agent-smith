@@ -136,6 +136,7 @@ export interface McpServer {
 }
 
 export interface MemoryItem {
+  context_tags?: string[];
   from_meeting?: boolean;
   source_type?: string | null;
   source_id?: string | null;
@@ -148,6 +149,9 @@ export interface MemoryItem {
 }
 
 export interface MeetingSummary {
+  labels?: string[];
+  labels_revision?: number;
+  labels_source?: 'human' | 'agent' | null;
   id: string;
   provider: string;
   account_key: string;
@@ -169,11 +173,24 @@ export interface MeetingSummary {
 }
 
 export interface MeetingListParams extends PaginationParams {
+  labels?: string[];
   q?: string;
   source?: string;
   project?: string;
   after?: string;
   before?: string;
+}
+
+export interface MeetingLabels {
+  labels: string[];
+  labels_revision: number;
+  labels_source?: 'human' | 'agent' | null;
+}
+
+export interface MeetingLabelSuggestion {
+  labels: string[];
+  labels_revision: number;
+  meeting_revision: number;
 }
 
 export interface TranscriptSegment {
@@ -293,6 +310,8 @@ export interface ParticipantProfile extends MeetingProfileSummary {
   metadata?: ProfileMetadataFields;
   metadata_provenance?: Partial<Record<keyof ProfileMetadataFields, ProfileMetadataSource>>;
   section_notes?: ProfileSectionNotes;
+  section_evidence?: Partial<Record<ProfileSectionKey, ProfileSectionEvidence>>;
+  assessment?: ProfileAssessmentState;
   relationships?: ProfileRelationship[];
 }
 
@@ -306,7 +325,32 @@ export type ProfileMetadataSource = { human: true } | {
   evidence: { segment_id: string; quote: string }[];
 };
 
-export interface ProfileSectionNotes { drivers?: string; strengths?: string; development_areas?: string }
+export type ProfileSectionKey = 'overview' | 'drivers' | 'strengths' | 'development_areas' | 'working_style' | 'relationships';
+export type ProfileSectionNotes = Partial<Record<ProfileSectionKey, string>>;
+export interface ProfileSectionEvidence {
+  human: boolean;
+  status?: 'supported' | 'insufficient_evidence';
+  claim_ids?: string[];
+  coverage?: { claim_count: number; meeting_count: number };
+  generated_at?: string;
+}
+export interface ProfileAssessmentState {
+  status: 'pending' | 'running' | 'failed' | 'current' | 'insufficient_evidence';
+  attempts: number;
+  next_attempt_at: string | null;
+  error: string | null;
+  coverage: { claim_count: number; meeting_count: number };
+  can_generate: boolean;
+}
+export interface ProfileRevision {
+  id: number; profile_id: string; base_revision: number; new_revision: number;
+  actor: 'human' | 'agent' | 'system'; source: 'meeting' | 'assessment' | 'manual' | 'merge';
+  source_id: string | null; input_hash: string | null;
+  source_restricted?: boolean;
+  changes: Record<string, { before: unknown; after: unknown }>;
+  created_at: string;
+}
+export interface ProfileBuildResult extends JobRunResult { job_id: number; profile_id: string }
 
 export interface ProfileRelationship {
   id: string; subject_id: string; target_id: string; subject_name: string; target_name: string;
@@ -335,6 +379,7 @@ export interface ProfileUpdateInput {
   metadata?: ProfileMetadataFields;
   nicknames?: string[];
   section_notes?: ProfileSectionNotes;
+  allow_agent_sections?: ProfileSectionKey[];
 }
 
 export interface ClaimCorrectionInput {
@@ -613,8 +658,13 @@ export const api = {
       ...(params?.project ? { project: params.project } : {}),
       ...(params?.after ? { after: params.after } : {}),
       ...(params?.before ? { before: params.before } : {}),
+      ...(params?.labels?.length ? { labels: params.labels } : {}),
     }),
     get: (id: string) => get<MeetingSummary>(`/meetings/${encodeURIComponent(id)}`),
+    updateLabels: (id: string, body: { expected_revision: number; labels: string[]; expected_meeting_revision?: number }) =>
+      patch<MeetingLabels>(`/meetings/${encodeURIComponent(id)}/labels`, body),
+    suggestLabels: (id: string, expected_revision: number) =>
+      post<MeetingLabelSuggestion>(`/meetings/${encodeURIComponent(id)}/labels/suggest`, { expected_revision }),
     transcript: (id: string, params?: PaginationParams) =>
       get<MeetingTranscript>(`/meetings/${encodeURIComponent(id)}/transcript`, paginationToParams(params)),
     deleteTranscript: (id: string) => del<{ deleted: boolean; id: string }>(`/meetings/${encodeURIComponent(id)}/transcript`),
@@ -645,6 +695,9 @@ export const api = {
     }),
     get: (id: string) => get<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}`),
     update: (id: string, body: ProfileUpdateInput) => patch<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}`, body),
+    rebuild: (id: string, expected_revision: number) => post<ProfileBuildResult>(`/profiles/${encodeURIComponent(id)}/rebuild`, { expected_revision }),
+    history: (id: string, params?: PaginationParams) => get<Paginated<ProfileRevision>>(`/profiles/${encodeURIComponent(id)}/history`, paginationToParams(params)),
+    historyOne: (id: string, revisionId: number) => get<ProfileRevision>(`/profiles/${encodeURIComponent(id)}/history/${revisionId}`),
     merge: (id: string, body: { target_id: string; expected_revision: number; target_revision: number }) =>
       post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/merge`, body),
     linkEmail: (id: string, body: { email: string; expected_revision: number }) =>

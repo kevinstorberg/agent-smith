@@ -37,7 +37,7 @@ def people(source, feed):
 
 
 @pytest.fixture
-def profiler(agents, monkeypatch):
+def profiler(agents, monkeypatch, extraction_only):
     from services.meetings import profile_analysis
 
     calls = []
