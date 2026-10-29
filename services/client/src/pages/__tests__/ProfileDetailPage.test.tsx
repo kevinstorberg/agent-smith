@@ -35,6 +35,16 @@ afterEach(() => {
 });
 
 describe('ProfileDetailPage', () => {
+  it('does not claim there is no meeting evidence for a metadata-only persona update', async () => {
+    read.mockResolvedValue({ ...profileFixture, claims: [], metadata: { company: 'Paralign' }, metadata_provenance: {
+      company: { meeting_id: 'meeting-source', transcript_hash: 'hash', participants_revision: 0,
+        evidence: [{ segment_id: 'segment-4', quote: 'I work at Paralign.' }] },
+    } });
+    renderWithProviders(<ProfileDetailPage />);
+    await screen.findByText('I work at Paralign.');
+    expect(screen.queryByText(/No meeting evidence yet/)).not.toBeInTheDocument();
+  });
+
   it('uses the shared header for profile editing, saving and cancellation', async () => {
     let finishSave: (profile: ParticipantProfile) => void = () => undefined;
     vi.mocked(api.profiles.update).mockReturnValueOnce(new Promise(resolve => { finishSave = resolve; }));

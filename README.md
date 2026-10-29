@@ -36,14 +36,19 @@ that startup has begun; inspect `.runtime/<environment>.log` for readiness/failu
 Use separate checkouts for active development and production so dependency refreshes
 and frontend builds cannot alter the deployed checkout.
 
+Typed resource searches and text filters request automatically after a 300ms pause,
+including Rules, Plans, Meetings, Profiles, Memory and person pickers. Select and checkbox
+filters apply immediately. Changing criteria returns to the first page and ignores late
+responses from earlier searches.
+
 Agents connect to individual MCP endpoints at
 `http://localhost:<DASHBOARD_PORT>/mcp/<server>/`, such as `/mcp/memory/`.
 Tool requests use POST with `Accept: application/json, text/event-stream`.
 Optional GET event streams require `Accept: text/event-stream`; requests without it
 receive 406. The local servers do not require OAuth, so unsupported discovery URLs
-under `/.well-known/` return 404. Expected OAuth/OpenID discovery probes on unauthenticated
-servers are recorded at DEBUG level; their HTTP responses are unchanged. Other 404s,
-406 negotiation failures, warnings and errors remain visible. Routine stateless transport
+under `/.well-known/` return 404. Expected OAuth/OpenID discovery probes and GET requests
+without the SSE Accept header on unauthenticated MCP endpoints are recorded at DEBUG level;
+their HTTP responses are unchanged. Other 404s, 406 failures, warnings and errors remain visible. Routine stateless transport
 cleanup messages are quieted.
 
 ## Structure
@@ -94,6 +99,11 @@ Meeting-generated memories join this same reusable store and remain available to
 On **Memory**, enable **Meetings only** to filter by meeting provenance without changing the
 records' tags or creating another store. The list/search API accepts `meeting_only=true`;
 returned records include `from_meeting`, `source_type` and `source_id` when known.
+New meeting memories carry useful topic tags such as `product`, `paralign` and `security`.
+Meeting origin is separate from tags. Legacy origin tags are hidden on reads without
+rewriting old memories or rerunning their meetings. Agents can use `tags` and
+`meeting_only` on both MCP `memory_search` and `memory_list`, for example
+`memory_search(query="MFA follow-up", tags=["security"], meeting_only=True)`.
 Defaults to LanceDB (local, stored in `memory_store/`). The supported backends are
 `lancedb`, `pinecone`, and `pgvector`. The pgvector backend uses the existing
 `DATABASE_URL_<ENV>` database and the Alembic-managed `memories` table:
@@ -183,8 +193,9 @@ flow and restart the dashboard with the updated code:
 
 Stop meeting runners on other devices before upgrading, and update every runner before
 resuming the shared jobs. Migration `f8a0b1c2d3e4` adds independent persona leases, editable
-profile context, directed relationships and meeting vocabulary. It preserves completed
-persona receipts and backfills existing relationship links without model calls.
+profile context, directed relationships and meeting vocabulary. Migration `9d2f6a8c1b40`
+adds field-level metadata provenance and protects existing human metadata. Both preserve
+completed persona receipts; existing relationship links are backfilled without model calls.
 
 ```sh
 ./db.sh production --confirm-database <production-database-name>
@@ -230,6 +241,10 @@ exact evidence quotes, processing status and retry action; the same records are 
 on their detail page. Pending work resumes without
 regenerating completed windows or republishing acknowledged memories.
 
+The memory agent prioritizes important information, material decisions, risks, blockers and
+explicit action items. A commitment includes the task, owner, due phrase and dependencies
+when supported by the transcript; missing owners or deadlines are never invented.
+
 The independent persona job reads complete saved transcripts directly from PostgreSQL; it
 does not need a Granola connection or successful memory generation. Previously published
 memories provide optional context. Open **Profiles** in the sidebar to browse people across
@@ -238,6 +253,10 @@ patterns, strengths, development areas and directed perceptions/interactions. Me
 cards link to the same records.
 Each claim includes its confidence, whether it is self-reported, observed or inferred, and
 exact transcript evidence. Profile retries preserve completed memories.
+On **Profiles**, **Run personas** invokes the configured persona job through the same path
+as **Run Now** in Jobs. The processing card links its execution and identifies missing or
+device-scoped job setup. A run uses saved, unreviewed transcripts and preserves checkpoints;
+memory indexing is not a prerequisite. Transcript capture still belongs to the Meetings job.
 
 Profiles accumulate evidence as new meetings are digested. The profile list shows the number
 of available source meetings and when each profile was last updated. The list and detail pages
@@ -259,6 +278,10 @@ metadata, plus notes for drivers, strengths and development areas. Nicknames are
 labels, not proof of identity. Human notes and claim corrections remain authoritative during
 later analysis. Directed relationships have their own editable labels and notes: A → B and
 B → A are distinct. Neither gender nor marital status is inferred from names or voice.
+The persona agent fills missing metadata from explicit statements with transcript evidence.
+Existing values stay intact; conflicting information can be recorded as claims for review.
+Editing or clearing a field protects that field from automatic fills. Generated metadata is
+hidden if its source transcript becomes unavailable or its attribution changes.
 
 Automatic matching across meetings uses a reliable email identity: an explicit speaker
 email or an unambiguous match between a named speaker and the meeting's named attendee roster.

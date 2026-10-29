@@ -67,7 +67,6 @@ describe('MemoryPage', () => {
       limit: 10, offset: 0, meeting_only: true, repo: 'agent-smith', tags: ['decision', 'release'], sort: 'updated_at_desc',
     }));
     fireEvent.change(screen.getByPlaceholderText('Semantic search...'), { target: { value: 'release plans' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
     await waitFor(() => expect(mockSearch).toHaveBeenLastCalledWith('release plans', expect.objectContaining({ meeting_only: true, offset: 0, repo: 'agent-smith', tags: ['decision', 'release'], sort: 'relevance' })));
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() => expect(mockSearch).toHaveBeenLastCalledWith('release plans', expect.objectContaining({ offset: 10, meeting_only: true })));
@@ -194,7 +193,6 @@ describe('MemoryPage', () => {
 
     const searchInput = screen.getByPlaceholderText('Semantic search...');
     fireEvent.change(searchInput, { target: { value: 'nonexistent' } });
-    fireEvent.click(screen.getByText('Search'));
 
     await waitFor(() => {
       expect(screen.getByText('No results found')).toBeInTheDocument();
@@ -258,7 +256,6 @@ describe('MemoryPage', () => {
 
     const searchInput = screen.getByPlaceholderText('Semantic search...');
     fireEvent.change(searchInput, { target: { value: 'q' } });
-    fireEvent.click(screen.getByText('Search'));
 
     await waitFor(() => {
       const updated = Array.from((screen.getByLabelText('Sort') as HTMLSelectElement).options).map(o => o.value);
@@ -266,7 +263,7 @@ describe('MemoryPage', () => {
     });
   });
 
-  it('triggers search on Enter key', async () => {
+  it('searches while typing without pressing Enter or a button', async () => {
     mockSearch.mockResolvedValue({ items: [fakeMemories[0]], total: 1 });
 
     renderWithProviders(<MemoryPage />);
@@ -277,7 +274,6 @@ describe('MemoryPage', () => {
 
     const searchInput = screen.getByPlaceholderText('Semantic search...');
     fireEvent.change(searchInput, { target: { value: 'architecture' } });
-    fireEvent.keyDown(searchInput, { key: 'Enter' });
 
     await waitFor(() => {
       expect(mockSearch).toHaveBeenCalled();
@@ -295,7 +291,6 @@ describe('MemoryPage', () => {
 
     const searchInput = screen.getByPlaceholderText('Semantic search...');
     fireEvent.change(searchInput, { target: { value: 'test' } });
-    fireEvent.click(screen.getByText('Search'));
 
     await waitFor(() => {
       expect(screen.getByText('Clear')).toBeInTheDocument();

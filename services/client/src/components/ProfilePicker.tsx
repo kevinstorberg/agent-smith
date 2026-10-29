@@ -3,6 +3,7 @@ import { api } from '../api';
 import type { ProfileSummary } from '../api';
 import { useApiRead } from '../hooks/useApiRead';
 import { useRefreshSignal } from '../hooks/useRefreshSignal';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 
 interface Props {
   label: string; selectionLabel: string; value: string; onSelect: (profile: ProfileSummary | null) => void;
@@ -14,18 +15,17 @@ interface Props {
 export function ProfilePicker({ label, selectionLabel, value, onSelect, excludeId, disabled = false, limit = 25, emptyLabel = 'Select a profile', refreshVersion, onResults, selectedLabel }: Props) {
   const id = useId();
   const [text, setText] = useState('');
-  const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(text.trim());
+  const query = text.trim() ? debouncedQuery : '';
   const read = useCallback(() => api.profiles.list({ q: query || undefined, limit }), [query, limit]);
   const { data, loading, error, refresh } = useApiRead(read);
   useRefreshSignal(refreshVersion, refresh);
   useEffect(() => { if (data) onResults?.(data.items); }, [data, onResults]);
-  const search = () => { const next = text.trim(); if (next === query) refresh(); else setQuery(next); onSelect(null); };
   return <div className="profile-picker">
     <label className="form-label" htmlFor={id}>{label}</label>
     <div className="search-bar">
-      <input id={id} value={text} maxLength={1000} disabled={disabled} onChange={event => setText(event.target.value)}
-        onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); search(); } }} />
-      <button type="button" className="btn" disabled={disabled || loading} onClick={search}>{loading ? 'Searching...' : 'Find profiles'}</button>
+      <input id={id} value={text} maxLength={1000} disabled={disabled} onChange={event => { setText(event.target.value); onSelect(null); }}
+        onKeyDown={event => { if (event.key === 'Enter') event.preventDefault(); }} />
     </div>
     {error ? <div role="alert">Could not load profiles. <button type="button" className="btn" onClick={() => refresh()}>Retry</button></div> : <>
       <select className="input" aria-label={selectionLabel} disabled={disabled || loading} value={value}

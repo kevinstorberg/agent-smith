@@ -50,7 +50,6 @@ describe('MeetingsIndexPage', () => {
     await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: undefined }));
 
     fireEvent.change(screen.getByLabelText('Search meetings'), { target: { value: ' release ' } });
-    fireEvent.submit(screen.getByRole('button', { name: 'Search' }).closest('form')!);
     await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'release' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
@@ -64,7 +63,6 @@ describe('MeetingsIndexPage', () => {
     expect(await screen.findByText(/No meeting summaries saved yet/)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Search meetings'), { target: { value: 'missing' } });
-    fireEvent.submit(screen.getByRole('button', { name: 'Search' }).closest('form')!);
     expect(await screen.findByText('No meetings match your search.')).toBeInTheDocument();
   });
 

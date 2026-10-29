@@ -125,7 +125,8 @@ export function ProfileDetailPage() {
           <ProfileRelationships profile={profile} disabled={Boolean(edit) || metadataBusy || identityBusy || notesBusy || correction.loading || deletion.loading}
             onBusyChange={setRelationshipsBusy} onReload={() => refresh({ showLoading: false })} />
           {notice && <p className="card" role="alert">{notice}</p>}
-          {profile.claims.length === 0 && <p className="card text-muted-sm">No meeting evidence yet. Evidence appears as linked meetings are processed.</p>}
+          {profile.claims.length === 0 && !Object.values(profile.metadata_provenance || {}).some(source => source && 'meeting_id' in source)
+            && <p className="card text-muted-sm">No meeting evidence yet. Evidence appears as linked meetings are processed.</p>}
           {profile.claims.length > 0 && <h3 className="section-title">Meeting evidence</h3>}
           {CATEGORIES.map(([category, label]) => {
             const claims = profile.claims.filter(claim => claim.category === category);

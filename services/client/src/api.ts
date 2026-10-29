@@ -208,6 +208,7 @@ export interface MeetingTranscript extends Paginated<TranscriptSegment> {
 export interface MeetingMemory {
   id: string;
   content: string;
+  tags?: string[];
   kind: 'fact' | 'decision' | 'commitment' | 'constraint' | 'preference' | 'lesson' | 'question';
   evidence: { segment_id: string; quote: string }[];
 }
@@ -290,6 +291,7 @@ export interface ParticipantProfile extends MeetingProfileSummary {
   emails?: string[];
   nicknames?: string[];
   metadata?: ProfileMetadataFields;
+  metadata_provenance?: Partial<Record<keyof ProfileMetadataFields, ProfileMetadataSource>>;
   section_notes?: ProfileSectionNotes;
   relationships?: ProfileRelationship[];
 }
@@ -298,6 +300,11 @@ export interface ProfileMetadataFields {
   gender?: string; marital_status?: string; company?: string; job_role?: string;
   start_date?: string; supervisor?: string; other?: string;
 }
+
+export type ProfileMetadataSource = { human: true } | {
+  human?: false; meeting_id: string; transcript_hash: string; participants_revision: number;
+  evidence: { segment_id: string; quote: string }[];
+};
 
 export interface ProfileSectionNotes { drivers?: string; strengths?: string; development_areas?: string }
 
@@ -410,7 +417,13 @@ export interface JobExecution {
   result: Record<string, unknown>;
 }
 
+export interface GraphJob extends Job {
+  configs: JobConfig[];
+  runs_on_device: boolean;
+}
+
 export interface JobRunResult {
+  execution_id?: number;
   success: boolean;
   output: string;
   error: string;
@@ -690,7 +703,9 @@ export const api = {
         ...(pagination?.status ? { status: pagination.status } : {}),
         ...paginationToParams(pagination),
       }),
-    search: (q: string) => get<Plan[]>('/plans/search', { q }),
+    search: (q: string, filters?: { project?: string; status?: string }) => get<Plan[]>('/plans/search', {
+      q, ...(filters?.project ? { project: filters.project } : {}), ...(filters?.status ? { status: filters.status } : {}),
+    }),
     get: (id: number) => get<Plan>(`/plans/${id}`),
     create: (body: { title: string; body: string; project?: string | null }) =>
       post<Plan>('/plans', body),
@@ -699,6 +714,7 @@ export const api = {
     remove: (id: number) => del(`/plans/${id}`),
   },
   jobs: {
+    forGraph: (type: string) => get<Paginated<GraphJob>>(`/jobs/graph/${encodeURIComponent(type)}`),
     list: (pagination?: PaginationParams) =>
       get<Paginated<Job>>('/jobs', paginationToParams(pagination)),
     get: (id: number) => get<Job>(`/jobs/${id}`),
@@ -710,6 +726,7 @@ export const api = {
     runNow: (id: number) => post<JobRunResult>(`/jobs/${id}/run-now`, {}),
     executions: (id: number, pagination?: PaginationParams) =>
       get<Paginated<JobExecution>>(`/jobs/${id}/executions`, paginationToParams(pagination)),
+    execution: (id: number, executionId: number) => get<JobExecution>(`/jobs/${id}/executions/${executionId}`),
     configs: {
       add: (jobId: number, body: Partial<JobConfig>) =>
         post<JobConfig[]>(`/jobs/${jobId}/configs`, body),

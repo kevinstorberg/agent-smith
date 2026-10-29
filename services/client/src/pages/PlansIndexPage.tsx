@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { api } from '../api';
 import type { Plan } from '../api';
@@ -9,49 +9,31 @@ import { StatusBadge } from '../components/StatusBadge';
 import { usePagination } from '../hooks/usePagination';
 import { usePolling } from '../hooks/usePolling';
 import { makeRowClickable } from '../utils/a11y';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 
 const STATUSES = ['all', 'draft', 'final'] as const;
 
 export function PlansIndexPage() {
-  const [projectFilter, setProjectFilter] = useState('');
+  const [projectInput, setProjectInput] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Plan[] | null>(null);
+  const projectFilter = useDebouncedValue(projectInput.trim());
+  const debouncedSearch = useDebouncedValue(searchQuery.trim());
+  const searchTerm = searchQuery.trim() ? debouncedSearch : '';
   const navigate = useNavigate();
 
-  const { items, total, loading, limit, offset, setLimit, setOffset, refresh } = usePagination<Plan>(
-    (l, o) => api.plans.list({
-      limit: l,
-      offset: o,
-      project: projectFilter || undefined,
-      status: statusFilter === 'all' ? undefined : statusFilter,
-    }),
-    [projectFilter, statusFilter],
+  const { items, total, loading, error, limit, offset, setLimit, setOffset, refresh } = usePagination<Plan>(
+    async (limit, offset) => {
+      const filters = { project: projectFilter || undefined, status: statusFilter === 'all' ? undefined : statusFilter };
+      if (searchTerm) {
+        const matches = await api.plans.search(searchTerm, filters);
+        return { items: matches.slice(offset, offset + limit), total: matches.length };
+      }
+      return api.plans.list({ limit, offset, ...filters });
+    },
+    [searchTerm, projectFilter, statusFilter],
   );
-  const searchTerm = searchQuery.trim();
-  const loadSearchResults = useCallback(async () => {
-    if (!searchTerm) {
-      setSearchResults(null);
-      return;
-    }
-    setSearchResults(await api.plans.search(searchTerm));
-  }, [searchTerm]);
-
-  useEffect(() => {
-    if (!searchTerm) {
-      setSearchResults(null);
-      return;
-    }
-    const timeout = setTimeout(() => { loadSearchResults(); }, 300);
-    return () => clearTimeout(timeout);
-  }, [loadSearchResults, searchTerm]);
-  usePolling(
-    () => (searchTerm ? loadSearchResults() : refresh({ showLoading: false })),
-  );
-
-  const displayed = searchResults ?? items;
-
-  if (loading && !searchResults) return <div className="loading">Loading...</div>;
+  usePolling(() => refresh({ showLoading: false }));
 
   return (
     <div>
@@ -64,14 +46,13 @@ export function PlansIndexPage() {
 
       <FilterBar
         nameValue={searchQuery}
-        projectValue={projectFilter}
+        projectValue={projectInput}
         onNameChange={setSearchQuery}
-        onProjectChange={val => { setProjectFilter(val); setOffset(0); }}
+        onProjectChange={setProjectInput}
         namePlaceholder="Search by title..."
       />
 
-      {!searchResults && (
-        <div className="filters">
+      <div className="filters">
           {STATUSES.map(status => (
             <button
               key={status}
@@ -81,8 +62,10 @@ export function PlansIndexPage() {
               {status}
             </button>
           ))}
-        </div>
-      )}
+      </div>
+
+      {loading && <div className="loading">Loading...</div>}
+      {error && <div role="alert" className="card">Could not load plans. <button className="btn" onClick={() => refresh()}>Retry</button></div>}
 
       <table className="table">
         <thead>
@@ -94,7 +77,7 @@ export function PlansIndexPage() {
           </tr>
         </thead>
         <tbody>
-          {displayed.map(plan => (
+          {!loading && !error && items.map(plan => (
             <tr
               key={plan.id}
               {...makeRowClickable(() => navigate(`/plans/${plan.id}`))}
@@ -112,13 +95,13 @@ export function PlansIndexPage() {
               <td><DateCell date={plan.updated_at} /></td>
             </tr>
           ))}
-          {displayed.length === 0 && (
+          {!loading && !error && items.length === 0 && (
             <tr><td colSpan={4} className="loading">No plans found</td></tr>
           )}
         </tbody>
       </table>
 
-      {!searchResults && (
+      {!loading && !error && (
         <Pagination
           total={total}
           limit={limit}

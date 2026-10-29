@@ -29,6 +29,7 @@ vi.mock('../../api', () => ({
       remove: vi.fn(),
       runNow: vi.fn(),
       executions: vi.fn(),
+      execution: vi.fn(),
     },
   },
 }));
@@ -61,6 +62,7 @@ beforeEach(() => {
   mockUpdate.mockResolvedValue(fakeJob);
   mockRemove.mockResolvedValue(undefined);
   mockRunNow.mockResolvedValue({ success: true, output: 'ok', error: '', duration_seconds: 0.1, exit_code: 0 });
+  vi.mocked(api.jobs.execution).mockResolvedValue({ id: 77, job_id: 42, status: 'success', started_at: '', completed_at: '', result: { output: 'Exact execution output' } });
 });
 
 afterEach(() => {
@@ -244,6 +246,13 @@ describe('JobDetailPage', () => {
   });
 
   describe('view mode', () => {
+    it('opens a linked execution directly and reads its exact ID', async () => {
+      renderWithProviders(<JobDetailPage />, { initialEntries: ['/jobs/42?tab=executions&execution=77'] });
+      expect(await screen.findByText('Exact execution output')).toBeInTheDocument();
+      expect(api.jobs.execution).toHaveBeenCalledWith(42, 77);
+      expect(screen.getByRole('region', { name: 'Execution 77' })).toBeInTheDocument();
+    });
+
     it('displays and edits an existing graph without requiring a command', async () => {
       const params = { graph_type: 'meeting_ingest', graph_inputs: { source: 'work' }, timeout: 300 };
       mockGet.mockResolvedValue({ ...fakeJob, input_params: params });

@@ -11,6 +11,8 @@ import { makeRowClickable } from '../utils/a11y';
 import { parseTags } from '../utils/tags';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { PROFILE_SCOPE_LABELS } from '../utils/profiles';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { PersonaJob } from '../components/PersonaJob';
 
 const SORT_OPTIONS = [
   ['created_at_desc', 'Newest profiles'], ['created_at_asc', 'Oldest profiles'],
@@ -21,9 +23,11 @@ const SORT_OPTIONS = [
 export function ProfilesIndexPage() {
   const navigate = useNavigate();
   const [searchText, setSearchText] = useState('');
-  const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(searchText.trim());
+  const query = searchText.trim() ? debouncedQuery : '';
   const [tagText, setTagText] = useState('');
-  const tags = useMemo(() => parseTags(tagText), [tagText]);
+  const debouncedTags = useDebouncedValue(tagText);
+  const tags = useMemo(() => parseTags(debouncedTags), [debouncedTags]);
   const [starredOnly, setStarredOnly] = useState(false);
   const [sort, setSort] = useState('created_at_desc');
   const [notice, setNotice] = useState<string | null>(null);
@@ -52,11 +56,6 @@ export function ProfilesIndexPage() {
   });
   usePolling(() => refresh({ showLoading: false }), { enabled: !star.loading });
 
-  const search = (value: string) => {
-    setQuery(value.trim());
-    setOffset(0);
-  };
-
   return (
     <div>
       <div className="page-header profiles-header">
@@ -64,6 +63,7 @@ export function ProfilesIndexPage() {
         <button className="btn btn-primary" disabled={creating} onClick={() => { setCreating(true); setName(''); setEmail(''); setCreateNotice(null); }}>New profile</button>
       </div>
       <p className="text-muted-sm" style={{ marginBottom: 16 }}>Manage people and their evidence from your meeting history.</p>
+      <PersonaJob onChanged={() => refresh({ showLoading: false })} />
       {creating && <form aria-label="New profile" className="card profile-create" onSubmit={event => {
         event.preventDefault();
         if (!name.trim()) { setCreateNotice('A profile name is required.'); return; }
@@ -85,15 +85,14 @@ export function ProfilesIndexPage() {
           <button className="btn" type="button" disabled={create.loading} onClick={() => setCreating(false)}>Cancel</button>
         </div>
       </form>}
-      <form className="search-bar" onSubmit={event => { event.preventDefault(); search(searchText); }}>
+      <div className="search-bar">
         <input aria-label="Search profiles" placeholder="Search names, nicknames or email..." maxLength={1000}
           value={searchText} onChange={event => setSearchText(event.target.value)} />
-        <button className="btn btn-primary" type="submit">Search</button>
-        {query && <button className="btn" type="button" onClick={() => { setSearchText(''); search(''); }}>Clear</button>}
-      </form>
+        {searchText && <button className="btn" type="button" onClick={() => setSearchText('')}>Clear</button>}
+      </div>
       <div className="filters" style={{ marginTop: 8 }}>
         <input aria-label="Filter by tags" placeholder="Tags (comma-separated)" value={tagText}
-          onChange={event => { setTagText(event.target.value); setOffset(0); }} />
+          onChange={event => setTagText(event.target.value)} />
         <label><input type="checkbox" checked={starredOnly} onChange={event => { setStarredOnly(event.target.checked); setOffset(0); }} /> Starred only</label>
         <label htmlFor="profile-sort">Sort</label>
         <select id="profile-sort" className="pagination-select" value={sort} onChange={event => { setSort(event.target.value); setOffset(0); }}>
@@ -125,7 +124,7 @@ export function ProfilesIndexPage() {
                 <td><DateCell date={profile.updated_at} /></td>
               </tr>)}
               {items.length === 0 && <tr><td colSpan={7} className="loading">
-                {query || tags.length || starredOnly ? 'No profiles match your search.' : 'No profiles saved yet. Create a profile or process a meeting to get started.'}
+                {query || tags.length || starredOnly ? 'No profiles match your search.' : 'No profiles saved yet. Create one or run the persona job to review saved meeting transcripts.'}
               </td></tr>}
             </tbody>
           </table>

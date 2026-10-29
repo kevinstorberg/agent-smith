@@ -55,7 +55,9 @@ export function MeetingMemories({ meetingId, refreshVersion, onState }: { meetin
             <p className="text-muted-sm">{memories.reason || 'No new durable memories were found in this meeting.'}</p>
           ) : memories.items.map(memory => (
             <article key={memory.id} style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 12 }}>
-              <span className="tag">{KIND_LABELS[memory.kind]}</span>
+              <div className="flex-wrap"><span className="tag">{KIND_LABELS[memory.kind]}</span>
+                {memory.tags?.map(tag => <span className="tag" key={tag}>{tag}</span>)}
+              </div>
               <p style={{ whiteSpace: 'pre-wrap' }}>{memory.content}</p>
               <details>
                 <summary>Source evidence</summary>

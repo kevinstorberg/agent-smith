@@ -18,6 +18,7 @@ export function usePagination<T>(
   const mountedRef = useRef(false);
   const requestIdRef = useRef(0);
   const fetcherRef = useRef(fetcher);
+  const filtersRef = useRef(deps);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -55,6 +56,14 @@ export function usePagination<T>(
   }, [limit, offset]);
 
   useEffect(() => {
+    const filtersChanged = deps.length !== filtersRef.current.length
+      || deps.some((value, index) => !Object.is(value, filtersRef.current[index]));
+    filtersRef.current = deps;
+    if (filtersChanged && offset !== 0) {
+      requestIdRef.current += 1;
+      setOffset(0);
+      return;
+    }
     refresh({ showLoading: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refresh, ...deps]);

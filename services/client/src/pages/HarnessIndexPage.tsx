@@ -9,6 +9,7 @@ import { ProjectCell, EnabledToggleCell, BadgeCell, DateCell, VersionCell } from
 import { usePagination } from '../hooks/usePagination';
 import { useNotification } from '../context/useNotification';
 import { makeKeyboardClickable } from '../utils/a11y';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 
 const TYPE_LABELS: Record<string, string> = {
   rule: 'Rules',
@@ -21,14 +22,14 @@ const TYPE_LABELS: Record<string, string> = {
 export function HarnessIndexPage({ type }: { type: string }) {
   const [nameInput, setNameInput] = useState('');
   const [projectInput, setProjectInput] = useState('');
-  const [nameFilter, setNameFilter] = useState('');
-  const [projectFilter, setProjectFilter] = useState('');
+  const nameFilter = useDebouncedValue(nameInput);
+  const projectFilter = useDebouncedValue(projectInput);
   const navigate = useNavigate();
   const { notify } = useNotification();
 
   const hasFilters = !!(nameFilter || projectFilter);
 
-  const { items, setItems, total, loading, limit, offset, setLimit, setOffset } = usePagination<HarnessItem>(
+  const { items, setItems, total, loading, error, refresh, limit, offset, setLimit, setOffset } = usePagination<HarnessItem>(
     (l, o) => api.harness.items.list(type, {
       limit: l, offset: o,
       name: nameFilter || undefined,
@@ -37,23 +38,11 @@ export function HarnessIndexPage({ type }: { type: string }) {
     [type, nameFilter, projectFilter],
   );
 
-  const dragDisabled = hasFilters;
-
-  useEffect(() => {
-    const timeout = setTimeout(() => setNameFilter(nameInput), 300);
-    return () => clearTimeout(timeout);
-  }, [nameInput]);
-
-  useEffect(() => {
-    const timeout = setTimeout(() => setProjectFilter(projectInput), 300);
-    return () => clearTimeout(timeout);
-  }, [projectInput]);
+  const dragDisabled = hasFilters || loading || Boolean(error);
 
   useEffect(() => {
     setNameInput('');
     setProjectInput('');
-    setNameFilter('');
-    setProjectFilter('');
   }, [type]);
 
   const toggleEnabled = async (item: HarnessItem) => {
@@ -67,7 +56,7 @@ export function HarnessIndexPage({ type }: { type: string }) {
   };
 
   const onDragEnd = async (result: DropResult) => {
-    if (!result.destination || result.source.index === result.destination.index) return;
+    if (dragDisabled || !result.destination || result.source.index === result.destination.index) return;
 
     const reordered = [...items];
     const [moved] = reordered.splice(result.source.index, 1);
@@ -81,8 +70,6 @@ export function HarnessIndexPage({ type }: { type: string }) {
       notify('Failed to save order', 'error');
     }
   };
-
-  if (loading) return <div className="loading">Loading...</div>;
 
   return (
     <div>
@@ -101,7 +88,12 @@ export function HarnessIndexPage({ type }: { type: string }) {
         onNameChange={setNameInput}
         onProjectChange={setProjectInput}
       />
+      {loading && <div className="loading">Loading...</div>}
+      {!loading && error && <div role="alert" className="card">
+        Could not load {TYPE_LABELS[type]?.toLowerCase() || 'items'}. <button className="btn" onClick={() => refresh()}>Retry</button>
+      </div>}
 
+      {!loading && !error && <>
       <DragDropContext onDragEnd={onDragEnd}>
         <Droppable droppableId="harness-table" isDropDisabled={dragDisabled}>
           {(provided) => (
@@ -200,7 +192,7 @@ export function HarnessIndexPage({ type }: { type: string }) {
                     )}
                   </Draggable>
                 ))}
-                {items.length === 0 && (
+                {!loading && items.length === 0 && (
                   <div className="loading" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '48px 24px' }}>
                     No {TYPE_LABELS[type]?.toLowerCase() || 'items'} found
                   </div>
@@ -219,6 +211,7 @@ export function HarnessIndexPage({ type }: { type: string }) {
         onPageChange={setOffset}
         onLimitChange={newLimit => { setLimit(newLimit); setOffset(0); }}
       />
+      </>}
     </div>
   );
 }
