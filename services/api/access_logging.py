@@ -51,7 +51,7 @@ class ExpectedMCPProbeFilter(logging.Filter):
         if record.name != "uvicorn.access" or record.levelno != logging.INFO or not isinstance(record.args, tuple) or len(record.args) != 5:
             return True
         _, method, path, _, status = record.args
-        if method != "GET" or not isinstance(path, str) or type(status) is not int:
+        if method != "GET" or not isinstance(path, str) or not isinstance(status, int) or isinstance(status, bool):
             return True
         discovery = status == 404 and path in self.paths
         missing_sse = status == 406 and path in self.endpoints and _missing_sse_path.get() == path
