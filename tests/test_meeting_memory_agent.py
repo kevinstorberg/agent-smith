@@ -297,7 +297,7 @@ async def test_model_factory_failure_is_redacted(monkeypatch, caplog):
 @pytest.mark.asyncio
 async def test_deadline_prevents_model_execution(backend, model):
     instance, _ = model([AIMessage(content="Too late")])
-    with pytest.raises(MemoryAnalysisError, match="TimeoutError"):
+    with pytest.raises(analysis.AnalysisBudgetExpired):
         await analyze_memories(SNAPSHOT, SEGMENTS, [], deadline=asyncio.get_running_loop().time() - 1)
     assert not instance.seen
 

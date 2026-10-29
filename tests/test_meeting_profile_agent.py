@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-import traceback
 from copy import deepcopy
 from uuid import uuid4
 
@@ -77,7 +76,7 @@ async def test_profile_react_uses_shared_research_fresh_profiles_and_same_run_me
     result = await analyze(profiles=initial, memories=memories, previous=previous)
 
     assert result == {"items": [CLAIM], "reason": "New explicit priority"}
-    assert roles == [("meeting_profile", "curator")]
+    assert roles == [("persona", "curator")]
     assert instance.tool_names == ["search_previous_memories", "get_memory", "search_transcript", "get_profile", "search_profiles", "stage_profiles"]
     assert reads == [[ALICE], [ALICE, BOB]] and writes == [] and backend[2] == []
     assert len(instance.seen) == 5
@@ -194,17 +193,17 @@ async def test_human_overrides_block_reassertion_of_original_claim(backend, cano
 
 
 @pytest.mark.asyncio
-async def test_profiles_require_successful_memory_search_and_can_fix_rejected_submission(backend, canonical, model):
+async def test_profiles_can_fix_rejected_submission_without_memory_search(backend, canonical, model):
     instance, _ = model([
-        call("stage_profiles", items=[CLAIM]), call("search_previous_memories", query="Alice"),
         call("stage_profiles", items=invalid_claim("wrong_speaker")), call("stage_profiles", items=[CLAIM]), AIMessage(content="Done"),
     ])
     assert (await analyze())["items"] == [CLAIM]
-    assert any(isinstance(message, ToolMessage) and "Successfully search prior memories" in message.content for message in instance.seen[1])
+    assert backend[0] == []
+    assert any(isinstance(message, ToolMessage) and "mapped to its subject speaker" in message.content for message in instance.seen[1])
 
 
 @pytest.mark.asyncio
-async def test_failed_memory_search_is_not_successful_retrieval(backend, canonical, model, monkeypatch, caplog):
+async def test_failed_optional_memory_search_is_redacted_and_does_not_block_personas(backend, canonical, model, monkeypatch, caplog):
     def fail(*args, **kwargs):
         raise RuntimeError("Private prior memory secret-token")
 
@@ -212,10 +211,10 @@ async def test_failed_memory_search_is_not_successful_retrieval(backend, canonic
     instance, _ = model([
         call("search_previous_memories", query="Alice"), call("stage_profiles", items=[CLAIM]), AIMessage(content="Done"),
     ])
-    with pytest.raises(ProfileAnalysisError) as caught:
-        await analyze()
-    observed = "".join(traceback.format_exception(caught.value)) + caplog.text
+    assert (await analyze())["items"] == [CLAIM]
+    observed = caplog.text
     observed += str([message.content for turn in instance.seen for message in turn if isinstance(message, ToolMessage)])
+    assert "Prior memory search failed" in observed and "RuntimeError" in observed
     assert "Private prior memory" not in observed and "secret-token" not in observed
 
 

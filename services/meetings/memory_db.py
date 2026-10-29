@@ -27,7 +27,8 @@ def get_memories(meeting_id: str) -> dict | None:
     UUID(meeting_id)
     with _cursor() as cur:
         cur.execute(
-            """SELECT d.meeting_id, d.transcript_status, d.memory_status, d.memory_artifact,
+            f"""SELECT d.meeting_id, d.transcript_status, d.memory_status, d.memory_artifact,
+               d.memory_attempts, d.memory_next_attempt_at, {stage_db.TOTAL_UNITS_SQL} AS total_units,
                d.memory_error, d.memory_updated_at, d.claim_until > clock_timestamp() AS running
                FROM meeting_summaries m LEFT JOIN meeting_digestions d ON d.meeting_id = m.id
                WHERE m.id = %s AND m.available""", (meeting_id,),
@@ -45,7 +46,8 @@ def get_memories(meeting_id: str) -> dict | None:
             status, reason = "blocked", "transcript_" + row["transcript_status"]
         elif row["running"]:
             status = "running"
-    return _serialize({"status": status, "items": items, "reason": reason, "error_type": row["memory_error"], "updated_at": row["memory_updated_at"]})
+    return _serialize({"status": status, "items": items, "reason": reason, "error_type": row["memory_error"],
+                       "updated_at": row["memory_updated_at"], "progress": stage_db.progress(dict(row), "memory", total_units=row["total_units"])})
 
 
 def retry_memories(meeting_id: str) -> None:
@@ -53,7 +55,8 @@ def retry_memories(meeting_id: str) -> None:
     with _cursor() as cur:
         cur.execute(
             """UPDATE meeting_digestions SET memory_status = 'pending', memory_attempts = 0,
-               memory_next_attempt_at = clock_timestamp(), memory_error = NULL, memory_updated_at = clock_timestamp()
+               memory_next_attempt_at = clock_timestamp(), memory_error = NULL, memory_updated_at = clock_timestamp(),
+               requested_at = coalesce(requested_at, clock_timestamp())
                WHERE meeting_id = %s AND memory_status = 'failed' AND transcript_status = 'ready'""", (meeting_id,),
         )
         if cur.rowcount != 1:

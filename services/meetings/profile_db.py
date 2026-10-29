@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from services.meetings import stage_db
 from services.meetings.db import _cursor, _serialize
 from services.meetings.outputs import ProfileClaim
+from services.meetings import profile_fields
 
 _CLAIM_NAMESPACE = UUID("9a9b960b-0574-53ed-9f5d-9a3f67b58fd7")
 _WRITE_LOCK = "agent-smith:profile-write"
@@ -72,7 +73,12 @@ def _canonical(cur, profile_id: str, *, lock: bool = False) -> dict | None:
 def _detail(cur, row: dict) -> dict:
     cur.execute("SELECT id, display_name, email, identity_scope FROM participant_profiles WHERE merged_into = %s ORDER BY id", (row["id"],))
     aliases = [_serialize(dict(alias)) for alias in cur.fetchall()]
-    return {**_visible(cur, [row])[0], "aliases": aliases}
+    from services.meetings.relationship_db import for_profiles
+
+    visible = _visible(cur, [row])[0]
+    emails = sorted({value.strip().casefold() for value in [row.get("email"), *(alias.get("email") for alias in aliases)] if value})
+    relationships = for_profiles(cur, [row])
+    return {**visible, "aliases": aliases, "emails": emails, "relationships": relationships[str(row["id"])]}
 
 
 def _catalog(participants: list[dict]) -> dict[str, dict]:
@@ -121,6 +127,23 @@ def resolve_participants(participants: list[dict], *, cursor=None) -> list[dict]
     return list(resolved.values())
 
 
+def include_linked_profiles(participants: list[dict]) -> list[dict]:
+    catalog = _catalog(participants)
+    if not catalog:
+        return []
+    with _cursor() as cur:
+        cur.execute("""SELECT DISTINCT p.* FROM profile_relationships r
+            JOIN participant_profiles p ON p.id = r.subject_id OR p.id = r.target_id
+            WHERE (r.subject_id IN %s OR r.target_id IN %s)
+              AND NOT p.deleted AND p.merged_into IS NULL ORDER BY p.id""", (tuple(catalog), tuple(catalog)))
+        for found in cur.fetchall():
+            row = _serialize(dict(found))
+            catalog.setdefault(row["id"], {key: row[key] for key in ("id", "identity_key", "display_name", "email", "identity_scope")} | {"segment_ids": []})
+    if len(catalog) > 200:
+        raise ValueError("Persona participant and relationship context exceeds 200 people")
+    return list(catalog.values())
+
+
 def _visible(cur, rows: list[dict], *, include_overrides: bool = False) -> list[dict]:
     meeting_ids = {claim.get("meeting_id") for row in rows for claim in row["claims"] if claim.get("meeting_id")}
     available = set()
@@ -155,8 +178,13 @@ def load_profiles(participants: list[dict]) -> list[dict]:
                 **{key: participant.get(key) for key in ("id", "identity_key", "display_name", "email", "identity_scope")},
                 "claims": [], "revision": 0, "deleted": False, "created_at": None, "updated_at": None,
                 "tags": [], "starred": False, "merged_into": None, "merge_history": [],
+                "metadata": {}, "section_notes": {}, "nicknames": [],
             })
-        return _visible(cur, result, include_overrides=True)
+        from services.meetings.relationship_db import for_profiles
+
+        visible = _visible(cur, result, include_overrides=True)
+        relationships = for_profiles(cur, result, include_dismissed=True, include_overrides=True)
+        return [{**row, "relationships": relationships[row["id"]]} for row in visible]
 
 
 def get_profile(profile_id: str) -> dict | None:
@@ -226,8 +254,10 @@ def list_profiles(query: str | None = None, limit: int = 20, offset: int = 0, *,
             raise ValueError("Profile query must be nonblank and at most 1000 characters")
         clauses.append("""(p.display_name ILIKE %s OR p.email ILIKE %s OR EXISTS (
             SELECT 1 FROM participant_profiles alias WHERE alias.merged_into = p.id
-            AND (alias.email ILIKE %s OR alias.display_name ILIKE %s)))""")
-        params.extend([f"%{query.strip()}%"] * 4)
+            AND (alias.email ILIKE %s OR alias.display_name ILIKE %s))
+            OR EXISTS (SELECT 1 FROM unnest(p.nicknames) nickname WHERE nickname ILIKE %s)
+            OR p.metadata->>'company' ILIKE %s OR p.metadata->>'job_role' ILIKE %s)""")
+        params.extend([f"%{query.strip()}%"] * 7)
     if normalized_tags:
         clauses.append("p.tags @> %s::text[]")
         params.append(normalized_tags)
@@ -241,7 +271,11 @@ def list_profiles(query: str | None = None, limit: int = 20, offset: int = 0, *,
         total = cur.fetchone()["count"]
         cur.execute(
             f"""SELECT page.id, page.display_name, page.email, page.identity_scope, page.revision,
-                   page.created_at, page.updated_at, page.tags, page.starred, visible.claim_count, visible.meeting_count
+                   page.created_at, page.updated_at, page.tags, page.starred, page.metadata, page.nicknames,
+                   ARRAY(SELECT DISTINCT lower(identity.email) FROM participant_profiles identity
+                         WHERE (identity.id = page.id OR identity.merged_into = page.id) AND identity.email IS NOT NULL
+                         ORDER BY lower(identity.email)) AS emails,
+                   visible.claim_count, visible.meeting_count
                FROM (
                    SELECT p.* FROM participant_profiles p WHERE {where}
                    ORDER BY {column.format(alias='p')} {direction}, p.id ASC LIMIT %s OFFSET %s
@@ -305,7 +339,7 @@ def _claim_identity(claim: dict, canonical_ids: dict[str, str]) -> str:
     return json.dumps({
         "meeting_id": claim["meeting_id"], "subject_id": canonical_ids.get(subject, subject),
         "target_id": canonical_ids.get(target, target), "category": claim["category"],
-        "content": " ".join(claim["content"].casefold().split()),
+        "content": profile_fields.normalized_text(claim["content"]),
         "evidence": sorted({(entry["segment_id"], entry["quote"]) for entry in claim["evidence"]}),
     }, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
@@ -348,15 +382,26 @@ def apply_profiles(meeting_id: str, owner: str, transcript_hash: str, artifact: 
             if ((row["revision"] if row else 0) != artifact["expected_revisions"][profile_id]
                     or (row and (row["merged_into"] is not None or row["identity_key"] != catalog[profile_id]["identity_key"]))):
                 raise ProfileRevisionConflict("Participant profile changed; rebuild the profile candidate")
-        for claim in claims:
-            if any(rows.get(profile_id, {}).get("deleted") for profile_id in (claim["subject_id"], claim["target_id"])):
-                raise ProfileRevisionConflict("A participant profile was deleted")
         all_claims = claims + [claim for row in rows.values() for claim in row["claims"]]
         identity_ids = {claim[key] for claim in all_claims for key in ("subject_id", "target_id") if claim.get(key)}
         canonical_ids = {key: str(row["id"]) if row else key
                          for key, row in canonical_rows(cur, list(identity_ids), metadata_only=True).items()}
+        for claim in claims:
+            if any(rows.get(profile_id, {}).get("deleted") for profile_id in (claim["subject_id"], claim["target_id"])):
+                raise ProfileRevisionConflict("A participant profile was deleted")
+            if any(prior.get("status") in {"corrected", "rejected"}
+                   and profile_fields.normalized_text(prior["content"]) == profile_fields.normalized_text(claim["content"])
+                   and _claim_identity(prior, canonical_ids) != _claim_identity(claim, canonical_ids)
+                   for prior in rows.get(claim["subject_id"], {}).get("claims", [])):
+                raise ProfileRevisionConflict("This assertion was corrected or rejected; honor the human correction")
+        if catalog:
+            cur.execute("SELECT subject_id, target_id FROM profile_relationships WHERE dismissed AND subject_id IN %s", (tuple(catalog),))
+            dismissed = {(str(row["subject_id"]), str(row["target_id"])) for row in cur.fetchall()}
+            if any((claim["subject_id"], claim.get("target_id")) in dismissed for claim in claims):
+                raise ProfileRevisionConflict("This relationship was removed; honor the human correction")
         applied = []
-        for profile_id in sorted({claim["subject_id"] for claim in claims}):
+        affected = {claim[key] for claim in claims for key in ("subject_id", "target_id") if claim.get(key)}
+        for profile_id in sorted(affected):
             additions = [claim for claim in claims if claim["subject_id"] == profile_id]
             row = rows.get(profile_id)
             cumulative = _cumulative_claims(row["claims"] if row else [], additions, canonical_ids)
@@ -373,7 +418,13 @@ def apply_profiles(meeting_id: str, owner: str, transcript_hash: str, artifact: 
                 )
                 if not cur.fetchone():
                     raise ProfileRevisionConflict("Participant identity was created concurrently")
-            applied.append(profile_id)
+            if additions:
+                applied.append(profile_id)
+        from services.meetings.relationship_db import ensure_claim_links
+
+        links = [{**claim, "subject_id": canonical_ids.get(claim["subject_id"], claim["subject_id"]),
+                  "target_id": canonical_ids.get(claim.get("target_id"), claim.get("target_id"))} for claim in all_claims]
+        ensure_claim_links(cur, links)
         completed = {**copy.deepcopy(artifact), "profile_ids": applied}
         stage_db.write_progress(cur, "profile", meeting_id, completed, complete=True)
     return applied
@@ -431,12 +482,17 @@ def delete_profile(profile_id: str, expected_revision: int) -> None:
 
 
 def update_metadata(profile_id: str, expected_revision: int, *, display_name: str | None = None,
-                    tags: list[str] | None = None, starred: bool | None = None) -> dict:
+                    tags: list[str] | None = None, starred: bool | None = None,
+                    metadata: dict | None = None, nicknames: list[str] | None = None,
+                    section_notes: dict | None = None) -> dict:
     _expected_revision(expected_revision)
-    if display_name is None and tags is None and starred is None:
-        raise ValueError("Provide a profile name, tags or starred state")
+    if all(value is None for value in (display_name, tags, starred, metadata, nicknames, section_notes)):
+        raise ValueError("Provide profile fields to update")
     normalized_name = _profile_name(display_name) if display_name is not None else None
     normalized_tags = _tags(tags) if tags is not None else None
+    normalized_metadata = profile_fields.fields(metadata, profile_fields.METADATA_FIELDS, "metadata") if metadata is not None else None
+    normalized_notes = profile_fields.fields(section_notes, profile_fields.SECTION_FIELDS, "section_notes") if section_notes is not None else None
+    normalized_nicknames = profile_fields.nicknames(nicknames) if nicknames is not None else None
     if starred is not None and type(starred) is not bool:
         raise ValueError("Profile starred state must be a boolean")
     with profile_write_cursor() as cur:
@@ -444,17 +500,24 @@ def update_metadata(profile_id: str, expected_revision: int, *, display_name: st
         new_tags = normalized_tags if normalized_tags is not None else row["tags"]
         new_starred = starred if starred is not None else row["starred"]
         new_name = normalized_name if normalized_name is not None else row["display_name"]
-        if row["display_name"] != new_name or row["tags"] != new_tags or row["starred"] != new_starred:
+        new_metadata = profile_fields.patch(row["metadata"], normalized_metadata) if normalized_metadata is not None else row["metadata"]
+        new_notes = profile_fields.patch(row["section_notes"], normalized_notes) if normalized_notes is not None else row["section_notes"]
+        new_nicknames = normalized_nicknames if normalized_nicknames is not None else row["nicknames"]
+        before = (row["display_name"], row["tags"], row["starred"], row["metadata"], row["section_notes"], row["nicknames"])
+        after = (new_name, new_tags, new_starred, new_metadata, new_notes, new_nicknames)
+        if before != after:
             cur.execute(
-                """UPDATE participant_profiles SET display_name = %s, tags = %s, starred = %s, revision = revision + 1,
-                   updated_at = clock_timestamp() WHERE id = %s RETURNING *""", (new_name, new_tags, new_starred, row["id"]),
+                """UPDATE participant_profiles SET display_name = %s, tags = %s, starred = %s,
+                   metadata = %s, section_notes = %s, nicknames = %s, revision = revision + 1,
+                   updated_at = clock_timestamp() WHERE id = %s RETURNING *""",
+                (new_name, new_tags, new_starred, Json(new_metadata), Json(new_notes), new_nicknames, row["id"]),
             )
             row = dict(cur.fetchone())
         return _detail(cur, row)
 
 
 def _attributes(row: dict) -> dict:
-    return {key: row[key] for key in ("display_name", "email", "identity_scope", "tags", "starred")}
+    return {key: row[key] for key in ("display_name", "email", "identity_scope", "tags", "starred", "metadata", "section_notes", "nicknames")}
 
 
 def _merge_claims(target: list[dict], source: list[dict]) -> tuple[list[dict], list[str]]:
@@ -488,14 +551,21 @@ def merge_profiles(source_id: str, target_id: str, expected_revision: int, targe
             "previous_source": _attributes(source), "previous_target": _attributes(target),
         }]
         email = target["email"] or source["email"]
+        metadata = {**source["metadata"], **target["metadata"]}
+        section_notes = {**source["section_notes"], **target["section_notes"]}
+        nicknames = profile_fields.nicknames(list(dict.fromkeys(target["nicknames"] + source["nicknames"])))
         cur.execute(
             """UPDATE participant_profiles SET claims = %s, tags = %s, starred = %s, email = %s,
-               identity_scope = %s, merge_history = %s, revision = %s, updated_at = clock_timestamp()
+               identity_scope = %s, merge_history = %s, revision = %s, metadata = %s, section_notes = %s,
+               nicknames = %s, updated_at = clock_timestamp()
                WHERE id = %s RETURNING *""",
             (Json(claims), tags, target["starred"] or source["starred"], email, "email" if email else target["identity_scope"],
-             Json(history), max(source["revision"], target["revision"]) + 1, target["id"]),
+             Json(history), max(source["revision"], target["revision"]) + 1, Json(metadata), Json(section_notes), nicknames, target["id"]),
         )
         winner = dict(cur.fetchone())
+        from services.meetings.relationship_db import merge_profile_links
+
+        merge_profile_links(cur, str(source["id"]), str(target["id"]))
         cur.execute(
             """UPDATE participant_profiles SET claims = '[]'::jsonb, merged_into = %s,
                revision = revision + 1, updated_at = clock_timestamp() WHERE id = %s OR merged_into = %s""",
@@ -539,8 +609,10 @@ def meeting_profiles(meeting_id: str) -> dict | None:
     UUID(meeting_id)
     with _cursor() as cur:
         cur.execute(
-            """SELECT d.meeting_id, d.transcript_status, d.memory_status, d.profile_status, d.profile_artifact,
-               d.profile_error, d.claim_until > clock_timestamp() AS running FROM meeting_summaries m
+            f"""SELECT d.meeting_id, d.transcript_status, d.profile_status, d.profile_artifact,
+               d.profile_error, d.profile_attempts, d.profile_next_attempt_at,
+               {stage_db.TOTAL_UNITS_SQL} AS total_units,
+               d.profile_claim_until > clock_timestamp() AS running FROM meeting_summaries m
                LEFT JOIN meeting_digestions d ON d.meeting_id = m.id WHERE m.id = %s AND m.available""", (meeting_id,),
         )
         row = cur.fetchone()
@@ -561,11 +633,10 @@ def meeting_profiles(meeting_id: str) -> dict | None:
                     items = [dict(item) for item in cur.fetchall()]
             elif row["transcript_status"] != "ready":
                 status, reason = "blocked", "transcript_" + row["transcript_status"]
-            elif row["memory_status"] != "done":
-                status, reason = "blocked", "memories_" + row["memory_status"]
             elif row["running"]:
                 status = "running"
-        return _serialize({"status": status, "items": items, "reason": reason, "error_type": row["profile_error"]})
+        return _serialize({"status": status, "items": items, "reason": reason, "error_type": row["profile_error"],
+                           "progress": stage_db.progress(row, "profile", total_units=row["total_units"])})
 
 
 def retry_profiles(meeting_id: str) -> None:
@@ -573,9 +644,11 @@ def retry_profiles(meeting_id: str) -> None:
     with _cursor() as cur:
         cur.execute(
             """UPDATE meeting_digestions d SET profile_status = 'pending', profile_attempts = 0,
-               profile_next_attempt_at = clock_timestamp(), profile_error = NULL, profile_updated_at = clock_timestamp()
+               profile_next_attempt_at = clock_timestamp(), profile_error = NULL, profile_updated_at = clock_timestamp(),
+               requested_at = coalesce(requested_at, clock_timestamp())
                FROM meeting_summaries m WHERE d.meeting_id = m.id AND m.available AND d.meeting_id = %s
-               AND d.profile_status = 'failed' AND d.transcript_status = 'ready' AND d.memory_status = 'done'""", (meeting_id,),
+               AND d.profile_status = 'failed' AND d.transcript_status = 'ready'
+               AND coalesce(d.profile_claim_until <= clock_timestamp(), true)""", (meeting_id,),
         )
         if cur.rowcount != 1:
             raise ValueError("Meeting profiles cannot be retried in their current state")

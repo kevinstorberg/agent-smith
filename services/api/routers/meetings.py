@@ -7,10 +7,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from services.api.routers.base import delete_response, empty_to_none, require_found
 from services.api.routers.profiles import profile_change, router as profiles_router
+from services.api.routers.meeting_vocabulary import router as vocabulary_router
 from services.meetings import db, digestion_db, management_db, memory_db, profile_db
 
 router = APIRouter()
 router.include_router(profiles_router, prefix="/profiles", include_in_schema=False)
+router.include_router(vocabulary_router, prefix="/vocabulary", tags=["meeting vocabulary"])
 
 
 class MeetingParticipantRequest(BaseModel):

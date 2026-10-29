@@ -112,7 +112,8 @@ def test_rest_transcript_pages_capture_and_retains_deleted_state(client, saved):
     second = client.get(f"/api/meetings/{meeting_id}/transcript", params={"limit": 1, "offset": 1}).json()
     assert first["status"] == second["status"] == "ready"
     assert first["total"] == second["total"] == 2
-    assert first["items"] == segments[:1] and second["items"] == segments[1:]
+    assert [{key: item[key] for key in segments[0]} for item in first["items"]] == segments[:1]
+    assert [{key: item[key] for key in segments[1]} for item in second["items"]] == segments[1:]
     assert first["captured_at"] and first["error_type"] is None
     assert "snapshot" not in first and "claim_owner" not in first
 
@@ -202,7 +203,7 @@ def test_rest_meeting_memories_hide_staging_and_expose_only_the_committed_artifa
     assert committed.status_code == 200
     assert committed.json()["status"] == "done" and committed.json()["items"] == [item]
     assert committed.json()["updated_at"]
-    assert set(committed.json()) == {"status", "items", "reason", "error_type", "updated_at"}
+    assert set(committed.json()) == {"status", "items", "reason", "error_type", "updated_at", "progress"}
     assert "PRIVATE_MODEL_CHAIN" not in committed.text and "published_ids" not in committed.text
 
 

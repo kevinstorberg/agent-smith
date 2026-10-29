@@ -75,6 +75,8 @@ def _manual_roster(snapshot: dict, segments: list[dict]) -> tuple[dict[str, dict
             participant = _participant(f"profile:{profile_id}", name, email, "email" if email else "meeting", profile_id=profile_id)
         elif email:
             participant = email_participant(email, name)
+        if participant:
+            participant = {**participant, "identity_source": "manual_assignment"}
         key = entry.get("speaker_key")
         if key is not None:
             if not isinstance(key, str) or not re.fullmatch(r"[a-f0-9]{64}", key) or key not in observed:
@@ -101,14 +103,16 @@ def _speaker_participant(meeting_id: str, speaker: dict, roster: dict, override:
     email = _email(speaker.get("email"))
     matches = roster.get(name.casefold(), {}) if name else {}
     if email:
-        return email_participant(email, name)
+        return {**email_participant(email, name), "identity_source": "speaker_email"}
     if len(matches) == 1:
-        return {**next(iter(matches.values())), "display_name": name, "segment_ids": []}
+        match = next(iter(matches.values()))
+        return {**match, "display_name": name, "segment_ids": [], "identity_source": match.get("identity_source", "attendee_match")}
     if name or label:
         identity = {"name": name, "diarization_label": label,
                     "source": _text(speaker.get("source")), "attribution": _text(speaker.get("attribution"))}
         fingerprint = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
-        return _participant(f"meeting:{meeting_id}:{fingerprint}", name or label, None, "meeting")
+        return {**_participant(f"meeting:{meeting_id}:{fingerprint}", name or label, None, "meeting"),
+                "identity_source": "manual_assignment" if override else "speaker_label"}
     # A shared microphone needs explicit human attribution to identify a person.
     return None
 

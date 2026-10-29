@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 import lancedb
+import pyarrow as pa
 from langchain_core.vectorstores import VectorStore
 from langchain_community.vectorstores import LanceDB as LanceDBVectorStore
 from langchain_core.documents import Document
@@ -14,6 +16,7 @@ from services.config import MEMORY_STORE_PATH
 
 STORE_PATH = Path(MEMORY_STORE_PATH)
 TABLE_NAME = "memories"
+_schema_lock = Lock()
 
 
 def _db() -> lancedb.DBConnection:
@@ -33,6 +36,17 @@ def init() -> None:
     _db()
 
 
+def _prepare_table():
+    with _schema_lock:
+        table = _get_table()
+        if table is not None:
+            metadata_type = table.schema.field("metadata").type
+            missing = [pa.field(name, pa.string()) for name in ("source_type", "source_id") if name not in metadata_type.names]
+            if missing:
+                table.add_columns(pa.schema([pa.field("metadata", pa.struct(missing))]))
+        return table
+
+
 class _UpsertingLanceDBVectorStore(LanceDBVectorStore):
     def similarity_search(self, query: str, k: int = 4, **kwargs: Any) -> list[Document]:
         if _get_table() is None:
@@ -44,7 +58,7 @@ class _UpsertingLanceDBVectorStore(LanceDBVectorStore):
         if len(ids) != len(documents) or any(not id for id in ids):
             raise ValueError("Every LanceDB memory document must have an ID")
 
-        table = _get_table()
+        table = _prepare_table()
         existing_rows: list[dict] = []
         if table:
             for id in ids:

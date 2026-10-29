@@ -176,7 +176,8 @@ async def test_name_only_profile_is_used_by_explicit_meeting_attribution_in_the_
         "name": profile["display_name"], "profile_id": profile["id"],
         "speaker_key": speaker_key(captured["transcript"]["segments"][0]["speaker"]),
     }])
-    result = json.loads(await dispatch("meeting_ingest", {"source": source.name}))
+    await dispatch("meeting_ingest", {"source": source.name})
+    result = json.loads(await dispatch("persona", {"source": source.name}))
     assert result["profiles"]["profile_ids"] == [profile["id"]]
     observed = profile_agent[0][-1]
     assert observed["participants"][0]["id"] == profile["id"] and observed["participants"][0]["identity_scope"] == "manual"

@@ -53,14 +53,42 @@ def validate_input_params(input_params: dict | None) -> None:
         validate_inputs(graph_type, graph_inputs)
     except KeyError as exc:
         raise ValueError(exc.args[0]) from exc
-    if graph_type == "meeting_ingest" and graph_inputs.get("digest", True):
+    if graph_type == "persona" or (graph_type == "meeting_ingest" and graph_inputs.get("digest", True)):
         from services.config import JOB_DEFAULT_TIMEOUT
         from services.meetings.enrichment import JOB_TIMEOUT_SECONDS
 
         timeout = params.get("timeout", JOB_DEFAULT_TIMEOUT)
         if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
                 or not math.isfinite(timeout) or timeout < JOB_TIMEOUT_SECONDS):
-            raise ValueError(f"Meeting digestion jobs require a timeout of at least {JOB_TIMEOUT_SECONDS} seconds")
+            raise ValueError(f"Meeting digestion and persona jobs require a timeout of at least {JOB_TIMEOUT_SECONDS} seconds")
+
+
+def execution_timeout(graph_type: str, params: dict) -> float:
+    from services.config import JOB_DEFAULT_TIMEOUT
+    from services.meetings.processing import JOB_TIMEOUT_SECONDS
+
+    timeout = float(params.get("timeout", JOB_DEFAULT_TIMEOUT))
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("Job timeout must be a finite positive number")
+    if graph_type == "persona" or (graph_type == "meeting_ingest" and (params.get("graph_inputs") or {}).get("digest", True)):
+        return max(timeout, JOB_TIMEOUT_SECONDS)
+    return timeout
+
+
+def has_requested_work(job: dict) -> bool:
+    params = job.get("input_params") or {}
+    graph_type, inputs = params.get("graph_type"), params.get("graph_inputs") or {}
+    from services.meetings import digestion_db
+
+    if graph_type == "persona":
+        from services.personas.factory import build_context_provider
+
+        return build_context_provider().has_requested_work(source=inputs.get("source"))
+    if graph_type == "meeting_ingest":
+        from services.meetings.digestion import configured_sources
+
+        return digestion_db.has_requested_work(list(configured_sources(inputs.get("source"))), digest=inputs.get("digest", True))
+    return False
 
 
 def create_job_with_default_config(

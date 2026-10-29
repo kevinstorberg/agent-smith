@@ -6,11 +6,19 @@ from dataclasses import replace
 import pytest
 
 from services.db import get_connection
-from services.graphs.runtime import dispatch
+from services.graphs.runtime import dispatch as graph_dispatch
 from services.meetings import db, digestion_db, enrichment, profile_db
 from services.meetings.types import TranscriptSegment
 from tests.test_meeting_memory_flow import agents as agents, feed as feed, job
 from tests.test_meeting_sync import note, source as source
+
+
+async def ingest_and_profile(inputs):
+    imported = json.loads(await graph_dispatch("meeting_ingest", inputs))
+    if inputs.get("digest") is False:
+        return json.dumps(imported)
+    persona = json.loads(await graph_dispatch("persona", {key: value for key, value in inputs.items() if key == "source"}))
+    return json.dumps({**imported, **persona})
 
 
 @pytest.fixture
@@ -65,18 +73,18 @@ def profile_due(meeting_id):
 
 @pytest.mark.asyncio
 async def test_graph_runs_both_agents_once_with_direct_memory_handoff_and_directed_evidence(source, people, agents, profiler):
-    result = json.loads(await dispatch("meeting_ingest", {"source": source.name}))
+    result = json.loads(await ingest_and_profile({"source": source.name}))
     meeting_id = meeting(source)
     assert result["memories"]["outcome"] == result["profiles"]["outcome"] == "done"
     calls, _ = profiler
     assert len(calls) == len(agents.analyses) == 1
-    assert calls[0]["memories"][0]["id"] == agents.publications[0]
+    assert calls[0]["memories"] == []
     profiles = [profile_db.get_profile(item["id"]) for item in profile_db.meeting_profiles(meeting_id)["items"]]
     alice, bob = sorted(profiles, key=lambda person: person["display_name"])
     assert bob["claims"][0]["target_id"] == alice["id"]
     assert bob["claims"][0]["target_name"] == "Alice"
     assert alice["claims"][0]["evidence"][0]["segment_id"] == "segment-0"
-    await dispatch("meeting_ingest", {"source": source.name})
+    await ingest_and_profile({"source": source.name})
     assert len(calls) == len(agents.analyses) == len(agents.publications) == 1
     assert "careful reviews" not in json.dumps(result)
 
@@ -92,14 +100,18 @@ async def test_profile_failure_retries_only_profiles_and_keeps_completed_memorie
         raise RuntimeError("Private profile content")
 
     monkeypatch.setattr(profile_analysis, "analyze_profiles", failed)
-    first = await execute_job(job(source))
+    imported = await execute_job(job(source))
+    assert imported["success"]
+    with pytest.raises(RuntimeError, match="RuntimeError"):
+        await graph_dispatch("persona", {"source": source.name})
+    first = {"success": False, "error": "RuntimeError"}
     meeting_id = meeting(source)
     row = digestion_db.get_record(meeting_id)
     assert not first["success"] and "Private profile content" not in first["error"]
     assert row["memory_status"] == "done" and row["profile_attempts"] == 1 and row["claim_owner"] is None
     monkeypatch.setattr(profile_analysis, "analyze_profiles", original)
     profile_due(meeting_id)
-    await dispatch("meeting_ingest", {"source": source.name})
+    await ingest_and_profile({"source": source.name})
     assert len(agents.analyses) == len(agents.publications) == len(calls) == 1
     assert digestion_db.get_record(meeting_id)["profile_status"] == "done"
 
@@ -117,7 +129,7 @@ async def test_cancellation_between_nodes_keeps_memory_done_and_releases_lease(s
         await asyncio.Event().wait()
 
     monkeypatch.setattr(meeting_ingest, "_generate_memories", cancel_after_memory)
-    task = asyncio.create_task(dispatch("meeting_ingest", {"source": source.name}))
+    task = asyncio.create_task(graph_dispatch("meeting_ingest", {"source": source.name}))
     try:
         await asyncio.wait_for(reached_edge.wait(), 5)
         task.cancel()
@@ -131,14 +143,17 @@ async def test_cancellation_between_nodes_keeps_memory_done_and_releases_lease(s
     assert row["memory_status"] == "done" and row["profile_status"] == "pending" and row["claim_owner"] is None
     assert profiler[0] == []
     monkeypatch.setattr(meeting_ingest, "_generate_memories", original)
-    await dispatch("meeting_ingest", {"source": source.name})
+    await ingest_and_profile({"source": source.name})
     assert len(profiler[0]) == len(agents.analyses) == 1
 
 
 @pytest.mark.asyncio
 async def test_profile_windows_resume_without_repeating_memory_stage(source, people, agents, profiler, monkeypatch):
     from services.meetings import profile_analysis
+    from services.personas import service as persona_service
 
+    monkeypatch.setattr(persona_service, "WINDOW_CHARS", 45)
+    monkeypatch.setattr(persona_service, "AGENT_SECONDS", 0.15)
     monkeypatch.setattr(enrichment, "WINDOW_CHARS", 45)
     monkeypatch.setattr(enrichment, "AGENT_SECONDS", 0.15)
     calls, original = profiler
@@ -149,14 +164,15 @@ async def test_profile_windows_resume_without_repeating_memory_stage(source, peo
         return await original(snapshot, window, previous, **kwargs)
 
     monkeypatch.setattr(profile_analysis, "analyze_profiles", pause_second)
-    first = json.loads(await dispatch("meeting_ingest", {"source": source.name}))
+    first = json.loads(await ingest_and_profile({"source": source.name}))
     row = digestion_db.get_record(meeting(source))
     assert first["profiles"]["outcome"] == "continued"
     assert row["profile_artifact"]["offset"] == 1 and row["profile_attempts"] == 0
     assert len(agents.analyses) == 2
     monkeypatch.setattr(enrichment, "AGENT_SECONDS", 10)
+    monkeypatch.setattr(persona_service, "AGENT_SECONDS", 10)
     monkeypatch.setattr(profile_analysis, "analyze_profiles", original)
-    await dispatch("meeting_ingest", {"source": source.name})
+    await ingest_and_profile({"source": source.name})
     assert len(agents.analyses) == 2 and len(calls) == 2
     assert [call["window"][0]["id"] for call in calls] == ["segment-0", "segment-1"]
     assert digestion_db.get_record(meeting(source))["profile_status"] == "done"
@@ -165,9 +181,9 @@ async def test_profile_windows_resume_without_repeating_memory_stage(source, peo
 @pytest.mark.asyncio
 async def test_human_correction_conflict_discards_only_uncommitted_profile_candidates(source, people, agents, profiler, monkeypatch):
     from services.meetings import profile_analysis
-    from services.meetings.service import MeetingSyncError
+    from services.graphs.library.persona import PersonaProcessingError as MeetingSyncError
 
-    await dispatch("meeting_ingest", {"source": source.name})
+    await ingest_and_profile({"source": source.name})
     initial = profile_db.meeting_profiles(meeting(source))["items"][0]
     profile = profile_db.get_profile(initial["id"])
     original = profiler[1]
@@ -180,7 +196,7 @@ async def test_human_correction_conflict_discards_only_uncommitted_profile_candi
     people.summaries["two"] = replace(people.summaries["one"], external_id="two", source_url="https://example.invalid/two")
     monkeypatch.setattr(profile_analysis, "analyze_profiles", concurrent_correction)
     with pytest.raises(MeetingSyncError, match="ProfileRevisionConflict"):
-        await dispatch("meeting_ingest", {"source": source.name})
+        await ingest_and_profile({"source": source.name})
     rows = db.list_summaries(source=source.name)["items"]
     second_id = next(row["id"] for row in rows if row["external_id"] == "two")
     second = digestion_db.get_record(second_id)
@@ -191,5 +207,5 @@ async def test_human_correction_conflict_discards_only_uncommitted_profile_candi
         return {"items": [], "reason": "Existing human correction is authoritative"}
     monkeypatch.setattr(profile_analysis, "analyze_profiles", respect_correction)
     profile_due(second_id)
-    await dispatch("meeting_ingest", {"source": source.name})
+    await ingest_and_profile({"source": source.name})
     assert len(agents.analyses) == 2 and digestion_db.get_record(second_id)["profile_status"] == "done"

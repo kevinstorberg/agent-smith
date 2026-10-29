@@ -20,6 +20,7 @@ from services.db import get_connection
 from services.memory.backends import BackendRow, build_row
 
 TABLE_NAME = "memories"
+_ROW_COLUMNS = "id, content, repo, tags, created_at, updated_at, last_accessed_at, source_type, source_id"
 
 _init_lock = threading.Lock()
 _initialized = False
@@ -75,6 +76,9 @@ def _metadata_values(id: str, metadata: dict[str, Any]) -> tuple[Any, ...]:
     repo = metadata.get("repo") or None
     if repo is not None and not isinstance(repo, str):
         raise ValueError("Memory metadata 'repo' must be a string or null")
+    for key in ("source_type", "source_id"):
+        if metadata.get(key) is not None and not isinstance(metadata[key], str):
+            raise ValueError(f"Memory metadata {key!r} must be a string or null")
     return (
         uuid.UUID(id),
         repo,
@@ -82,6 +86,7 @@ def _metadata_values(id: str, metadata: dict[str, Any]) -> tuple[Any, ...]:
         _as_utc(metadata.get("created_at"), "created_at"),
         _as_utc(metadata.get("updated_at"), "updated_at"),
         _as_utc(metadata.get("last_accessed_at"), "last_accessed_at"),
+        metadata.get("source_type"), metadata.get("source_id"),
     )
 
 
@@ -90,7 +95,7 @@ def _iso(value: datetime) -> str:
 
 
 def _to_backend_row(row: tuple[Any, ...]) -> BackendRow:
-    id, content, repo, tags, created_at, updated_at, last_accessed_at = row
+    id, content, repo, tags, created_at, updated_at, last_accessed_at, source_type, source_id = row
     metadata = {
         "id": str(id),
         "repo": repo or "",
@@ -98,6 +103,7 @@ def _to_backend_row(row: tuple[Any, ...]) -> BackendRow:
         "created_at": _iso(created_at),
         "updated_at": _iso(updated_at),
         "last_accessed_at": _iso(last_accessed_at),
+        "source_type": source_type, "source_id": source_id,
     }
     return build_row(str(id), content, metadata)
 
@@ -184,7 +190,7 @@ class PGVectorStore(VectorStore):
         for id, content, metadata, embedding in zip(
             ids, text_list, metadatas, embeddings, strict=True
         ):
-            row_id, repo, tags, created_at, updated_at, last_accessed_at = (
+            row_id, repo, tags, created_at, updated_at, last_accessed_at, source_type, source_id = (
                 _metadata_values(id, metadata)
             )
             records.append(
@@ -198,6 +204,7 @@ class PGVectorStore(VectorStore):
                     created_at,
                     updated_at,
                     last_accessed_at,
+                    source_type, source_id,
                 )
             )
 
@@ -207,9 +214,9 @@ class PGVectorStore(VectorStore):
                     """
                     INSERT INTO memories (
                         id, content, repo, tags, embedding, embedding_model,
-                        created_at, updated_at, last_accessed_at
+                        created_at, updated_at, last_accessed_at, source_type, source_id
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO UPDATE SET
                         content = EXCLUDED.content,
                         repo = EXCLUDED.repo,
@@ -217,7 +224,9 @@ class PGVectorStore(VectorStore):
                         embedding = EXCLUDED.embedding,
                         embedding_model = EXCLUDED.embedding_model,
                         updated_at = EXCLUDED.updated_at,
-                        last_accessed_at = EXCLUDED.last_accessed_at
+                        last_accessed_at = EXCLUDED.last_accessed_at,
+                        source_type = EXCLUDED.source_type,
+                        source_id = EXCLUDED.source_id
                     """,
                     records,
                 )
@@ -237,9 +246,8 @@ class PGVectorStore(VectorStore):
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    """
-                    SELECT id, content, repo, tags, created_at, updated_at,
-                           last_accessed_at, embedding <=> %s AS distance
+                    f"""
+                    SELECT {_ROW_COLUMNS}, embedding <=> %s AS distance
                     FROM memories
                     WHERE embedding_model = %s
                     ORDER BY embedding <=> %s, id
@@ -252,9 +260,9 @@ class PGVectorStore(VectorStore):
             (
                 Document(
                     page_content=row[1],
-                    metadata=_to_backend_row(row[:7])["metadata"],
+                    metadata=_to_backend_row(row[:-1])["metadata"],
                 ),
-                float(row[7]),
+                float(row[-1]),
             )
             for row in rows
         ]
@@ -291,8 +299,8 @@ def load_all() -> list[BackendRow]:
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """
-                SELECT id, content, repo, tags, created_at, updated_at, last_accessed_at
+                f"""
+                SELECT {_ROW_COLUMNS}
                 FROM memories
                 ORDER BY created_at, id
                 """
@@ -307,8 +315,8 @@ def list_rows(repo: str | None = None, limit: int = 20) -> list[BackendRow]:
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """
-                SELECT id, content, repo, tags, created_at, updated_at, last_accessed_at
+                f"""
+                SELECT {_ROW_COLUMNS}
                 FROM memories
                 WHERE (%s IS NULL OR repo = %s)
                 ORDER BY created_at DESC, id
@@ -325,8 +333,8 @@ def get_row(id: str) -> BackendRow | None:
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """
-                SELECT id, content, repo, tags, created_at, updated_at, last_accessed_at
+                f"""
+                SELECT {_ROW_COLUMNS}
                 FROM memories
                 WHERE id = %s
                 """,

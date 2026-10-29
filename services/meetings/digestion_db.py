@@ -11,6 +11,9 @@ from services.meetings.db import ClaimLostError, _cursor, _serialize
 
 LEASE_SECONDS = 600
 _CLAIM_LOCK = "agent-smith:meeting-digestion"
+_PROFILE_LOCK = "agent-smith:persona"
+_MEMORY_ELIGIBILITY = "(d.transcript_status = 'pending' AND d.next_attempt_at <= clock_timestamp()) OR (d.transcript_status = 'ready' AND d.memory_status = 'pending' AND d.memory_next_attempt_at <= clock_timestamp())"
+_PROFILE_ELIGIBILITY = "d.transcript_status = 'ready' AND d.profile_status = 'pending' AND d.profile_next_attempt_at <= clock_timestamp()"
 _SNAPSHOT_FIELDS = (
     "id", "provider", "account_key", "external_id", "source_name", "project", "title",
     "summary_text", "source_url", "metadata", "provider_updated_at", "revision",
@@ -26,39 +29,73 @@ def claim_transcript(identities: list[tuple[str, str]], owner: str) -> dict | No
 
 
 def claim_digestion(identities: list[tuple[str, str]], owner: str) -> dict | None:
-    return _claim(identities, owner,
-                  "(d.transcript_status = 'pending' AND d.next_attempt_at <= clock_timestamp()) OR "
-                  "(d.transcript_status = 'ready' AND d.memory_status = 'pending' AND d.memory_next_attempt_at <= clock_timestamp()) OR "
-                  "(d.transcript_status = 'ready' AND d.memory_status = 'done' AND d.profile_status = 'pending' AND d.profile_next_attempt_at <= clock_timestamp())")
+    return _claim(identities, owner, _MEMORY_ELIGIBILITY)
 
 
-def _claim(identities: list[tuple[str, str]], owner: str, eligibility: str) -> dict | None:
+def _work_scope(identities, source):
+    if identities is not None:
+        return "(m.provider, m.account_key) IN %s", (tuple(identities),)
+    if source is not None and (not isinstance(source, str) or not source.strip() or len(source) > 100):
+        raise ValueError("Persona source must be a nonblank stored connection name of at most 100 characters")
+    return "(%s IS NULL OR m.source_name = %s)", (source, source)
+
+
+def claim_profile(source: str | None, owner: str) -> dict | None:
+    return _claim(None, owner, _PROFILE_ELIGIBILITY, source=source, profile=True)
+
+
+def has_requested_work(identities: list[tuple[str, str]], *, digest: bool = True) -> bool:
     if not identities:
+        return False
+    eligibility = _MEMORY_ELIGIBILITY if digest else "d.transcript_status = 'pending' AND d.next_attempt_at <= clock_timestamp()"
+    return _has_requested(identities, eligibility)
+
+
+def has_requested_profile_work(source: str | None = None) -> bool:
+    return _has_requested(None, _PROFILE_ELIGIBILITY, source=source, profile=True)
+
+
+def _has_requested(identities, eligibility, *, source=None, profile=False) -> bool:
+    scope, params = _work_scope(identities, source)
+    lease = "profile_claim_until" if profile else "claim_until"
+    with _cursor() as cur:
+        cur.execute(
+            f"""SELECT EXISTS (SELECT 1 FROM meeting_digestions d JOIN meeting_summaries m ON m.id = d.meeting_id
+                WHERE m.available AND d.requested_at IS NOT NULL AND ({scope}) AND ({eligibility}))
+                AND NOT EXISTS (SELECT 1 FROM meeting_digestions WHERE {lease} > clock_timestamp()) AS due""", params,
+        )
+        return cur.fetchone()["due"]
+
+
+def _claim(identities, owner: str, eligibility: str, *, source=None, profile=False) -> dict | None:
+    if identities is not None and not identities:
         return None
     if not isinstance(owner, str) or not owner.strip() or len(owner) > 100:
         raise ValueError("Digestion claim requires a nonblank owner of at most 100 characters")
+    scope, params = _work_scope(identities, source)
+    prefix = "profile_" if profile else ""
     with _cursor() as cur:
-        cur.execute("SELECT pg_try_advisory_xact_lock(hashtextextended(%s, 0)) AS acquired", (_CLAIM_LOCK,))
+        cur.execute("SELECT pg_try_advisory_xact_lock(hashtextextended(%s, 0)) AS acquired", (_PROFILE_LOCK if profile else _CLAIM_LOCK,))
         if not cur.fetchone()["acquired"]:
             return None
-        cur.execute("SELECT 1 FROM meeting_digestions WHERE claim_until > clock_timestamp() LIMIT 1")
+        cur.execute(f"SELECT 1 FROM meeting_digestions WHERE {prefix}claim_until > clock_timestamp() LIMIT 1")
         if cur.fetchone():
             return None
         cur.execute(
             f"""SELECT d.meeting_id, m.manual_participants, m.participants_revision FROM meeting_digestions d
                JOIN meeting_summaries m ON m.id = d.meeting_id
-               WHERE (m.provider, m.account_key) IN %s AND m.available
+               WHERE ({scope}) AND m.available
                  AND ({eligibility})
                ORDER BY (d.requested_at IS NULL), d.requested_at, d.created_at, d.meeting_id
                LIMIT 1 FOR UPDATE OF d FOR SHARE OF m""",
-            (tuple(identities),),
+            params,
         )
         row = cur.fetchone()
         if row is None:
             return None
         cur.execute(
-            """UPDATE meeting_digestions SET claim_owner = %s,
-               claim_until = clock_timestamp() + %s * interval '1 second', updated_at = clock_timestamp(),
+            f"""UPDATE meeting_digestions SET {prefix}claim_owner = %s,
+               {prefix}claim_until = clock_timestamp() + %s * interval '1 second', updated_at = clock_timestamp(),
                participant_snapshot = %s, participants_revision = %s
                WHERE meeting_id = %s RETURNING *""",
             (owner, LEASE_SECONDS, Json(row["manual_participants"]), row["participants_revision"], row["meeting_id"]),
@@ -66,12 +103,13 @@ def _claim(identities: list[tuple[str, str]], owner: str, eligibility: str) -> d
         return _serialize(dict(cur.fetchone()))
 
 
-def _owned(cur, meeting_id: str, owner: str) -> dict:
+def _owned(cur, meeting_id: str, owner: str, *, profile: bool = False) -> dict:
     cur.execute("SELECT * FROM meeting_digestions WHERE meeting_id = %s FOR UPDATE", (meeting_id,))
     row = cur.fetchone()
     cur.execute("SELECT clock_timestamp() AS now")
     now = cur.fetchone()["now"]
-    if row is None or row["claim_owner"] != owner or row["claim_until"] is None or row["claim_until"] <= now:
+    prefix = "profile_" if profile else ""
+    if row is None or row[prefix + "claim_owner"] != owner or row[prefix + "claim_until"] is None or row[prefix + "claim_until"] <= now:
         raise ClaimLostError("Meeting digestion claim expired or belongs to another run")
     return dict(row)
 
@@ -86,9 +124,18 @@ def release(meeting_id: str, owner: str) -> None:
 
 
 def release_owner(owner: str) -> None:
+    _release_owner(owner, profile=False)
+
+
+def release_profile_owner(owner: str) -> None:
+    _release_owner(owner, profile=True)
+
+
+def _release_owner(owner: str, *, profile: bool) -> None:
+    prefix = "profile_" if profile else ""
     with _cursor() as cur:
         cur.execute(
-            "UPDATE meeting_digestions SET claim_owner = NULL, claim_until = NULL WHERE claim_owner = %s",
+            f"UPDATE meeting_digestions SET {prefix}claim_owner = NULL, {prefix}claim_until = NULL WHERE {prefix}claim_owner = %s",
             (owner,),
         )
 
@@ -164,7 +211,7 @@ def get_transcript(meeting_id: str, *, limit: int = 100, offset: int = 0) -> dic
         raise ValueError("Transcript limit must be 1-200 and offset nonnegative")
     with _cursor() as cur:
         cur.execute(
-            """SELECT transcript_status, error_type, captured_at, claim_until > clock_timestamp() AS running,
+            """SELECT m.id, m.manual_participants, m.metadata, transcript_status, error_type, captured_at, claim_until > clock_timestamp() AS running,
                CASE WHEN transcript_status = 'ready' THEN jsonb_array_length(transcript->'segments') ELSE 0 END AS total,
                CASE WHEN transcript_status = 'ready' THEN
                  (SELECT coalesce(jsonb_agg(segment ORDER BY position), '[]'::jsonb)
@@ -174,6 +221,11 @@ def get_transcript(meeting_id: str, *, limit: int = 100, offset: int = 0) -> dic
                WHERE m.id = %s AND m.available""", (offset, offset + limit, meeting_id),
         )
         row = cur.fetchone()
+        if row and row["transcript_status"] == "ready":
+            from services.meetings.participants_db import effective_speakers
+
+            speakers = effective_speakers(cur, dict(row), row["items"])
+            row["items"] = [{**segment, "effective_speaker": speakers.get(segment["id"])} for segment in row["items"]]
     if row is None:
         return None
     if row["transcript_status"] is None:
@@ -190,6 +242,7 @@ def delete_transcript(meeting_id: str) -> None:
             """INSERT INTO meeting_digestions (meeting_id, transcript_status) VALUES (%s, 'deleted')
                ON CONFLICT (meeting_id) DO UPDATE SET transcript_status = 'deleted', transcript = '{}'::jsonb,
                snapshot = '{}'::jsonb, transcript_hash = NULL, claim_owner = NULL, claim_until = NULL,
+               profile_claim_owner = NULL, profile_claim_until = NULL,
                captured_at = NULL, error_type = NULL, updated_at = clock_timestamp()""", (meeting_id,),
         )
 
@@ -199,7 +252,8 @@ def retry_transcript(meeting_id: str) -> None:
     with _cursor() as cur:
         cur.execute(
             """UPDATE meeting_digestions SET transcript_status = 'pending', attempts = 0,
-               next_attempt_at = clock_timestamp(), error_type = NULL, updated_at = clock_timestamp()
+               next_attempt_at = clock_timestamp(), error_type = NULL, updated_at = clock_timestamp(),
+               requested_at = coalesce(requested_at, clock_timestamp())
                WHERE meeting_id = %s AND transcript_status IN ('failed', 'unsupported', 'unavailable')""",
             (meeting_id,),
         )

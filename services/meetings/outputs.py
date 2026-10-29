@@ -39,7 +39,7 @@ class MemorySubmission(_Output):
 class ProfileClaim(_Output):
     subject_id: str = Field(min_length=1, max_length=200)
     target_id: str | None = Field(default=None, min_length=1, max_length=200)
-    category: Literal["driver", "priority", "communication", "decision_pattern", "perception", "interaction", "uncertainty"]
+    category: Literal["driver", "strength", "development_area", "role", "priority", "communication", "decision_pattern", "perception", "interaction", "relationship", "uncertainty"]
     epistemic: Literal["self_report", "observed", "inference"]
     confidence: Literal["low", "medium", "high"]
     content: _Content = Field(min_length=1, max_length=2000)
@@ -55,8 +55,8 @@ class ProfileClaim(_Output):
     def grounded_classification(self):
         if self.target_id == self.subject_id:
             raise ValueError("A directed claim must target a different participant")
-        if self.category == "perception" and self.target_id is None:
-            raise ValueError("Perception claims require a directed target participant")
+        if self.category in {"perception", "relationship"} and self.target_id is None:
+            raise ValueError("Perception and relationship claims require a directed target participant")
         if self.epistemic == "inference" and (self.confidence == "high" or not self.rationale):
             raise ValueError("Inferences require a rationale and low or medium confidence")
         return self

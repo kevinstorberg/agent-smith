@@ -6,13 +6,22 @@ from dataclasses import replace
 import pytest
 
 from services.db import get_connection
-from services.graphs.runtime import dispatch
-from services.meetings import db, digestion_db, enrichment, management_db, profile_db
+from services.graphs.runtime import dispatch as graph_dispatch
+from services.meetings import db, digestion_db, management_db, profile_db
+from services.personas import service as enrichment
 from services.meetings.participants import email_participant, speaker_key
 from services.meetings.types import TranscriptSegment
 from tests.test_meeting_memory_flow import agents as agents, feed as feed
 from tests.test_meeting_profile_flow import profile_due
 from tests.test_meeting_sync import note, source as source
+
+
+async def ingest_and_profile(inputs):
+    imported = json.loads(await graph_dispatch("meeting_ingest", inputs))
+    if inputs.get("digest") is False:
+        return json.dumps(imported)
+    persona = json.loads(await graph_dispatch("persona", {key: value for key, value in inputs.items() if key == "source"}))
+    return json.dumps({**imported, **persona})
 
 
 @pytest.fixture
@@ -63,7 +72,7 @@ def meeting_id(source, external_id):
 async def seed_profiles(source, feed, identities):
     for index, person in enumerate(identities):
         add_meeting(feed, f"initial-{index}", person)
-        result = json.loads(await dispatch("meeting_ingest", {"source": source.name}))
+        result = json.loads(await ingest_and_profile({"source": source.name}))
         assert result["profiles"]["outcome"] == "done"
     return [profile_db.get_profile(person["id"]) for person in identities]
 
@@ -79,7 +88,7 @@ async def test_future_meeting_uses_losing_email_as_canonical_identity_before_ana
     merged = merge(original)
     original_claim_ids = {claim["id"] for profile in original for claim in profile["claims"]}
     add_meeting(feed, "future", identities[0])
-    result = json.loads(await dispatch("meeting_ingest", {"source": source.name}))
+    result = json.loads(await ingest_and_profile({"source": source.name}))
 
     call = profile_agent[0][-1]
     assert [person["id"] for person in call["participants"]] == [merged["id"]]
@@ -97,7 +106,7 @@ async def test_future_meeting_uses_losing_email_as_canonical_identity_before_ana
 async def test_two_known_alias_speakers_share_one_catalog_entry_and_all_evidence_segments(source, feed, identities, profile_agent):
     merged = merge(await seed_profiles(source, feed, identities))
     add_meeting(feed, "both", *identities)
-    await dispatch("meeting_ingest", {"source": source.name})
+    await ingest_and_profile({"source": source.name})
 
     catalog = profile_agent[0][-1]["participants"]
     assert len(catalog) == 1 and catalog[0]["id"] == merged["id"]
@@ -112,7 +121,7 @@ async def test_merge_during_analysis_rebuilds_only_profile_candidate_and_preserv
     source, feed, identities, agents, profile_agent, monkeypatch,
 ):
     from services.meetings import profile_analysis
-    from services.meetings.service import MeetingSyncError
+    from services.graphs.library.persona import PersonaProcessingError as MeetingSyncError
 
     profiles = await seed_profiles(source, feed, identities)
     original = profile_agent[1]
@@ -125,7 +134,7 @@ async def test_merge_during_analysis_rebuilds_only_profile_candidate_and_preserv
     monkeypatch.setattr(profile_analysis, "analyze_profiles", concurrent_merge)
     add_meeting(feed, "interrupted", identities[0])
     with pytest.raises(MeetingSyncError, match="ProfileRevisionConflict"):
-        await dispatch("meeting_ingest", {"source": source.name})
+        await ingest_and_profile({"source": source.name})
     pending_id = meeting_id(source, "interrupted")
     pending = digestion_db.get_record(pending_id)
     memories = copy.deepcopy(pending["memory_artifact"])
@@ -134,7 +143,7 @@ async def test_merge_during_analysis_rebuilds_only_profile_candidate_and_preserv
 
     monkeypatch.setattr(profile_analysis, "analyze_profiles", original)
     profile_due(pending_id)
-    await dispatch("meeting_ingest", {"source": source.name})
+    await ingest_and_profile({"source": source.name})
     completed = digestion_db.get_record(pending_id)
     assert completed["profile_status"] == "done" and completed["memory_artifact"] == memories
     assert profile_agent[0][-1]["participants"][0]["id"] == profiles[1]["id"]
@@ -147,7 +156,7 @@ async def test_merge_between_windows_discards_saved_alias_candidate_without_rege
     source, feed, identities, agents, profile_agent, monkeypatch, merge_after_resolution,
 ):
     from services.meetings import profile_analysis
-    from services.meetings.service import MeetingSyncError
+    from services.graphs.library.persona import PersonaProcessingError as MeetingSyncError
 
     profiles = await seed_profiles(source, feed, identities)
     original = profile_agent[1]
@@ -161,7 +170,7 @@ async def test_merge_between_windows_discards_saved_alias_candidate_without_rege
     monkeypatch.setattr(enrichment, "AGENT_SECONDS", 0.15)
     monkeypatch.setattr(profile_analysis, "analyze_profiles", pause_second)
     add_meeting(feed, "continued", identities[0], identities[0])
-    first = json.loads(await dispatch("meeting_ingest", {"source": source.name}))
+    first = json.loads(await ingest_and_profile({"source": source.name}))
     pending_id = meeting_id(source, "continued")
     pending = digestion_db.get_record(pending_id)
     assert first["profiles"]["outcome"] == "continued" and pending["profile_artifact"]["offset"] == 1
@@ -181,11 +190,11 @@ async def test_merge_between_windows_discards_saved_alias_candidate_without_rege
     monkeypatch.setattr(enrichment, "AGENT_SECONDS", 10)
     monkeypatch.setattr(profile_analysis, "analyze_profiles", original)
     with pytest.raises(MeetingSyncError, match="ProfileRevisionConflict"):
-        await dispatch("meeting_ingest", {"source": source.name})
+        await ingest_and_profile({"source": source.name})
     assert digestion_db.get_record(pending_id)["profile_artifact"] == {}
     monkeypatch.setattr(profile_db, "resolve_participants", resolve)
     profile_due(pending_id)
-    await dispatch("meeting_ingest", {"source": source.name})
+    await ingest_and_profile({"source": source.name})
     completed = digestion_db.get_record(pending_id)
     assert completed["profile_status"] == "done" and completed["memory_artifact"] == memories
     assert len(agents.analyses) == memory_calls
@@ -197,7 +206,7 @@ async def test_deleted_canonical_profile_is_not_recreated_by_a_known_alias_in_a_
     merged = merge(await seed_profiles(source, feed, identities))
     profile_db.delete_profile(merged["id"], merged["revision"])
     add_meeting(feed, "after-deletion", identities[0])
-    result = json.loads(await dispatch("meeting_ingest", {"source": source.name}))
+    result = json.loads(await ingest_and_profile({"source": source.name}))
 
     call = profile_agent[0][-1]
     assert call["participants"][0]["id"] == merged["id"] and call["profiles"][0]["deleted"]
@@ -216,7 +225,7 @@ async def test_manual_attribution_reaches_profile_agent_without_changing_frozen_
     target = identities[1] if existing_profile else identities[0]
     add_meeting(feed, "manual", target)
     feed.segments = (TranscriptSegment("I prioritize verified ownership.", {"name": "Me", "source": "microphone"}),)
-    await dispatch("meeting_ingest", {"source": source.name, "digest": False})
+    await ingest_and_profile({"source": source.name, "digest": False})
     manual_id = meeting_id(source, "manual")
     captured = digestion_db.get_record(manual_id)
     snapshot = copy.deepcopy(captured["snapshot"])
@@ -225,7 +234,7 @@ async def test_manual_attribution_reaches_profile_agent_without_changing_frozen_
     management_db.update_participants(manual_id, 0, mapping)
     memory_calls = len(agents.analyses)
 
-    await dispatch("meeting_ingest", {"source": source.name})
+    await ingest_and_profile({"source": source.name})
     call = profile_agent[0][-1]
     record = digestion_db.get_record(manual_id)
     assert call["participants"][0]["id"] == target["id"]

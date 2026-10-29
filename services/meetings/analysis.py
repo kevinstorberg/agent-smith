@@ -52,14 +52,30 @@ class MemoryAnalysisError(MeetingAnalysisError):
     pass
 
 
+class AnalysisBudgetExpired(TimeoutError):
+    pass
+
+
+class ModelCallTimeoutError(TimeoutError):
+    pass
+
+
 class _ModelDeadline(AgentMiddleware):
     def __init__(self, deadline: float):
         self.deadline = deadline
 
     async def awrap_model_call(self, request, handler):
-        limit = min(self.deadline, asyncio.get_running_loop().time() + MODEL_TIMEOUT_SECONDS)
-        async with asyncio.timeout_at(limit):
-            return await handler(request)
+        model_limit = asyncio.get_running_loop().time() + MODEL_TIMEOUT_SECONDS
+        budget_limited = self.deadline <= model_limit
+        attempt = asyncio.timeout_at(min(self.deadline, model_limit))
+        try:
+            async with attempt:
+                return await handler(request)
+        except TimeoutError:
+            if attempt.expired():
+                error = AnalysisBudgetExpired if budget_limited else ModelCallTimeoutError
+                raise error("Analysis budget expired" if budget_limited else "Model call timed out") from None
+            raise
 
 
 def _window_text(segments: list[dict]) -> dict[str, str]:
@@ -91,7 +107,7 @@ def recent_items(items: list[dict], max_chars: int = 32_000) -> list[dict]:
 
 
 class AnalysisContext:
-    def __init__(self, snapshot: dict, segments: list[dict], previous: list[dict]) -> None:
+    def __init__(self, snapshot: dict, segments: list[dict], previous: list[dict], *, require_memory_search: bool = True) -> None:
         if not isinstance(snapshot, dict) or not isinstance(previous, list) or any(not isinstance(item, dict) for item in previous):
             raise ValueError("Meeting analysis requires a snapshot object and earlier item objects")
         self.snapshot = snapshot
@@ -99,6 +115,7 @@ class AnalysisContext:
         self.previous = previous
         self.texts = _window_text(segments)
         self.searched = False
+        self.require_memory_search = require_memory_search
         self.collector = {}
 
     def quoted_data(self) -> dict:
@@ -109,7 +126,7 @@ class AnalysisContext:
 
     def stage(self, items: list[BaseModel], reason: str, validate_item: Callable | None = None) -> str:
         self.collector.clear()
-        if not self.searched:
+        if self.require_memory_search and not self.searched:
             return json.dumps({"error": "Successfully search prior memories before staging"})
         if not items and not reason.strip():
             return json.dumps({"error": "Zero items requires a nonblank reason"})
@@ -206,8 +223,9 @@ async def run_analysis(
     if deadline is not None and (isinstance(deadline, bool) or not isinstance(deadline, (int, float)) or not math.isfinite(deadline)):
         raise ValueError("Meeting analysis deadline must be a finite monotonic timestamp")
     deadline = min(deadline, loop.time() + 150) if deadline is not None else loop.time() + 150
+    attempt = asyncio.timeout_at(deadline)
     try:
-        async with asyncio.timeout_at(deadline):
+        async with attempt:
             agent = create_tool_agent(
                 model_role=model_role, fallback_role="curator", system_prompt=system_prompt + (
                     f"\nResearch within {MODEL_CALL_LIMIT} model turns and {TOOL_CALL_LIMIT} tool calls. "
@@ -227,8 +245,12 @@ async def run_analysis(
             )
             if not context.collector:
                 raise error_class(f"{label} analysis ended without a valid staged result")
-    except error_class:
+    except (error_class, AnalysisBudgetExpired):
         raise
+    except TimeoutError as error:
+        if attempt.expired():
+            raise AnalysisBudgetExpired("Analysis budget expired") from None
+        raise error_class(f"{label} analysis failed ({type(error).__name__})", error_type=type(error).__name__) from None
     except Exception as error:
         raise error_class(f"{label} analysis failed ({type(error).__name__})", error_type=type(error).__name__) from None
     return context.collector

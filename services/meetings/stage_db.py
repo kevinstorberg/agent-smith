@@ -7,6 +7,21 @@ from psycopg2.extras import Json
 
 from services.meetings.db import ClaimLostError, _cursor
 from services.meetings.digestion_db import _owned
+from services.meetings.windows import WINDOW_CHARS
+
+TOTAL_UNITS_SQL = f"(SELECT sum(greatest(1, (char_length(segment->>'text') + {WINDOW_CHARS - 1}) / {WINDOW_CHARS})) FROM jsonb_array_elements(d.transcript->'segments') segment)"
+
+
+def progress(row: dict | None, stage: str, *, total_units: int | None = None) -> dict:
+    stage = _stage(stage)
+    row = row or {}
+    artifact = row.get(stage + "_artifact") or {}
+    return {
+        "processed_units": artifact.get("offset", 0), "total_units": artifact.get("total_units", total_units),
+        "staged_count": len(artifact.get("items", [])),
+        "saved_count": len(artifact.get("published_ids" if stage == "memory" else "profile_ids", [])),
+        "attempts": row.get(stage + "_attempts", 0), "next_attempt_at": row.get(stage + "_next_attempt_at"),
+    }
 
 
 def _stage(stage: str) -> str:
@@ -17,12 +32,11 @@ def _stage(stage: str) -> str:
 
 def pending(cur, meeting_id: str, owner: str, transcript_hash: str, stage: str) -> dict:
     stage = _stage(stage)
-    row = _owned(cur, meeting_id, owner)
+    row = _owned(cur, meeting_id, owner, profile=stage == "profile")
     cur.execute("SELECT available FROM meeting_summaries WHERE id = %s FOR SHARE", (meeting_id,))
     meeting = cur.fetchone()
     if (not meeting or not meeting["available"] or row["transcript_status"] != "ready"
-            or row["transcript_hash"] != transcript_hash or row[stage + "_status"] != "pending"
-            or (stage == "profile" and row["memory_status"] != "done")):
+            or row["transcript_hash"] != transcript_hash or row[stage + "_status"] != "pending"):
         raise ClaimLostError("Meeting stage input changed or its prerequisites are no longer satisfied")
     return row
 
@@ -54,7 +68,7 @@ def record_failure(stage: str, meeting_id: str, owner: str, error_type: str) -> 
     if not isinstance(error_type, str) or not error_type or not error_type.replace("_", "").isalnum() or len(error_type) > 100:
         raise ValueError("Meeting stage error must be a safe category")
     with _cursor() as cur:
-        row = _owned(cur, meeting_id, owner)
+        row = _owned(cur, meeting_id, owner, profile=stage == "profile")
         attempts = row[stage + "_attempts"] + 1
         delay = min(900, 60 * 5 ** (attempts - 1)) * random.uniform(0.8, 1.2)
         cur.execute(

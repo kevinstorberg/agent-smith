@@ -67,7 +67,8 @@ def agents(monkeypatch):
                 "evidence": [{"segment_id": window[0]["id"], "quote": window[0]["text"]}],
             }], "reason": ""}
 
-        def publish(self, memory_id, content, repo=None, tags=None, *, created_at):
+        def publish(self, memory_id, content, repo=None, tags=None, *, created_at, source_type=None, source_id=None):
+            assert source_type == "meeting" and source_id
             frozen = (content, repo, tags, created_at)
             if memory_id in self.stored:
                 assert self.stored[memory_id] == frozen

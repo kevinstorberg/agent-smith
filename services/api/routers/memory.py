@@ -20,8 +20,9 @@ def search_memories(
     sort: str = Query("", pattern=SORT_PATTERN),
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    meeting_only: bool = False,
 ):
-    all_results = search(q, repo=empty_to_none(repo), tags=tags or None, sort=sort or None)
+    all_results = search(q, repo=empty_to_none(repo), tags=tags or None, sort=sort or None, meeting_only=meeting_only)
     items, total = paginate(all_results, offset, limit)
     return list_response(items, total)
 
@@ -33,11 +34,13 @@ def list_all(
     sort: str = Query("", pattern=SORT_PATTERN),
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    meeting_only: bool = False,
 ):
     all_results = list_memories(
         repo=empty_to_none(repo),
         tags=tags or None,
         sort=sort or "created_at_desc",
+        meeting_only=meeting_only,
     )
     items, total = paginate(all_results, offset, limit)
     return list_response(items, total)

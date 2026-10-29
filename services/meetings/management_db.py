@@ -24,7 +24,7 @@ class MeetingNotFoundError(LookupError):
 def _editable(meeting_id: str, *, allow_running: bool = False):
     UUID(meeting_id)
     with profile_db.profile_write_cursor() as cur:
-        cur.execute("SELECT *, claim_until > clock_timestamp() AS running FROM meeting_digestions WHERE meeting_id = %s FOR UPDATE", (meeting_id,))
+        cur.execute("SELECT *, (claim_until > clock_timestamp() OR profile_claim_until > clock_timestamp()) AS running FROM meeting_digestions WHERE meeting_id = %s FOR UPDATE", (meeting_id,))
         digestion = cur.fetchone()
         cur.execute("SELECT * FROM meeting_summaries WHERE id = %s AND available FOR UPDATE", (meeting_id,))
         meeting = cur.fetchone()
@@ -37,7 +37,7 @@ def _editable(meeting_id: str, *, allow_running: bool = False):
 
 def _speaker_groups(cur, meeting_id: str) -> list[dict]:
     cur.execute(
-        """SELECT entry->'speaker' AS speaker, count(*) AS segment_count
+        """SELECT entry->'speaker' AS speaker, count(*) AS segment_count, left(min(entry->>'text'), 160) AS sample
            FROM meeting_digestions d, jsonb_array_elements(d.transcript->'segments') entry
            WHERE d.meeting_id = %s AND d.transcript_status = 'ready'
            GROUP BY entry->'speaker'""", (meeting_id,),
@@ -47,7 +47,9 @@ def _speaker_groups(cur, meeting_id: str) -> list[dict]:
         speaker = row["speaker"] or {}
         key = speaker_key(speaker)
         label = speaker.get("name") or speaker.get("diarization_label") or speaker.get("email") or "Unidentified speaker"
-        group = groups.setdefault(key, {"key": key, "label": label, "segment_count": 0})
+        group = groups.setdefault(key, {"key": key, "label": label, "segment_count": 0,
+                                      "source": speaker.get("source"), "attribution": speaker.get("attribution"),
+                                      "sample": row["sample"] or "", "speaker": speaker})
         group["segment_count"] += row["segment_count"]
     return sorted(groups.values(), key=lambda group: (group["label"].casefold(), group["key"]))
 
@@ -55,7 +57,8 @@ def _speaker_groups(cur, meeting_id: str) -> list[dict]:
 def _participants(cur, meeting_id: str) -> dict | None:
     cur.execute(
         """SELECT m.manual_participants, m.participants_revision, m.metadata,
-           d.meeting_id IS NOT NULL AS enrolled, coalesce(d.claim_until > clock_timestamp(), false) AS running
+           d.meeting_id IS NOT NULL AS enrolled,
+           coalesce(d.claim_until > clock_timestamp(), false) OR coalesce(d.profile_claim_until > clock_timestamp(), false) AS running
            FROM meeting_summaries m LEFT JOIN meeting_digestions d ON d.meeting_id = m.id
            WHERE m.id = %s AND m.available""", (meeting_id,),
     )
@@ -63,6 +66,15 @@ def _participants(cur, meeting_id: str) -> dict | None:
     if row is None:
         return None
     speakers = _speaker_groups(cur, meeting_id)
+    from services.meetings.participants_db import effective_speakers
+
+    snapshot = {"id": meeting_id, "manual_participants": row["manual_participants"], "metadata": row["metadata"]}
+    effective = effective_speakers(cur, snapshot, [{"id": group["key"], "speaker": group["speaker"], "text": group["sample"]} for group in speakers])
+    assignments = {entry["speaker_key"]: entry for entry in row["manual_participants"] if entry.get("speaker_key")}
+    for group in speakers:
+        group.pop("speaker")
+        group["assignment"] = assignments.get(group["key"])
+        group["effective_speaker"] = effective.get(group["key"])
     keys = {group["key"] for group in speakers}
     return _serialize({
         "revision": row["participants_revision"], "items": row["manual_participants"],
@@ -166,7 +178,7 @@ def update_participants(meeting_id: str, expected_revision: int, participants: l
                 """UPDATE meeting_digestions SET profile_status = 'pending', profile_artifact = '{}'::jsonb,
                    profile_attempts = 0, profile_error = NULL, profile_next_attempt_at = clock_timestamp(),
                    profile_updated_at = clock_timestamp(), updated_at = clock_timestamp(),
-                   requested_at = coalesce(requested_at, clock_timestamp()) WHERE meeting_id = %s""", (meeting_id,),
+                   requested_at = coalesce(requested_at, clock_timestamp()) WHERE meeting_id = %s AND profile_status != 'done'""", (meeting_id,),
             )
         return _participants(cur, meeting_id)
 
@@ -177,7 +189,7 @@ def request_processing(meeting_id: str) -> dict:
             return {"status": "running"}
         if digestion and digestion["transcript_status"] == "deleted":
             raise ValueError("This transcript was explicitly deleted and will not be restored by processing")
-        if digestion and digestion["profile_status"] == "done":
+        if digestion and digestion["profile_status"] == "done" and digestion["memory_status"] == "done":
             return {"status": "done"}
         digestion_db.enroll(cur, meeting_id)
         cur.execute(

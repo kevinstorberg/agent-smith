@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from services.api.routers.base import delete_response, empty_to_none, require_found
-from services.meetings import profile_db
+from services.meetings import profile_db, relationship_db
 
 router = APIRouter()
 
@@ -33,14 +33,17 @@ class ProfileMetadataRequest(ProfileRevisionRequest):
     display_name: str | None = Field(None, min_length=1, max_length=profile_db.MAX_PROFILE_NAME_LENGTH, strict=True)
     tags: list[str] | None = Field(None, max_length=profile_db.MAX_TAGS)
     starred: bool | None = Field(None, strict=True)
+    metadata: dict[str, str] | None = Field(None, max_length=7)
+    nicknames: list[str] | None = Field(None, max_length=20)
+    section_notes: dict[str, str] | None = Field(None, max_length=3)
 
     @model_validator(mode="before")
     @classmethod
     def require_metadata(cls, value):
         if isinstance(value, dict):
-            fields = {key for key in ("display_name", "tags", "starred") if key in value}
+            fields = {key for key in ("display_name", "tags", "starred", "metadata", "nicknames", "section_notes") if key in value}
             if not fields or any(value[key] is None for key in fields):
-                raise ValueError("Provide a non-null profile name, tags or starred state")
+                raise ValueError("Provide non-null profile fields to update")
         return value
 
 
@@ -51,6 +54,27 @@ class MergeProfilesRequest(ProfileRevisionRequest):
 
 class ProfileAliasRequest(ProfileRevisionRequest):
     email: str = Field(min_length=1, max_length=320)
+
+
+class RelationshipCreate(ProfileRevisionRequest):
+    target_id: UUID
+    target_revision: int = Field(ge=1, strict=True)
+    label: str = Field(default="", max_length=200, strict=True)
+    notes: str = Field(default="", max_length=4000, strict=True)
+
+
+class RelationshipUpdate(ProfileRevisionRequest):
+    label: str | None = Field(None, max_length=200, strict=True)
+    notes: str | None = Field(None, max_length=4000, strict=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def require_fields(cls, value):
+        if isinstance(value, dict):
+            fields = {key for key in ("label", "notes") if key in value}
+            if not fields or any(value[key] is None for key in fields):
+                raise ValueError("Provide a non-null relationship label or notes")
+        return value
 
 
 def profile_change(action, *args, **kwargs):
@@ -92,7 +116,34 @@ def create_profile(body: CreateProfileRequest):
 def update_metadata(profile_id: UUID, body: ProfileMetadataRequest):
     key = str(profile_id)
     require_found(profile_db.get_profile(key), "Participant profile", key)
-    return profile_change(profile_db.update_metadata, key, body.expected_revision, **body.model_dump(include={"display_name", "tags", "starred"}, exclude_unset=True))
+    return profile_change(profile_db.update_metadata, key, body.expected_revision,
+                          **body.model_dump(include={"display_name", "tags", "starred", "metadata", "nicknames", "section_notes"}, exclude_unset=True))
+
+
+@router.get("/{profile_id}/relationships")
+def list_relationships(profile_id: UUID):
+    key = str(profile_id)
+    profile = require_found(profile_db.get_profile(key), "Profile", key)
+    return {"items": profile["relationships"], "total": len(profile["relationships"])}
+
+
+@router.post("/{profile_id}/relationships", status_code=201)
+def create_relationship(profile_id: UUID, body: RelationshipCreate):
+    return profile_change(relationship_db.create, str(profile_id), str(body.target_id), body.expected_revision,
+                          body.target_revision, body.label, body.notes)
+
+
+@router.patch("/{profile_id}/relationships/{relationship_id}")
+def edit_relationship(profile_id: UUID, relationship_id: UUID, body: RelationshipUpdate):
+    return profile_change(relationship_db.update, str(profile_id), str(relationship_id), body.expected_revision,
+                          **body.model_dump(include={"label", "notes"}, exclude_unset=True))
+
+
+@router.delete("/{profile_id}/relationships/{relationship_id}")
+def remove_relationship(profile_id: UUID, relationship_id: UUID, body: ProfileRevisionRequest):
+    key = str(relationship_id)
+    profile_change(relationship_db.delete, str(profile_id), key, body.expected_revision)
+    return delete_response(key)
 
 
 @router.post("/{profile_id}/merge")

@@ -42,9 +42,9 @@ def ready_meeting(source, external_id="one"):
 def claimed(source):
     meeting_id = ready_meeting(source)
     owner = "profile-test-owner"
-    assert digestion_db.claim_digestion([(source.provider, source.account_key)], owner)["meeting_id"] == meeting_id
+    assert digestion_db.claim_profile(source.name, owner)["meeting_id"] == meeting_id
     yield meeting_id, owner, digestion_db.get_record(meeting_id)["transcript_hash"]
-    digestion_db.release(meeting_id, owner)
+    digestion_db.release_profile_owner(owner)
 
 
 def candidate(participants, revisions=None):
@@ -87,7 +87,9 @@ def test_new_profiles_are_synthetic_until_atomic_apply_and_replay_is_fenced(clai
 def test_empty_output_completes_without_inserting_profiles(claimed, participants):
     artifact = {**candidate(participants), "items": [], "reason": "No grounded participant claims"}
     assert apply(claimed, artifact, participants) == []
-    assert profile_db.meeting_profiles(claimed[0]) == {
+    response = profile_db.meeting_profiles(claimed[0])
+    assert response.pop("progress")["staged_count"] == 0
+    assert response == {
         "status": "done", "items": [], "reason": "No grounded participant claims", "error_type": None,
     }
     assert all(row["revision"] == 0 for row in profile_db.load_profiles(participants))
@@ -114,13 +116,13 @@ def test_cumulative_profiles_preserve_corrections_and_directed_target(source, cl
     corrected = profile_db.correct_claim(first["id"], original_claim["id"], 1, "correct", "Values reliability when practical", "Clarified priority")
     assert corrected["revision"] == 2 and corrected["claims"][0]["content"] == original_claim["content"]
     assert corrected["claims"][0]["correction"]["content"] == "Values reliability when practical"
-    digestion_db.release(claimed[0], claimed[1])
+    digestion_db.release_profile_owner(claimed[1])
     second = ready_meeting(source, "two")
     owner = "second-profile-owner"
-    digestion_db.claim_digestion([(source.provider, source.account_key)], owner)
+    digestion_db.claim_profile(source.name, owner)
     record = digestion_db.get_record(second)
     try:
-        artifact = candidate(participants, {participants[0]["id"]: 2, participants[1]["id"]: 0})
+        artifact = candidate(participants, {participants[0]["id"]: 2, participants[1]["id"]: 1})
         artifact["items"][0].update(category="perception", content="Expects Blair to communicate directly")
         profile_db.apply_profiles(second, owner, record["transcript_hash"], artifact, participants)
         updated = profile_db.get_profile(first["id"])
@@ -129,7 +131,7 @@ def test_cumulative_profiles_preserve_corrections_and_directed_target(source, cl
         assert updated["claims"][1]["target_id"] == participants[1]["id"]
         assert updated["claims"][0]["id"] != updated["claims"][1]["id"]
     finally:
-        digestion_db.release(second, owner)
+        digestion_db.release_profile_owner(owner)
 
 
 def test_all_catalog_revisions_are_checked_before_any_subject_write(source, claimed, participants):
@@ -138,23 +140,24 @@ def test_all_catalog_revisions_are_checked_before_any_subject_write(source, clai
     artifact = candidate(swapped)
     artifact["items"][0]["evidence"] = [{"segment_id": "segment-1", "quote": "I value direct communication"}]
     apply(claimed, artifact, swapped)
-    digestion_db.release(claimed[0], claimed[1])
+    digestion_db.release_profile_owner(claimed[1])
     second = ready_meeting(source, "two")
     owner = "stale-profile-owner"
-    digestion_db.claim_digestion([(source.provider, source.account_key)], owner)
+    digestion_db.claim_profile(source.name, owner)
     record = digestion_db.get_record(second)
     try:
         with pytest.raises(profile_db.ProfileRevisionConflict):
             profile_db.apply_profiles(second, owner, record["transcript_hash"], candidate(participants), participants)
-        assert profile_db.get_profile(participants[0]["id"]) is None
+        unchanged = profile_db.get_profile(participants[0]["id"])
+        assert unchanged["claims"] == [] and unchanged["revision"] == 1
         assert digestion_db.get_record(second)["profile_status"] == "pending"
         profile_db.reset_progress(second, owner, record["transcript_hash"])
         assert digestion_db.get_record(second)["profile_artifact"] == {}
     finally:
-        digestion_db.release(second, owner)
+        digestion_db.release_profile_owner(owner)
 
 
-@pytest.mark.parametrize("change", ["owner", "expired", "hash", "unavailable", "memory_pending"])
+@pytest.mark.parametrize("change", ["owner", "expired", "hash", "unavailable", "transcript_deleted"])
 def test_profile_checkpoint_and_apply_enforce_live_prerequisites(claimed, participants, change):
     meeting_id, owner, transcript_hash = claimed
     if change == "owner":
@@ -164,11 +167,11 @@ def test_profile_checkpoint_and_apply_enforce_live_prerequisites(claimed, partic
     else:
         with get_connection() as conn, conn.cursor() as cur:
             if change == "expired":
-                cur.execute("UPDATE meeting_digestions SET claim_until = clock_timestamp() - interval '1 second' WHERE meeting_id = %s", (meeting_id,))
+                cur.execute("UPDATE meeting_digestions SET profile_claim_until = clock_timestamp() - interval '1 second' WHERE meeting_id = %s", (meeting_id,))
             elif change == "unavailable":
                 cur.execute("UPDATE meeting_summaries SET available = false WHERE id = %s", (meeting_id,))
             else:
-                cur.execute("UPDATE meeting_digestions SET memory_status = 'pending' WHERE meeting_id = %s", (meeting_id,))
+                cur.execute("UPDATE meeting_digestions SET transcript_status = 'deleted' WHERE meeting_id = %s", (meeting_id,))
     with pytest.raises(db.ClaimLostError):
         profile_db.save_progress(meeting_id, owner, transcript_hash, candidate(participants))
     with pytest.raises(db.ClaimLostError):
@@ -236,13 +239,13 @@ def test_deleted_profile_is_tombstoned_and_cannot_be_recreated(source, claimed, 
     tombstone = profile_db.load_profiles(participants)[0]
     assert tombstone["deleted"] and tombstone["revision"] == 2 and tombstone["claims"] == []
     assert profile_db.meeting_profiles(claimed[0])["items"] == []
-    digestion_db.release(claimed[0], claimed[1])
+    digestion_db.release_profile_owner(claimed[1])
     second = ready_meeting(source, "two")
     owner = "deleted-profile-owner"
-    digestion_db.claim_digestion([(source.provider, source.account_key)], owner)
+    digestion_db.claim_profile(source.name, owner)
     record = digestion_db.get_record(second)
     try:
-        artifact = candidate(participants, {profile_id: 2, participants[1]["id"]: 0})
+        artifact = candidate(participants, {profile_id: 2, participants[1]["id"]: 1})
         with pytest.raises(profile_db.ProfileRevisionConflict):
             profile_db.apply_profiles(second, owner, record["transcript_hash"], artifact, participants)
         assert profile_db.get_profile(profile_id) is None
@@ -250,7 +253,7 @@ def test_deleted_profile_is_tombstoned_and_cannot_be_recreated(source, claimed, 
         profile_db.apply_profiles(second, owner, record["transcript_hash"], artifact, participants)
         assert digestion_db.get_record(second)["profile_status"] == "done"
     finally:
-        digestion_db.release(second, owner)
+        digestion_db.release_profile_owner(owner)
 
 
 def test_unavailable_source_claims_are_hidden_but_preserved_canonically(claimed, participants):
@@ -274,6 +277,7 @@ def test_failures_are_bounded_safe_and_retry_only_reopens_profile_stage(claimed)
         assert row["profile_status"] == ("failed" if attempt == 3 else "pending")
         assert row["profile_error"] == "AgentValidationError"
         assert row["memory_status"] == "done"
+    digestion_db.release_profile_owner(owner)
     profile_db.retry_profiles(meeting_id)
     row = digestion_db.get_record(meeting_id)
     assert row["profile_status"] == "pending" and row["profile_attempts"] == 0
@@ -311,7 +315,8 @@ def test_profile_status_exposes_missing_dependencies_and_legacy(source):
     assert profile_db.meeting_profiles(meeting_id)["reason"] == "transcript_pending"
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("UPDATE meeting_digestions SET transcript_status = 'ready' WHERE meeting_id = %s", (meeting_id,))
-    assert profile_db.meeting_profiles(meeting_id)["reason"] == "memories_pending"
+    assert profile_db.meeting_profiles(meeting_id)["status"] == "pending"
+    assert profile_db.meeting_profiles(meeting_id)["reason"] is None
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM meeting_digestions WHERE meeting_id = %s", (meeting_id,))
     assert profile_db.meeting_profiles(meeting_id)["status"] == "not_imported"
@@ -343,29 +348,29 @@ def test_cumulative_size_limit_rolls_back_new_claim_and_stage(source, claimed, p
     profile["claims"][0]["content"] = "private historical text " * 90_000
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("UPDATE participant_profiles SET claims = %s WHERE id = %s", (Json(profile["claims"]), profile["id"]))
-    digestion_db.release(claimed[0], claimed[1])
+    digestion_db.release_profile_owner(claimed[1])
     second = ready_meeting(source, "two")
     owner = "oversized-profile-owner"
-    digestion_db.claim_digestion([(source.provider, source.account_key)], owner)
+    digestion_db.claim_profile(source.name, owner)
     record = digestion_db.get_record(second)
     try:
-        artifact = candidate(participants, {participants[0]["id"]: 1, participants[1]["id"]: 0})
+        artifact = candidate(participants, {participants[0]["id"]: 1, participants[1]["id"]: 1})
         with pytest.raises(ValueError, match="2000000-byte storage limit") as failed:
             profile_db.apply_profiles(second, owner, record["transcript_hash"], artifact, participants)
         assert "private historical" not in str(failed.value)
         assert profile_db.get_profile(profile["id"])["revision"] == 1
         assert digestion_db.get_record(second)["profile_status"] == "pending"
     finally:
-        digestion_db.release(second, owner)
+        digestion_db.release_profile_owner(owner)
 
 
 def test_concurrent_correction_and_candidate_apply_have_one_revision_winner(source, claimed, participants):
     apply(claimed, candidate(participants), participants)
     profile = profile_db.get_profile(participants[0]["id"])
-    digestion_db.release(claimed[0], claimed[1])
+    digestion_db.release_profile_owner(claimed[1])
     second = ready_meeting(source, "two")
     owner = "concurrent-profile-owner"
-    digestion_db.claim_digestion([(source.provider, source.account_key)], owner)
+    digestion_db.claim_profile(source.name, owner)
     record = digestion_db.get_record(second)
     barrier = threading.Barrier(2)
 
@@ -401,4 +406,4 @@ def test_concurrent_correction_and_candidate_apply_have_one_revision_winner(sour
             assert len(updated["claims"]) == 2
             assert digestion_db.get_record(second)["profile_status"] == "done"
     finally:
-        digestion_db.release(second, owner)
+        digestion_db.release_profile_owner(owner)
