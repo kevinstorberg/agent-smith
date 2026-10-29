@@ -45,7 +45,7 @@ class PlanModel(BaseModel):
             cls.dynamic_update(plan_id, fields)
 
     @classmethod
-    def search(cls, query: str, project: str | None = None, limit: int = 100) -> list[dict]:
+    def search(cls, query: str, project: str | None = None, limit: int = 100, *, status: str | None = None) -> list[dict]:
         assert_not_empty(query, "query")
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -54,6 +54,9 @@ class PlanModel(BaseModel):
                 if project:
                     sql += " AND project = %s"
                     params.append(project)
+                if status:
+                    sql += " AND status = %s"
+                    params.append(status)
                 sql += " ORDER BY updated_at DESC LIMIT %s"
                 params.append(limit)
                 cur.execute(sql, params)

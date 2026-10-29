@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, get_args
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MemoryKind = Literal["fact", "decision", "commitment", "constraint", "preference", "lesson", "question"]
+_TOPIC_TAG_LIMIT = 50
 
 
 def _nonblank(value: str) -> str:
@@ -28,7 +29,22 @@ class Evidence(_Output):
 class MemoryItem(_Output):
     content: _Content = Field(min_length=1, max_length=4000)
     kind: MemoryKind
+    tags: list[Annotated[str, Field(min_length=1, max_length=_TOPIC_TAG_LIMIT)]] = Field(min_length=1, max_length=8)
     evidence: list[Evidence] = Field(min_length=1, max_length=10)
+
+    @field_validator("tags")
+    @classmethod
+    def topical_tags(cls, values: list[str]) -> list[str]:
+        tags = []
+        for value in values:
+            tag = "-".join(value.strip().lower().split())
+            if not tag or len(tag) > _TOPIC_TAG_LIMIT or tag == "meeting-memory" or tag.startswith("meeting:"):
+                raise ValueError("Use short topic tags, not meeting origin identifiers")
+            if tag not in tags:
+                tags.append(tag)
+        if not set(tags).difference(get_args(MemoryKind)):
+            raise ValueError("Include a topic, not only memory classifications")
+        return tags
 
 
 class MemorySubmission(_Output):
@@ -62,6 +78,23 @@ class ProfileClaim(_Output):
         return self
 
 
+class ProfileMetadataPatch(_Output):
+    subject_id: str = Field(min_length=1, max_length=200)
+    fields: dict[str, str] = Field(min_length=1, max_length=7)
+    evidence: list[Evidence] = Field(min_length=1, max_length=10)
+
+    @field_validator("fields")
+    @classmethod
+    def valid_fields(cls, value: dict[str, str]) -> dict[str, str]:
+        from services.meetings import profile_fields
+
+        result = profile_fields.fields(value, profile_fields.METADATA_FIELDS, "metadata")
+        if any(not item for item in result.values()):
+            raise ValueError("Agent metadata fields must be nonblank")
+        return result
+
+
 class ProfileSubmission(_Output):
     items: list[ProfileClaim] = Field(max_length=20)
+    metadata_updates: list[ProfileMetadataPatch] = Field(default_factory=list, max_length=20)
     reason: str = Field(default="", max_length=2000)

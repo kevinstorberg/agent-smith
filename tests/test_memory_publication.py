@@ -89,7 +89,7 @@ def test_publication_replay_after_delayed_fetch_does_not_duplicate_cache(monkeyp
     db.publish(id, "Frozen memory", created_at=CREATED)
     retriever = db._get_retriever()
     with monkeypatch.context() as patch:
-        patch.setattr(db, "get", lambda key: None)
+        patch.setattr(lancedb_backend, "get_row", lambda key: None)
         db.publish(id, "Frozen memory", created_at=CREATED)
     assert len([item for item in retriever.memory_stream if item.metadata.get("id") == id]) == 1
     assert lancedb_backend._get_table().count_rows() == 1

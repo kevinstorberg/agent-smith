@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Literal
 
 import psycopg2
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel, Field, field_validator
 
 from services.config import DEVICE_NAME
@@ -12,10 +12,12 @@ from services.jobs.models.config import (
     delete_config,
     get_config,
     list_configs,
+    list_configs_for_jobs,
     update_config,
 )
 from services.jobs.models.execution import get_execution, list_executions_for_job
-from services.jobs.models.job import delete_job, get_job, list_jobs, update_job
+from services.jobs.models.job import delete_job, get_job, list_graph_jobs, list_jobs, update_job
+from services.jobs.scoping import job_targets
 from services.jobs.schedule import parse_interval
 from services.jobs.scheduler import execute_job
 from services.jobs.service import create_job_with_default_config, validate_input_params
@@ -44,6 +46,17 @@ def list_all(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0))
 @router.get("/{job_id}")
 def get_one(job_id: int):
     return _job_detail(job_id)
+
+
+@router.get("/graph/{graph_type}")
+def for_graph(graph_type: str = Path(min_length=1, max_length=100, pattern=r"^[a-z][a-z0-9_]*$")):
+    jobs = list_graph_jobs(graph_type)
+    grouped = {job["id"]: [] for job in jobs}
+    for config in list_configs_for_jobs(list(grouped)):
+        grouped[config["job_id"]].append(config)
+    items = [{**job, "configs": grouped[job["id"]],
+              "runs_on_device": bool(job_targets(grouped[job["id"]], DEVICE_NAME))} for job in jobs]
+    return list_response(items, len(items))
 
 
 class JobCreateRequest(BaseModel):
@@ -141,7 +154,10 @@ def executions(
 
 @router.get("/{job_id}/executions/{execution_id}")
 def execution_one(job_id: int, execution_id: int):
-    return require_found(get_execution(execution_id), "Execution", execution_id)
+    execution = require_found(get_execution(execution_id), "Execution", execution_id)
+    if execution["job_id"] != job_id:
+        raise HTTPException(status_code=404, detail=f"Execution {execution_id} does not belong to job {job_id}")
+    return execution
 
 
 class ConfigCreateRequest(BaseModel):

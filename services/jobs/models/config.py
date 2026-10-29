@@ -40,18 +40,26 @@ class JobConfigModel(BaseModel):
 
     @classmethod
     def list_for_job(cls, job_id: int) -> list[dict]:
-        cls._validate_id(job_id)
+        return cls.list_for_jobs([job_id])
+
+    @classmethod
+    def list_for_jobs(cls, job_ids: list[int]) -> list[dict]:
+        for job_id in job_ids:
+            cls._validate_id(job_id)
+        if not job_ids:
+            return []
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
-                    f"SELECT * FROM {cls.table} WHERE job_id = %s ORDER BY id",
-                    (job_id,),
+                    f"SELECT * FROM {cls.table} WHERE job_id = ANY(%s) ORDER BY id",
+                    (job_ids,),
                 )
                 return [cls.serialize_timestamps(dict(r)) for r in cur.fetchall()]
 
 
 # Convenience exports
 list_configs = JobConfigModel.list_for_job
+list_configs_for_jobs = JobConfigModel.list_for_jobs
 get_config = JobConfigModel.read
 create_config = JobConfigModel.create
 update_config = JobConfigModel.update

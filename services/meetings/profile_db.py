@@ -12,8 +12,8 @@ from pydantic import ValidationError
 
 from services.meetings import stage_db
 from services.meetings.db import _cursor, _serialize
-from services.meetings.outputs import ProfileClaim
-from services.meetings import profile_fields
+from services.meetings.outputs import ProfileClaim, ProfileMetadataPatch
+from services.meetings import profile_fields, profile_metadata
 
 _CLAIM_NAMESPACE = UUID("9a9b960b-0574-53ed-9f5d-9a3f67b58fd7")
 _WRITE_LOCK = "agent-smith:profile-write"
@@ -144,12 +144,19 @@ def include_linked_profiles(participants: list[dict]) -> list[dict]:
     return list(catalog.values())
 
 
+def _source_contexts(cur, rows: list[dict], meeting_ids: set[str] | None = None) -> dict[str, dict]:
+    ids = profile_metadata.source_ids(rows) | (meeting_ids or set())
+    if not ids:
+        return {}
+    cur.execute("""SELECT m.id, m.available, m.participants_revision, d.transcript_status, d.transcript_hash
+        FROM meeting_summaries m LEFT JOIN meeting_digestions d ON d.meeting_id = m.id WHERE m.id IN %s""", (tuple(ids),))
+    return {str(row["id"]): dict(row) for row in cur.fetchall()}
+
+
 def _visible(cur, rows: list[dict], *, include_overrides: bool = False) -> list[dict]:
     meeting_ids = {claim.get("meeting_id") for row in rows for claim in row["claims"] if claim.get("meeting_id")}
-    available = set()
-    if meeting_ids:
-        cur.execute("SELECT id FROM meeting_summaries WHERE id IN %s AND available", (tuple(meeting_ids),))
-        available = {str(row["id"]) for row in cur.fetchall()}
+    contexts = _source_contexts(cur, rows, meeting_ids)
+    available = {key for key, context in contexts.items() if context["available"]}
     result = []
     for row in rows:
         claims = []
@@ -158,7 +165,7 @@ def _visible(cur, rows: list[dict], *, include_overrides: bool = False) -> list[
                 claims.append(claim)
             elif include_overrides and claim.get("status") in {"corrected", "rejected"}:
                 claims.append({**claim, "evidence": [], "source_url": None, "rationale": "", "source_unavailable": True})
-        result.append(_serialize({**row, "claims": claims}))
+        result.append(_serialize({**profile_metadata.project(row, contexts), "claims": claims}))
     return result
 
 
@@ -178,7 +185,7 @@ def load_profiles(participants: list[dict]) -> list[dict]:
                 **{key: participant.get(key) for key in ("id", "identity_key", "display_name", "email", "identity_scope")},
                 "claims": [], "revision": 0, "deleted": False, "created_at": None, "updated_at": None,
                 "tags": [], "starred": False, "merged_into": None, "merge_history": [],
-                "metadata": {}, "section_notes": {}, "nicknames": [],
+                "metadata": {}, "metadata_provenance": {}, "section_notes": {}, "nicknames": [],
             })
         from services.meetings.relationship_db import for_profiles
 
@@ -252,11 +259,12 @@ def list_profiles(query: str | None = None, limit: int = 20, offset: int = 0, *,
     if query is not None:
         if not isinstance(query, str) or not query.strip() or len(query) > 1000:
             raise ValueError("Profile query must be nonblank and at most 1000 characters")
-        clauses.append("""(p.display_name ILIKE %s OR p.email ILIKE %s OR EXISTS (
+        clauses.append(f"""(p.display_name ILIKE %s OR p.email ILIKE %s OR EXISTS (
             SELECT 1 FROM participant_profiles alias WHERE alias.merged_into = p.id
             AND (alias.email ILIKE %s OR alias.display_name ILIKE %s))
             OR EXISTS (SELECT 1 FROM unnest(p.nicknames) nickname WHERE nickname ILIKE %s)
-            OR p.metadata->>'company' ILIKE %s OR p.metadata->>'job_role' ILIKE %s)""")
+            OR ({profile_metadata.visible_sql('p')})->>'company' ILIKE %s
+            OR ({profile_metadata.visible_sql('p')})->>'job_role' ILIKE %s)""")
         params.extend([f"%{query.strip()}%"] * 7)
     if normalized_tags:
         clauses.append("p.tags @> %s::text[]")
@@ -271,7 +279,8 @@ def list_profiles(query: str | None = None, limit: int = 20, offset: int = 0, *,
         total = cur.fetchone()["count"]
         cur.execute(
             f"""SELECT page.id, page.display_name, page.email, page.identity_scope, page.revision,
-                   page.created_at, page.updated_at, page.tags, page.starred, page.metadata, page.nicknames,
+                   page.created_at, page.updated_at, page.tags, page.starred,
+                   {profile_metadata.visible_sql('page')} AS metadata, page.nicknames,
                    ARRAY(SELECT DISTINCT lower(identity.email) FROM participant_profiles identity
                          WHERE (identity.id = page.id OR identity.merged_into = page.id) AND identity.email IS NOT NULL
                          ORDER BY lower(identity.email)) AS emails,
@@ -280,10 +289,18 @@ def list_profiles(query: str | None = None, limit: int = 20, offset: int = 0, *,
                    SELECT p.* FROM participant_profiles p WHERE {where}
                    ORDER BY {column.format(alias='p')} {direction}, p.id ASC LIMIT %s OFFSET %s
                ) page CROSS JOIN LATERAL (
-                   SELECT count(*) AS claim_count, count(DISTINCT m.id) AS meeting_count
-                   FROM jsonb_array_elements(page.claims) claim
-                   JOIN meeting_summaries m ON m.id = (claim->>'meeting_id')::uuid AND m.available
-                   WHERE claim->>'superseded' IS DISTINCT FROM 'true'
+                   WITH claim_sources AS (
+                       SELECT m.id FROM jsonb_array_elements(page.claims) claim
+                       JOIN meeting_summaries m ON m.id = (claim->>'meeting_id')::uuid AND m.available
+                       WHERE claim->>'superseded' IS DISTINCT FROM 'true'
+                   )
+                   SELECT (SELECT count(*) FROM claim_sources) AS claim_count,
+                          (SELECT count(*) FROM (
+                              SELECT id::text FROM claim_sources UNION
+                              SELECT source.value->>'meeting_id' FROM jsonb_each(page.metadata_provenance) source
+                              WHERE page.metadata ? source.key AND source.value->>'human' IS DISTINCT FROM 'true'
+                                AND {profile_metadata.source_sql('source.value')}
+                          ) meeting_sources) AS meeting_count
                ) visible ORDER BY {column.format(alias='page')} {direction}, page.id ASC""",
             (*params, limit, offset),
         )
@@ -302,21 +319,17 @@ def reset_progress(meeting_id: str, owner: str, transcript_hash: str) -> None:
     save_progress(meeting_id, owner, transcript_hash, {})
 
 
-def _validate_candidates(artifact: dict, catalog: dict[str, dict], record: dict) -> list[dict]:
-    expected = artifact.get("expected_revisions")
-    if not isinstance(expected, dict) or set(expected) != set(catalog) or any(type(value) is not int or value < 0 for value in expected.values()):
-        raise ValueError("Profile output requires every participant revision")
-    candidates = artifact.get("items")
+def _validated_outputs(candidates: list, schema, catalog: dict[str, dict], record: dict) -> list[dict]:
     if not isinstance(candidates, list):
         raise ValueError("Profile output items must be an array")
     segments = {item["id"]: item["text"] for item in record["transcript"]["segments"]}
-    claims = []
+    result = []
     for item in candidates:
         try:
-            item = ProfileClaim.model_validate(item).model_dump()
+            item = schema.model_validate(item).model_dump()
         except ValidationError:
-            raise ValueError("Profile claim does not match the output schema") from None
-        subject, target = item["subject_id"], item["target_id"]
+            raise ValueError("Profile output does not match the output schema") from None
+        subject, target = item["subject_id"], item.get("target_id")
         if subject not in catalog or (target is not None and target not in catalog):
             raise ValueError("Profile claim references an unknown participant")
         evidence = item["evidence"]
@@ -324,6 +337,17 @@ def _validate_candidates(artifact: dict, catalog: dict[str, dict], record: dict)
         if any(entry["segment_id"] not in allowed or not entry["quote"].strip()
                or entry["quote"] not in segments.get(entry["segment_id"], "") for entry in evidence):
             raise ValueError("Profile claim requires exact evidence from its subject")
+        result.append(item)
+    return result
+
+
+def _validate_candidates(artifact: dict, catalog: dict[str, dict], record: dict) -> list[dict]:
+    expected = artifact.get("expected_revisions")
+    if not isinstance(expected, dict) or set(expected) != set(catalog) or any(type(value) is not int or value < 0 for value in expected.values()):
+        raise ValueError("Profile output requires every participant revision")
+    claims = []
+    for item in _validated_outputs(artifact.get("items"), ProfileClaim, catalog, record):
+        target = item["target_id"]
         claims.append({
             **item,
             "meeting_id": str(record["meeting_id"]), "source_url": record["snapshot"]["source_url"],
@@ -373,6 +397,7 @@ def apply_profiles(meeting_id: str, owner: str, transcript_hash: str, artifact: 
         if record.get("participants_revision", 0) != artifact.get("participants_revision", 0):
             raise ProfileRevisionConflict("Meeting participants changed; rebuild the profile candidate")
         claims = _validate_candidates(artifact, catalog, record)
+        metadata_updates = _validated_outputs(artifact.get("metadata_updates", []), ProfileMetadataPatch, catalog, record)
         rows = {}
         if catalog:
             cur.execute("SELECT * FROM participant_profiles WHERE id IN %s ORDER BY id FOR UPDATE", (tuple(catalog),))
@@ -382,6 +407,7 @@ def apply_profiles(meeting_id: str, owner: str, transcript_hash: str, artifact: 
             if ((row["revision"] if row else 0) != artifact["expected_revisions"][profile_id]
                     or (row and (row["merged_into"] is not None or row["identity_key"] != catalog[profile_id]["identity_key"]))):
                 raise ProfileRevisionConflict("Participant profile changed; rebuild the profile candidate")
+        contexts = _source_contexts(cur, list(rows.values()))
         all_claims = claims + [claim for row in rows.values() for claim in row["claims"]]
         identity_ids = {claim[key] for claim in all_claims for key in ("subject_id", "target_id") if claim.get(key)}
         canonical_ids = {key: str(row["id"]) if row else key
@@ -400,25 +426,33 @@ def apply_profiles(meeting_id: str, owner: str, transcript_hash: str, artifact: 
             if any((claim["subject_id"], claim.get("target_id")) in dismissed for claim in claims):
                 raise ProfileRevisionConflict("This relationship was removed; honor the human correction")
         applied = []
-        affected = {claim[key] for claim in claims for key in ("subject_id", "target_id") if claim.get(key)}
+        affected = ({claim[key] for claim in claims for key in ("subject_id", "target_id") if claim.get(key)}
+                    | {patch["subject_id"] for patch in metadata_updates})
         for profile_id in sorted(affected):
             additions = [claim for claim in claims if claim["subject_id"] == profile_id]
             row = rows.get(profile_id)
+            if row and row["deleted"]:
+                raise ProfileRevisionConflict("A participant profile was deleted")
             cumulative = _cumulative_claims(row["claims"] if row else [], additions, canonical_ids)
+            metadata, provenance = profile_metadata.fill_missing(row or {},
+                [patch for patch in metadata_updates if patch["subject_id"] == profile_id], record, contexts)
+            metadata_changed = (metadata, provenance) != ((row or {}).get("metadata", {}), (row or {}).get("metadata_provenance", {}))
             if row:
-                if cumulative != row["claims"]:
-                    cur.execute("UPDATE participant_profiles SET claims = %s, revision = revision + 1, updated_at = clock_timestamp() WHERE id = %s",
-                                (Json(cumulative), profile_id))
+                if cumulative != row["claims"] or metadata_changed:
+                    cur.execute("""UPDATE participant_profiles SET claims = %s, metadata = %s, metadata_provenance = %s,
+                                revision = revision + 1, updated_at = clock_timestamp() WHERE id = %s""",
+                                (Json(cumulative), Json(metadata), Json(provenance), profile_id))
             else:
                 participant = catalog[profile_id]
                 cur.execute(
-                    """INSERT INTO participant_profiles (id, identity_key, display_name, email, identity_scope, claims)
-                       VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING RETURNING id""",
-                    (profile_id, participant["identity_key"], participant["display_name"], participant.get("email"), participant["identity_scope"], Json(cumulative)),
+                    """INSERT INTO participant_profiles (id, identity_key, display_name, email, identity_scope, claims, metadata, metadata_provenance)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING RETURNING id""",
+                    (profile_id, participant["identity_key"], participant["display_name"], participant.get("email"), participant["identity_scope"],
+                     Json(cumulative), Json(metadata), Json(provenance)),
                 )
                 if not cur.fetchone():
                     raise ProfileRevisionConflict("Participant identity was created concurrently")
-            if additions:
+            if additions or metadata_changed:
                 applied.append(profile_id)
         from services.meetings.relationship_db import ensure_claim_links
 
@@ -500,24 +534,24 @@ def update_metadata(profile_id: str, expected_revision: int, *, display_name: st
         new_tags = normalized_tags if normalized_tags is not None else row["tags"]
         new_starred = starred if starred is not None else row["starred"]
         new_name = normalized_name if normalized_name is not None else row["display_name"]
-        new_metadata = profile_fields.patch(row["metadata"], normalized_metadata) if normalized_metadata is not None else row["metadata"]
+        new_metadata, new_provenance = profile_metadata.human_patch(row, normalized_metadata) if normalized_metadata is not None else (row["metadata"], row["metadata_provenance"])
         new_notes = profile_fields.patch(row["section_notes"], normalized_notes) if normalized_notes is not None else row["section_notes"]
         new_nicknames = normalized_nicknames if normalized_nicknames is not None else row["nicknames"]
-        before = (row["display_name"], row["tags"], row["starred"], row["metadata"], row["section_notes"], row["nicknames"])
-        after = (new_name, new_tags, new_starred, new_metadata, new_notes, new_nicknames)
+        before = (row["display_name"], row["tags"], row["starred"], row["metadata"], row["section_notes"], row["nicknames"], row["metadata_provenance"])
+        after = (new_name, new_tags, new_starred, new_metadata, new_notes, new_nicknames, new_provenance)
         if before != after:
             cur.execute(
                 """UPDATE participant_profiles SET display_name = %s, tags = %s, starred = %s,
-                   metadata = %s, section_notes = %s, nicknames = %s, revision = revision + 1,
+                   metadata = %s, section_notes = %s, nicknames = %s, metadata_provenance = %s, revision = revision + 1,
                    updated_at = clock_timestamp() WHERE id = %s RETURNING *""",
-                (new_name, new_tags, new_starred, Json(new_metadata), Json(new_notes), new_nicknames, row["id"]),
+                (new_name, new_tags, new_starred, Json(new_metadata), Json(new_notes), new_nicknames, Json(new_provenance), row["id"]),
             )
             row = dict(cur.fetchone())
         return _detail(cur, row)
 
 
 def _attributes(row: dict) -> dict:
-    return {key: row[key] for key in ("display_name", "email", "identity_scope", "tags", "starred", "metadata", "section_notes", "nicknames")}
+    return {key: row[key] for key in ("display_name", "email", "identity_scope", "tags", "starred", "metadata", "section_notes", "nicknames", "metadata_provenance")}
 
 
 def _merge_claims(target: list[dict], source: list[dict]) -> tuple[list[dict], list[str]]:
@@ -551,16 +585,16 @@ def merge_profiles(source_id: str, target_id: str, expected_revision: int, targe
             "previous_source": _attributes(source), "previous_target": _attributes(target),
         }]
         email = target["email"] or source["email"]
-        metadata = {**source["metadata"], **target["metadata"]}
+        metadata, provenance = profile_metadata.merge(source, target, _source_contexts(cur, [source, target]))
         section_notes = {**source["section_notes"], **target["section_notes"]}
         nicknames = profile_fields.nicknames(list(dict.fromkeys(target["nicknames"] + source["nicknames"])))
         cur.execute(
             """UPDATE participant_profiles SET claims = %s, tags = %s, starred = %s, email = %s,
                identity_scope = %s, merge_history = %s, revision = %s, metadata = %s, section_notes = %s,
-               nicknames = %s, updated_at = clock_timestamp()
+               nicknames = %s, metadata_provenance = %s, updated_at = clock_timestamp()
                WHERE id = %s RETURNING *""",
             (Json(claims), tags, target["starred"] or source["starred"], email, "email" if email else target["identity_scope"],
-             Json(history), max(source["revision"], target["revision"]) + 1, Json(metadata), Json(section_notes), nicknames, target["id"]),
+             Json(history), max(source["revision"], target["revision"]) + 1, Json(metadata), Json(section_notes), nicknames, Json(provenance), target["id"]),
         )
         winner = dict(cur.fetchone())
         from services.meetings.relationship_db import merge_profile_links

@@ -34,9 +34,23 @@ must cite a supplied segment_id and an exact, nonblank quote from that segment's
 Do not infer a named speaker from anonymous diarization labels or attendee membership.
 Do not invent facts, commitments, dates or identities. Clearly retain uncertainty/questions.
 
+Prioritize important information that will help future work: product/business context,
+security requirements, material decisions and their rationale, constraints, risks, blockers,
+and unresolved questions. Capture explicit action items as commitment memories. State the
+task or deliverable, supported owner, due date or original due phrase, dependencies and
+status when the transcript supplies them. Distinguish proposals from agreed commitments.
+Never invent an owner or deadline. Preserve relative dates unless the actual meeting date
+and timezone make the meaning unambiguous; provider_updated_at is not a meeting date.
+Keep memories concise and self-contained, rather than retelling the discussion or greetings.
+
 Call stage_memories with at most 20 items covering distinct useful facts, decisions,
-commitments, constraints, preferences, lessons or questions. Content must stand alone and
-stay within 4000 characters. Cite evidence from THIS window, not another window or memory.
+commitments, constraints, preferences, lessons or questions. Each item needs 1-8 meaningful
+topic tags a future agent could use, such as product, paralign, security, authentication,
+roadmap or hiring, only when supported by its content/context. Reuse relevant existing topic
+labels when suitable. Tags are at most 50 characters, lowercase with hyphens between words.
+Do not tag meeting origin or IDs, dates, or use only generic labels like decision or fact.
+Origin is separate metadata. Content must stand alone and stay within 4000 characters.
+Cite evidence from THIS window, not another window or memory.
 An empty item list is valid when nothing useful is new; supply a concrete reason. Fix any
 staging errors and stage again. Only staged items are returned; final prose is ignored.
 """
@@ -140,10 +154,10 @@ class AnalysisContext:
         self.collector.update(items=[item.model_dump() for item in items], reason=reason.strip())
         return json.dumps({"staged": len(items)})
 
-    def configure_stage(self, stage_tool):
+    def configure_stage(self, stage_tool, *, validation_feedback: str | None = None):
         def rejected_submission(_error) -> str:
             self.collector.clear()
-            return "Staging rejected: use at most 20 typed items, valid fields and nonblank content/evidence within the stated limits."
+            return validation_feedback or "Staging rejected: use at most 20 typed items, valid fields and nonblank content/evidence within the stated limits."
 
         stage_tool.handle_validation_error = rejected_submission
         return stage_tool
@@ -272,6 +286,10 @@ async def analyze_memories(
 
     return await run_analysis(
         context, model_role="meeting_memory", system_prompt=_SYSTEM_PROMPT,
-        tools=[*context.research_tools(), context.configure_stage(stage_memories)],
+        tools=[*context.research_tools(), context.configure_stage(stage_memories, validation_feedback=(
+            "Staging rejected: use at most 20 typed items with supported kinds, nonblank content, "
+            "exact evidence and 1-8 short topic tags. Include a real topic, not only a memory kind; "
+            "do not include meeting-memory or meeting:<id> tags."
+        ))],
         data=context.quoted_data(), label="Memory", error_class=MemoryAnalysisError, deadline=deadline,
     )

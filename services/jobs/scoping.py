@@ -22,7 +22,10 @@ def resolve_job_targets(job_id: int, device_name: str) -> list[str]:
     An empty list means the job does not run on this device (no enabled
     additive config matches, or every match is excluded).
     """
-    configs = list_configs(job_id)
+    return job_targets(list_configs(job_id), device_name)
+
+
+def job_targets(configs: list[dict], device_name: str) -> list[str]:
     relevant = [
         c for c in configs
         if c["enabled"] and _device_matches(c["device"], device_name)

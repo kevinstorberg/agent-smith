@@ -24,7 +24,7 @@ class BackgroundJobModel(BaseModel):
         where: str = "WHERE state = 'active'",
         params: tuple = (),
         order_by: str = "updated_at DESC",
-        limit: int = 100,
+        limit: int | None = 100,
         offset: int = 0,
     ) -> tuple[list[dict], int]:
         return super().list(
@@ -61,6 +61,14 @@ class BackgroundJobModel(BaseModel):
         return items[0] if items else None
 
     @classmethod
+    def list_for_graph(cls, graph_type: str) -> list[dict]:
+        items, _ = cls.list(
+            where="WHERE state = 'active' AND input_params->>'graph_type' = %s",
+            params=(graph_type,), limit=None,
+        )
+        return items
+
+    @classmethod
     def update(cls, job_id: int, **fields) -> None:
         """Update a background job, bumping its version for optimistic concurrency."""
         clean = cls._collect_fields(**fields)
@@ -78,6 +86,7 @@ class BackgroundJobModel(BaseModel):
 list_jobs = BackgroundJobModel.list
 get_job = BackgroundJobModel.read
 get_job_by_name = BackgroundJobModel.get_by_name
+list_graph_jobs = BackgroundJobModel.list_for_graph
 create_job = BackgroundJobModel.create
 update_job = BackgroundJobModel.update
 delete_job = BackgroundJobModel.destroy

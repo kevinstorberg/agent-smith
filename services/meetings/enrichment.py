@@ -74,7 +74,7 @@ class DigestionRun(processing.ProcessingRun):
         artifact = copy.deepcopy(record["memory_artifact"]) or {
             "version": 1, "offset": 0, "items": [], "published_ids": [],
             "created_at": datetime.now(timezone.utc).isoformat(), "reason": "",
-            "model": resolve_model_id("meeting_memory", "curator"), "prompt_version": 1,
+            "model": resolve_model_id("meeting_memory", "curator"), "prompt_version": 2,
         }
         if not record["memory_artifact"]:
             from services.meetings.vocabulary_db import relevant
@@ -101,8 +101,10 @@ class DigestionRun(processing.ProcessingRun):
             if item["id"] in artifact["published_ids"]:
                 continue
             await run_db(memory_db.assert_publishable, meeting_id, self.owner, record["transcript_hash"])
+            # Older checkpoints must replay their exact publication after a lost receipt.
+            tags = item["tags"] if "tags" in item else ["meeting-memory", f"meeting:{meeting_id}", item["kind"]]
             await run_db(publish, item["id"], memory_content(record["snapshot"], item),
-                         repo=record["snapshot"].get("project"), tags=["meeting-memory", f"meeting:{meeting_id}", item["kind"]],
+                         repo=record["snapshot"].get("project"), tags=tags,
                          created_at=artifact["created_at"], source_type="meeting", source_id=meeting_id)
             artifact["published_ids"].append(item["id"])
             await run_db(memory_db.save_progress, meeting_id, self.owner, record["transcript_hash"], artifact)

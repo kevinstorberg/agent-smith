@@ -182,9 +182,25 @@ def _filter_and_sort(
     return out
 
 
-def _to_row(*, content: str, id: str, meta: dict) -> dict:
+def _stored_tags(meta: dict) -> list[str]:
     tags = meta.get("tags") or []
-    tags = json.loads(tags) if isinstance(tags, str) else list(tags)
+    return json.loads(tags) if isinstance(tags, str) else list(tags)
+
+
+def _meeting_origin_tag(tag: str) -> bool:
+    if tag == "meeting-memory":
+        return True
+    if tag.startswith("meeting:"):
+        try:
+            uuid.UUID(tag.removeprefix("meeting:"))
+            return True
+        except ValueError:
+            pass
+    return False
+
+
+def _to_row(*, content: str, id: str, meta: dict) -> dict:
+    tags = _stored_tags(meta)
     source_type, source_id = meta.get("source_type"), meta.get("source_id")
     if source_type is None and "meeting-memory" in tags:
         for tag in tags:
@@ -200,7 +216,7 @@ def _to_row(*, content: str, id: str, meta: dict) -> dict:
         "id": id,
         "content": content,
         "repo": meta.get("repo") or None,
-        "tags": tags,
+        "tags": [tag for tag in tags if not _meeting_origin_tag(tag)] if source_type == "meeting" else tags,
         "source_type": source_type,
         "source_id": source_id,
         "from_meeting": source_type == "meeting",
@@ -295,14 +311,15 @@ def publish(id: str, content: str, repo: str | None = None, tags: list[str] | No
         except (ValueError, TypeError, AttributeError):
             raise ValueError("Meeting memory source_id must be a UUID") from None
     stamp = _publication_time(created_at)
-    existing = get(id)
+    raw = get_backend().get_row(id)
+    existing = _raw_to_row(raw) if raw else None
     if existing is not None:
         try:
             same_time = _publication_time(existing.get("created_at")) == stamp
         except ValueError:
             same_time = False
         if (not same_time or existing["content"] != content or existing["repo"] != (repo or None)
-                or existing["tags"] != (tags or [])
+                or _stored_tags(raw.get("metadata", {})) != (tags or [])
                 or (source_type is not None and (existing.get("source_type"), existing.get("source_id")) != (source_type, source_id))):
             raise MemoryConflictError(f"Memory {id} differs from its frozen publication") from None
         return id
