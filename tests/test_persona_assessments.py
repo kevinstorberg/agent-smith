@@ -62,8 +62,11 @@ def roster_observed(source, participants):
     digestion_db.save_capture(meeting_id, "roster-capture", digestion_db.get_context(meeting_id), {"segments": segments}, complete=True)
     record = digestion_db.get_record(meeting_id)
     memory_db.save_progress(meeting_id, "roster-capture", record["transcript_hash"], {"items": [], "reason": "No new memory"}, complete=True)
+    # This fixture starts from historical evidence to verify assessment rebasing.
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE meeting_digestions SET speaker_status='legacy' WHERE meeting_id=%s", (meeting_id,))
     digestion_db.release(meeting_id, "roster-capture")
-    digestion_db.claim_profile(source.name, "roster-profiles")
+    assert digestion_db.claim_profile(source.name, "roster-profiles")["meeting_id"] == meeting_id
     artifact = candidate(participants)
     artifact["items"] = [{**artifact["items"][0], "subject_id": participants[0 if index < 2 else 1]["id"],
                           "target_id": None, "content": text, "evidence": [{"segment_id": f"segment-{index}", "quote": text}]}

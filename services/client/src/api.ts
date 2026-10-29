@@ -203,6 +203,7 @@ export interface TranscriptSegment {
     diarization_label?: string | null;
   };
   effective_speaker?: EffectiveSpeaker | null;
+  speaker_assignment?: MeetingParticipantInput | null;
   start_time: string | null;
   end_time: string | null;
 }
@@ -211,7 +212,7 @@ export interface EffectiveSpeaker {
   profile_id: string | null;
   display_name: string;
   email: string | null;
-  source: 'manual_assignment' | 'speaker_email' | 'attendee_match' | 'speaker_label';
+  source: 'manual_assignment' | 'automatic_statement' | 'speaker_email' | 'attendee_match' | 'speaker_label';
 }
 
 export interface MeetingTranscript extends Paginated<TranscriptSegment> {
@@ -261,6 +262,7 @@ export interface MeetingParticipantInput {
   email?: string | null;
   profile_id?: string | null;
   speaker_key?: string | null;
+  segment_id?: string | null;
 }
 
 export interface MeetingParticipants {
@@ -272,6 +274,14 @@ export interface MeetingParticipants {
   running: boolean;
   enrolled: boolean;
   stale_speaker_keys?: string[];
+  stale_segment_ids?: string[];
+  edit_lock_reason?: 'capturing_transcript' | 'identifying_participants' | 'analyzing_personas' | null;
+  transcript_hash?: string | null;
+  attribution?: {
+    status: 'pending' | 'done' | 'failed' | 'legacy' | 'not_imported' | 'running';
+    error_type: string | null;
+    progress: { processed_units: number; total_units: number | null; staged_count: number; saved_count: number; attempts: number; next_attempt_at: string | null };
+  };
 }
 
 export interface ProfileClaimCorrection {
@@ -313,6 +323,9 @@ export interface ParticipantProfile extends MeetingProfileSummary {
   section_evidence?: Partial<Record<ProfileSectionKey, ProfileSectionEvidence>>;
   assessment?: ProfileAssessmentState;
   relationships?: ProfileRelationship[];
+  evidence_loaded?: boolean;
+  claim_count?: number;
+  meeting_count?: number;
 }
 
 export interface ProfileMetadataFields {
@@ -321,8 +334,9 @@ export interface ProfileMetadataFields {
 }
 
 export type ProfileMetadataSource = { human: true } | {
-  human?: false; meeting_id: string; transcript_hash: string; participants_revision: number;
+  human?: false; meeting_id: string; transcript_hash?: string; participants_revision?: number;
   evidence: { segment_id: string; quote: string }[];
+  evidence_count?: number;
 };
 
 export type ProfileSectionKey = 'overview' | 'drivers' | 'strengths' | 'development_areas' | 'working_style' | 'relationships';
@@ -333,6 +347,7 @@ export interface ProfileSectionEvidence {
   claim_ids?: string[];
   coverage?: { claim_count: number; meeting_count: number };
   generated_at?: string;
+  claim_count?: number;
 }
 export interface ProfileAssessmentState {
   status: 'pending' | 'running' | 'failed' | 'current' | 'insufficient_evidence';
@@ -356,6 +371,13 @@ export interface ProfileRelationship {
   id: string; subject_id: string; target_id: string; subject_name: string; target_name: string;
   label: string; notes: string; revision: number; dismissed: boolean; claims: ProfileClaim[];
   created_at: string; updated_at: string;
+  claim_count?: number;
+  history_count?: number;
+}
+
+export interface ProfileClaimsPage extends Paginated<ProfileClaim> {
+  profile_id: string;
+  revision: number;
 }
 
 export interface MeetingVocabulary {
@@ -674,8 +696,9 @@ export const api = {
     profiles: (id: string) => get<MeetingProfiles>(`/meetings/${encodeURIComponent(id)}/profiles`),
     retryProfiles: (id: string) => post<{ success: boolean }>(`/meetings/${encodeURIComponent(id)}/profiles/retry`, {}),
     participants: (id: string) => get<MeetingParticipants>(`/meetings/${encodeURIComponent(id)}/participants`),
-    updateParticipants: (id: string, body: { expected_revision: number; participants: MeetingParticipantInput[] }) =>
+    updateParticipants: (id: string, body: { expected_revision: number; participants: MeetingParticipantInput[]; expected_transcript_hash?: string | null }) =>
       put<MeetingParticipants>(`/meetings/${encodeURIComponent(id)}/participants`, body),
+    identifyParticipants: (id: string) => post<{ status: 'queued' | 'running' | 'done' }>(`/meetings/${encodeURIComponent(id)}/identify-participants`, {}),
     process: (id: string) => post<{ status: 'queued' | 'running' | 'done' }>(`/meetings/${encodeURIComponent(id)}/process`, {}),
     vocabulary: {
       list: () => get<Paginated<MeetingVocabulary>>('/meetings/vocabulary'),
@@ -685,7 +708,7 @@ export const api = {
     },
   },
   profiles: {
-    create: (body: { display_name: string; email?: string }) => post<ParticipantProfile>('/profiles', body),
+    create: (body: { display_name: string; email?: string }) => post<ParticipantProfile>('/profiles?include_evidence=false', body),
     list: (params?: PaginationParams & { q?: string; tags?: string[]; starred?: boolean; sort?: string }) => get<Paginated<ProfileSummary>>('/profiles', {
       ...paginationToParams(params),
       ...(params?.q ? { q: params.q } : {}),
@@ -693,23 +716,24 @@ export const api = {
       ...(params?.starred !== undefined ? { starred: String(params.starred) } : {}),
       ...(params?.sort ? { sort: params.sort } : {}),
     }),
-    get: (id: string) => get<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}`),
-    update: (id: string, body: ProfileUpdateInput) => patch<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}`, body),
+    get: (id: string) => get<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}`, { include_evidence: 'false' }),
+    claims: (id: string, params?: PaginationParams) => get<ProfileClaimsPage>(`/profiles/${encodeURIComponent(id)}/claims`, paginationToParams(params)),
+    update: (id: string, body: ProfileUpdateInput) => patch<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}?include_evidence=false`, body),
     rebuild: (id: string, expected_revision: number) => post<ProfileBuildResult>(`/profiles/${encodeURIComponent(id)}/rebuild`, { expected_revision }),
     history: (id: string, params?: PaginationParams) => get<Paginated<ProfileRevision>>(`/profiles/${encodeURIComponent(id)}/history`, paginationToParams(params)),
     historyOne: (id: string, revisionId: number) => get<ProfileRevision>(`/profiles/${encodeURIComponent(id)}/history/${revisionId}`),
     merge: (id: string, body: { target_id: string; expected_revision: number; target_revision: number }) =>
-      post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/merge`, body),
+      post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/merge?include_evidence=false`, body),
     linkEmail: (id: string, body: { email: string; expected_revision: number }) =>
-      post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/aliases`, body),
+      post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/aliases?include_evidence=false`, body),
     createRelationship: (id: string, body: { target_id: string; target_revision: number; expected_revision: number; label: string; notes: string }) =>
-      post<ProfileRelationship>(`/profiles/${encodeURIComponent(id)}/relationships`, body),
+      post<ProfileRelationship>(`/profiles/${encodeURIComponent(id)}/relationships?include_evidence=false`, body),
     updateRelationship: (id: string, relationshipId: string, body: { expected_revision: number; label?: string; notes?: string }) =>
-      patch<ProfileRelationship>(`/profiles/${encodeURIComponent(id)}/relationships/${encodeURIComponent(relationshipId)}`, body),
+      patch<ProfileRelationship>(`/profiles/${encodeURIComponent(id)}/relationships/${encodeURIComponent(relationshipId)}?include_evidence=false`, body),
     removeRelationship: (id: string, relationshipId: string, expected_revision: number) =>
       del<{ deleted: boolean; id: string }>(`/profiles/${encodeURIComponent(id)}/relationships/${encodeURIComponent(relationshipId)}`, { expected_revision }),
     correctClaim: (id: string, claimId: string, body: ClaimCorrectionInput) =>
-      post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/claims/${encodeURIComponent(claimId)}`, body),
+      post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/claims/${encodeURIComponent(claimId)}?include_evidence=false`, body),
     remove: (id: string, expectedRevision: number) =>
       del<{ deleted: boolean; id: string }>(`/profiles/${encodeURIComponent(id)}`, { expected_revision: expectedRevision }),
   },

@@ -46,7 +46,7 @@ export function PersonaJob({ onChanged }: { onChanged: () => void }) {
     }
   };
 
-  return <section className="card" aria-label="Persona processing">
+  return <section className="card persona-job" aria-label="Persona processing">
     <div className="page-header profiles-header"><h3 className="section-title">Persona processing</h3>
       <button className="btn" disabled={loading || Boolean(error) || !selected || running} onClick={run}>{running ? 'Running personas...' : 'Run personas'}</button>
     </div>

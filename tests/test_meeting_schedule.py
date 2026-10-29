@@ -119,7 +119,7 @@ def test_concurrent_configuration_creates_one_job_and_one_device_scope(source):
 
 
 @pytest.mark.asyncio
-async def test_fifteen_minute_schedule_fires_twice_and_restart_uses_actual_history(source, monkeypatch):
+async def test_fifteen_minute_schedule_fires_twice_and_restart_uses_actual_history(source, monkeypatch, unidentified_speakers):
     stamp = datetime(2026, 1, 1, tzinfo=timezone.utc)
     summary = MeetingSummary("scheduled-note", "A scheduled meeting", "A durable decision", None, "https://example.test/note", stamp, stamp)
     providers = []

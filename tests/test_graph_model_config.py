@@ -328,3 +328,15 @@ def test_shipped_config_gives_each_chat_participant_its_own_model():
 def test_shipped_config_holds_only_placeholder_api_keys():
     with pytest.raises(ValueError, match="must be a real Amazon Bedrock API key"):
         load_model_config("opinion", env=read_env_file(REPO_ROOT / ".env.default"))
+
+
+def test_speaker_role_uses_its_small_preset_and_parent_credentials_without_large_fallback():
+    shipped = _shipped_env()
+    config = load_model_config("meeting_speaker", "curator", env=shipped)
+    assert config.model_id == "openai.gpt-oss-20b-1:0"
+    assert config.server_url == RUNTIME_US_EAST_1
+    assert config.server_api_key == API_KEY
+    assert config.max_tokens == 4096
+    assert config.request_timeout == 30 and config.max_retries == 0 and not config.streaming
+    assert dict(config.extra_body) == {"reasoning_effort": "low"}
+    assert resolve_model_id("persona", "curator", env=shipped) == "us.moonshotai.kimi-k3"

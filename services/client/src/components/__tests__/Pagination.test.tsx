@@ -3,6 +3,15 @@ import { describe, it, expect, vi } from 'vitest';
 import { Pagination } from '../Pagination';
 
 describe('Pagination', () => {
+  it('supports fixed page sizes and locks navigation during an edit', () => {
+    const change = vi.fn();
+    render(<Pagination total={45} limit={20} offset={0} onPageChange={change} disabled />);
+    expect(screen.getByText(/1–20 of 45/)).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(change).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '2' })).toBeDisabled();
+  });
   it('renders nothing when total is 0', () => {
     const { container } = render(
       <Pagination total={0} limit={10} offset={0} onPageChange={vi.fn()} onLimitChange={vi.fn()} />

@@ -51,7 +51,7 @@ def feed(source, monkeypatch):
 
 
 @pytest.fixture
-def agents(monkeypatch):
+def agents(monkeypatch, unidentified_speakers):
     from services.meetings import analysis, profile_analysis
     from services.memory import db as vector_db
 
@@ -98,6 +98,8 @@ def ready(source, feed):
         }, complete=True)
     finally:
         digestion_db.release(meeting_id, owner)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE meeting_digestions SET speaker_status='legacy' WHERE meeting_id=%s", (meeting_id,))
     return meeting_id
 
 

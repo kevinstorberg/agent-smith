@@ -18,7 +18,7 @@ from tests.test_memory_publication import CREATED, isolated_store as isolated_st
 
 
 @pytest.mark.asyncio
-async def test_real_react_to_publication_preserves_topic_tags_and_action_details(source, feed, model):
+async def test_real_react_to_publication_preserves_topic_tags_and_action_details(source, feed, model, unidentified_speakers):
     action = "Sam will deliver the Paralign MFA security review by 2026-11-02; the audit is blocked until it is ready."
     feed.segments = transcript_page(action).segments
     items = [{

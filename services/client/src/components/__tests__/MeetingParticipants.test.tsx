@@ -8,7 +8,7 @@ import { MeetingParticipants } from '../MeetingParticipants';
 
 vi.mock('../../api', async importOriginal => {
   const actual = await importOriginal<typeof import('../../api')>();
-  return { ...actual, api: { meetings: { participants: vi.fn(), updateParticipants: vi.fn(), process: vi.fn() }, profiles: { list: vi.fn() } } };
+  return { ...actual, api: { meetings: { participants: vi.fn(), updateParticipants: vi.fn(), process: vi.fn(), identifyParticipants: vi.fn() }, profiles: { list: vi.fn() } } };
 });
 import { api, ApiError } from '../../api';
 
@@ -139,5 +139,102 @@ describe('MeetingParticipants', () => {
     expect(screen.queryByText(/PRIVATE_READER_DETAIL/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText(/Provider Person/)).toBeInTheDocument();
+  });
+
+  it('allows assignments during unrelated memory work and explains a persona lock', async () => {
+    read.mockResolvedValue({ ...empty, running: true, edit_lock_reason: null });
+    const rendered = renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
+    expect(await screen.findByRole('button', { name: 'Assign speaker' })).toBeEnabled();
+    rendered.unmount();
+    read.mockResolvedValue({ ...empty, running: true, edit_lock_reason: 'analyzing_personas' });
+    renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
+    expect(await screen.findByRole('button', { name: 'Assign speaker' })).toBeDisabled();
+    expect(screen.getByText(/current persona review finishes/)).toBeInTheDocument();
+  });
+
+  it('saves a single statement with its transcript hash without assigning the shared channel', async () => {
+    read.mockResolvedValue({ ...empty, transcript_hash: 'b'.repeat(64), edit_lock_reason: null });
+    renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} statement={{ id: 'segment-2', text: 'My own statement.' }} />);
+    await screen.findByLabelText('Name');
+    expect(screen.queryByLabelText('Transcript speaker')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Casey' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save participant' }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith('meeting-id', { expected_revision: 0, expected_transcript_hash: 'b'.repeat(64),
+      participants: [{ name: 'Casey', segment_id: 'segment-2' }] }));
+  });
+
+  it('preserves an unsaved participant draft when a different statement is selected', async () => {
+    const busy = vi.fn();
+    const view = renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} onBusyChange={busy} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Add participant' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Unsaved person' } });
+    view.rerender(<MeetingParticipants meetingId="meeting-id" onChanged={changed} onBusyChange={busy} statement={{ id: 'segment-7', text: 'Another statement' }} />);
+    expect(screen.getByLabelText('Name')).toHaveValue('Unsaved person');
+    expect(screen.getByLabelText('Transcript speaker')).toBeInTheDocument();
+    expect(busy).toHaveBeenLastCalledWith(true);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('keeps the submitted statement and fields while a save is in flight', async () => {
+    let finish: (value: Participants) => void = () => undefined;
+    update.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    read.mockResolvedValue({ ...empty, transcript_hash: 'b'.repeat(64) });
+    const closed = vi.fn();
+    const view = renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} onStatementClosed={closed}
+      statement={{ id: 'segment-0', text: 'Original statement' }} />);
+    fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'Original person' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save participant' }));
+    view.rerender(<MeetingParticipants meetingId="meeting-id" onChanged={changed} onStatementClosed={closed}
+      statement={{ id: 'segment-1', text: 'Different statement' }} />);
+    expect(screen.getByLabelText('Name')).toHaveValue('Original person');
+    expect(screen.getByText('Original statement')).toBeInTheDocument();
+    expect(screen.queryByText('Different statement')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Saving...' })).toBeDisabled();
+    expect(update).toHaveBeenCalledWith('meeting-id', { expected_revision: 0, expected_transcript_hash: 'b'.repeat(64),
+      participants: [{ name: 'Original person', segment_id: 'segment-0' }] });
+    await act(async () => { finish({ ...empty, revision: 1 }); });
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
+  it('includes the captured hash when removing another person while retaining a statement assignment', async () => {
+    const statement = { name: 'Statement person', segment_id: 'segment-0' };
+    read.mockResolvedValue({ ...empty, transcript_hash: 'b'.repeat(64), items: [statement, { name: 'Other attendee' }] });
+    renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
+    const row = (await screen.findByText('Other attendee')).closest('li')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'Remove participant' }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith('meeting-id', { expected_revision: 0, expected_transcript_hash: 'b'.repeat(64), participants: [statement] }));
+  });
+
+  it('includes the captured hash when clearing stale channels while retaining statement assignments', async () => {
+    const statement = { name: 'Statement person', segment_id: 'segment-0' };
+    read.mockResolvedValue({ ...empty, transcript_hash: 'b'.repeat(64), items: [statement, { name: 'Old channel', speaker_key: 'stale-key' }], stale_speaker_keys: ['stale-key'] });
+    renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear outdated assignments' }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith('meeting-id', { expected_revision: 0, expected_transcript_hash: 'b'.repeat(64),
+      participants: [statement, { name: 'Old channel', speaker_key: null }] }));
+  });
+
+  it('clears stale statement assignments together after transcript deletion', async () => {
+    read.mockResolvedValue({ ...empty, transcript_hash: null, items: [{ name: 'A', segment_id: 'segment-0' }, { name: 'B', segment_id: 'segment-1' }],
+      stale_segment_ids: ['segment-0', 'segment-1'] });
+    renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear outdated statement assignments' }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith('meeting-id', { expected_revision: 0,
+      participants: [{ name: 'A', segment_id: null }, { name: 'B', segment_id: null }] }));
+  });
+
+  it('requires selecting a current statement if the transcript changed while saving', async () => {
+    read.mockResolvedValue({ ...empty, transcript_hash: 'b'.repeat(64) });
+    update.mockRejectedValueOnce(new ApiError('Transcript changed.', 409));
+    renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed}
+      statement={{ id: 'segment-0', text: 'Original transcript words' }} />);
+    fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'My draft' } });
+    read.mockResolvedValue({ ...empty, transcript_hash: 'c'.repeat(64) });
+    fireEvent.click(screen.getByRole('button', { name: 'Save participant' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Cancel this draft and select a current statement');
+    expect(screen.getByRole('button', { name: 'Save participant' })).toBeDisabled();
+    expect(screen.getByLabelText('Name')).toHaveValue('My draft');
+    expect(screen.getByText('Original transcript words')).toBeInTheDocument();
+    expect(update).toHaveBeenCalledTimes(1);
   });
 });

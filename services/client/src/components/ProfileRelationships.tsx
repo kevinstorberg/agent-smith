@@ -39,22 +39,15 @@ export function ProfileRelationships({ profile, disabled, onBusyChange, onReload
   });
   const busy = Boolean(draft) || save.loading || remove.loading;
   useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
-  return <section className="card" aria-label="Profile relationships">
-    <div className="page-header profiles-header"><h3 className="section-title">Relationships</h3>
-      <button className="btn" disabled={disabled || busy} onClick={() => { setNotice(null); setDraft({ edge: null, target: null, label: '', notes: '', revision: profile.revision, conflicted: false }); }}>Add relationship</button>
+  return <div className="profile-relationship-links">
+    <div className="relationship-actions">
+      <button className="btn btn-sm" disabled={disabled || busy} onClick={() => { setNotice(null); setDraft({ edge: null, target: null, label: '', notes: '', revision: profile.revision, conflicted: false }); }}>Add relationship</button>
     </div>
     {!profile.relationships?.some(edge => !edge.dismissed) && <p className="text-muted-sm">No relationships saved. Add someone you know, or review evidence from future persona analysis.</p>}
     {profile.relationships?.filter(edge => !edge.dismissed).map(edge => <article key={edge.id} className="relationship-row">
       <p><Link className="text-link" to={`/profiles/${edge.subject_id}`}>{edge.subject_name}</Link> → <Link className="text-link" to={`/profiles/${edge.target_id}`}>{edge.target_name}</Link></p>
       <p>{edge.label || 'Relationship'}</p><p className="text-muted-sm" style={{ whiteSpace: 'pre-wrap' }}>{edge.notes}</p>
-      {edge.claims.length > 0 && <details><summary>Meeting evidence ({edge.claims.length})</summary>
-        {edge.claims.map(claim => <div key={claim.id} style={{ marginTop: 8 }}>
-          {claim.status !== 'active' && <span className="tag tag-sm">{claim.status === 'rejected' ? 'Rejected by you' : 'Corrected by you'}</span>}
-          <p style={{ textDecoration: claim.status === 'rejected' ? 'line-through' : undefined }}>{claim.status === 'corrected' ? claim.correction?.content || claim.content : claim.content}</p>
-          {claim.correction?.reason && <p className="text-muted-sm">Reason: {claim.correction.reason}</p>}
-          <Link className="text-link" to={`/meetings/${claim.meeting_id}#meeting-transcript`}>Source meeting</Link>
-        </div>)}
-      </details>}
+      {(edge.claim_count ?? edge.claims.length) > 0 && <p className="text-muted-sm"><Link className="text-link" to={`/profiles/${edge.subject_id}?tab=evidence`}>Meeting evidence ({edge.claim_count ?? edge.claims.length})</Link></p>}
       <div className="flex-wrap" style={{ marginTop: 8 }}>
         <button className="btn btn-sm" disabled={disabled || busy} onClick={() => { setNotice(null); setDraft({ edge, target: null, label: edge.label, notes: edge.notes, revision: profile.revision, conflicted: false }); }}>Edit relationship</button>
         <button className="btn btn-sm btn-danger" disabled={disabled || busy} onClick={() => { if (confirm(`Remove the relationship from ${edge.subject_name} to ${edge.target_name}?`)) remove.mutate(edge); }}>Remove relationship</button>
@@ -74,5 +67,5 @@ export function ProfileRelationships({ profile, disabled, onBusyChange, onReload
         <button className="btn" type="button" disabled={save.loading} onClick={() => { setDraft(null); setNotice(null); }}>Cancel</button></div>
     </form>}
     {notice && <p role="alert">{notice}</p>}
-  </section>;
+  </div>;
 }

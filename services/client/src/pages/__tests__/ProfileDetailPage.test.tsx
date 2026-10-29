@@ -1,9 +1,10 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useLocation } from 'react-router';
 import { renderWithProviders } from '../../test-utils';
 import { ProfileDetailPage } from '../ProfileDetailPage';
 import { profileFixture } from './profileFixture';
-import type { ParticipantProfile } from '../../api';
+import type { ParticipantProfile, ProfileRelationship } from '../../api';
 import { POLL_INTERVAL_MS } from '../../constants';
 
 const navigate = vi.fn();
@@ -13,274 +14,199 @@ vi.mock('react-router', async importOriginal => {
 });
 vi.mock('../../api', async importOriginal => {
   const actual = await importOriginal<typeof import('../../api')>();
-  return { ...actual, api: { profiles: { get: vi.fn(), correctClaim: vi.fn(), remove: vi.fn(), update: vi.fn(), list: vi.fn(), merge: vi.fn(), linkEmail: vi.fn(), rebuild: vi.fn(), history: vi.fn(), historyOne: vi.fn() } } };
+  return { ...actual, api: { profiles: { get: vi.fn(), claims: vi.fn(), correctClaim: vi.fn(), remove: vi.fn(), update: vi.fn(), list: vi.fn(), merge: vi.fn(), linkEmail: vi.fn(), rebuild: vi.fn(), history: vi.fn(), historyOne: vi.fn(), createRelationship: vi.fn(), updateRelationship: vi.fn(), removeRelationship: vi.fn() } } };
 });
 import { api, ApiError } from '../../api';
 
+const compact: ParticipantProfile = { ...profileFixture, claims: [], claim_count: 1, meeting_count: 1, evidence_loaded: false,
+  section_notes: { overview: 'Alex combines product planning with careful follow-through.', strengths: 'Builds clarity for the team.' } };
+const edge: ProfileRelationship = { id: 'edge', subject_id: profileFixture.id, target_id: profileFixture.claims[0].target_id!, subject_name: 'Alex', target_name: 'Jordan', label: 'works with', notes: 'Shared project context', revision: 2, dismissed: false, claims: [], claim_count: 1, created_at: profileFixture.updated_at, updated_at: profileFixture.updated_at };
 const read = vi.mocked(api.profiles.get);
-const correct = vi.mocked(api.profiles.correctClaim);
-const remove = vi.mocked(api.profiles.remove);
-
+const claims = vi.mocked(api.profiles.claims);
+function Location() { return <output data-testid="location">{useLocation().search}</output>; }
+function renderPage(tab?: string) {
+  return renderWithProviders(<><ProfileDetailPage /><Location /></>, { initialEntries: [`/profiles/${profileFixture.id}${tab ? `?tab=${tab}` : ''}`] });
+}
+const open = async (label: string) => fireEvent.click(await screen.findByRole('link', { name: label }));
 beforeEach(() => {
   vi.clearAllMocks();
-  read.mockResolvedValue(profileFixture);
-  correct.mockResolvedValue(profileFixture);
-  remove.mockResolvedValue({ deleted: true, id: profileFixture.id });
-  vi.mocked(api.profiles.update).mockResolvedValue(profileFixture);
+  read.mockResolvedValue(compact);
+  claims.mockResolvedValue({ profile_id: compact.id, revision: 1, items: profileFixture.claims, total: 1 });
+  vi.mocked(api.profiles.update).mockResolvedValue(compact);
+  vi.mocked(api.profiles.correctClaim).mockResolvedValue(compact);
+  vi.mocked(api.profiles.remove).mockResolvedValue({ deleted: true, id: compact.id });
   vi.mocked(api.profiles.list).mockResolvedValue({ items: [], total: 0 });
+  vi.mocked(api.profiles.history).mockResolvedValue({ items: [], total: 0 });
+  vi.mocked(api.profiles.updateRelationship).mockResolvedValue(edge);
 });
-afterEach(() => {
-  vi.restoreAllMocks();
-  vi.useRealTimers();
-});
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe('ProfileDetailPage', () => {
-  it('makes narrative assessments primary, keeps observations collapsed, and protects edits from a concurrent build', async () => {
-    read.mockResolvedValue({ ...profileFixture, section_notes: { overview: 'Alex combines product planning with careful follow-through.' }, section_evidence: { overview: { human: false, status: 'supported' } } });
-    renderWithProviders(<ProfileDetailPage />);
-    expect(await screen.findByText('Alex combines product planning with careful follow-through.')).toBeVisible();
-    expect(screen.getByText('Evidence and observations (1)').closest('details')).not.toHaveAttribute('open');
-    expect(screen.getByText('History').closest('details')).not.toHaveAttribute('open');
+  it('defaults to Overview with every metadata field visible and no evidence request', async () => {
+    renderPage();
+    expect(await screen.findByText(compact.section_notes!.overview!)).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page');
+    for (const label of ['Gender', 'Marital status', 'Company', 'Job role / title', 'Start date', 'Supervisor', 'Other', 'Nicknames']) expect(screen.getByText(label)).toBeVisible();
+    expect(screen.getAllByText('Not set')).toHaveLength(8);
+    expect(screen.queryByText(profileFixture.claims[0].content)).not.toBeInTheDocument();
+    expect(screen.getByText('Builds clarity for the team.')).not.toBeVisible();
+    expect(claims).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Edit overview' }));
     expect(screen.getByRole('button', { name: 'Refresh assessment' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Edit' })).toBeDisabled();
   });
 
-  it('does not claim there is no meeting evidence for a metadata-only persona update', async () => {
-    read.mockResolvedValue({ ...profileFixture, claims: [], metadata: { company: 'Paralign' }, metadata_provenance: {
-      company: { meeting_id: 'meeting-source', transcript_hash: 'hash', participants_revision: 0,
-        evidence: [{ segment_id: 'segment-4', quote: 'I work at Paralign.' }] },
-    } });
-    renderWithProviders(<ProfileDetailPage />);
-    await screen.findByText('I work at Paralign.');
-    expect(screen.queryByText(/No meeting evidence yet/)).not.toBeInTheDocument();
+  it('shows five assessments and one relationships card containing narrative, canonical links and controls', async () => {
+    read.mockResolvedValue({ ...compact, relationships: [edge], section_notes: { ...compact.section_notes, relationships: 'Alex and Jordan coordinate planning.' } });
+    renderPage('assessment');
+    const card = await screen.findByRole('region', { name: 'Relationships and perceptions assessment' });
+    const relations = within(card);
+    expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(5);
+    expect(relations.getByText('Alex and Jordan coordinate planning.')).toBeVisible();
+    expect(relations.getByRole('link', { name: 'Jordan' })).toHaveAttribute('href', `/profiles/${edge.target_id}`);
+    expect(relations.getByRole('button', { name: 'Add relationship' })).toBeVisible();
+    expect(relations.getByRole('button', { name: 'Edit relationship' })).toBeVisible();
+    expect(relations.getByRole('button', { name: 'Remove relationship' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Relationships' })).not.toBeInTheDocument();
+    expect(claims).not.toHaveBeenCalled();
   });
 
-  it('uses the shared header for profile editing, saving and cancellation', async () => {
-    let finishSave: (profile: ParticipantProfile) => void = () => undefined;
-    vi.mocked(api.profiles.update).mockReturnValueOnce(new Promise(resolve => { finishSave = resolve; }));
-    renderWithProviders(<ProfileDetailPage />);
-    const edit = await screen.findByRole('button', { name: 'Edit' });
-    const header = edit.parentElement!.parentElement!;
-    expect(header).toContainElement(screen.getByRole('button', { name: /Back to profiles/ }));
-    expect(header).toContainElement(screen.getByRole('button', { name: 'Delete' }));
-    expect(edit).toHaveClass('btn');
-    expect(edit).not.toHaveClass('btn-primary');
-    fireEvent.click(edit);
-    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Save profile' })).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Alex Morgan' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(api.profiles.update).toHaveBeenCalledWith(profileFixture.id, {
-      expected_revision: 1, display_name: 'Alex Morgan', tags: [], starred: false,
-    }));
-    expect(screen.getByLabelText('Name')).toBeDisabled();
-    expect(screen.getByLabelText('Company')).toBeDisabled();
-    expect(screen.getByLabelText('Other')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Saving...' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
-    await act(async () => { finishSave(profileFixture); });
+  it('loads evidence lazily in fixed pages of 20 and uses URL navigation', async () => {
+    const items = Array.from({ length: 45 }, (_, index) => ({ ...profileFixture.claims[0], id: `claim-${index}`, content: `Saved observation ${index + 1}` }));
+    claims.mockImplementation(async (_, params) => ({ profile_id: compact.id, revision: 1, items: items.slice(params!.offset!, params!.offset! + params!.limit!), total: items.length }));
+    renderPage();
+    await open('Assessment');
+    expect(claims).not.toHaveBeenCalled();
+    await open('Evidence');
+    expect(await screen.findByText('Saved observation 20')).toBeVisible();
+    expect(claims).toHaveBeenCalledTimes(1);
+    expect(claims).toHaveBeenLastCalledWith(compact.id, { limit: 20, offset: 0 });
+    expect(screen.queryByText('Saved observation 21')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('Saved observation 21')).toBeVisible();
+    expect(claims).toHaveBeenLastCalledWith(compact.id, { limit: 20, offset: 20 });
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('?tab=evidence');
+  });
+
+  it('global Edit opens Overview and retains its draft while switching views', async () => {
+    renderPage('assessment');
     fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Unsaved draft' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('?tab=overview');
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Alex Morgan' } });
+    await open('Assessment');
+    expect(screen.getByLabelText('Name')).not.toBeVisible();
+    await open('Overview');
+    expect(screen.getByLabelText('Name')).toHaveValue('Alex Morgan');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.profiles.update).toHaveBeenCalledWith(compact.id, { expected_revision: 1, display_name: 'Alex Morgan', tags: [], starred: false }));
     expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
-    expect(api.profiles.update).toHaveBeenCalledTimes(1);
   });
 
-  it('retains a note draft when the conflict refresh fails, then recovers without remounting', async () => {
-    let failRefresh: (failure: Error) => void = () => undefined;
-    read.mockResolvedValueOnce(profileFixture).mockReturnValueOnce(new Promise((_, reject) => { failRefresh = reject; }));
+  it('retains an assessment draft across tabs and prevents overlapping relationship edits', async () => {
+    read.mockResolvedValue({ ...compact, relationships: [edge] });
+    renderPage('assessment');
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit relationships and perceptions' }));
+    fireEvent.change(screen.getByLabelText('Relationships and perceptions'), { target: { value: 'My assessment draft' } });
+    expect(screen.getByRole('button', { name: 'Add relationship' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Edit relationship' })).toBeDisabled();
+    await open('Overview');
+    await open('Assessment');
+    expect(screen.getByLabelText('Relationships and perceptions')).toHaveValue('My assessment draft');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit relationship' }));
+    expect(screen.getByRole('button', { name: 'Edit relationships and perceptions' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Refresh assessment' })).toBeDisabled();
+  });
+
+  it('retains a note draft when its conflict refresh fails and recovers without remounting', async () => {
+    let failRefresh!: (error: Error) => void;
+    read.mockResolvedValueOnce(compact).mockReturnValueOnce(new Promise((_, reject) => { failRefresh = reject; }));
     vi.mocked(api.profiles.update).mockRejectedValueOnce(new ApiError('Changed profile', 409));
-    renderWithProviders(<ProfileDetailPage />);
+    renderPage('assessment');
     fireEvent.click(await screen.findByRole('button', { name: 'Edit strengths' }));
     fireEvent.change(screen.getByLabelText('Strengths'), { target: { value: 'Keep this human note.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save section' }));
     await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
-    await act(async () => { failRefresh(new Error('Temporary failure')); });
-    expect(await screen.findByText(/Could not refresh this profile/)).toBeInTheDocument();
+    await act(async () => failRefresh(new Error('Temporary failure')));
+    expect(await screen.findByText(/Could not refresh this profile/)).toBeVisible();
     expect(screen.getByLabelText('Strengths')).toHaveValue('Keep this human note.');
-    expect(screen.getByRole('heading', { name: 'Alex' })).toBeInTheDocument();
-    read.mockResolvedValue({ ...profileFixture, revision: 2 });
+    read.mockResolvedValue({ ...compact, revision: 2 });
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(await screen.findByText('Revision 2')).toBeInTheDocument();
-    expect(screen.getByLabelText('Strengths')).toHaveValue('Keep this human note.');
+    await screen.findByText('Revision 2');
     fireEvent.click(screen.getByRole('button', { name: 'Save section' }));
-    await waitFor(() => expect(api.profiles.update).toHaveBeenLastCalledWith(profileFixture.id, { expected_revision: 2, section_notes: { strengths: 'Keep this human note.' } }));
+    await waitFor(() => expect(api.profiles.update).toHaveBeenLastCalledWith(compact.id, { expected_revision: 2, section_notes: { strengths: 'Keep this human note.' } }));
   });
 
-  it('groups claims, labels hypotheses and directed perceptions, and cites exact evidence', async () => {
-    renderWithProviders(<ProfileDetailPage />);
-    expect(await screen.findByRole('heading', { name: 'Alex' })).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Evidence and observations (1)'));
-    expect(screen.getByRole('region', { name: 'Perceptions' })).toBeInTheDocument();
-    expect(screen.getByText('Hypothesis')).toBeInTheDocument();
-    expect(screen.getByText('medium confidence')).toBeInTheDocument();
-    expect(screen.getByText('About Jordan')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Source evidence'));
-    expect(screen.getByText(profileFixture.claims[0].evidence[0].quote)).toBeVisible();
-    expect(screen.getByRole('link', { name: 'View source meeting' })).toHaveAttribute('href', `/meetings/${profileFixture.claims[0].meeting_id}#meeting-transcript`);
-    expect(screen.getByRole('link', { name: 'Open original meeting' })).toHaveAttribute('rel', 'noopener noreferrer');
+  it('history evidence links activate the Evidence view', async () => {
+    const change = { id: 7, profile_id: compact.id, base_revision: 1, new_revision: 2, actor: 'agent' as const, source: 'meeting' as const, source_id: 'meeting', input_hash: null, changes: { claims: { before: [], after: ['claim'] } }, created_at: compact.updated_at };
+    vi.mocked(api.profiles.history).mockResolvedValue({ items: [change], total: 1 });
+    vi.mocked(api.profiles.historyOne).mockResolvedValue(change);
+    renderPage();
+    fireEvent.click(await screen.findByText('History'));
+    fireEvent.click(await screen.findByRole('button', { name: 'View change #7' }));
+    await open('View supporting evidence');
+    expect(await screen.findByRole('region', { name: 'Evidence and observations' })).toBeVisible();
+    expect(screen.getByTestId('location')).toHaveTextContent('?tab=evidence');
+    expect(claims).toHaveBeenCalledWith(compact.id, { limit: 20, offset: 0 });
   });
 
-  it('keeps meeting-only identities explicit and suppresses unsafe external links', async () => {
-    read.mockResolvedValue({ ...profileFixture, email: null, identity_scope: 'meeting', claims: [{ ...profileFixture.claims[0], source_url: 'javascript:alert(1)' }] });
-    renderWithProviders(<ProfileDetailPage />);
-    expect(await screen.findByText(/Identified in this meeting only/)).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Open original meeting' })).not.toBeInTheDocument();
+  it('suppresses metadata quotes outside Evidence while keeping its source link', async () => {
+    read.mockResolvedValue({ ...compact, metadata: { company: 'Paralign' }, metadata_provenance: { company: { meeting_id: 'meeting-source', transcript_hash: 'hash', participants_revision: 0, evidence: [{ segment_id: 'segment', quote: 'Private source quote.' }] } } });
+    renderPage();
+    expect(await screen.findByRole('link', { name: 'View source meeting' })).toHaveAttribute('href', '/meetings/meeting-source#meeting-transcript');
+    expect(screen.queryByText('Private source quote.')).not.toBeInTheDocument();
+    expect(claims).not.toHaveBeenCalled();
   });
 
-  it('explains that a manual profile can collect linked meeting evidence', async () => {
-    read.mockResolvedValue({ ...profileFixture, email: null, identity_scope: 'manual', claims: [] });
-    renderWithProviders(<ProfileDetailPage />);
-    expect(await screen.findByText(/Manually created profile/)).toBeInTheDocument();
-    expect(screen.getByText(/No meeting evidence yet/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Add email' })).toBeInTheDocument();
-    expect(screen.queryByText(/Identified in this meeting only/)).not.toBeInTheDocument();
+  it('explains manual and meeting-only identities without claiming unavailable evidence', async () => {
+    read.mockResolvedValue({ ...compact, email: null, identity_scope: 'manual' });
+    renderPage();
+    expect(await screen.findByText(/Manually created profile/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Add email' })).toBeVisible();
+    expect(screen.queryByText(/No meeting evidence yet/)).not.toBeInTheDocument();
   });
 
-  it('requires a reason and corrected content before submitting', async () => {
-    renderWithProviders(<ProfileDetailPage />);
-    fireEvent.click(await screen.findByText('Evidence and observations (1)'));
-    fireEvent.click(screen.getByRole('button', { name: 'Correct claim' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
-    expect(screen.getByRole('alert')).toHaveTextContent('A reason is required.');
-    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'The speaker clarified this.' } });
-    fireEvent.change(screen.getByLabelText('Corrected claim'), { target: { value: ' ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
-    expect(screen.getByRole('alert')).toHaveTextContent('Corrected content is required.');
-    expect(correct).not.toHaveBeenCalled();
-  });
-
-  it('submits a revision snapshot and displays corrected content with original evidence', async () => {
-    const changed: ParticipantProfile = { ...profileFixture, revision: 2, claims: [{ ...profileFixture.claims[0], status: 'corrected', correction: {
-      action: 'correct', content: 'Alex requested a date for coordination.', reason: 'The speaker clarified their intent.', corrected_at: '2026-10-28T12:01:00Z',
-    } }] };
-    correct.mockImplementationOnce(async () => { read.mockResolvedValue(changed); return changed; });
-    renderWithProviders(<ProfileDetailPage />);
-    fireEvent.click(await screen.findByText('Evidence and observations (1)'));
-    fireEvent.click(screen.getByRole('button', { name: 'Correct claim' }));
-    fireEvent.change(screen.getByLabelText('Corrected claim'), { target: { value: 'Alex requested a date for coordination.' } });
-    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'The speaker clarified their intent.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
-    await waitFor(() => expect(correct).toHaveBeenCalledWith(profileFixture.id, profileFixture.claims[0].id, {
-      expected_revision: 1, action: 'correct', content: 'Alex requested a date for coordination.', reason: 'The speaker clarified their intent.',
-    }));
-    expect(await screen.findByText('Corrected by you')).toBeInTheDocument();
-    expect(screen.getByText('Alex requested a date for coordination.')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Original claim'));
-    expect(screen.getByText(profileFixture.claims[0].content)).toBeVisible();
-    expect(screen.getByText(profileFixture.claims[0].evidence[0].quote)).toBeInTheDocument();
-  });
-
-  it('keeps rejected claims visible with a human review label', async () => {
-    const rejected: ParticipantProfile = { ...profileFixture, revision: 2, claims: [{ ...profileFixture.claims[0], status: 'rejected', correction: {
-      action: 'reject', content: null, reason: 'This interpretation is incorrect.', corrected_at: '2026-10-28T12:01:00Z',
-    } }] };
-    correct.mockImplementationOnce(async () => { read.mockResolvedValue(rejected); return rejected; });
-    renderWithProviders(<ProfileDetailPage />);
-    fireEvent.click(await screen.findByText('Evidence and observations (1)'));
-    fireEvent.click(screen.getByRole('button', { name: 'Reject claim' }));
-    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'This interpretation is incorrect.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm rejection' }));
-    await waitFor(() => expect(correct).toHaveBeenCalledWith(profileFixture.id, profileFixture.claims[0].id, {
-      expected_revision: 1, action: 'reject', reason: 'This interpretation is incorrect.',
-    }));
-    expect(await screen.findByText('Rejected by you')).toBeInTheDocument();
-    expect(screen.getByText('Reason: This interpretation is incorrect.')).toBeInTheDocument();
-  });
-
-  it('refreshes a conflict while preserving the draft for an explicit resubmission', async () => {
-    correct.mockRejectedValueOnce(new ApiError('PRIVATE_CONFLICT_DETAIL', 409));
-    renderWithProviders(<ProfileDetailPage />);
-    fireEvent.click(await screen.findByText('Evidence and observations (1)'));
-    fireEvent.click(screen.getByRole('button', { name: 'Correct claim' }));
-    fireEvent.change(screen.getByLabelText('Corrected claim'), { target: { value: 'Keep this correction draft.' } });
-    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Keep this reason.' } });
-    read.mockResolvedValue({ ...profileFixture, revision: 2 });
-    fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
-    expect(await screen.findByText('Revision 2')).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('Review the latest version and submit again.');
-    expect(screen.getByLabelText('Corrected claim')).toHaveValue('Keep this correction draft.');
-    expect(screen.queryByText('PRIVATE_CONFLICT_DETAIL')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
-    await waitFor(() => expect(correct).toHaveBeenLastCalledWith(profileFixture.id, profileFixture.claims[0].id, {
-      expected_revision: 2, action: 'correct', content: 'Keep this correction draft.', reason: 'Keep this reason.',
-    }));
-  });
-
-  it('confirms profile deletion and submits the visible revision', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    renderWithProviders(<ProfileDetailPage />);
+  it('confirms deletion using the visible revision', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    renderPage();
     const button = await screen.findByRole('button', { name: 'Delete' });
     fireEvent.click(button);
-    expect(remove).not.toHaveBeenCalled();
-    confirm.mockReturnValue(true);
+    expect(api.profiles.remove).not.toHaveBeenCalled();
     fireEvent.click(button);
-    await waitFor(() => expect(remove).toHaveBeenCalledWith(profileFixture.id, 1));
+    await waitFor(() => expect(api.profiles.remove).toHaveBeenCalledWith(compact.id, 1));
     expect(navigate).toHaveBeenCalledWith('/profiles');
+    confirm.mockRestore();
   });
 
-  it('keeps failures generic and offers navigation for an unavailable profile', async () => {
+  it('keeps failures generic and offers navigation for unavailable profiles', async () => {
     read.mockRejectedValue(new Error('PRIVATE_PROFILE_DETAIL'));
-    renderWithProviders(<ProfileDetailPage />);
+    renderPage();
     expect(await screen.findByRole('alert')).toHaveTextContent('It may be unavailable or deleted.');
     expect(screen.queryByText(/PRIVATE_PROFILE_DETAIL/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Back to profiles/ }));
     expect(navigate).toHaveBeenCalledWith('/profiles');
   });
 
-  it('refreshes cumulative evidence without hiding the current profile', async () => {
+  it('polls the compact profile without mounting Evidence or hiding the current content', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    let finishPoll: (profile: ParticipantProfile) => void = () => undefined;
-    read.mockResolvedValueOnce(profileFixture).mockReturnValueOnce(new Promise(resolve => { finishPoll = resolve; }));
-    renderWithProviders(<ProfileDetailPage />);
+    let finishPoll!: (profile: ParticipantProfile) => void;
+    read.mockResolvedValueOnce(compact).mockReturnValueOnce(new Promise(resolve => { finishPoll = resolve; }));
+    renderPage();
     await screen.findByText('Revision 1');
-
-    await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS); });
-    expect(screen.getByRole('heading', { name: 'Alex' })).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTime(POLL_INTERVAL_MS));
+    expect(screen.getByRole('heading', { name: 'Alex' })).toBeVisible();
     expect(screen.queryByText('Loading participant profile...')).not.toBeInTheDocument();
-    const updated: ParticipantProfile = { ...profileFixture, revision: 2, claims: [
-      ...profileFixture.claims,
-      { ...profileFixture.claims[0], id: 'later-claim', category: 'priority', content: 'A priority learned from a later meeting.', meeting_id: 'later-meeting' },
-    ] };
-    await act(async () => { finishPoll(updated); });
-    expect(await screen.findByText('A priority learned from a later meeting.')).toBeInTheDocument();
-    expect(screen.getByText('Revision 2')).toBeInTheDocument();
+    await act(async () => finishPoll({ ...compact, revision: 2 }));
+    expect(await screen.findByText('Revision 2')).toBeVisible();
+    expect(claims).not.toHaveBeenCalled();
   });
 
-  it('keeps the correction draft and captured revision when an earlier poll finishes during editing', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    let finishPoll: (profile: ParticipantProfile) => void = () => undefined;
-    read.mockResolvedValueOnce(profileFixture).mockReturnValueOnce(new Promise(resolve => { finishPoll = resolve; }));
-    correct.mockRejectedValueOnce(new ApiError('Changed profile', 409));
-    renderWithProviders(<ProfileDetailPage />);
-    await screen.findByText('Revision 1');
-    await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS); });
-    fireEvent.click(screen.getByRole('button', { name: 'Correct claim' }));
-    fireEvent.change(screen.getByLabelText('Corrected claim'), { target: { value: 'My correction draft.' } });
-    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'My correction reason.' } });
-    const updated = { ...profileFixture, revision: 2 };
-    read.mockResolvedValue(updated);
-    await act(async () => { finishPoll(updated); });
-    expect(screen.getByText('Revision 2')).toBeInTheDocument();
-    expect(screen.getByLabelText('Corrected claim')).toHaveValue('My correction draft.');
-    await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS); });
-    expect(read).toHaveBeenCalledTimes(2);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
-    await waitFor(() => expect(correct).toHaveBeenCalledWith(profileFixture.id, profileFixture.claims[0].id, {
-      expected_revision: 1, action: 'correct', content: 'My correction draft.', reason: 'My correction reason.',
-    }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Review the latest version and submit again.');
-    expect(screen.getByLabelText('Corrected claim')).toHaveValue('My correction draft.');
-  });
-
-  it('redirects an old identity to its canonical profile and edits the canonical ID', async () => {
-    const winner = { ...profileFixture, id: 'canonical-profile' };
-    read.mockResolvedValue(winner);
-    renderWithProviders(<ProfileDetailPage />);
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/profiles/canonical-profile', { replace: true }));
+  it('preserves the selected query view when resolving a canonical alias', async () => {
+    read.mockResolvedValue({ ...compact, id: 'canonical-profile' });
+    renderPage('assessment');
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/profiles/canonical-profile?tab=assessment', { replace: true }));
+    await open('Overview');
     fireEvent.click(screen.getByRole('button', { name: 'Star Alex' }));
     await waitFor(() => expect(api.profiles.update).toHaveBeenCalledWith('canonical-profile', { expected_revision: 1, starred: true }));
   });

@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 from services.meetings import profile_db
-from services.meetings.participants import meeting_participants, speaker_key
+from services.meetings.participants import current_manual, meeting_participants
 
 
 def effective_speakers(cur, snapshot: dict, segments: list[dict]) -> dict[str, dict]:
-    observed = {speaker_key(segment.get("speaker") or {}) for segment in segments}
-    snapshot = {**snapshot, "manual_participants": [entry for entry in snapshot.get("manual_participants", [])
-                 if not entry.get("speaker_key") or entry["speaker_key"] in observed]}
+    snapshot = {**snapshot, "manual_participants": current_manual(snapshot.get("manual_participants", []), segments)}
     raw = meeting_participants(snapshot, segments)
     sources = {segment_id: person.get("identity_source", "speaker_label") for person in raw for segment_id in person["segment_ids"]}
     catalog = profile_db.resolve_participants(raw, cursor=cur)
