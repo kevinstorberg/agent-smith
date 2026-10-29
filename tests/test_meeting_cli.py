@@ -126,7 +126,7 @@ async def test_live_verification_discards_graph_output_and_keeps_summary_content
         monkeypatch.setattr(digestion_db, "get_record", lambda summary_id: {"transcript": {"segments": [TranscriptSegment("Private transcript content", {}).to_dict(0)]}})
     monkeypatch.setattr(db, "source_status", lambda source: [{"scan_started_at": None if calls else "checkpoint", "last_completed_at": "completed" if calls else None}])
     result = await meetings.verify_live("fixture", stage)
-    assert calls == [("meeting_ingest", {"source": "fixture"})] * 2
+    assert calls == [("meeting_ingest", {"source": "fixture", "digest": False})] * 2
     assert provider.closed
     assert result["normalized_summary_verified"] and result["replay_verified"]
     if stage == "scan":

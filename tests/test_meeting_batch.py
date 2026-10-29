@@ -48,7 +48,7 @@ def providers(monkeypatch, sources, first=None):
 @pytest.mark.asyncio
 async def test_empty_graph_inputs_import_every_connection_and_replay_without_duplicates(sources, monkeypatch):
     clients = providers(monkeypatch, sources)
-    validate_input_params({"graph_type": "meeting_ingest", "graph_inputs": {}})
+    validate_input_params({"graph_type": "meeting_ingest", "graph_inputs": {}, "timeout": 600})
     first = json.loads(await dispatch("meeting_ingest", {}))
     rows = [db.list_summaries(source=config.name)["items"][0] for config in sources]
     second = json.loads(await dispatch("meeting_ingest", {}))

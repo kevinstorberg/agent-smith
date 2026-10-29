@@ -9,7 +9,7 @@ vi.mock('react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router')>();
   return { ...actual, useParams: () => ({ id: meetingFixture.id }) };
 });
-vi.mock('../../api', () => ({ api: { meetings: { get: vi.fn(), transcript: vi.fn(), deleteTranscript: vi.fn(), retryTranscript: vi.fn() } } }));
+vi.mock('../../api', () => ({ api: { meetings: { get: vi.fn(), transcript: vi.fn(), deleteTranscript: vi.fn(), retryTranscript: vi.fn(), memories: vi.fn(), retryMemories: vi.fn(), profiles: vi.fn(), retryProfiles: vi.fn() } } }));
 import { api } from '../../api';
 
 const mockGet = vi.mocked(api.meetings.get);
@@ -18,6 +18,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockGet.mockResolvedValue(meetingFixture);
   vi.mocked(api.meetings.transcript).mockResolvedValue({ status: 'not_imported', items: [], total: 0, limit: 100, offset: 0, error_type: null, captured_at: null });
+  vi.mocked(api.meetings.memories).mockResolvedValue({ status: 'not_imported', items: [], reason: null, error_type: null, updated_at: null });
+  vi.mocked(api.meetings.profiles).mockResolvedValue({ status: 'not_imported', items: [], reason: null, error_type: null });
 });
 
 afterEach(() => vi.useRealTimers());
@@ -69,6 +71,15 @@ describe('MeetingDetailPage', () => {
     expect(await screen.findByText('Ship the next release.')).toBeInTheDocument();
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load transcript');
     expect(screen.getByRole('heading', { name: 'Product planning' })).toBeInTheDocument();
+  });
+
+  it('keeps summary and transcript visible if the memory reader fails', async () => {
+    vi.mocked(api.meetings.memories).mockRejectedValue(new Error('Memory reader unavailable'));
+    renderWithProviders(<MeetingDetailPage />);
+
+    expect(await screen.findByText('Ship the next release.')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load meeting memories');
+    expect(screen.getByRole('region', { name: 'Meeting transcript' })).toBeInTheDocument();
   });
 
   it('refreshes saved summaries periodically', async () => {

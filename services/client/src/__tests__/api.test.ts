@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { api } from '../api';
+import { api, ApiError } from '../api';
 
 function mockFetch(body: unknown, options: { ok?: boolean; status?: number; statusText?: string } = {}) {
   const { ok = true, status = 200, statusText = 'OK' } = options;
@@ -17,6 +17,16 @@ beforeEach(() => {
 });
 
 describe('parseError (tested through api methods)', () => {
+  it('preserves a conflict status for profile revision recovery', async () => {
+    globalThis.fetch = mockFetch({ detail: 'Profile changed' }, { ok: false, status: 409 });
+    try {
+      await api.meetings.profile('profile-id');
+      expect.fail('Expected a conflict');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).status).toBe(409);
+    }
+  });
   it('throws string detail from error response', async () => {
     globalThis.fetch = mockFetch({ detail: 'Not found' }, { ok: false, status: 404, statusText: 'Not Found' });
     await expect(api.plans.get(999)).rejects.toThrow('Not found');
@@ -188,6 +198,38 @@ describe('specific API methods', () => {
     expect(retryUrl).toBe('/api/meetings/summary-id/transcript/retry');
     expect(retryOptions.method).toBe('POST');
     expect(retryOptions.body).toBe('{}');
+  });
+
+  it('reads generated memories and queues a failed generation retry', async () => {
+    globalThis.fetch = mockFetch({ status: 'pending', items: [] });
+    await api.meetings.memories('summary-id');
+    const url = new URL((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect(url.pathname).toBe('/api/meetings/summary-id/memories');
+
+    await api.meetings.retryMemories('summary-id');
+    const [retryUrl, options] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[1];
+    expect(retryUrl).toBe('/api/meetings/summary-id/memories/retry');
+    expect(options.method).toBe('POST');
+    expect(options.body).toBe('{}');
+  });
+
+  it('reads profiles and submits revision-checked corrections and deletion', async () => {
+    globalThis.fetch = mockFetch({});
+    await api.meetings.profiles('meeting-id');
+    await api.meetings.profile('profile-id');
+    await api.meetings.retryProfiles('meeting-id');
+    const body = { expected_revision: 3, action: 'correct' as const, content: 'Corrected claim', reason: 'Source correction' };
+    await api.meetings.correctClaim('profile-id', 'claim-id', body);
+    await api.meetings.deleteProfile('profile-id', 4);
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    expect(new URL(calls[0][0]).pathname).toBe('/api/meetings/meeting-id/profiles');
+    expect(new URL(calls[1][0]).pathname).toBe('/api/meetings/profiles/profile-id');
+    expect(calls[2][0]).toBe('/api/meetings/meeting-id/profiles/retry');
+    expect(calls[3][0]).toBe('/api/meetings/profiles/profile-id/claims/claim-id');
+    expect(JSON.parse(calls[3][1].body)).toEqual(body);
+    expect(calls[4][0]).toBe('/api/meetings/profiles/profile-id');
+    expect(calls[4][1].method).toBe('DELETE');
+    expect(JSON.parse(calls[4][1].body)).toEqual({ expected_revision: 4 });
   });
 
   it('harness.sync sends POST to /harness/sync', async () => {

@@ -180,7 +180,7 @@ Open **Jobs → New Job** and enter:
 - **Graph:** `meeting_ingest`
 - **Graph inputs (JSON):** `{}`
 - **Run every:** 15 minutes
-- **Timeout (seconds):** 300
+- **Timeout (seconds):** 600
 - **Run on:** All devices
 
 Save the job. New `meeting_ingest` jobs default to **All devices**. Each running Agent Smith
@@ -207,6 +207,42 @@ snapshot is shown only after every provider page has been captured and validated
 unavailable, unsupported and failed captures remain distinct from an empty transcript; a
 summary is never presented as a transcript. Anonymous or uncertain speakers stay unidentified.
 
+Newly imported meetings also produce memories through a tool-calling agent after their complete
+transcript is ready. The agent searches existing memories, reads every transcript window and
+stages evidence-backed results before publication. Meeting details show the generated content,
+exact evidence quotes, processing status and retry action; the same records are available on
+**Memory**. Previously imported meetings are not backfilled. Pending work resumes without
+regenerating completed windows or republishing acknowledged memories.
+
+After memories are saved, a second tool-calling agent builds participant profiles in the same
+graph run. It receives the newly generated memories directly and can retrieve older memories
+and canonical profiles. Open a profile from the meeting's **Participant profiles** card to
+see priorities, inferred drivers, communication patterns and directed perceptions/interactions.
+Each claim includes its confidence, whether it is self-reported, observed or inferred, and
+exact transcript evidence. Profile retries preserve completed memories.
+
+Profiles merge across meetings only through a reliable email identity: an explicit speaker
+email or an unambiguous match between a named speaker and the meeting's named attendee roster.
+Names without an email and anonymous speaker labels remain meeting-scoped. A shared microphone
+without a distinguishable speaker does not create a person; silent attendees are not profiled.
+No names or email aliases are guessed.
+
+Use **Correct** or **Reject** on a profile claim to retain a human override with a reason.
+Later analysis reads those overrides. Revision checks prevent a background analysis from
+overwriting a concurrent edit; it rebuilds only its unfinished profile candidate. **Delete
+profile** removes its claims and leaves an identity tombstone so later meetings cannot recreate
+it automatically. Source-unavailable claims are hidden in the reader; human overrides remain
+constraints for later analysis. Generated meeting-memory cards preserve the original output;
+edits/deletions on Memory manage the published record separately.
+
+The `meeting_memory` model role uses the existing model factory. Its default is `KIMI_K3`,
+with the curator credential as fallback; override `MEETING_MEMORY_MODEL_*` for a separate
+connection or model. Each run handles one pending meeting within a 540-second work budget,
+including up to 60 seconds for imports and 150 seconds for each agent. The `meeting_profile`
+role has the same factory/configuration convention via `MEETING_PROFILE_MODEL_*`. Use the
+600-second job timeout to leave time for cleanup. An initial account backlog drains over
+successive runs. No second job is required.
+
 To import immediately, use the graphs MCP tool:
 
 ```python
@@ -220,6 +256,8 @@ remaining connections after a source failure, then reports a failed execution wi
 per-source diagnostics. Partial progress counts that cannot be determined are reported as
 unknown, with known completed counts kept separately. Interrupted or deferred work resumes
 on later scheduled runs; connections with no or older attempts get priority.
+For an import/transcript-only run, pass `{"digest":false}`. The isolated `verify-live`
+commands use this mode and do not call a model or publish memories.
 
 The meetings MCP server provides `meeting_list`, `meeting_get`, `meeting_search`, and
 `meeting_sync_status`. List/search filter by source, project, and timezone-aware meeting
@@ -228,7 +266,7 @@ provider/account identity, local revision, source timestamps, and selected meeti
 
 Each normal scan lists all accessible IDs and fetches new, changed, or pending summaries.
 The initial scan and a daily deep scan refresh all details and recheck omitted records.
-Runs stop after a 240-second work budget and resume the saved page/item checkpoint next time.
+Graph imports stop after a 60-second work budget and resume the saved page/item checkpoint next time.
 A database claim prevents overlapping source imports; outcomes include `continued`,
 `completed`, `completed_with_warnings`, and `skipped_busy`. Failed/interrupted runs preserve
 committed progress; a scan unfinished after 24 hours reports degraded status.

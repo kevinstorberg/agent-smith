@@ -152,7 +152,9 @@ export function JobDetailPage() {
   };
 
   const changeGraph = (graph: string) => {
-    setEditValue('input_params', { ...inputParams, graph_type: graph });
+    const params: Record<string, unknown> = { ...inputParams, graph_type: graph };
+    if (isNew && graph.trim() === 'meeting_ingest' && Number(params.timeout ?? 300) < 600) params.timeout = 600;
+    setEditValue('input_params', params);
     if (isNew && !deviceScopeTouched) {
       setDeviceScope(graph.trim() === 'meeting_ingest' ? 'all_devices' : 'this_device');
     }
@@ -270,7 +272,7 @@ export function JobDetailPage() {
                 placeholder="{}"
               />
               {String(inputParams.graph_type ?? '').trim() === 'meeting_ingest' && (
-                <p className="text-muted-sm">Use {'{}'} to import all configured meeting connections.</p>
+                <p className="text-muted-sm">Use {'{}'} to import all configured meeting connections. Set Timeout to 600 seconds for transcript and memory processing.</p>
               )}
             </>
           ) : (

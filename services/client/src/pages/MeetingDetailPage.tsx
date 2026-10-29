@@ -1,54 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import { Link, useParams } from 'react-router';
 import ReactMarkdown from 'react-markdown';
 import { api } from '../api';
-import type { MeetingSummary } from '../api';
 import { CopyButton } from '../components/CopyButton';
 import { MeetingTranscript } from '../components/MeetingTranscript';
+import { MeetingMemories } from '../components/MeetingMemories';
+import { MeetingProfiles } from '../components/MeetingProfiles';
 import { CODE_BOX } from '../components/codeBox';
 import { DateCell } from '../components/table';
 import { usePolling } from '../hooks/usePolling';
-
-function sourceLink(value: string): string | null {
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null;
-  } catch {
-    return null;
-  }
-}
+import { useApiRead } from '../hooks/useApiRead';
+import { safeHttpUrl } from '../utils/links';
 
 export function MeetingDetailPage() {
   const { id } = useParams();
-  const [meeting, setMeeting] = useState<MeetingSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const requestId = useRef(0);
-
-  const load = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
-    const currentRequest = ++requestId.current;
-    if (showLoading) setLoading(true);
-    try {
-      if (!id) throw new Error('Meeting not found');
-      const result = await api.meetings.get(id);
-      if (currentRequest === requestId.current) {
-        setMeeting(result);
-        setError(null);
-      }
-    } catch (err) {
-      if (currentRequest === requestId.current) setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      if (currentRequest === requestId.current) setLoading(false);
-    }
+  const read = useCallback(() => {
+    if (!id) return Promise.reject(new Error('Meeting not found'));
+    return api.meetings.get(id);
   }, [id]);
-
-  useEffect(() => {
-    load();
-    return () => { requestId.current += 1; };
-  }, [load]);
+  const { data: meeting, loading, error, refresh: load } = useApiRead(read);
   usePolling(() => load({ showLoading: false }), { enabled: Boolean(id) });
 
-  const sourceUrl = meeting ? sourceLink(meeting.source_url) : null;
+  const sourceUrl = meeting ? safeHttpUrl(meeting.source_url) : null;
 
   return (
     <div>
@@ -85,6 +58,8 @@ export function MeetingDetailPage() {
             <div className="markdown-content"><ReactMarkdown>{meeting.summary_markdown || meeting.summary_text}</ReactMarkdown></div>
           </div>
           <MeetingTranscript key={meeting.id} meetingId={meeting.id} />
+          <MeetingMemories key={`memories-${meeting.id}`} meetingId={meeting.id} />
+          <MeetingProfiles key={`profiles-${meeting.id}`} meetingId={meeting.id} />
           {Object.keys(meeting.metadata).length > 0 && (
             <details className="card">
               <summary>Additional metadata</summary>

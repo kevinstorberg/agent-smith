@@ -122,7 +122,7 @@ describe('JobDetailPage', () => {
       await waitFor(() => expect(mockCreate).toHaveBeenCalledWith({
         name: 'Meetings',
         schedule_config: { minutes: 15 },
-        input_params: { graph_type: 'meeting_ingest', graph_inputs: {}, timeout: 300 },
+        input_params: { graph_type: 'meeting_ingest', graph_inputs: {}, timeout: 600 },
         description: null,
       }));
     });
@@ -138,6 +138,15 @@ describe('JobDetailPage', () => {
       expect(screen.getByLabelText('Run on')).toHaveValue('this_device');
       fireEvent.change(screen.getByLabelText('Graph'), { target: { value: 'echo' } });
       expect(screen.getByLabelText('Run on')).toHaveValue('this_device');
+    });
+
+    it('keeps a longer custom timeout when selecting meeting imports', () => {
+      renderWithProviders(<JobDetailPage />);
+      fireEvent.change(screen.getByLabelText('Job type'), { target: { value: 'graph' } });
+      expect(screen.getByLabelText('Timeout (seconds)')).toHaveValue(300);
+      fireEvent.change(screen.getByLabelText('Timeout (seconds)'), { target: { value: '900' } });
+      fireEvent.change(screen.getByLabelText('Graph'), { target: { value: 'meeting_ingest' } });
+      expect(screen.getByLabelText('Timeout (seconds)')).toHaveValue(900);
     });
 
     it.each(['{', '[]', 'null', '"text"', '1'])('rejects graph inputs that are not a JSON object: %s', (inputs) => {
