@@ -1274,6 +1274,10 @@ pre {
     border-bottom: none;
   }
 
+  .sidebar-section:not(:last-child) {
+    border-right: 1px solid var(--border);
+  }
+
   .sidebar-link {
     padding: 12px 14px !important;
     white-space: nowrap;
