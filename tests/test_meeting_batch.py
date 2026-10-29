@@ -128,7 +128,7 @@ async def test_busy_connection_does_not_prevent_other_imports(sources, monkeypat
 @pytest.mark.asyncio
 async def test_slow_first_connection_yields_time_for_later_connection_and_releases_claim(sources, monkeypatch):
     class SlowProvider(Provider):
-        async def list_page(self, cursor=None):
+        async def list_page(self, cursor=None, *, updated_after=None):
             await asyncio.Event().wait()
 
     slow = SlowProvider([])
@@ -162,7 +162,7 @@ async def test_overall_deadline_includes_setup_and_cleanup_and_reports_deferred_
 @pytest.mark.asyncio
 async def test_next_run_prioritizes_previously_deferred_connection_after_slow_cleanup(sources, monkeypatch):
     class SlowCleanupProvider(Provider):
-        async def list_page(self, cursor=None):
+        async def list_page(self, cursor=None, *, updated_after=None):
             await asyncio.Event().wait()
 
         async def aclose(self):
@@ -184,7 +184,7 @@ async def test_external_cancellation_stops_batch_and_releases_claim(sources, mon
     entered = asyncio.Event()
 
     class SlowProvider(Provider):
-        async def list_page(self, cursor=None):
+        async def list_page(self, cursor=None, *, updated_after=None):
             entered.set()
             await asyncio.Event().wait()
 
@@ -204,10 +204,10 @@ async def test_external_cancellation_stops_batch_and_releases_claim(sources, mon
 @pytest.mark.asyncio
 async def test_batch_uses_one_config_snapshot(sources, monkeypatch):
     class ReconfiguringProvider(Provider):
-        async def list_page(self, cursor=None):
+        async def list_page(self, cursor=None, *, updated_after=None):
             monkeypatch.setenv("MEETING_SOURCES_JSON", "{}")
             monkeypatch.delenv("BATCH_Z_KEY")
-            return await super().list_page(cursor)
+            return await super().list_page(cursor, updated_after=updated_after)
 
     providers(monkeypatch, sources, ReconfiguringProvider([note()]))
     result = await service.sync_sources()

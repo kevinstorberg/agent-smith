@@ -27,7 +27,7 @@ async def test_meeting_graph_persists_through_factory_and_replays(monkeypatch):
         def __init__(self, config):
             clients.append(self)
 
-        async def list_page(self, cursor=None):
+        async def list_page(self, cursor=None, *, updated_after=None):
             return NotePage((NoteReference("test-note", stamp),))
 
         async def get_summary(self, external_id):

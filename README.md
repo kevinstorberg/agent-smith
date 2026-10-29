@@ -98,7 +98,12 @@ Defaults to LanceDB (local, stored in `memory_store/`). The supported backends a
 MEMORY_BACKEND=pgvector
 MEMORY_EMBEDDING_MODEL=all-MiniLM-L6-v2
 MEMORY_EMBEDDING_DIMENSION=384
+MEMORY_EMBEDDING_DEVICE=cpu
 ```
+
+Embedding initialization and encoding are serialized. CPU is the default to avoid
+concurrent native MPS model/device initialization on macOS. An explicit
+`MEMORY_EMBEDDING_DEVICE` overrides it without changing the stored model or dimensions.
 
 The model and dimension form one storage contract. Changing either requires a schema and
 data migration; startup fails if stored rows use a different model or the database column
@@ -153,8 +158,8 @@ separately using the same configured connection and its existing permissions.
 
 Keep `account_key` stable when rotating credentials; use a new `account_key` for a different account.
 Adding another provider requires an adapter and factory registration, then a configuration
-change. Folder/project configuration changes restart synchronization with a deep scan while
-retaining prior stored context. Provider/account switches retain their independent records.
+change. Folder/project configuration changes reset the connection's incremental checkpoint
+while retaining prior stored context. Provider/account switches retain their independent records.
 
 Probe the real API, then verify the graph, persistence, and MCP reader in an owned disposable
 database. These commands load only meeting settings/credentials from `.env.production` and
@@ -300,15 +305,26 @@ The meetings MCP server provides `meeting_list`, `meeting_get`, `meeting_search`
 dates; reads see committed imports immediately. Each summary has a stable UUID, source URL,
 provider/account identity, local revision, source timestamps, and selected meeting metadata.
 
-Each normal scan lists all accessible IDs and fetches new, changed, or pending summaries.
-The initial scan and a daily deep scan refresh all details and recheck omitted records.
+Each connection pulls notes updated since its last completed pull using Granola's
+[`updated_after` filter](https://docs.granola.ai/api-reference/list-notes). The saved boundary
+is the start of that pull, with a one-minute overlap; it advances only after all pages
+complete. Continued pages and retries keep the same frozen boundary. Unchanged references
+in the overlap do not fetch summaries, transcripts, or rerun completed agent work.
+
+There is no automatic daily history sweep. New connections and connections upgraded without
+a safe checkpoint need one metadata baseline; already stored, unchanged notes are skipped.
+Only newly imported meetings are automatically enrolled for analysis. Completed memory and
+profile stages stay completed; unfinished stages resume, and older meetings can still be
+processed explicitly from their detail page.
+
 Graph imports stop after a 60-second work budget and resume the saved page/item checkpoint next time.
 A database claim prevents overlapping source imports; outcomes include `continued`,
 `completed`, `completed_with_warnings`, and `skipped_busy`. Failed/interrupted runs preserve
 committed progress; a scan unfinished after 24 hours reports degraded status.
 
-Context is eventually consistent: processing notes appear after the provider makes them
-available. Three unresolved detail observations hide a previously stored summary; explicit
+Context is eventually consistent: changed notes appear after the provider makes them
+available with a newer `updated_at`. Access/readiness changes without a timestamp update
+cannot be detected by incremental polling. Three unresolved detail observations hide a previously stored summary; explicit
 deletion tombstones hide it immediately. A successful later fetch restores availability.
 Listing absence alone does not delete context. Existing content remains stored for diagnosis;
 there is no automatic retention purge, full revision history, or replication of source ACLs.

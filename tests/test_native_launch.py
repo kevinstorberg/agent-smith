@@ -8,12 +8,14 @@ import signal
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
 from urllib.parse import urlsplit, urlunsplit
 
 import psycopg2
 import pytest
 
 from scripts import manage
+from scripts.shared import processes
 from scripts.shared.local_postgres import temporary_postgres
 from scripts.shared.processes import instance_lock, supervise
 
@@ -37,14 +39,74 @@ def test_temporary_cluster_is_ready_and_removed_even_when_body_fails():
         psycopg2.connect(admin_url, connect_timeout=2)
 
 
-def test_managed_child_failure_stops_and_reaps_its_sibling(tmp_path):
+@pytest.mark.parametrize(("termination", "expected_status", "expected_detail"), [
+    ("raise SystemExit(42)", 42, "returncode=42"),
+    ("os.kill(os.getpid(), signal.SIGTERM)", 143, "returncode=-15, signal=SIGTERM (15)"),
+])
+def test_managed_child_failure_stops_and_reaps_its_sibling(tmp_path, capsys, termination, expected_status, expected_detail):
     pid_file = tmp_path / "child.pid"
     child = [sys.executable, "-c", f"import os,time; from pathlib import Path; Path({str(pid_file)!r}).write_text(str(os.getpid())); time.sleep(60)"]
-    failure = [sys.executable, "-c", "import time; time.sleep(0.5); raise SystemExit(42)"]
+    failure_file = tmp_path / "failure.pid"
+    failure = [sys.executable, "-c",
+               f"import os,signal,time; from pathlib import Path; "
+               f"Path({str(failure_file)!r}).write_text(str(os.getpid())); "
+               f"time.sleep(0.5); {termination}", "private-command-argument"]
     result = supervise([(child, tmp_path), (failure, tmp_path)], dict(os.environ))
-    assert result == 42
+    assert result == expected_status
+    diagnostic = capsys.readouterr().err
+    assert f"frontend child (pid={int(failure_file.read_text())})" in diagnostic
+    assert f"{expected_detail}, launcher_exit={expected_status}" in diagnostic
+    assert "private-command-argument" not in diagnostic
     with pytest.raises(ProcessLookupError):
         os.kill(int(pid_file.read_text()), 0)
+
+
+@pytest.mark.parametrize(("override", "expected"), [(None, "1"), ("", ""), ("1", "1")])
+def test_native_signal_reports_segfault_and_preserves_faulthandler_override(tmp_path, monkeypatch, capsys, override, expected):
+    env = {"PATH": "/bin"}
+    if override is not None:
+        env["PYTHONFAULTHANDLER"] = override
+    original_env = dict(env)
+    captured = []
+
+    def start_child(command, **kwargs):
+        captured.append(kwargs["env"])
+        return SimpleNamespace(pid=12345, poll=lambda: -11)
+
+    monkeypatch.setattr(processes.subprocess, "Popen", start_child)
+    result = supervise([([sys.executable, "private-command-argument"], tmp_path)], env)
+    assert result == 139
+    assert captured[0]["PYTHONFAULTHANDLER"] == expected
+    assert env == original_env
+    diagnostic = capsys.readouterr().err
+    assert "API child (pid=12345)" in diagnostic
+    assert "returncode=-11, signal=SIGSEGV (11), launcher_exit=139" in diagnostic
+    assert "private-command-argument" not in diagnostic
+
+
+def test_api_child_has_faulthandler_enabled(tmp_path):
+    result_file = tmp_path / "faulthandler.json"
+    command = [sys.executable, "-c",
+               f"import faulthandler,json; from pathlib import Path; "
+               f"Path({str(result_file)!r}).write_text(json.dumps(faulthandler.is_enabled()))"]
+    env = dict(os.environ)
+    env.pop("PYTHONFAULTHANDLER", None)
+    assert supervise([(command, tmp_path)], env) == 1
+    assert json.loads(result_file.read_text()) is True
+
+
+def test_intentional_supervisor_shutdown_does_not_report_child_failure(tmp_path, monkeypatch, capsys):
+    def poll_during_shutdown():
+        signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+        return -signal.SIGTERM
+
+    child = SimpleNamespace(pid=12345, poll=poll_during_shutdown)
+    stopped = []
+    monkeypatch.setattr(processes.subprocess, "Popen", lambda *args, **kwargs: child)
+    monkeypatch.setattr(processes, "stop_process", stopped.append)
+    assert supervise([([sys.executable, "-c", "pass"], tmp_path)], {}) == 0
+    assert stopped == [child]
+    assert not capsys.readouterr().err
 
 
 def test_unchanged_frontend_skips_build_and_changed_source_rebuilds(tmp_path, monkeypatch):

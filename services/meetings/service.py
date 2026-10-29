@@ -183,7 +183,7 @@ async def sync_source(
         async with claimed_source(config) as claim:
             if claim is None:
                 return {"source": source, "outcome": "skipped_busy"}
-            scan = claim.state["scan"] or _new_scan(claim.state)
+            scan = _resume_scan(claim.state)
             await run_db(db.save_progress, config, claim.owner, scan)
             runner = _SummaryScan(config, claim.owner, scan, provider)
             try:
@@ -208,14 +208,49 @@ async def sync_source(
 
 def _new_scan(state: dict) -> dict:
     now = datetime.now(timezone.utc)
-    last_deep = state["last_deep_completed_at"]
+    previous_start = state.get("last_pull_started_at")
+    if previous_start is not None and (not isinstance(previous_start, datetime) or previous_start.utcoffset() is None):
+        raise ValueError("Meeting last_pull_started_at must be a timezone-aware datetime")
+    # Overlap protects exclusive provider boundaries; unchanged references never refetch detail.
+    cutoff = previous_start - timedelta(seconds=60) if previous_start is not None else None
     return {
-        "id": str(uuid4()), "started_at": now.isoformat(),
-        "deep": last_deep is None or now - last_deep >= timedelta(days=1),
+        "version": 1, "id": str(uuid4()), "started_at": now.isoformat(),
+        "updated_after": cutoff.isoformat() if cutoff else None, "deep": False,
         "phase": "listing", "cursor": None, "page": None, "offset": 0,
         "next_cursor": None, "seen_cursors": [], "restarts": 0, "attempts": 0,
         "counts": dict.fromkeys(_COUNTS, 0),
     }
+
+
+def _scan_timestamp(value: object, field: str) -> datetime:
+    try:
+        stamp = datetime.fromisoformat(value) if isinstance(value, str) else None
+    except ValueError:
+        stamp = None
+    if stamp is None or stamp.utcoffset() is None:
+        raise ValueError(f"Meeting checkpoint {field} must be a timezone-aware ISO timestamp")
+    return stamp
+
+
+def _resume_scan(state: dict) -> dict:
+    scan = state["scan"] or _new_scan(state)
+    if not isinstance(scan, dict):
+        raise ValueError("Meeting checkpoint must be an object")
+    if "version" not in scan:
+        scan.update(version=1, updated_after=None, deep=False)
+        if scan.get("phase") == "missing":
+            scan.update(phase="done", page=None, offset=0, attempts=0)
+    if type(scan.get("version")) is not int or scan["version"] != 1:
+        raise ValueError("Unsupported meeting checkpoint version")
+    started = _scan_timestamp(scan.get("started_at"), "started_at")
+    if "updated_after" not in scan:
+        raise ValueError("Meeting checkpoint updated_after is required")
+    if scan["updated_after"] is not None and _scan_timestamp(scan["updated_after"], "updated_after") > started:
+        raise ValueError("Meeting checkpoint updated_after must not be after started_at")
+    if scan.get("phase") not in {"listing", "done"}:
+        raise ValueError("Meeting checkpoint has an invalid scan phase")
+    scan["deep"] = False
+    return scan
 
 
 class _SummaryScan:
@@ -226,6 +261,7 @@ class _SummaryScan:
         self.provider = provider
         self.counts = scan["counts"]
         self.stored: dict = {}
+        self.updated_after = _scan_timestamp(scan["updated_after"], "updated_after") if scan["updated_after"] else None
 
     async def save(self, **observation) -> dict | None:
         return await run_db(db.save_progress, self.config, self.owner, self.scan, **observation)
@@ -241,12 +277,8 @@ class _SummaryScan:
                 await self.finish_page()
             elif self.scan["phase"] == "listing":
                 await self.list_page()
-            elif self.scan["phase"] == "missing":
-                if not await self.missing_page():
-                    await run_db(db.finish_scan, self.config, self.owner, self.scan["deep"], self.scan)
-                    return True
             elif self.scan["phase"] == "done":
-                await run_db(db.finish_scan, self.config, self.owner, self.scan["deep"], self.scan)
+                await run_db(db.finish_scan, self.config, self.owner, self.scan)
                 return True
             else:
                 raise ValueError("Meeting checkpoint has an invalid scan phase")
@@ -254,7 +286,7 @@ class _SummaryScan:
     async def list_page(self) -> None:
         cursor = self.scan["cursor"]
         try:
-            page = await self.provider.list_page(cursor)
+            page = await self.provider.list_page(cursor, updated_after=self.updated_after)
         except InvalidCursorError:
             if self.scan["restarts"] >= 1:
                 raise MeetingProviderError("Meeting listing cursor repeatedly expired; narrow the source scope") from None
@@ -278,19 +310,9 @@ class _SummaryScan:
         if self.scan["phase"] == "listing":
             self.scan["cursor"] = self.scan["next_cursor"]
             if self.scan["cursor"] is None:
-                self.scan["phase"] = "missing" if self.scan["deep"] else "done"
+                self.scan["phase"] = "done"
         self.scan.update(page=None, offset=0, attempts=0)
         await self.save()
-
-    async def missing_page(self) -> bool:
-        # Recheck records omitted by LIST; absence alone does not establish deletion.
-        self.stored = await run_db(db.get_stored_refs, self.config)
-        missing = [key for key, row in self.stored.items() if row["last_seen_scan_id"] != self.scan["id"]]
-        if not missing:
-            return False
-        self.scan.update(page=[{"id": key, "updated_at": None, "deleted_at": None} for key in sorted(missing)[:30]], offset=0)
-        await self.save()
-        return True
 
     async def process(self, reference: dict) -> bool:
         external_id = reference["id"]
@@ -306,7 +328,7 @@ class _SummaryScan:
                 self.counts["unavailable"] += 1
                 await self.save(unavailable_id=external_id, deleted_at=deleted_at, observed_updated_at=updated_at)
             return True
-        if (not self.scan["deep"] and old and old["available"] and old["missing_count"] == 0
+        if (old and old["project"] == self.config.project and old["available"] and old["missing_count"] == 0
                 and updated_at is not None and old["provider_updated_at"] >= updated_at):
             self.counts["unchanged"] += 1
             self.advance()
@@ -328,7 +350,7 @@ class _SummaryScan:
         self.stored[external_id] = {
             "provider_updated_at": max(summary.provider_updated_at, old["provider_updated_at"]) if old else summary.provider_updated_at,
             "available": summary.provider_deleted_at is None, "missing_count": 0,
-            "last_seen_scan_id": self.scan["id"],
+            "last_seen_scan_id": self.scan["id"], "project": self.config.project,
         }
         return True
 

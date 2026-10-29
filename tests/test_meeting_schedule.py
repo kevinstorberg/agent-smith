@@ -131,7 +131,7 @@ async def test_fifteen_minute_schedule_fires_twice_and_restart_uses_actual_histo
             self.get_calls = []
             providers.append(self)
 
-        async def list_page(self, cursor=None):
+        async def list_page(self, cursor=None, *, updated_after=None):
             return NotePage((NoteReference(summary.external_id, stamp),))
 
         async def get_summary(self, external_id):
@@ -201,7 +201,7 @@ async def test_scheduler_shutdown_interrupts_meeting_graph_and_releases_source_c
         def __init__(self, config):
             providers.append(self)
 
-        async def list_page(self, cursor=None):
+        async def list_page(self, cursor=None, *, updated_after=None):
             entered.set()
             await asyncio.Event().wait()
 

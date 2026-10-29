@@ -70,12 +70,10 @@ def claim_source(config: SourceConfig, owner: str, lease_seconds: int = 300) -> 
                  source_name = EXCLUDED.source_name,
                  config_fingerprint = EXCLUDED.config_fingerprint,
                  scan = CASE WHEN meeting_sync_state.config_fingerprint <> EXCLUDED.config_fingerprint
-                                  OR meeting_sync_state.source_name <> EXCLUDED.source_name
                              THEN '{}'::jsonb ELSE meeting_sync_state.scan END,
-                 last_deep_completed_at = CASE
+                 last_pull_started_at = CASE
                      WHEN meeting_sync_state.config_fingerprint <> EXCLUDED.config_fingerprint
-                          OR meeting_sync_state.source_name <> EXCLUDED.source_name
-                     THEN NULL ELSE meeting_sync_state.last_deep_completed_at END,
+                     THEN NULL ELSE meeting_sync_state.last_pull_started_at END,
                  claim_owner = EXCLUDED.claim_owner, claim_until = EXCLUDED.claim_until,
                  outcome = 'claimed', last_error = NULL, updated_at = clock_timestamp()
                WHERE meeting_sync_state.claim_until IS NULL
@@ -84,6 +82,12 @@ def claim_source(config: SourceConfig, owner: str, lease_seconds: int = 300) -> 
             (*_identity(config), config.name, config.fingerprint, owner, lease_seconds),
         )
         row = cur.fetchone()
+        if row is not None:
+            cur.execute(
+                """UPDATE meeting_summaries SET source_name = %s
+                   WHERE provider = %s AND account_key = %s AND source_name <> %s""",
+                (config.name, *_identity(config), config.name),
+            )
         return dict(row) if row else None
 
 
@@ -239,17 +243,20 @@ def _save_summary(cur: RealDictCursor, config: SourceConfig, scan: dict, summary
     return {"id": summary_id, "revision": revision, "status": status}
 
 
-def finish_scan(config: SourceConfig, owner: str, deep: bool, scan: dict) -> None:
+def finish_scan(config: SourceConfig, owner: str, scan: dict) -> None:
     _validate_scan(scan)
+    started = _optional_date(scan.get("started_at"), "scan.started_at")
+    if started is None or scan.get("phase") != "done":
+        raise ValueError("Only a completed meeting scan with started_at can advance the pull boundary")
     with _cursor() as cur:
         _owned_state(cur, config, owner)
         cur.execute(
             """UPDATE meeting_sync_state SET scan = '{}'::jsonb,
                last_completed_at = clock_timestamp(),
-               last_deep_completed_at = CASE WHEN %s THEN clock_timestamp() ELSE last_deep_completed_at END,
+               last_pull_started_at = GREATEST(last_pull_started_at, %s),
                updated_at = clock_timestamp()
                WHERE provider = %s AND account_key = %s""",
-            (deep, *_identity(config)),
+            (started, *_identity(config)),
         )
 
 
@@ -271,7 +278,7 @@ def release_source(config: SourceConfig, owner: str, outcome: str, error: str | 
 def get_stored_refs(config: SourceConfig) -> dict:
     with _cursor() as cur:
         cur.execute(
-            """SELECT external_id, provider_updated_at, available, missing_count, last_seen_scan_id
+            """SELECT external_id, provider_updated_at, project, available, missing_count, last_seen_scan_id
                FROM meeting_summaries WHERE provider = %s AND account_key = %s""",
             _identity(config),
         )
@@ -352,7 +359,7 @@ def source_status(source: str | None = None) -> list[dict]:
     with _cursor() as cur:
         cur.execute(
             """SELECT provider, account_key, source_name, outcome, last_error,
-               claim_until, last_completed_at, last_deep_completed_at, updated_at,
+               claim_until, last_completed_at, last_deep_completed_at, last_pull_started_at, updated_at,
                scan->>'started_at' AS scan_started_at,
                scan->'deep' AS scan_deep, scan->'counts' AS counts
                FROM meeting_sync_state WHERE (%s IS NULL OR source_name = %s)
