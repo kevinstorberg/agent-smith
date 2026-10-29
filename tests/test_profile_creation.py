@@ -2,7 +2,6 @@ import copy
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
@@ -53,7 +52,7 @@ def test_name_only_profiles_are_first_class_and_duplicate_names_stay_separate(cl
     assert profile_db.load_profiles([{**profile, "segment_ids": []}])[0]["identity_scope"] == "manual"
 
 
-def test_email_creation_uses_normalized_meeting_identity_and_exports_actual_http_contract(client, created_profiles):
+def test_email_creation_uses_normalized_meeting_identity_and_exports_actual_http_contract(client, created_profiles, tmp_path):
     request = {"display_name": "Jordan Rivera", "email": "jordan.rivera.contract@example.invalid"}
     response = post_profile(client, created_profiles, request)
     assert response.status_code == 201
@@ -65,7 +64,7 @@ def test_email_creation_uses_normalized_meeting_identity_and_exports_actual_http
     duplicate = post_profile(client, created_profiles, duplicate_request)
     assert duplicate.status_code == 409 and "existing profile" in duplicate.json()["detail"]
     assert profile_db.get_profile(profile["id"]) == profile
-    Path("/private/tmp/agent-smith-profile-create-contract.json").write_text(json.dumps({
+    (tmp_path / "profile-create-contract.json").write_text(json.dumps({
         "create": {"request": request, "status": response.status_code, "body": profile},
         "duplicate": {"request": duplicate_request, "status": duplicate.status_code, "body": duplicate.json()},
     }, indent=2))
