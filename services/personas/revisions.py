@@ -53,6 +53,15 @@ def _project(cur, row: dict, current: dict) -> dict:
         for key in ("metadata", "metadata_provenance", "section_notes", "section_evidence"):
             if key in changes:
                 changes[key][side] = visible[key]
+    if "relationships" in changes:
+        from services.meetings.relationship_db import project_history
+
+        for side in ("before", "after"):
+            raw = changes["relationships"].get(side)
+            edges = raw if isinstance(raw, list) else [raw] if isinstance(raw, dict) else []
+            projected = [project_history(cur, edge) for edge in edges]
+            source_restricted |= any(old.get("notes") != new.get("notes") for old, new in zip(edges, projected))
+            changes["relationships"][side] = projected
     # Claim deltas are stable IDs only; withdrawn transcript text is never copied into history.
     return _serialize({**row, "changes": changes, "source_restricted": source_restricted})
 

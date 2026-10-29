@@ -40,7 +40,7 @@ describe('Sidebar', () => {
 
   it('renders all navigation links', () => {
     renderSidebar();
-    for (const label of ['Agents', 'Hooks', 'Rules', 'Skills', 'Tools', 'Memory', 'Meetings', 'Profiles', 'Plans', 'Chat', 'Evals', 'Results']) {
+    for (const label of ['Agents', 'Hooks', 'Rules', 'Skills', 'Tools', 'Audit', 'Evals', 'Jobs', 'Proposals', 'Results', 'Chat', 'Meetings', 'Memory', 'Plans', 'Profiles']) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
   });
@@ -53,13 +53,13 @@ describe('Sidebar', () => {
     expect(screen.getByRole('link', { name: 'Meetings' })).not.toHaveClass('active');
   });
 
-  it('alphabetizes links inside each existing sidebar section', () => {
+  it('alphabetizes links within the three unlabeled functional groups', () => {
     const { container } = renderSidebar();
     const sections = [...container.querySelectorAll('.sidebar-section')].map(section => within(section as HTMLElement).queryAllByRole('link').map(link => link.textContent));
     expect(sections).toEqual([
       ['Agents', 'Hooks', 'Rules', 'Skills', 'Tools'],
-      ['Audit', 'Chat', 'Jobs', 'Meetings', 'Memory', 'Plans', 'Profiles', 'Proposals'],
-      ['Evals', 'Results'],
+      ['Audit', 'Evals', 'Jobs', 'Proposals', 'Results'],
+      ['Chat', 'Meetings', 'Memory', 'Plans', 'Profiles'],
       [],
     ]);
   });

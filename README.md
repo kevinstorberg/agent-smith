@@ -202,6 +202,8 @@ for assessment by the persona job. These migrations preserve completed persona r
 existing relationship links are backfilled without model calls.
 Migration `7f2a9c6d8e10` adds resumable statement attribution. Completed memory contexts are
 marked legacy instead of automatically being processed again; partial memory receipts are preserved.
+Migration `8a3b0d7e9f21` keeps relationship analysis ownership and its publication evidence on
+each directed relationship. It preserves existing notes and performs no model work.
 
 ```sh
 ./db.sh production --confirm-database <production-database-name>
@@ -264,18 +266,23 @@ existing bounded candidate set; a tag filter does not perform an exhaustive vect
 The independent persona job reads complete saved transcripts directly from PostgreSQL; it
 does not need a Granola connection or successful memory generation. Previously published
 memories provide optional context. Open **Profiles** in the sidebar to browse people across
-meetings. Each profile has three addressable tabs: **Overview**, **Assessment** and **Evidence**.
+meetings. Each profile has four addressable tabs: **Overview**, **Assessment**, **Relationships**
+and **Evidence**.
 Overview combines its summary and metadata; optional metadata remains visible as **Not set**
-when empty. Assessment contains motivations, strengths, development areas, working style and
-one **Relationships and perceptions** section, including links to people and manual relationship
-management. Evidence loads separately in pages of 20, with confidence, attribution, exact
-transcript quotations and correction/rejection controls. Overview and Assessment use compact
+when empty. Assessment contains motivations, strengths, development areas and working style.
+Relationships has one entry per linked person, grouping the two directed perspectives when
+both exist. The analysis and its edit controls belong to the same relationship record.
+Evidence has All, Observed, Self-reported and Hypotheses tabs, plus automatically applied
+search, category, confidence, review-status and sort filters. Its compact list loads 20 matching
+observations per page; open an observation for exact quotations and correction/rejection controls.
+Relationship evidence links can filter the list to the related person. Source visibility and all
+filters apply before counting and pagination. Overview and Assessment use compact
 responses that exclude cumulative observations and historical snapshots. Current proof
 validation still reads saved claims internally. Meeting profile cards link to the same records.
 Profile retries preserve completed memories.
 On **Profiles**, **Run personas** invokes the configured persona job through the same path
-as **Run Now** in Jobs. The processing card links its execution and identifies missing or
-device-scoped job setup. A run uses saved, unreviewed transcripts and preserves checkpoints;
+as **Run Now** in Jobs. The header action shows compact execution feedback and links to
+missing job setup when needed. A run uses saved, unreviewed transcripts and preserves checkpoints;
 memory indexing is not a prerequisite. The same job updates assessments when their saved
 evidence changes. A profile's build action uses its existing saved evidence without reading
 transcripts again. Transcript capture still belongs to the Meetings job.
@@ -299,8 +306,14 @@ cause the merge to fail instead of silently choosing one.
 Optional human context includes nicknames, company, job role, start date, supervisor and other
 metadata, plus editable assessment sections. Nicknames are searchable
 labels, not proof of identity. Human notes and claim corrections remain authoritative during
-later analysis. Directed relationships have their own editable labels and notes: A → B and
-B → A are distinct. Neither gender nor marital status is inferred from names or voice.
+later analysis. Directed relationships have editable labels and one shared analysis field:
+the agent and human editor update that same text. A → B and B → A are distinct perspectives
+under the same person entry. Editing or explicitly clearing an analysis protects it; **Allow
+automatic updates** releases that protection. Editing only a label preserves analysis ownership.
+Allowing automatic updates keeps the current text until an agent publishes its replacement.
+Earlier human-written or deliberately cleared combined relationship notes stay protected;
+**Allow automatic relationship updates** explicitly releases that legacy protection.
+Neither gender nor marital status is inferred from names or voice.
 The persona agent fills missing metadata from explicit statements with transcript evidence.
 Existing values stay intact; conflicting information can be recorded as claims for review.
 Editing or clearing a field protects that field from automatic fills. Generated metadata is
@@ -314,6 +327,11 @@ need multiple supporting claims; otherwise the section reports insufficient evid
 Generated assessments describe high-level working patterns and development opportunities;
 event narratives, direct quotes and citations belong in Evidence. Refresh an existing assessment
 to apply this writing style to its saved observations without replaying a transcript.
+That refresh also creates individual relationship analyses from saved observations. Earlier
+combined relationship text remains available in History and is not split by guessing names.
+Synthesis validates each relationship against evidence about its canonical target. A profile
+assessment accepts up to 30 editable outgoing relationships within its existing context/time
+budget; an excessive context fails explicitly before a model call.
 Editing or clearing a section makes it human-controlled until you explicitly allow automatic
 updates again. Generated sections and history respect withdrawn or corrected source evidence.
 Historical generated text may also be hidden when its original participant attribution version
@@ -370,7 +388,7 @@ a deliberately deleted transcript. Previously imported meetings are not enrolled
 Repeated processing, profile/nickname edits and vocabulary changes do not reopen completed
 reviews or regenerate completed frozen memories.
 
-On **Meetings**, open **Meeting vocabulary** to define terms and abbreviations. New memory analysis selects a
+On **Meetings**, select the **Vocabulary** tab to define terms and abbreviations. New memory analysis selects a
 bounded matching glossary and saves it before its first model call. Retries reuse that glossary;
 editing vocabulary does not alter transcripts or replay earlier meetings.
 

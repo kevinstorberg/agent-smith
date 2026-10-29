@@ -1164,10 +1164,6 @@ pre {
 .profile-star:hover:not(:disabled) { background: var(--accent); border-color: var(--border); }
 .profile-star:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
 .profile-star:disabled { opacity: 0.5; cursor: default; }
-.persona-job .page-header { margin-bottom: 8px; }
-.persona-job .section-title { margin-bottom: 0; }
-.persona-job p + p { margin-top: 8px; }
-.persona-job .form-label { margin-top: 12px; }
 .profile-summary-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr); gap: 24px; align-items: start; }
 .profile-summary-identity { display: grid; gap: 6px; min-width: 0; }
 .profile-summary .page-title { margin-bottom: 2px; }
@@ -1177,28 +1173,59 @@ pre {
 .profile-assessment-state { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
 .profile-assessment-help { margin-top: 10px; color: var(--text-muted); font-size: 12px; }
 .profile-assessment-help p { margin-top: 8px; }
-.profile-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
-.profile-tabs a { display: inline-flex; align-items: center; min-height: 42px; padding: 9px 16px; border-bottom: 2px solid transparent; margin-bottom: -1px; color: var(--text-muted); font-size: 14px; text-decoration: none; }
-.profile-tabs a[aria-current="page"] { border-bottom-color: var(--highlight); color: var(--text); font-weight: 600; }
-.profile-tabs a:hover { color: var(--text); background: var(--surface); }
-.profile-tabs a:focus-visible { outline: 2px solid var(--info); outline-offset: -2px; }
+.resource-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+.resource-tabs a { display: inline-flex; align-items: center; min-height: 42px; padding: 9px 16px; border-bottom: 2px solid transparent; margin-bottom: -1px; color: var(--text-muted); font-size: 14px; text-decoration: none; }
+.resource-tabs a[aria-current="page"] { border-bottom-color: var(--highlight); color: var(--text); font-weight: 600; }
+.resource-tabs a:hover { color: var(--text); background: var(--surface); }
+.resource-tabs a:focus-visible { outline: 2px solid var(--info); outline-offset: -2px; }
 .profile-details dd { margin-top: 5px; }
 .profile-details dd p { margin-top: 4px; }
 .profile-evidence-link { margin-top: 12px; font-size: 13px; }
-.profile-relationship-links { margin-top: 20px; }
-.relationship-actions { display: flex; justify-content: flex-end; margin-bottom: 8px; }
-.profile-relationship-links .participant-form { margin-top: 16px; }
-.profile-evidence-intro { margin-bottom: 20px; }
 .profile-claim-edit { display: grid; gap: 8px; margin-top: 16px; }
 .profile-claim-edit .form-label { margin: 4px 0 0; }
+.profile-header-actions { display: flex; align-items: flex-start; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 75%; }
+.persona-job-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; max-width: 520px; }
+.persona-job-feedback { flex-basis: 100%; font-size: 12px; line-height: 1.6; }
+.persona-job-select { width: auto; max-width: 240px; }
+.relationship-person-name { margin-bottom: 16px; font-size: 16px; }
+.relationship-perspective + .relationship-perspective { border-top: 1px solid var(--border); margin-top: 20px; padding-top: 20px; }
+.relationship-perspective h5 { font-size: 13px; margin-bottom: 8px; }
+.relationship-label { margin-bottom: 10px; }
+.relationship-evidence { align-items: center; margin-top: 12px; font-size: 13px; }
+.relationship-actions { align-items: center; margin-top: 12px; }
+.relationship-perspective .participant-form { margin-top: 12px; }
+.relationship-protection-notice .btn { margin-top: 12px; }
+.profile-legacy-assessment { margin: 16px 0; }
+.profile-legacy-assessment > p { margin: 12px 0; }
+.evidence-kinds { flex-wrap: wrap; }
+.evidence-filters { display: grid; grid-template-columns: minmax(200px, 1.6fr) repeat(4, minmax(130px, 1fr)); align-items: end; gap: 12px; margin-bottom: 16px; }
+.evidence-filters > * { min-width: 0; }
+.evidence-filters .input { min-height: 40px; }
+.evidence-list-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.inline-clear { border: 0; background: none; color: inherit; font: inherit; padding: 2px 4px; cursor: pointer; }
+.inline-clear:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.evidence-table { overflow-x: auto; max-width: 100%; container-type: inline-size; }
+.evidence-table:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.evidence-table .table { min-width: 860px; }
+.evidence-table th:first-child { width: 40%; min-width: 260px; }
+.evidence-table td { vertical-align: top; }
+.evidence-preview { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.evidence-row-expanded { background: var(--accent); }
+.evidence-detail { display: grid; gap: 12px; max-width: calc(100cqi - 32px); padding: 8px 0; overflow-wrap: anywhere; }
+.evidence-table .evidence-detail-cell { background: var(--surface); }
+.evidence-detail details > p,
+.evidence-detail blockquote { margin-top: 8px; }
 @media (max-width: 1100px) {
   .profile-filters { grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr); }
   .profile-summary-content { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .profile-assessment-status { border-left: 0; border-top: 1px solid var(--border); padding: 16px 0 0; }
+  .evidence-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 540px) {
   .profile-filters { grid-template-columns: minmax(0, 1fr); }
-  .profile-tabs a { flex: 1; justify-content: center; padding-inline: 10px; }
+  .profile-header-actions { max-width: 100%; }
+  .evidence-filters { grid-template-columns: minmax(0, 1fr); }
+  .resource-tabs a { flex: 1 1 calc(50% - 4px); justify-content: center; padding-inline: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .form-checkbox { transition: none; }
@@ -1245,6 +1272,10 @@ pre {
     display: flex;
     padding: 0;
     border-bottom: none;
+  }
+
+  .sidebar-section:not(:last-child) {
+    border-right: 1px solid var(--border);
   }
 
   .sidebar-link {

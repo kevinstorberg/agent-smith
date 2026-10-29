@@ -113,3 +113,17 @@ it('refreshes source-projected historical text while open even without a profile
   await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS); });
   expect(api.profiles.historyOne).not.toHaveBeenCalled();
 });
+
+it('shows named directional assessment and ownership changes from multiple edge snapshots', async () => {
+  const edge = { id: 'private-edge-id', subject_name: 'Alex', target_name: 'Jordan', label: '', notes: 'Previous analysis', dismissed: false, analysis_evidence: { human: false } };
+  vi.mocked(api.profiles.historyOne).mockResolvedValue({ ...revision, changes: { relationships: {
+    before: [edge], after: [{ ...edge, notes: 'Updated analysis', analysis_evidence: { human: true, claim_ids: ['private-proof-id'] } }],
+  } } });
+  renderWithProviders(<ProfileHistory profileId="person" revision={3} />);
+  fireEvent.click(screen.getByText('History'));
+  fireEvent.click(await screen.findByRole('button', { name: 'View change #12' }));
+  expect(await screen.findByText('Updated analysis')).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Alex → Jordan · Relationship assessment' })).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Alex → Jordan · Automatic updates' })).toBeVisible();
+  expect(screen.queryByText(/private-/)).not.toBeInTheDocument();
+});

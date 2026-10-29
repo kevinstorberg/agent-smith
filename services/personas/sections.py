@@ -54,14 +54,15 @@ def human_patch(row: dict, changes: dict | None, release: list[str]) -> tuple[di
 
 
 def input_hash(row: dict, claims: list[dict]) -> str:
+    from services.meetings.relationship_analysis import inputs
+
     # Agent-authored narratives are outputs, so publishing them must not dirty their own inputs.
     return digest({
-        "prompt_version": 2, "identity": {key: row.get(key) for key in ("id", "display_name", "email", "nicknames")},
+        "prompt_version": 3, "identity": {key: row.get(key) for key in ("id", "display_name", "email", "nicknames")},
         "metadata": row.get("metadata", {}), "metadata_provenance": row.get("metadata_provenance", {}),
         "claims": sorted((claim["id"], claim["signature"]) for claim in claims),
         "human_sections": {key: row.get("section_notes", {}).get(key) for key in profile_fields.SECTION_FIELDS if human(key, row)},
-        "relationships": [{key: edge.get(key) for key in ("id", "revision", "subject_id", "target_id", "label", "notes", "dismissed")}
-                          for edge in row.get("relationships", [])],
+        "relationships": inputs(row.get("relationships", [])),
     })
 
 

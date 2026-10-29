@@ -3,24 +3,26 @@ import { NavLink } from 'react-router';
 import { api } from '../api';
 import { useNotification } from '../context/useNotification';
 
+// Separate deployable harness configuration from its management tools and general-purpose resources.
+// Group names stay internal; the sidebar uses separators without headings.
 const NAV_SECTIONS = [{ id: 'harness', links: [
   { path: '/harness/agents', label: 'Agents' },
   { path: '/harness/hooks', label: 'Hooks' },
   { path: '/harness/rules', label: 'Rules' },
   { path: '/harness/skills', label: 'Skills' },
   { path: '/harness/tools', label: 'Tools' },
-] }, { id: 'resources', links: [
-  { path: '/memory', label: 'Memory' },
-  { path: '/meetings', label: 'Meetings' },
-  { path: '/profiles', label: 'Profiles' },
-  { path: '/plans', label: 'Plans' },
+] }, { id: 'maintenance', links: [
+  { path: '/audit', label: 'Audit' },
+  { path: '/eval-configs', label: 'Evals' },
   { path: '/jobs', label: 'Jobs' },
   { path: '/proposals', label: 'Proposals' },
-  { path: '/audit', label: 'Audit' },
-  { path: '/chat', label: 'Chat' },
-] }, { id: 'evals', links: [
-  { path: '/eval-configs', label: 'Evals' },
   { path: '/evals', label: 'Results' },
+] }, { id: 'external', links: [
+  { path: '/chat', label: 'Chat' },
+  { path: '/meetings', label: 'Meetings' },
+  { path: '/memory', label: 'Memory' },
+  { path: '/plans', label: 'Plans' },
+  { path: '/profiles', label: 'Profiles' },
 ] }];
 
 function navClass({ isActive }: { isActive: boolean }): string {

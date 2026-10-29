@@ -6,13 +6,13 @@ from uuid import UUID
 
 from psycopg2.extras import Json
 
-from services.meetings import profile_db
+from services.meetings import profile_db, relationship_analysis
 from services.meetings.db import _serialize
 from services.meetings.profile_fields import text
 
 
 def for_profiles(cur, profiles: list[dict], *, include_dismissed: bool = False, include_overrides: bool = False,
-                 include_evidence: bool = True) -> dict[str, list[dict]]:
+                 include_evidence: bool = True, include_unavailable: bool = False) -> dict[str, list[dict]]:
     ids = tuple(str(row["id"]) for row in profiles)
     result = {key: [] for key in ids}
     if not ids:
@@ -33,14 +33,22 @@ def for_profiles(cur, profiles: list[dict], *, include_dismissed: bool = False, 
     subjects = {row["id"]: row for row in profile_db._visible(cur, [dict(row) for row in cur.fetchall()], include_overrides=include_overrides)}
     target_ids = {claim["target_id"] for row in subjects.values() for claim in row["claims"] if claim.get("target_id")}
     canonical = profile_db.canonical_rows(cur, list(target_ids), metadata_only=True)
+    contexts = profile_db._source_contexts(cur, list(subjects.values()),
+        {source["meeting_id"] for edge in edges for source in edge["analysis_evidence"].get("sources", [])})
     for edge in edges:
         item = _serialize(edge)
         item["history_count"] = len(item.pop("history"))
         claims = [claim for claim in subjects.get(item["subject_id"], {}).get("claims", [])
                   if claim.get("target_id") and canonical.get(claim["target_id"])
                   and str(canonical[claim["target_id"]]["id"]) == item["target_id"]]
+        effective = []
+        from services.personas import sections
+        for claim in sections.effective_claims(subjects.get(item["subject_id"], {}), contexts):
+            target = canonical.get(claim.get("target_id"))
+            effective.append({**claim, "canonical_target_id": str(target["id"]) if target else claim.get("target_id")})
+        item = relationship_analysis.project(item, effective, contexts, full_proof=include_overrides)
         item["claim_count"] = len(claims)
-        if not claims and not item["human_confirmed"] and not item["dismissed"]:
+        if not claims and not item["human_confirmed"] and not item["dismissed"] and not include_unavailable:
             continue
         if include_overrides:
             item["claims_available_via"] = {"tool": "get_profile", "profile_id": item["subject_id"]}
@@ -64,20 +72,21 @@ def _detail(cur, relationship_id: str, *, include_evidence: bool = True) -> dict
     return found
 
 
-def create(profile_id: str, target_id: str, expected_revision: int, target_revision: int, label: str = "", notes: str = "",
+def create(profile_id: str, target_id: str, expected_revision: int, target_revision: int, label: str = "", notes: str | None = None,
            *, include_evidence: bool = True) -> dict:
-    label, notes = text(label, "Relationship label", 200), text(notes, "Relationship notes")
+    proof = {"version": 1, "human": notes is not None}
+    label, notes = text(label, "Relationship label", 200), text(notes or "", "Relationship notes")
     with profile_db.profile_write_cursor() as cur:
         subject = profile_db._editable(cur, profile_id, expected_revision)
         target = profile_db._editable(cur, target_id, target_revision)
         if subject["id"] == target["id"]:
             raise ValueError("A relationship must connect two different people")
-        cur.execute("""INSERT INTO profile_relationships (subject_id, target_id, label, notes, human_confirmed)
-            VALUES (%s, %s, %s, %s, true)
+        cur.execute("""INSERT INTO profile_relationships (subject_id, target_id, label, notes, human_confirmed, analysis_evidence)
+            VALUES (%s, %s, %s, %s, true, %s)
             ON CONFLICT (subject_id, target_id) DO UPDATE SET label = EXCLUDED.label,
-              notes = EXCLUDED.notes, dismissed = false, human_confirmed = true, revision = profile_relationships.revision + 1,
+              notes = EXCLUDED.notes, analysis_evidence=EXCLUDED.analysis_evidence, dismissed = false, human_confirmed = true, revision = profile_relationships.revision + 1,
               updated_at = clock_timestamp() WHERE profile_relationships.dismissed
-            RETURNING *""", (subject["id"], target["id"], label, notes))
+            RETURNING *""", (subject["id"], target["id"], label, notes, Json(proof)))
         row = cur.fetchone()
         if row is None:
             raise profile_db.ProfileRevisionConflict("These people already have a relationship; edit that relationship instead")
@@ -112,8 +121,7 @@ def _touch_profiles(cur, ids, previous: dict | None, current: dict) -> None:
         assessment_attempts = 0, assessment_error = NULL, assessment_next_attempt_at = now(),
         updated_at = clock_timestamp() WHERE id IN %s RETURNING *""", (tuple(ids),))
     after = [dict(row) for row in cur.fetchall()]
-    fields = ("id", "subject_id", "target_id", "label", "notes", "dismissed", "human_confirmed")
-    change = {side: _serialize({key: edge[key] for key in fields}) if edge is not None else None
+    change = {side: [history_snapshot(cur, edge)] if edge is not None else []
               for side, edge in (("before", previous), ("after", current))}
     for row in after:
         revisions.record(cur, before[row["id"]], row, actor="human", source="manual",
@@ -121,20 +129,27 @@ def _touch_profiles(cur, ids, previous: dict | None, current: dict) -> None:
 
 
 def update(profile_id: str, relationship_id: str, expected_revision: int, *, label: str | None = None,
-           notes: str | None = None, include_evidence: bool = True) -> dict:
-    if label is None and notes is None:
+           notes: str | None = None, allow_agent_notes: bool = False, include_evidence: bool = True) -> dict:
+    if type(allow_agent_notes) is not bool or allow_agent_notes and notes is not None:
+        raise ValueError("Automatic relationship updates cannot be released together with a notes edit")
+    if label is None and notes is None and not allow_agent_notes:
         raise ValueError("Provide a relationship label or notes")
     with profile_db.profile_write_cursor() as cur:
         edge = _editable(cur, profile_id, relationship_id, expected_revision)
         new_label = text(label, "Relationship label", 200) if label is not None else edge["label"]
         new_notes = text(notes, "Relationship notes") if notes is not None else edge["notes"]
-        if (new_label, new_notes) != (edge["label"], edge["notes"]) or not edge["human_confirmed"]:
-            history = edge["history"] + [{"action": "edit", "label": edge["label"], "notes": edge["notes"],
+        proof = {"version": 1, "human": True} if notes is not None else dict(edge["analysis_evidence"])
+        if allow_agent_notes:
+            proof = {**proof, "human": False}
+            if "claim_ids" not in proof:
+                proof = {"version": 1, "human": False, "origin": "human"}
+        if (new_label, new_notes, proof) != (edge["label"], edge["notes"], edge["analysis_evidence"]) or not edge["human_confirmed"]:
+            history = edge["history"] + [{"action": "edit", **history_snapshot(cur, edge),
                                            "timestamp": datetime.now(timezone.utc).isoformat()}]
             _validate_history(history)
-            cur.execute("""UPDATE profile_relationships SET label = %s, notes = %s, history = %s, human_confirmed = true,
+            cur.execute("""UPDATE profile_relationships SET label = %s, notes = %s, history = %s, analysis_evidence=%s, human_confirmed = true,
                 revision = revision + 1, updated_at = clock_timestamp() WHERE id = %s RETURNING *""",
-                        (new_label, new_notes, Json(history), edge["id"]))
+                        (new_label, new_notes, Json(history), Json(proof), edge["id"]))
             updated = dict(cur.fetchone())
             _touch_profiles(cur, (edge["subject_id"], edge["target_id"]), edge, updated)
         return _detail(cur, str(edge["id"]), include_evidence=include_evidence)
@@ -161,9 +176,64 @@ def _validate_history(history: list[dict]) -> None:
         raise ValueError("Relationship history exceeds the storage limit")
 
 
+def history_snapshot(cur, edge: dict) -> dict:
+    fields = ("id", "subject_id", "target_id", "label", "notes", "dismissed", "human_confirmed", "analysis_evidence")
+    result = _serialize({key: edge[key] for key in fields})
+    cur.execute("SELECT id,display_name FROM participant_profiles WHERE id IN %s", ((edge["subject_id"], edge["target_id"]),))
+    names = {str(row["id"]): row["display_name"] for row in cur.fetchall()}
+    return {**result, "subject_name": names.get(str(edge["subject_id"]), "Unavailable profile"),
+            "target_name": names.get(str(edge["target_id"]), "Unavailable profile")}
+
+
+def apply_assessments(cur, profile_id: str, candidates: list[dict], claims: list[dict], contexts: dict) -> dict:
+    cur.execute("SELECT * FROM profile_relationships WHERE subject_id=%s AND NOT dismissed ORDER BY id FOR UPDATE", (profile_id,))
+    edges = {str(row["target_id"]): dict(row) for row in cur.fetchall()}
+    before, after = [], []
+    for item in candidates:
+        edge = edges.get(item["target_id"])
+        if edge is None or relationship_analysis.human(edge):
+            raise profile_db.ProfileRevisionConflict("Relationship ownership or identity changed during assessment")
+        proof = relationship_analysis.proof(edge, item, claims, contexts)
+        previous = history_snapshot(cur, edge)
+        history = edge["history"] + [{"action": "assessment", **previous}]
+        _validate_history(history)
+        cur.execute("""UPDATE profile_relationships SET notes=%s,analysis_evidence=%s,history=%s,
+            revision=revision+1,updated_at=clock_timestamp() WHERE id=%s RETURNING *""",
+                    (item["text"], Json(proof), Json(history), edge["id"]))
+        before.append(previous)
+        after.append(history_snapshot(cur, dict(cur.fetchone())))
+    return {"before": before, "after": after}
+
+
+def rebase_analysis(cur, profile_id: str, previous_claims: list[dict], claims: list[dict], before: dict, after: dict) -> bool:
+    from services.personas import sections
+
+    cur.execute("SELECT * FROM profile_relationships WHERE subject_id=%s AND NOT dismissed ORDER BY id FOR UPDATE", (profile_id,))
+    stale = False
+    current = {claim["id"]: claim for claim in claims}
+    for found in cur.fetchall():
+        edge = dict(found)
+        proof = edge["analysis_evidence"]
+        if relationship_analysis.human(edge):
+            continue
+        if sections.proof_valid(proof, previous_claims, before) and all(key in current for key in proof.get("claim_ids", [])):
+            updated = {**proof, "claim_signatures": {key: current[key]["signature"] for key in proof["claim_ids"]},
+                       "sources": [{"meeting_id": source["meeting_id"], "transcript_hash": after[source["meeting_id"]]["transcript_hash"],
+                                    "participants_revision": after[source["meeting_id"]]["participants_revision"]}
+                                   for source in proof.get("sources", [])]}
+            cur.execute("UPDATE profile_relationships SET analysis_evidence=%s WHERE id=%s", (Json(updated), edge["id"]))
+        elif proof.get("status") == "supported":
+            stale = True
+    return stale
+
+
 def merge_profile_links(cur, source_id: str, target_id: str) -> None:
     cur.execute("SELECT * FROM profile_relationships WHERE subject_id = %s OR target_id = %s ORDER BY id FOR UPDATE", (source_id, source_id))
     edges = [dict(row) for row in cur.fetchall()]
+    if edges:
+        cur.execute("""UPDATE participant_profiles SET assessment_dirty=true,assessment_attempts=0,assessment_error=NULL,
+            assessment_next_attempt_at=clock_timestamp() WHERE id IN %s AND NOT deleted""",
+                    (tuple({str(edge["subject_id"]) for edge in edges} | {target_id}),))
     for edge in edges:
         subject = target_id if str(edge["subject_id"]) == source_id else str(edge["subject_id"])
         target = target_id if str(edge["target_id"]) == source_id else str(edge["target_id"])
@@ -174,19 +244,38 @@ def merge_profile_links(cur, source_id: str, target_id: str) -> None:
         cur.execute("SELECT * FROM profile_relationships WHERE subject_id = %s AND target_id = %s AND id <> %s FOR UPDATE", (subject, target, edge["id"]))
         winner = cur.fetchone()
         if winner is None:
-            cur.execute("UPDATE profile_relationships SET subject_id = %s, target_id = %s, revision = revision + 1, updated_at = clock_timestamp() WHERE id = %s", (subject, target, edge["id"]))
+            history = edge["history"] + [{"action": "merge", **history_snapshot(cur, edge)}]
+            _validate_history(history)
+            proof = {"version": 1, "human": relationship_analysis.human(edge)}
+            cur.execute("""UPDATE profile_relationships SET subject_id=%s,target_id=%s,notes=%s,analysis_evidence=%s,
+                history=%s,revision=revision+1,updated_at=clock_timestamp() WHERE id=%s""",
+                        (subject, target, edge["notes"] if proof["human"] else "", Json(proof), Json(history), edge["id"]))
             continue
         winner = dict(winner)
-        note_parts = [winner["notes"], edge["notes"]]
-        if winner["label"] and edge["label"] and winner["label"] != edge["label"]:
-            note_parts.append("Also described as: " + edge["label"])
-        notes = "\n\n".join(dict.fromkeys(part for part in note_parts if part))
-        text(notes, "Combined relationship notes")
-        history = winner["history"] + edge["history"] + [{"action": "merge", "relationship": _serialize(edge)}]
+        chosen = winner if relationship_analysis.human(winner) else edge if relationship_analysis.human(edge) else None
+        notes = chosen["notes"] if chosen else ""
+        proof = {"version": 1, "human": True} if chosen else {"version": 1, "human": False}
+        history = winner["history"] + edge["history"] + [{"action": "merge", "before": [history_snapshot(cur, winner), history_snapshot(cur, edge)]}]
         _validate_history(history)
-        cur.execute("""UPDATE profile_relationships SET label = %s, notes = %s, dismissed = %s, history = %s,
+        cur.execute("""UPDATE profile_relationships SET label = %s, notes = %s, dismissed = %s, history = %s, analysis_evidence=%s,
             human_confirmed = %s,
             revision = greatest(revision, %s) + 1, updated_at = clock_timestamp() WHERE id = %s""",
-                    (winner["label"] or edge["label"], notes, winner["dismissed"] or edge["dismissed"], Json(history),
+                    (winner["label"] or edge["label"], notes, winner["dismissed"] or edge["dismissed"], Json(history), Json(proof),
                      winner["human_confirmed"] or edge["human_confirmed"], edge["revision"], winner["id"]))
         cur.execute("DELETE FROM profile_relationships WHERE id = %s", (edge["id"],))
+
+
+def project_history(cur, edge: dict) -> dict:
+    from services.personas import sections
+
+    if not edge.get("analysis_evidence"):
+        return edge
+    row = profile_db._canonical(cur, edge["subject_id"])
+    rows = [row] if row and not row["deleted"] else []
+    contexts = profile_db._source_contexts(cur, rows,
+        {source["meeting_id"] for source in edge["analysis_evidence"].get("sources", [])}
+        | {claim["meeting_id"] for profile in rows for claim in profile["claims"]})
+    claims = sections.effective_claims(row, contexts) if rows else []
+    targets = profile_db.canonical_rows(cur, [claim["target_id"] for claim in claims if claim.get("target_id")], metadata_only=True)
+    claims = [{**claim, "canonical_target_id": str(targets[claim["target_id"]]["id"]) if targets.get(claim.get("target_id")) else claim.get("target_id")} for claim in claims]
+    return relationship_analysis.project(edge, claims, contexts)

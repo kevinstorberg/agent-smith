@@ -15,8 +15,8 @@ import { ProfileHistory } from '../components/ProfileHistory';
 import { ProfileRelationships } from '../components/ProfileRelationships';
 import { DetailPageHeader } from '../components/DetailPageHeader';
 
-const ASSESSMENT_SECTIONS: ProfileSectionKey[] = ['drivers', 'strengths', 'development_areas', 'working_style', 'relationships'];
-const VIEWS = [['overview', 'Overview'], ['assessment', 'Assessment'], ['evidence', 'Evidence']] as const;
+const ASSESSMENT_SECTIONS: ProfileSectionKey[] = ['drivers', 'strengths', 'development_areas', 'working_style'];
+const VIEWS = [['overview', 'Overview'], ['assessment', 'Assessment'], ['relationships', 'Relationships'], ['evidence', 'Evidence']] as const;
 type View = typeof VIEWS[number][0];
 
 export function ProfileDetailPage() {
@@ -24,7 +24,7 @@ export function ProfileDetailPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const selected = searchParams.get('tab');
-  const view: View = selected === 'assessment' || selected === 'evidence' ? selected : 'overview';
+  const view: View = selected === 'assessment' || selected === 'relationships' || selected === 'evidence' ? selected : 'overview';
   const tabSearch = (value: View) => {
     const next = new URLSearchParams(searchParams);
     next.set('tab', value);
@@ -94,7 +94,7 @@ export function ProfileDetailPage() {
     </div>
     {error && <div className="card" role="alert"><p>{profile ? 'Could not refresh this profile. Your current view and drafts are retained.' : 'Could not load this participant profile. It may be unavailable or deleted.'}</p><button className="btn" onClick={reload}>Retry</button></div>}
     {loading && !profile ? <div className="loading">Loading participant profile...</div> : profile && <>
-      <nav className="profile-tabs" aria-label="Profile views">
+      <nav className="resource-tabs" aria-label="Profile views">
         {VIEWS.map(([value, label]) => <Link key={value} id={`profile-tab-${value}`} to={tabSearch(value)} aria-current={view === value ? 'page' : undefined}>{label}</Link>)}
       </nav>
       {notice && <p className="card" role="alert">{notice}</p>}
@@ -111,13 +111,15 @@ export function ProfileDetailPage() {
           onBusyChange={setIdentityBusy} onReload={reload}
           onSaved={winner => { if (winner.id !== id) navigate(`/profiles/${winner.id}${tabSearch(view)}`, { replace: true }); else reload(); }} />
         <ProfileHistory key={`history-${profile.id}`} profileId={profile.id} revision={profile.revision}
-          evidenceHref={tabSearch('evidence')} />
+          evidenceHref={tabSearch('evidence')} legacyRelationships={profile.section_notes?.relationships !== undefined ? { text: profile.section_notes.relationships, human: profile.section_evidence?.relationships?.human ?? false } : undefined} />
       </div>
       <div hidden={view !== 'assessment'} role="region" aria-labelledby="profile-tab-assessment">
         <ProfileNotes key={`sections-${profile.id}`} profile={profile} sectionKeys={ASSESSMENT_SECTIONS}
-          disabled={baseDisabled || overviewBusy || relationshipsBusy} onBusyChange={setNotesBusy} onReload={reload}
-          relationships={<ProfileRelationships profile={profile} disabled={baseDisabled || overviewBusy || notesBusy}
-            onBusyChange={setRelationshipsBusy} onReload={reload} />} />
+          disabled={baseDisabled || overviewBusy || relationshipsBusy} onBusyChange={setNotesBusy} onReload={reload} />
+      </div>
+      <div hidden={view !== 'relationships'} role="region" aria-labelledby="profile-tab-relationships">
+        <ProfileRelationships key={`relationships-${profile.id}`} profile={profile} disabled={baseDisabled || overviewBusy || notesBusy}
+          onBusyChange={setRelationshipsBusy} onReload={reload} />
       </div>
       <div hidden={view !== 'evidence'} role="region" aria-labelledby="profile-tab-evidence">
         {(view === 'evidence' || evidenceVisited) && <ProfileEvidence key={`evidence-${profile.id}`} profile={profile} active={view === 'evidence'}

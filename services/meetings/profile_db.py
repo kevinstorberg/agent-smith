@@ -4,6 +4,7 @@ import copy
 import json
 from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
+from typing import get_args
 from uuid import UUID, uuid4, uuid5
 
 from psycopg2.extras import Json
@@ -12,7 +13,8 @@ from pydantic import ValidationError
 
 from services.meetings import stage_db
 from services.meetings.db import _cursor, _serialize
-from services.meetings.outputs import ProfileClaim, ProfileMetadataPatch
+from services.meetings.outputs import (ProfileClaim, ProfileMetadataPatch, ProfileCategory, ProfileEpistemic,
+                                      ProfileConfidence, ProfileReviewStatus, ProfileClaimSort)
 from services.meetings import profile_fields, profile_metadata
 from services.personas import revisions, sections
 
@@ -117,7 +119,7 @@ def _detail(cur, row: dict, *, include_evidence: bool = True) -> dict:
 
     contexts = _source_contexts(cur, [row], {claim["meeting_id"] for claim in row["claims"] if claim.get("meeting_id")})
     result = {**visible, "aliases": aliases, "emails": emails, "relationships": relationships[str(row["id"])],
-              "assessment": describe(row, sections.effective_claims(row, contexts))}
+              "assessment": describe(row, sections.effective_claims(row, contexts), relationships[str(row["id"])])}
     return result if include_evidence else _compact_profile(result)
 
 
@@ -240,25 +242,63 @@ def get_profile(profile_id: str, *, include_evidence: bool = True) -> dict | Non
         return _detail(cur, row, include_evidence=include_evidence) if row and not row["deleted"] else None
 
 
-def list_claims(profile_id: str, *, limit: int = 20, offset: int = 0) -> dict | None:
+def list_claims(profile_id: str, *, limit: int = 20, offset: int = 0, query: str | None = None,
+                category: ProfileCategory | None = None, epistemic: ProfileEpistemic | None = None,
+                confidence: ProfileConfidence | None = None, status: ProfileReviewStatus | None = None,
+                target_id: str | None = None, sort: ProfileClaimSort = "oldest") -> dict | None:
     key = str(UUID(profile_id))
     if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
         raise ValueError("Profile claim limit must be 1-100 and offset must be nonnegative")
+    filters, params = [], [key]
+    for field, value, choices in (("category", category, ProfileCategory), ("epistemic", epistemic, ProfileEpistemic),
+                                   ("confidence", confidence, ProfileConfidence), ("status", status, ProfileReviewStatus)):
+        if value is not None:
+            if not isinstance(value, str) or value not in get_args(choices):
+                raise ValueError(f"Profile evidence {field} is invalid")
+            filters.append(f"value->>'{field}' = %s")
+            params.append(value)
+    if not isinstance(sort, str) or sort not in get_args(ProfileClaimSort):
+        raise ValueError("Profile evidence sort must be oldest or newest")
+    if query is not None:
+        if not isinstance(query, str) or not query.strip() or len(query) > 1000:
+            raise ValueError("Profile evidence query must be nonblank and at most 1000 characters")
+        filters.append("""concat_ws(' ', value->>'content', value->'correction'->>'content',
+            value->'correction'->>'reason', value->>'rationale', value->'evidence', meeting_title) ILIKE %s""")
+        params.append("%" + query.strip() + "%")
+    if target_id is not None:
+        filters.append("canonical_target_id = (SELECT coalesce(merged_into,id) FROM participant_profiles WHERE id=%s AND NOT deleted)")
+        params.append(str(UUID(str(target_id))))
+    where = " AND ".join(filters) or "true"
+    direction = "DESC" if sort == "newest" else "ASC"
     with _cursor() as cur:
         cur.execute(f"""WITH profile AS (
                 SELECT canonical.id, canonical.revision, canonical.deleted, canonical.merged_into, canonical.claims
                 {_CANONICAL_JOIN} WHERE requested.id = %s
             ), visible AS (
-                SELECT claim.value, claim.ordinality FROM profile
+                SELECT claim.value, claim.ordinality, meeting.title AS meeting_title,
+                    meeting.provider_created_at AS meeting_date,
+                    CASE WHEN NOT target.deleted AND NOT canonical_target.deleted THEN canonical_target.id END AS canonical_target_id,
+                    CASE WHEN NOT canonical_target.deleted THEN canonical_target.display_name END AS canonical_target_name
+                FROM profile
                 CROSS JOIN LATERAL jsonb_array_elements(profile.claims) WITH ORDINALITY claim(value, ordinality)
+                JOIN meeting_summaries meeting ON meeting.id=(claim.value->>'meeting_id')::uuid
+                LEFT JOIN participant_profiles target ON target.id=(claim.value->>'target_id')::uuid
+                LEFT JOIN participant_profiles canonical_target ON canonical_target.id=coalesce(target.merged_into,target.id)
                 WHERE NOT profile.deleted AND profile.merged_into IS NULL
                   AND claim.value->>'superseded' IS DISTINCT FROM 'true'
                   AND {profile_metadata.source_sql('claim.value', legacy_claim=True)}
+            ), filtered AS (
+                SELECT value || jsonb_build_object('meeting_title',meeting_title,'meeting_date',meeting_date)
+                    || CASE WHEN canonical_target_id IS NOT NULL THEN jsonb_build_object(
+                        'target_id',canonical_target_id,'target_name',canonical_target_name)
+                        WHEN value->>'target_id' IS NOT NULL THEN jsonb_build_object('target_id',NULL,'target_name',NULL)
+                        ELSE '{{}}'::jsonb END AS value,
+                    ordinality FROM visible WHERE {where}
             ) SELECT profile.id AS profile_id, profile.revision, profile.deleted, profile.merged_into,
-                (SELECT count(*) FROM visible) AS total,
-                coalesce((SELECT jsonb_agg(page.value ORDER BY page.ordinality) FROM (
-                    SELECT value, ordinality FROM visible ORDER BY ordinality LIMIT %s OFFSET %s
-                ) page), '[]'::jsonb) AS items FROM profile""", (key, limit, offset))
+                (SELECT count(*) FROM filtered) AS total,
+                coalesce((SELECT jsonb_agg(page.value ORDER BY page.ordinality {direction}) FROM (
+                    SELECT value, ordinality FROM filtered ORDER BY ordinality {direction} LIMIT %s OFFSET %s
+                ) page), '[]'::jsonb) AS items FROM profile""", (*params, limit, offset))
         row = cur.fetchone()
         if row is None or row["deleted"]:
             return None

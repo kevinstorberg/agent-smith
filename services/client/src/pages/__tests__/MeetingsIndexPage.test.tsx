@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
+import { useLocation } from 'react-router';
 import { MeetingsIndexPage } from '../MeetingsIndexPage';
 import { meetingFixture } from './meetingFixture';
 
@@ -11,11 +12,17 @@ vi.mock('react-router', async (importOriginal) => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
-vi.mock('../../api', async original => ({ ...await original<typeof import('../../api')>(), api: { meetings: { list: vi.fn(), vocabulary: { list: vi.fn() } } } }));
+vi.mock('../../api', async original => ({ ...await original<typeof import('../../api')>(), api: { meetings: { list: vi.fn(), vocabulary: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() } } } }));
 import { api } from '../../api';
 
 const mockList = vi.mocked(api.meetings.list);
 const meetings = [meetingFixture, { ...meetingFixture, id: 'other-id', source_name: 'team', title: 'Team retrospective' }];
+const term = { id: 'term-1', term: 'LTV', definition: 'Lifetime value', revision: 1, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' };
+
+function Location() {
+  const location = useLocation();
+  return <output data-testid="location">{location.pathname}{location.search}</output>;
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -24,6 +31,40 @@ beforeEach(() => {
 });
 
 describe('MeetingsIndexPage', () => {
+  it('opens Vocabulary from its URL and preserves unrelated query parameters when switching views', async () => {
+    vi.mocked(api.meetings.vocabulary.list).mockResolvedValue({ items: [term], total: 1 });
+    renderWithProviders(<><MeetingsIndexPage /><Location /></>, { initialEntries: ['/meetings?tab=vocabulary&source=work'] });
+    expect(await screen.findByRole('button', { name: 'Edit LTV' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Vocabulary' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('textbox', { name: 'Search meetings' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('link', { name: 'Meetings' }));
+    expect(screen.getByRole('textbox', { name: 'Search meetings' })).toBeVisible();
+    expect(screen.getByTestId('location')).toHaveTextContent('/meetings?tab=meetings&source=work');
+    expect(screen.queryByRole('button', { name: 'Edit LTV' })).not.toBeInTheDocument();
+  });
+
+  it('retains meeting search, pagination and an unsaved vocabulary edit across tab changes', async () => {
+    mockList.mockResolvedValue({ items: meetings, total: 25 });
+    vi.mocked(api.meetings.vocabulary.list).mockResolvedValue({ items: [term], total: 1 });
+    renderWithProviders(<MeetingsIndexPage />);
+    await screen.findByText('Product planning');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search meetings' }), { target: { value: 'release' } });
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'release' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: 'release' }));
+    const listReads = mockList.mock.calls.length;
+    fireEvent.click(screen.getByRole('link', { name: 'Vocabulary' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit LTV' }));
+    fireEvent.change(screen.getByLabelText('Meaning / definition (optional)'), { target: { value: 'My definition draft' } });
+    fireEvent.click(screen.getByRole('link', { name: 'Meetings' }));
+    expect(screen.getByRole('textbox', { name: 'Search meetings' })).toHaveValue('release');
+    expect(screen.getByText('Showing 11–20 of 25')).toBeVisible();
+    expect(mockList).toHaveBeenCalledTimes(listReads);
+    fireEvent.click(screen.getByRole('link', { name: 'Vocabulary' }));
+    expect(screen.getByLabelText('Meaning / definition (optional)')).toHaveValue('My definition draft');
+    expect(api.meetings.vocabulary.update).not.toHaveBeenCalled();
+  });
+
   it('renders meeting topics and filters them while typing from the first page', async () => {
     mockList.mockResolvedValue({ items: [{ ...meetingFixture, labels: ['product', 'roadmapping'] }], total: 1 });
     renderWithProviders(<MeetingsIndexPage />);

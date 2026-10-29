@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 from langchain_core.tools import tool
 from pydantic import BaseModel, ConfigDict, Field
 
-from services.meetings import profile_fields
+from services.meetings import profile_fields, relationship_analysis
 from services.meetings.analysis import AnalysisContext, MeetingAnalysisError, run_analysis
 from services.personas import sections
 
@@ -17,7 +17,7 @@ Read the existing narrative, human edits/clears, optional metadata, relationship
 Refine the current assessment incrementally; never discard contrary evidence or replace human
 text. human=true section ownership is authoritative, even for an empty/cleared section.
 Describe overview; drivers/motivations; strengths; development areas; communication/working
-style; and directed relationships/perceptions. Distinguish a person's own report, an observed
+style. Produce directed relationship analyses separately in relationships using supplied canonical target_id values. Distinguish a person's own report, an observed
 interaction and an uncertain inference. Do not diagnose, stereotype, guess private attributes,
 identify anonymous speakers or convert one interaction into a permanent personality claim.
 Write HIGH-LEVEL analyses of working patterns, motivations, capabilities and development
@@ -38,7 +38,7 @@ multiple claims repeating the same source utterance count once. Overview may use
 If support is insufficient, stage status insufficient_evidence, empty text and no asserted
 claim. A supported section must cite only the supplied current claim IDs and describe what
 those observations justify, with uncertainty and changes over time. Never invent evidence.
-Stage each editable section exactly once through stage_assessment. Keep each text concise,
+Stage each editable ordinary section and each editable outgoing relationship exactly once through stage_assessment. Never generate an aggregate relationships section. If the legacy relationships section is human-protected, stage no relationship entries until its owner explicitly releases it. Relationship claim IDs must all concern that target; preserve human relationship notes including clears. Keep each text concise,
 specific, actionable and at most 4000 characters. Relationships retain direction and name
 the known target only when supported. Source evidence remains secondary to the narrative.
 You can research previous memories but cannot write memories, execute tasks or edit metadata.
@@ -57,44 +57,76 @@ class SectionAssessment(BaseModel):
     claim_ids: list[str] = Field(default_factory=list, max_length=30)
 
 
+class RelationshipAssessment(SectionAssessment):
+    target_id: str
+
+
 class AssessmentSubmission(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    sections: dict[str, SectionAssessment] = Field(max_length=6)
+    sections: dict[str, SectionAssessment] = Field(max_length=5)
+    relationships: list[RelationshipAssessment] = Field(default_factory=list, max_length=30)
     reason: str = Field(default="", max_length=2000)
 
 
 def validate_output(row: dict, claims: list[dict], candidates: dict) -> dict:
-    editable = {key for key in profile_fields.SECTION_FIELDS if not sections.human(key, row)}
+    editable = {key for key in profile_fields.SECTION_FIELDS - {"relationships"} if not sections.human(key, row)}
     if set(candidates) != editable:
         raise ValueError("Assessment must include each editable section exactly once and preserve human sections")
     known = {claim["id"]: claim for claim in claims}
     result = {}
     for key, candidate in candidates.items():
         item = SectionAssessment.model_validate(candidate).model_dump()
-        ids = list(dict.fromkeys(item["claim_ids"]))
-        if set(ids) - known.keys():
-            raise ValueError("Assessment cites an unknown or unavailable observation")
-        if item["status"] == "supported":
-            if not item["text"].strip() or len(ids) < (1 if key == "overview" else 2):
-                raise ValueError("Supported assessment requires text and enough distinct current observation IDs")
-            if re.search(r"https?://|\bsegment-\d+\b|\b(?:meeting source|evidence):", item["text"], re.IGNORECASE):
-                raise ValueError("Keep source citations in claim_ids and the evidence feed, not assessment text")
-            supports = [{(known[claim_id]["meeting_id"], entry["segment_id"])
-                         for entry in known[claim_id].get("evidence", [])} for claim_id in ids]
-            independent = any(first and second and first.isdisjoint(second)
-                              for index, first in enumerate(supports) for second in supports[index + 1:])
-            if key != "overview" and not independent:
-                raise ValueError("Subjective assessment requires two independent source observations, not repeated claims about one utterance")
-        elif item["text"].strip() or ids:
-            raise ValueError("Insufficient evidence sections must contain no asserted text or claim IDs")
-        result[key] = {**item, "text": item["text"].strip(), "claim_ids": ids}
+        result[key] = validate_item(item, known, minimum=1 if key == "overview" else 2)
+    return result
+
+
+def validate_item(item: dict, known: dict, *, minimum: int = 2) -> dict:
+    ids = list(dict.fromkeys(item["claim_ids"]))
+    if set(ids) - known.keys():
+        raise ValueError("Assessment cites an unknown or unavailable observation")
+    if item["status"] == "supported":
+        if not item["text"].strip() or len(ids) < minimum:
+            raise ValueError("Supported assessment requires text and enough distinct current observation IDs")
+        if re.search(r"https?://|\bsegment-\d+\b|\b(?:meeting source|evidence):", item["text"], re.IGNORECASE):
+            raise ValueError("Keep source citations in claim_ids and the evidence feed, not assessment text")
+        supports = [{(known[key]["meeting_id"], entry["segment_id"]) for entry in known[key].get("evidence", [])} for key in ids]
+        independent = any(first and second and first.isdisjoint(second) for index, first in enumerate(supports) for second in supports[index + 1:])
+        if minimum > 1 and not independent:
+            raise ValueError("Subjective assessment requires two independent source observations, not repeated claims about one utterance")
+    elif item["text"].strip() or ids:
+        raise ValueError("Insufficient evidence sections must contain no asserted text or claim IDs")
+    return {**item, "text": item["text"].strip(), "claim_ids": ids}
+
+
+def editable_relationships(row: dict) -> list[dict]:
+    if sections.human("relationships", row):
+        return []
+    edges = [edge for edge in row.get("relationships", []) if edge["subject_id"] == str(row["id"])
+             and not edge.get("dismissed") and not relationship_analysis.human(edge)]
+    if len(edges) > 30:
+        raise AssessmentError("Profile has more than 30 editable outgoing relationships; reduce the context before retrying", error_type="ProfileContextTooLarge")
+    return edges
+
+
+def validate_relationships(row: dict, claims: list[dict], candidates: list[dict]) -> list[dict]:
+    targets = {edge["target_id"] for edge in editable_relationships(row)}
+    result, seen = [], set()
+    for raw in candidates:
+        item = RelationshipAssessment.model_validate(raw).model_dump()
+        if item["target_id"] not in targets or item["target_id"] in seen:
+            raise ValueError("Relationship assessment must use each editable known outgoing target exactly once")
+        known = {claim["id"]: claim for claim in claims if claim.get("canonical_target_id", claim.get("target_id")) == item["target_id"]}
+        result.append(validate_item(item, known))
+        seen.add(item["target_id"])
+    if seen != targets:
+        raise ValueError("Relationship assessment must include every editable outgoing target")
     return result
 
 
 def _claim(claim: dict) -> dict:
     return {key: claim.get(key) for key in (
         "id", "category", "epistemic", "confidence", "effective_content", "rationale", "status",
-        "target_id", "target_name", "meeting_id", "source_url", "evidence",
+        "target_id", "canonical_target_id", "target_name", "meeting_id", "source_url", "evidence",
     )}
 
 
@@ -111,6 +143,10 @@ def _page(claims: list[dict], offset: int, limit: int) -> dict:
     return {"items": items, "total": len(claims), "next_offset": next_offset if next_offset < len(claims) else None}
 
 
+def _proof_context(proof: dict) -> dict:
+    return {key: proof[key] for key in ("human", "status", "claim_ids", "coverage", "origin") if key in proof}
+
+
 async def synthesize(row: dict, claims: list[dict], *, deadline: float | None = None) -> dict:
     context = AnalysisContext({"id": row["id"], "title": row["display_name"]}, [], [],
                               require_memory_search=False, require_transcript=False)
@@ -122,12 +158,15 @@ async def synthesize(row: dict, claims: list[dict], *, deadline: float | None = 
         return json.dumps(_page(claims, offset, limit), ensure_ascii=False, default=str)
 
     @tool(args_schema=AssessmentSubmission)
-    async def stage_assessment(sections: dict[str, SectionAssessment], reason: str = "") -> str:
+    async def stage_assessment(sections: dict[str, SectionAssessment], relationships: list[RelationshipAssessment] | None = None, reason: str = "") -> str:
         """Stage incremental evidence-backed narratives or explicit insufficient-evidence sections."""
         context.collector.clear()
         try:
             candidates = {key: value.model_dump() for key, value in sections.items()}
+            directed = validate_relationships(row, claims, [item.model_dump() for item in relationships or []])
             context.collector = {"sections": validate_output(row, claims, candidates), "reason": reason}
+            if directed:
+                context.collector["relationships"] = directed
             return json.dumps({"staged": len(candidates)})
         except ValueError as error:
             return json.dumps({"error": str(error)})
@@ -138,11 +177,12 @@ async def synthesize(row: dict, claims: list[dict], *, deadline: float | None = 
         "id", "display_name", "email", "nicknames", "metadata", "metadata_provenance", "section_notes", "section_evidence",
     )}
     # Full proof is validated by storage; the model needs ownership and coverage, not duplicated hashes.
-    profile["section_evidence"] = {key: {name: proof.get(name) for name in ("human", "status", "claim_ids", "coverage")}
-                                   for key, proof in row.get("section_evidence", {}).items()}
+    profile["section_evidence"] = {key: _proof_context(proof) for key, proof in row.get("section_evidence", {}).items()}
     relationships = [{key: edge.get(key) for key in ("id", "subject_id", "target_id", "subject_name", "target_name", "label", "notes", "dismissed")}
+                     | {"analysis_evidence": _proof_context(edge.get("analysis_evidence") or {})}
                      for edge in row.get("relationships", [])]
-    data = {"profile": profile, "relationships": relationships, "coverage": sections.coverage(claims),
+    editable = editable_relationships(row)
+    data = {"editable_relationship_targets": [edge["target_id"] for edge in editable], "profile": profile, "relationships": relationships, "coverage": sections.coverage(claims),
             "observations": _page(claims, 0, 10)}
     if len(json.dumps(data, ensure_ascii=False, default=str)) > 64_000:
         raise AssessmentError("Profile human context exceeds assessment budget", error_type="ProfileContextTooLarge")

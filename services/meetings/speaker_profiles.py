@@ -21,7 +21,8 @@ def _context(profile: dict) -> dict:
         "company": _text(metadata.get("company"), 300), "job_role": _text(metadata.get("job_role"), 300),
         "overview": _text((profile.get("section_notes") or {}).get("overview"), 1500),
         "relationships": [{key: _text(edge.get(key), 200) for key in ("subject_name", "target_name", "label", "notes")} | {
-            "human_confirmed": bool(edge.get("human_confirmed")), "dismissed": bool(edge.get("dismissed")),
+            "human_confirmed": bool(edge.get("human_confirmed")),
+            "analysis_human": bool((edge.get("analysis_evidence") or {}).get("human", edge.get("human_confirmed", False))), "dismissed": bool(edge.get("dismissed")),
         } for edge in relationships[:5]],
         "omitted": {"nicknames": max(0, len(profile.get("nicknames", [])) - 6),
                     "emails": max(0, len(profile.get("emails", [])) - 6),

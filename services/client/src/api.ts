@@ -305,6 +305,8 @@ export interface ProfileClaim {
   source_url: string;
   status: 'active' | 'corrected' | 'rejected';
   correction: ProfileClaimCorrection | null;
+  meeting_title?: string | null;
+  meeting_date?: string | null;
 }
 
 export interface ParticipantProfile extends MeetingProfileSummary {
@@ -373,6 +375,24 @@ export interface ProfileRelationship {
   created_at: string; updated_at: string;
   claim_count?: number;
   history_count?: number;
+  analysis_evidence?: Omit<ProfileSectionEvidence, 'status' | 'generated_at'> & { status?: 'supported' | 'insufficient_evidence' | 'stale'; generated_at?: string | null; origin?: 'human' };
+}
+
+export interface ProfileClaimsParams extends PaginationParams {
+  q?: string;
+  epistemic?: ProfileClaim['epistemic'];
+  category?: ProfileClaim['category'];
+  confidence?: ProfileClaim['confidence'];
+  status?: ProfileClaim['status'];
+  target_id?: string;
+  sort?: 'newest' | 'oldest';
+}
+
+export interface ProfileRelationshipUpdateInput {
+  expected_revision: number;
+  label?: string;
+  notes?: string;
+  allow_agent_notes?: true;
 }
 
 export interface ProfileClaimsPage extends Paginated<ProfileClaim> {
@@ -717,7 +737,16 @@ export const api = {
       ...(params?.sort ? { sort: params.sort } : {}),
     }),
     get: (id: string) => get<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}`, { include_evidence: 'false' }),
-    claims: (id: string, params?: PaginationParams) => get<ProfileClaimsPage>(`/profiles/${encodeURIComponent(id)}/claims`, paginationToParams(params)),
+    claims: (id: string, params?: ProfileClaimsParams) => get<ProfileClaimsPage>(`/profiles/${encodeURIComponent(id)}/claims`, {
+      ...paginationToParams(params),
+      ...(params?.q ? { q: params.q } : {}),
+      ...(params?.epistemic ? { epistemic: params.epistemic } : {}),
+      ...(params?.category ? { category: params.category } : {}),
+      ...(params?.confidence ? { confidence: params.confidence } : {}),
+      ...(params?.status ? { status: params.status } : {}),
+      ...(params?.target_id ? { target_id: params.target_id } : {}),
+      ...(params?.sort ? { sort: params.sort } : {}),
+    }),
     update: (id: string, body: ProfileUpdateInput) => patch<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}?include_evidence=false`, body),
     rebuild: (id: string, expected_revision: number) => post<ProfileBuildResult>(`/profiles/${encodeURIComponent(id)}/rebuild`, { expected_revision }),
     history: (id: string, params?: PaginationParams) => get<Paginated<ProfileRevision>>(`/profiles/${encodeURIComponent(id)}/history`, paginationToParams(params)),
@@ -726,9 +755,9 @@ export const api = {
       post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/merge?include_evidence=false`, body),
     linkEmail: (id: string, body: { email: string; expected_revision: number }) =>
       post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/aliases?include_evidence=false`, body),
-    createRelationship: (id: string, body: { target_id: string; target_revision: number; expected_revision: number; label: string; notes: string }) =>
+    createRelationship: (id: string, body: { target_id: string; target_revision: number; expected_revision: number; label: string; notes?: string }) =>
       post<ProfileRelationship>(`/profiles/${encodeURIComponent(id)}/relationships?include_evidence=false`, body),
-    updateRelationship: (id: string, relationshipId: string, body: { expected_revision: number; label?: string; notes?: string }) =>
+    updateRelationship: (id: string, relationshipId: string, body: ProfileRelationshipUpdateInput) =>
       patch<ProfileRelationship>(`/profiles/${encodeURIComponent(id)}/relationships/${encodeURIComponent(relationshipId)}?include_evidence=false`, body),
     removeRelationship: (id: string, relationshipId: string, expected_revision: number) =>
       del<{ deleted: boolean; id: string }>(`/profiles/${encodeURIComponent(id)}/relationships/${encodeURIComponent(relationshipId)}`, { expected_revision }),

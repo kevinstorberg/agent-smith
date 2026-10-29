@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from services.api.routers.base import delete_response, empty_to_none, require_found
 from services.meetings import profile_db, relationship_db
+from services.meetings.outputs import ProfileCategory, ProfileEpistemic, ProfileConfidence, ProfileReviewStatus, ProfileClaimSort
 from services.personas import assessment_db, revisions
 
 router = APIRouter()
@@ -68,14 +69,17 @@ class RelationshipCreate(ProfileRevisionRequest):
 class RelationshipUpdate(ProfileRevisionRequest):
     label: str | None = Field(None, max_length=200, strict=True)
     notes: str | None = Field(None, max_length=4000, strict=True)
+    allow_agent_notes: bool = Field(default=False, strict=True)
 
     @model_validator(mode="before")
     @classmethod
     def require_fields(cls, value):
         if isinstance(value, dict):
             fields = {key for key in ("label", "notes") if key in value}
-            if not fields or any(value[key] is None for key in fields):
-                raise ValueError("Provide a non-null relationship label or notes")
+            if (not fields and value.get("allow_agent_notes") is not True) or any(value[key] is None for key in fields):
+                raise ValueError("Provide relationship fields or release automatic notes updates")
+            if "notes" in fields and value.get("allow_agent_notes"):
+                raise ValueError("Notes cannot be edited and released together")
         return value
 
 
@@ -110,9 +114,15 @@ def get_one(profile_id: UUID, include_evidence: bool = True):
 
 
 @router.get("/{profile_id}/claims")
-def list_claims(profile_id: UUID, limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0)):
+def list_claims(profile_id: UUID, limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0),
+                q: str = Query("", max_length=1000), category: ProfileCategory | None = None,
+                epistemic: ProfileEpistemic | None = None, confidence: ProfileConfidence | None = None,
+                status: ProfileReviewStatus | None = None, target_id: UUID | None = None,
+                sort: ProfileClaimSort = "oldest"):
     key = str(profile_id)
-    return require_found(profile_change(profile_db.list_claims, key, limit=limit, offset=offset), "Profile", key)
+    return require_found(profile_change(profile_db.list_claims, key, limit=limit, offset=offset, query=empty_to_none(q),
+                         category=category, epistemic=epistemic, confidence=confidence, status=status,
+                         target_id=str(target_id) if target_id else None, sort=sort), "Profile", key)
 
 
 @router.post("", status_code=201)
@@ -174,13 +184,13 @@ def list_relationships(profile_id: UUID, include_evidence: bool = True):
 @router.post("/{profile_id}/relationships", status_code=201)
 def create_relationship(profile_id: UUID, body: RelationshipCreate, include_evidence: bool = True):
     return profile_change(relationship_db.create, str(profile_id), str(body.target_id), body.expected_revision,
-                          body.target_revision, body.label, body.notes, include_evidence=include_evidence)
+                          body.target_revision, body.label, body.notes if "notes" in body.model_fields_set else None, include_evidence=include_evidence)
 
 
 @router.patch("/{profile_id}/relationships/{relationship_id}")
 def edit_relationship(profile_id: UUID, relationship_id: UUID, body: RelationshipUpdate, include_evidence: bool = True):
     return profile_change(relationship_db.update, str(profile_id), str(relationship_id), body.expected_revision, include_evidence=include_evidence,
-                          **body.model_dump(include={"label", "notes"}, exclude_unset=True))
+                          **body.model_dump(include={"label", "notes", "allow_agent_notes"}, exclude_unset=True))
 
 
 @router.delete("/{profile_id}/relationships/{relationship_id}")

@@ -9,9 +9,9 @@ const reload = vi.fn();
 const busy = vi.fn();
 beforeEach(() => { vi.clearAllMocks(); vi.mocked(api.profiles.update).mockResolvedValue(profileFixture); });
 
-it('shows six narrative assessments and patches just the edited section, including a protected clear', async () => {
+it('shows five nonrelationship narrative assessments and patches just the edited section, including a protected clear', async () => {
   renderWithProviders(<ProfileNotes profile={{ ...profileFixture, section_notes: { drivers: 'Autonomy', strengths: 'Teaching' } }} disabled={false} onBusyChange={busy} onReload={reload} />);
-  expect(screen.getAllByRole('heading')).toHaveLength(6);
+  expect(screen.getAllByRole('heading')).toHaveLength(5);
   const drivers = within(screen.getByRole('region', { name: 'Drivers and motivations assessment' }));
   fireEvent.click(drivers.getByRole('button', { name: 'Edit drivers and motivations' }));
   fireEvent.change(drivers.getByLabelText('Drivers and motivations'), { target: { value: '' } });

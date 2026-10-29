@@ -222,7 +222,10 @@ def _retire_changed_attribution(cur, meeting: dict, digestion: dict, participant
         evidence = sections.rebase_attribution(row, claims, contexts, future, meeting_id, revision)
         new = {**row, "claims": claims, "metadata_provenance": provenance, "section_evidence": evidence}
         valid = sections.effective_claims(new, future)
-        invalidated = (retired or any(source.get("meeting_id") == meeting_id and not profile_metadata.source_valid(source, future)
+        from services.meetings import relationship_db
+
+        relationship_stale = relationship_db.rebase_analysis(cur, str(row["id"]), sections.effective_claims(row, contexts), valid, contexts, future)
+        invalidated = (retired or relationship_stale or any(source.get("meeting_id") == meeting_id and not profile_metadata.source_valid(source, future)
                                     for source in provenance.values())
                        or any(proof.get("status") == "supported" and not proof.get("human")
                               and not sections.proof_valid(proof, valid, future) for proof in evidence.values()))

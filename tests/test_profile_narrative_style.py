@@ -13,7 +13,7 @@ def sample():
     claims = [{"id": f"claim-{index}", "meeting_id": "saved-meeting", "effective_content": content,
                "evidence": [{"segment_id": f"segment-{index}", "quote": content}]}
               for index, content in enumerate(("Gives detailed operational directions.", "Sets priorities for owners."))]
-    sections = {key: {"status": "insufficient_evidence", "text": "", "claim_ids": []} for key in profile_fields.SECTION_FIELDS}
+    sections = {key: {"status": "insufficient_evidence", "text": "", "claim_ids": []} for key in profile_fields.SECTION_FIELDS - {"relationships"}}
     sections["development_areas"] = {"status": "supported", "text": "Could develop outcome-based delegation to give owners more autonomy.",
                                      "claim_ids": [claim["id"] for claim in claims]}
     return row, claims, sections
