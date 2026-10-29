@@ -1099,6 +1099,37 @@ pre {
 .text-muted-sm { color: var(--text-muted); font-size: 12px; }
 .text-mono { font-family: var(--mono); font-size: 12px; }
 
+.text-link,
+.text-link:visited {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.text-link:hover { color: var(--success); }
+.text-link:focus-visible { outline: 2px solid var(--success); outline-offset: 3px; border-radius: 2px; }
+
+.meeting-participants { display: grid; gap: 16px; min-width: 0; }
+.participants-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+.participants-header .section-title { margin-bottom: 0; }
+.participant-group { display: grid; gap: 8px; min-width: 0; }
+.participant-list { list-style: none; display: grid; gap: 8px; }
+.participant-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.participant-info { display: grid; gap: 2px; flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+.participant-name { font-weight: 600; }
+.participant-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.participant-add { justify-self: start; }
+.participant-form { display: grid; gap: 16px; min-width: 0; border-top: 1px solid var(--border); padding-top: 16px; }
+.participant-form > * { min-width: 0; }
+.participant-form .search-bar { margin-bottom: 0; flex-wrap: wrap; }
+.participant-form .search-bar input { min-width: 0; flex: 1 1 180px; }
+.profiles-header { flex-wrap: wrap; gap: 12px; }
+.profile-create { display: grid; gap: 16px; max-width: 640px; }
+.profile-create h3 { margin-bottom: 0; }
+.profiles-table { overflow-x: auto; max-width: 100%; }
+.profiles-table:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.profile-detail { min-width: 0; overflow-wrap: anywhere; }
+
 @media (max-width: 768px) {
   .sidebar {
     position: static;

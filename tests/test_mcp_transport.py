@@ -12,6 +12,7 @@ from contextlib import AsyncExitStack
 import httpx
 import pytest
 import pytest_asyncio
+from mcp.types import LATEST_PROTOCOL_VERSION
 from starlette.routing import Mount
 
 from services.api.app import MCP_SERVERS, app
@@ -53,6 +54,19 @@ async def test_every_mcp_endpoint_serves_a_session_id_from_before_a_restart(capl
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:7654") as client:
             for path in _mcp_mount_paths():
+                response = await client.post(
+                    f"{path}/", headers=MCP_HEADERS,
+                    json={"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {
+                        "protocolVersion": LATEST_PROTOCOL_VERSION, "capabilities": {},
+                        "clientInfo": {"name": "transport-regression", "version": "1"},
+                    }},
+                )
+                assert response.status_code == 200 and "result" in _json_rpc_payload(response)
+                response = await client.post(
+                    f"{path}/", headers=MCP_HEADERS,
+                    json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+                )
+                assert response.status_code == 202
                 response = await client.post(
                     f"{path}/",
                     headers=MCP_HEADERS,

@@ -13,9 +13,9 @@ vi.mock('react-router', async importOriginal => {
 });
 vi.mock('../../api', async importOriginal => {
   const actual = await importOriginal<typeof import('../../api')>();
-  return { ...actual, api: { profiles: { list: vi.fn(), update: vi.fn() } } };
+  return { ...actual, api: { profiles: { list: vi.fn(), update: vi.fn(), create: vi.fn() } } };
 });
-import { api } from '../../api';
+import { api, ApiError } from '../../api';
 
 const read = vi.mocked(api.profiles.list);
 const profiles: ProfileSummary[] = [
@@ -28,10 +28,54 @@ beforeEach(() => {
   vi.clearAllMocks();
   read.mockResolvedValue({ items: profiles, total: 2 });
   vi.mocked(api.profiles.update).mockResolvedValue(profileFixture);
+  vi.mocked(api.profiles.create).mockResolvedValue(profileFixture);
 });
 afterEach(() => vi.useRealTimers());
 
 describe('ProfilesIndexPage', () => {
+  it('creates a profile by trimmed name without requiring an email or meeting', async () => {
+    renderWithProviders(<ProfilesIndexPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'New profile' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: ' Jordan Rivera ' } });
+    fireEvent.submit(screen.getByRole('form', { name: 'New profile' }));
+    await waitFor(() => expect(api.profiles.create).toHaveBeenCalledWith({ display_name: 'Jordan Rivera' }));
+    expect(navigate).toHaveBeenCalledWith(`/profiles/${profileFixture.id}`);
+  });
+
+  it('preserves the creation draft on an email conflict and supports explicit retry', async () => {
+    vi.mocked(api.profiles.create).mockRejectedValueOnce(new ApiError('This email already belongs to a profile. Open or merge the existing profile.', 409));
+    renderWithProviders(<ProfilesIndexPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'New profile' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Jordan Rivera' } });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'jordan@example.test' } });
+    fireEvent.submit(screen.getByRole('form', { name: 'New profile' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Open or merge the existing profile.');
+    expect(screen.getByLabelText('Name')).toHaveValue('Jordan Rivera');
+    expect(screen.getByLabelText('Email')).toHaveValue('jordan@example.test');
+    expect(navigate).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'jordan.rivera@example.test' } });
+    fireEvent.submit(screen.getByRole('form', { name: 'New profile' }));
+    await waitFor(() => expect(api.profiles.create).toHaveBeenLastCalledWith({ display_name: 'Jordan Rivera', email: 'jordan.rivera@example.test' }));
+  });
+
+  it('validates a blank name and cancels the create form without a request', async () => {
+    renderWithProviders(<ProfilesIndexPage />);
+    await screen.findByText('Alex');
+    fireEvent.click(screen.getByRole('button', { name: 'New profile' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: '  ' } });
+    fireEvent.submit(screen.getByRole('form', { name: 'New profile' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('A profile name is required.');
+    expect(api.profiles.create).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('form', { name: 'New profile' })).not.toBeInTheDocument();
+  });
+
+  it('labels a manually created global identity distinctly from a meeting-only identity', async () => {
+    read.mockResolvedValue({ items: [{ ...profiles[0], identity_scope: 'manual' }], total: 1 });
+    renderWithProviders(<ProfilesIndexPage />);
+    expect(await screen.findByText('Manual')).toBeInTheDocument();
+    expect(screen.queryByText('Meeting only')).not.toBeInTheDocument();
+  });
   it('shows cumulative profiles across identity scopes without filtering by meetings or devices', async () => {
     renderWithProviders(<ProfilesIndexPage />);
     expect(await screen.findByText('Alex')).toBeInTheDocument();

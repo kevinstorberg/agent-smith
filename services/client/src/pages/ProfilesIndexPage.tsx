@@ -10,6 +10,7 @@ import { usePolling } from '../hooks/usePolling';
 import { makeRowClickable } from '../utils/a11y';
 import { parseTags } from '../utils/tags';
 import { useApiMutation } from '../hooks/useApiMutation';
+import { PROFILE_SCOPE_LABELS } from '../utils/profiles';
 
 const SORT_OPTIONS = [
   ['created_at_desc', 'Newest profiles'], ['created_at_asc', 'Oldest profiles'],
@@ -26,6 +27,16 @@ export function ProfilesIndexPage() {
   const [starredOnly, setStarredOnly] = useState(false);
   const [sort, setSort] = useState('created_at_desc');
   const [notice, setNotice] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [createNotice, setCreateNotice] = useState<string | null>(null);
+  const create = useApiMutation({
+    mutationFn: () => api.profiles.create({ display_name: name.trim(), ...(email.trim() ? { email: email.trim() } : {}) }),
+    onSuccess: profile => navigate(`/profiles/${profile.id}`),
+    onError: failure => setCreateNotice(failure instanceof ApiError && failure.status === 409
+      ? failure.message : 'Could not create this profile. Try again.'),
+  });
   const { items, total, loading, error, limit, offset, setLimit, setOffset, refresh } = usePagination<ProfileSummary>(
     (pageLimit, pageOffset) => api.profiles.list({ limit: pageLimit, offset: pageOffset, q: query || undefined,
       sort, ...(tags.length ? { tags } : {}), ...(starredOnly ? { starred: true } : {}) }),
@@ -48,8 +59,32 @@ export function ProfilesIndexPage() {
 
   return (
     <div>
-      <h2 className="page-title" style={{ marginBottom: 8 }}>Profiles</h2>
-      <p className="text-muted-sm" style={{ marginBottom: 16 }}>Participant profiles with evidence from your meeting history.</p>
+      <div className="page-header profiles-header">
+        <h2 className="page-title">Profiles</h2>
+        <button className="btn btn-primary" disabled={creating} onClick={() => { setCreating(true); setName(''); setEmail(''); setCreateNotice(null); }}>New profile</button>
+      </div>
+      <p className="text-muted-sm" style={{ marginBottom: 16 }}>Manage people and their evidence from your meeting history.</p>
+      {creating && <form aria-label="New profile" className="card profile-create" onSubmit={event => {
+        event.preventDefault();
+        if (!name.trim()) { setCreateNotice('A profile name is required.'); return; }
+        create.mutate();
+      }}>
+        <h3>New profile</h3>
+        <div>
+          <label className="form-label" htmlFor="new-profile-name">Name</label>
+          <input id="new-profile-name" className="input" value={name} maxLength={200} required onChange={event => setName(event.target.value)} />
+        </div>
+        <div>
+          <label className="form-label" htmlFor="new-profile-email">Email</label>
+          <input id="new-profile-email" className="input" type="email" value={email} maxLength={320} onChange={event => setEmail(event.target.value)} />
+          <p className="text-muted-sm">Optional. A known email links future meetings to this person.</p>
+        </div>
+        {createNotice && <p role="alert">{createNotice}</p>}
+        <div className="flex-wrap">
+          <button className="btn btn-primary" type="submit" disabled={create.loading}>{create.loading ? 'Creating...' : 'Create profile'}</button>
+          <button className="btn" type="button" disabled={create.loading} onClick={() => setCreating(false)}>Cancel</button>
+        </div>
+      </form>}
       <form className="search-bar" onSubmit={event => { event.preventDefault(); search(searchText); }}>
         <input aria-label="Search profiles" placeholder="Search by name or email..." maxLength={1000}
           value={searchText} onChange={event => setSearchText(event.target.value)} />
@@ -74,6 +109,7 @@ export function ProfilesIndexPage() {
         </div>
       ) : (
         <>
+          <div className="profiles-table" role="region" aria-label="Profiles list" tabIndex={0}>
           <table className="table">
             <thead><tr><th>Star</th><th>Name</th><th>Email</th><th>Identity</th><th>Tags</th><th>Meetings</th><th>Last updated</th></tr></thead>
             <tbody>
@@ -81,16 +117,17 @@ export function ProfilesIndexPage() {
                 <td><ProfileStar name={profile.display_name} starred={profile.starred} disabled={star.loading} onClick={() => star.mutate(profile)} /></td>
                 <td>{profile.display_name}</td>
                 <td>{profile.email || '—'}</td>
-                <td>{profile.identity_scope === 'email' ? 'Email' : 'Meeting only'}</td>
+                <td>{PROFILE_SCOPE_LABELS[profile.identity_scope]}</td>
                 <td><BadgeCell items={profile.tags} /></td>
                 <td>{profile.meeting_count}</td>
                 <td><DateCell date={profile.updated_at} /></td>
               </tr>)}
               {items.length === 0 && <tr><td colSpan={7} className="loading">
-                {query || tags.length || starredOnly ? 'No profiles match your search.' : 'No profiles saved yet. Profiles appear as new meetings are processed.'}
+                {query || tags.length || starredOnly ? 'No profiles match your search.' : 'No profiles saved yet. Create a profile or process a meeting to get started.'}
               </td></tr>}
             </tbody>
           </table>
+          </div>
           <Pagination total={total} limit={limit} offset={offset} onPageChange={setOffset}
             onLimitChange={value => { setLimit(value); setOffset(0); }} />
         </>

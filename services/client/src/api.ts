@@ -264,7 +264,7 @@ export interface ProfileClaim {
 }
 
 export interface ParticipantProfile extends MeetingProfileSummary {
-  identity_scope: 'email' | 'meeting';
+  identity_scope: 'email' | 'meeting' | 'manual';
   deleted: boolean;
   claims: ProfileClaim[];
   updated_at: string;
@@ -281,6 +281,7 @@ export interface ProfileSummary extends Pick<ParticipantProfile, 'id' | 'display
 
 export interface ProfileUpdateInput {
   expected_revision: number;
+  display_name?: string;
   tags?: string[];
   starred?: boolean;
 }
@@ -571,6 +572,7 @@ export const api = {
     process: (id: string) => post<{ status: 'queued' | 'running' | 'done' }>(`/meetings/${encodeURIComponent(id)}/process`, {}),
   },
   profiles: {
+    create: (body: { display_name: string; email?: string }) => post<ParticipantProfile>('/profiles', body),
     list: (params?: PaginationParams & { q?: string; tags?: string[]; starred?: boolean; sort?: string }) => get<Paginated<ProfileSummary>>('/profiles', {
       ...paginationToParams(params),
       ...(params?.q ? { q: params.q } : {}),

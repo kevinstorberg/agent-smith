@@ -12,6 +12,12 @@ from services.meetings import profile_db
 router = APIRouter()
 
 
+class CreateProfileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    display_name: str = Field(min_length=1, max_length=profile_db.MAX_PROFILE_NAME_LENGTH, strict=True)
+    email: str | None = Field(None, min_length=1, max_length=320, strict=True)
+
+
 class ProfileRevisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1, strict=True)
@@ -24,6 +30,7 @@ class ClaimCorrectionRequest(ProfileRevisionRequest):
 
 
 class ProfileMetadataRequest(ProfileRevisionRequest):
+    display_name: str | None = Field(None, min_length=1, max_length=profile_db.MAX_PROFILE_NAME_LENGTH, strict=True)
     tags: list[str] | None = Field(None, max_length=profile_db.MAX_TAGS)
     starred: bool | None = Field(None, strict=True)
 
@@ -31,9 +38,9 @@ class ProfileMetadataRequest(ProfileRevisionRequest):
     @classmethod
     def require_metadata(cls, value):
         if isinstance(value, dict):
-            fields = {key for key in ("tags", "starred") if key in value}
+            fields = {key for key in ("display_name", "tags", "starred") if key in value}
             if not fields or any(value[key] is None for key in fields):
-                raise ValueError("Provide non-null tags or starred state")
+                raise ValueError("Provide a non-null profile name, tags or starred state")
         return value
 
 
@@ -76,11 +83,16 @@ def get_one(profile_id: UUID):
     return require_found(profile_db.get_profile(key), "Participant profile", key)
 
 
+@router.post("", status_code=201)
+def create_profile(body: CreateProfileRequest):
+    return profile_change(profile_db.create_profile, body.display_name, email=body.email)
+
+
 @router.patch("/{profile_id}")
 def update_metadata(profile_id: UUID, body: ProfileMetadataRequest):
     key = str(profile_id)
     require_found(profile_db.get_profile(key), "Participant profile", key)
-    return profile_change(profile_db.update_metadata, key, body.expected_revision, **body.model_dump(include={"tags", "starred"}, exclude_unset=True))
+    return profile_change(profile_db.update_metadata, key, body.expected_revision, **body.model_dump(include={"display_name", "tags", "starred"}, exclude_unset=True))
 
 
 @router.post("/{profile_id}/merge")

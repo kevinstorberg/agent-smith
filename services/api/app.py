@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from services.config import DB_POOL_MAX
+from services.api.access_logging import configure_mcp_access_logging
 from services.db import init_db, init_pool, close_pool
 from services.db.seed import seed_all
 from services.api.routers import harness_router
@@ -92,6 +93,7 @@ app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
 app.include_router(eval_configs.router, prefix="/api/eval-configs", tags=["eval-configs"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 
+_mcp_authenticated_mounts = {}
 for _srv in MCP_SERVERS:
     _srv.settings.streamable_http_path = "/"
     # Sessions live only in this process, so every restart would answer connected agents'
@@ -99,7 +101,10 @@ for _srv in MCP_SERVERS:
     _srv.settings.stateless_http = True
     _app = _srv.streamable_http_app()
     _app.router.lifespan_context = None
-    app.mount(f"/mcp/{_srv.name.split(' - ')[0]}", _app)
+    _mount_path = f"/mcp/{_srv.name.split(' - ')[0]}"
+    app.mount(_mount_path, _app)
+    _mcp_authenticated_mounts[_mount_path] = _srv.settings.auth is not None
+configure_mcp_access_logging(_mcp_authenticated_mounts)
 
 dist_dir = Path(__file__).resolve().parent.parent / "client" / "dist"
 if dist_dir.exists():

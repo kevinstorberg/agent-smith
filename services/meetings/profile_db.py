@@ -4,7 +4,7 @@ import copy
 import json
 from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
-from uuid import UUID, uuid5
+from uuid import UUID, uuid4, uuid5
 
 from psycopg2.extras import Json
 from psycopg2.errors import LockNotAvailable
@@ -18,6 +18,7 @@ _CLAIM_NAMESPACE = UUID("9a9b960b-0574-53ed-9f5d-9a3f67b58fd7")
 _WRITE_LOCK = "agent-smith:profile-write"
 MAX_TAGS = 20
 MAX_TAG_LENGTH = 100
+MAX_PROFILE_NAME_LENGTH = 200
 PROFILE_SORTS = {
     f"{name}_{direction}": (column, direction.upper())
     for name, column in (("name", "lower({alias}.display_name)"), ("created_at", "{alias}.created_at"), ("updated_at", "{alias}.updated_at"))
@@ -85,7 +86,7 @@ def _catalog(participants: list[dict]) -> dict[str, dict]:
         profile_id = str(UUID(participant["id"]))
         identity = participant.get("identity_key")
         if (profile_id in catalog or not isinstance(identity, str) or not identity.strip() or len(identity) > 1000
-                or identity in identities or participant.get("identity_scope") not in {"email", "meeting"}
+                or identity in identities or participant.get("identity_scope") not in {"email", "meeting", "manual"}
                 or not isinstance(participant.get("display_name"), str) or not participant["display_name"].strip()
                 or len(participant["display_name"]) > 1000
                 or (participant.get("email") is not None and not isinstance(participant["email"], str))):
@@ -162,6 +163,40 @@ def get_profile(profile_id: str) -> dict | None:
     with _cursor() as cur:
         row = _canonical(cur, profile_id)
         return _detail(cur, row) if row and not row["deleted"] else None
+
+
+def _profile_name(value: str) -> str:
+    if not isinstance(value, str) or not value.strip() or len(value) > MAX_PROFILE_NAME_LENGTH:
+        raise ValueError(f"Profile name must be nonblank and at most {MAX_PROFILE_NAME_LENGTH} characters")
+    return value.strip()
+
+
+def _email_matches(cur, identity: dict) -> list[dict]:
+    cur.execute("""SELECT id, deleted FROM participant_profiles
+                   WHERE id = %s OR identity_key = %s OR lower(email) = %s ORDER BY id FOR UPDATE""",
+                (identity["id"], identity["identity_key"], identity["email"]))
+    return [dict(found) for found in cur.fetchall()]
+
+
+def create_profile(display_name: str, email: str | None = None) -> dict:
+    from services.meetings.participants import email_participant
+
+    name = _profile_name(display_name)
+    if email is not None:
+        identity = email_participant(email, name)
+    else:
+        profile_id = str(uuid4())
+        identity = {"id": profile_id, "identity_key": "manual:" + profile_id,
+                    "display_name": name, "email": None, "identity_scope": "manual"}
+    with profile_write_cursor() as cur:
+        if email is not None and _email_matches(cur, identity):
+            raise ProfileRevisionConflict("A profile already uses this email; open or merge the existing profile")
+        cur.execute(
+            """INSERT INTO participant_profiles (id, identity_key, display_name, email, identity_scope)
+               VALUES (%s, %s, %s, %s, %s) RETURNING *""",
+            tuple(identity[key] for key in ("id", "identity_key", "display_name", "email", "identity_scope")),
+        )
+        return _detail(cur, dict(cur.fetchone()))
 
 
 def _tags(tags: list[str]) -> list[str]:
@@ -395,10 +430,12 @@ def delete_profile(profile_id: str, expected_revision: int) -> None:
         cur.execute("UPDATE participant_profiles SET claims = '[]'::jsonb, deleted = true, revision = revision + 1, updated_at = clock_timestamp() WHERE id = %s", (row["id"],))
 
 
-def update_metadata(profile_id: str, expected_revision: int, *, tags: list[str] | None = None, starred: bool | None = None) -> dict:
+def update_metadata(profile_id: str, expected_revision: int, *, display_name: str | None = None,
+                    tags: list[str] | None = None, starred: bool | None = None) -> dict:
     _expected_revision(expected_revision)
-    if tags is None and starred is None:
-        raise ValueError("Provide profile tags or starred state")
+    if display_name is None and tags is None and starred is None:
+        raise ValueError("Provide a profile name, tags or starred state")
+    normalized_name = _profile_name(display_name) if display_name is not None else None
     normalized_tags = _tags(tags) if tags is not None else None
     if starred is not None and type(starred) is not bool:
         raise ValueError("Profile starred state must be a boolean")
@@ -406,10 +443,11 @@ def update_metadata(profile_id: str, expected_revision: int, *, tags: list[str] 
         row = _editable(cur, profile_id, expected_revision)
         new_tags = normalized_tags if normalized_tags is not None else row["tags"]
         new_starred = starred if starred is not None else row["starred"]
-        if row["tags"] != new_tags or row["starred"] != new_starred:
+        new_name = normalized_name if normalized_name is not None else row["display_name"]
+        if row["display_name"] != new_name or row["tags"] != new_tags or row["starred"] != new_starred:
             cur.execute(
-                """UPDATE participant_profiles SET tags = %s, starred = %s, revision = revision + 1,
-                   updated_at = clock_timestamp() WHERE id = %s RETURNING *""", (new_tags, new_starred, row["id"]),
+                """UPDATE participant_profiles SET display_name = %s, tags = %s, starred = %s, revision = revision + 1,
+                   updated_at = clock_timestamp() WHERE id = %s RETURNING *""", (new_name, new_tags, new_starred, row["id"]),
             )
             row = dict(cur.fetchone())
         return _detail(cur, row)
@@ -473,10 +511,7 @@ def link_alias(profile_id: str, email: str, expected_revision: int) -> dict:
     with profile_write_cursor() as cur:
         row = _editable(cur, profile_id, expected_revision)
         alias = email_participant(email, row["display_name"])
-        cur.execute("""SELECT id, deleted FROM participant_profiles
-                       WHERE id = %s OR identity_key = %s OR lower(email) = %s ORDER BY id FOR UPDATE""",
-                    (alias["id"], alias["identity_key"], alias["email"]))
-        existing = [dict(found) for found in cur.fetchall()]
+        existing = _email_matches(cur, alias)
         if existing:
             owners = canonical_rows(cur, [str(found["id"]) for found in existing], lock=True)
             if any(found["deleted"] or owners[str(found["id"])]["deleted"] or owners[str(found["id"])]["id"] != row["id"] for found in existing):
