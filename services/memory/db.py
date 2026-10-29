@@ -163,9 +163,14 @@ def _filter_and_sort(
     repo: str | None,
     tags: list[str] | None,
     sort: str | None,
+    meeting_only: bool = False,
 ) -> list[dict]:
     _validate_sort(sort)
+    if type(meeting_only) is not bool:
+        raise ValueError("meeting_only must be a boolean")
     out = rows
+    if meeting_only:
+        out = [row for row in out if row.get("from_meeting", False)]
     if repo:
         out = [r for r in out if r.get("repo") == repo]
     if tags:
@@ -179,11 +184,26 @@ def _filter_and_sort(
 
 def _to_row(*, content: str, id: str, meta: dict) -> dict:
     tags = meta.get("tags") or []
+    tags = json.loads(tags) if isinstance(tags, str) else list(tags)
+    source_type, source_id = meta.get("source_type"), meta.get("source_id")
+    if source_type is None and "meeting-memory" in tags:
+        for tag in tags:
+            if not tag.startswith("meeting:"):
+                continue
+            try:
+                source_id = str(uuid.UUID(tag.removeprefix("meeting:")))
+            except (ValueError, TypeError, AttributeError):
+                continue
+            source_type = "meeting"
+            break
     return {
         "id": id,
         "content": content,
         "repo": meta.get("repo") or None,
-        "tags": json.loads(tags) if isinstance(tags, str) else list(tags),
+        "tags": tags,
+        "source_type": source_type,
+        "source_id": source_id,
+        "from_meeting": source_type == "meeting",
         "created_at": meta.get("created_at"),
         "updated_at": meta.get("updated_at"),
     }
@@ -230,11 +250,14 @@ def _persist_document(
         retriever.memory_stream[replace_index] = memory_document
 
 
-def _memory_document(id: str, content: str, repo: str | None, tags: list[str] | None, created_at: str, updated_at: str) -> Document:
-    return Document(page_content=content, metadata={
+def _memory_document(id: str, content: str, repo: str | None, tags: list[str] | None, created_at: str, updated_at: str,
+                     *, source_type: str | None = None, source_id: str | None = None) -> Document:
+    metadata = {
         "id": id, "repo": repo or "", "tags": json.dumps(tags or []),
         "created_at": created_at, "updated_at": updated_at,
-    })
+    }
+    metadata.update(source_type=source_type or "general", source_id=source_id or id)
+    return Document(page_content=content, metadata=metadata)
 
 
 def _validate_scope(repo: str | None, tags: list[str] | None) -> None:
@@ -254,7 +277,8 @@ def _publication_time(value: str) -> datetime:
     return result.astimezone(timezone.utc)
 
 
-def publish(id: str, content: str, repo: str | None = None, tags: list[str] | None = None, *, created_at: str) -> str:
+def publish(id: str, content: str, repo: str | None = None, tags: list[str] | None = None, *, created_at: str,
+            source_type: str | None = None, source_id: str | None = None) -> str:
     """Publish frozen content without rewriting a conflicting memory."""
     try:
         id = str(uuid.UUID(id))
@@ -263,6 +287,13 @@ def publish(id: str, content: str, repo: str | None = None, tags: list[str] | No
     if not isinstance(content, str) or not content.strip():
         raise ValueError("Memory content must not be empty")
     _validate_scope(repo, tags)
+    if source_type is not None or source_id is not None:
+        if source_type != "meeting":
+            raise ValueError("Memory publication source_type must be meeting when provenance is supplied")
+        try:
+            source_id = str(uuid.UUID(source_id))
+        except (ValueError, TypeError, AttributeError):
+            raise ValueError("Meeting memory source_id must be a UUID") from None
     stamp = _publication_time(created_at)
     existing = get(id)
     if existing is not None:
@@ -271,10 +302,11 @@ def publish(id: str, content: str, repo: str | None = None, tags: list[str] | No
         except ValueError:
             same_time = False
         if (not same_time or existing["content"] != content or existing["repo"] != (repo or None)
-                or existing["tags"] != (tags or [])):
+                or existing["tags"] != (tags or [])
+                or (source_type is not None and (existing.get("source_type"), existing.get("source_id")) != (source_type, source_id))):
             raise MemoryConflictError(f"Memory {id} differs from its frozen publication") from None
         return id
-    doc = _memory_document(id, content, repo, tags, stamp.isoformat(), stamp.isoformat())
+    doc = _memory_document(id, content, repo, tags, stamp.isoformat(), stamp.isoformat(), source_type=source_type, source_id=source_id)
     replace_index = _cached_index(_retriever, id) if _retriever is not None else None
     _persist_document(_retriever, doc, id=id, current_time=stamp.replace(tzinfo=None), replace_index=replace_index)
     return id
@@ -316,6 +348,7 @@ def search(
     tags: list[str] | None = None,
     sort: str | None = None,
     limit: int | None = None,
+    meeting_only: bool = False,
 ) -> list[dict]:
     assert query and query.strip(), "Search query must not be empty."
     _validate_sort(sort)
@@ -327,7 +360,7 @@ def search(
     retriever.k = SEARCH_FETCH_CEILING
     docs = retriever.invoke(query)
     rows = [_doc_to_row(doc) for doc in docs]
-    result = _filter_and_sort(rows, repo=repo, tags=tags, sort=sort)
+    result = _filter_and_sort(rows, repo=repo, tags=tags, sort=sort, meeting_only=meeting_only)
     return result[: int(limit)] if limit is not None else result
 
 
@@ -336,12 +369,13 @@ def list_memories(
     tags: list[str] | None = None,
     sort: str = "created_at_desc",
     limit: int | None = None,
+    meeting_only: bool = False,
 ) -> list[dict]:
     # Read the retriever's stream, which add/update/delete keep current, instead of a full
     # backend load per call: on Pinecone that load is ~5 MB and exhausted the monthly egress
     # quota. Like search, it sees other processes' writes only after this process restarts.
     rows = [_doc_to_row(doc) for doc in _get_retriever().memory_stream]
-    result = _filter_and_sort(rows, repo=repo, tags=tags, sort=sort)
+    result = _filter_and_sort(rows, repo=repo, tags=tags, sort=sort, meeting_only=meeting_only)
     return result[: int(limit)] if limit is not None else result
 
 
@@ -386,7 +420,8 @@ def update(
     now_str = _now()
     now_dt = datetime.now()
 
-    doc = _memory_document(id, new_content, new_repo, new_tags, existing.get("created_at", now_str), now_str)
+    doc = _memory_document(id, new_content, new_repo, new_tags, existing.get("created_at", now_str), now_str,
+                           source_type=existing.get("source_type"), source_id=existing.get("source_id"))
 
     retriever = _get_retriever()
     replace_index = _cached_index(retriever, id)

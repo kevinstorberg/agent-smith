@@ -11,7 +11,7 @@ vi.mock('react-router', async (importOriginal) => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
-vi.mock('../../api', () => ({ api: { meetings: { list: vi.fn() } } }));
+vi.mock('../../api', async original => ({ ...await original<typeof import('../../api')>(), api: { meetings: { list: vi.fn(), vocabulary: { list: vi.fn() } } } }));
 import { api } from '../../api';
 
 const mockList = vi.mocked(api.meetings.list);
@@ -20,6 +20,7 @@ const meetings = [meetingFixture, { ...meetingFixture, id: 'other-id', source_na
 beforeEach(() => {
   vi.clearAllMocks();
   mockList.mockResolvedValue({ items: meetings, total: 2 });
+  vi.mocked(api.meetings.vocabulary.list).mockResolvedValue({ items: [], total: 0 });
 });
 
 describe('MeetingsIndexPage', () => {

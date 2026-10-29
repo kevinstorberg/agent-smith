@@ -7,6 +7,11 @@ import pytest
 from scripts.shared.paths import bootstrap
 bootstrap(__file__)
 
+from scripts.shared.automated_tests import live_evals_enabled
+
+if not live_evals_enabled():
+    raise pytest.UsageError("Live evaluations require ./evals.sh and are disabled during automated tests.")
+
 
 def pytest_addoption(parser):
     parser.addoption(

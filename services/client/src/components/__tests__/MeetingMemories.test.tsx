@@ -49,7 +49,7 @@ describe('MeetingMemories', () => {
 
   it.each([
     ['not_imported', 'Memory generation has not started. Use Process meeting'],
-    ['pending', 'Memory generation is queued for the next meeting import run.'],
+    ['pending', 'Memory generation is queued for the next meeting job run.'],
     ['running', 'Generating meeting memories...'],
     ['failed', 'Memory generation failed.'],
   ] as const)('distinguishes %s without exposing staged results', async (status, message) => {
@@ -103,7 +103,7 @@ describe('MeetingMemories', () => {
     mockRead.mockResolvedValue(response('pending'));
     fireEvent.click(screen.getByRole('button', { name: 'Retry generation' }));
     await waitFor(() => expect(mockRetry).toHaveBeenCalledWith('meeting-id'));
-    await screen.findByText('Memory generation is queued for the next meeting import run.');
+    await screen.findByText('Memory generation is queued for the next meeting job run.');
 
     mockRead.mockResolvedValue(response('running'));
     await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS); });

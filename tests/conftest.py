@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import os
 
+from scripts.shared.automated_tests import activate_automated_tests
+
+activate_automated_tests()
 os.environ["APP_ENV"] = "test"
 
 import pytest

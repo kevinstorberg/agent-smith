@@ -178,7 +178,8 @@ def test_complete_transcript_has_stable_hash_and_paginated_http_reader(config, s
     page = client.get(f"/api/meetings/{saved}/transcript", params={"offset": 1, "limit": 1})
     assert page.status_code == 200
     assert page.json()["status"] == "ready" and page.json()["total"] == 3
-    assert page.json()["items"] == full["segments"][1:2]
+    assert [{key: item[key] for key in full["segments"][1]} for item in page.json()["items"]] == full["segments"][1:2]
+    assert page.json()["items"][0]["effective_speaker"]["profile_id"] is None
     assert page.json()["offset"] == page.json()["limit"] == 1
     assert "snapshot" not in page.json() and "claim_owner" not in page.json()
     assert "transcript" not in client.get(f"/api/meetings/{saved}").json()

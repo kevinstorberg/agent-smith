@@ -77,7 +77,7 @@ def test_profile_http_retry_queues_only_a_failed_stage_with_completed_inputs(cli
     meeting_id, owner, _ = claimed
     for _ in range(3):
         profile_db.record_failure(meeting_id, owner, "SafeFailure")
-    digestion_db.release(meeting_id, owner)
+    digestion_db.release_profile_owner(owner)
     assert client.get(f"/api/meetings/{meeting_id}/profiles").json()["status"] == "failed"
     response = client.post(f"/api/meetings/{meeting_id}/profiles/retry")
     assert response.status_code == 200 and response.json() == {"success": True}

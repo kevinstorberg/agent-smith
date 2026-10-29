@@ -7,6 +7,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.outputs import ChatGeneration, Generation, LLMResult
 from langchain_openai import ChatOpenAI as ChatCompletionsTransportAdapter
 
+from scripts.shared.automated_tests import require_model_calls_allowed
 from services.graphs.model_config import SUPPORTED_PROVIDERS, GraphModelConfig, load_model_config
 
 
@@ -35,7 +36,7 @@ def _build_bedrock(config: GraphModelConfig) -> BaseChatModel:
         max_retries=config.max_retries,
         timeout=config.request_timeout,
         streaming=config.streaming,
-        callbacks=[_TruncationGuard(config)],
+        callbacks=[_ModelGuard(config)],
         **optional,
     )
 
@@ -68,6 +69,11 @@ class _TruncationGuard(BaseCallbackHandler):
             f"{config.max_tokens}-token output cap (finish_reason=length), so the reply is "
             f"incomplete; reasoning tokens count against the cap. Raise one of: {settings}."
         )
+
+
+class _ModelGuard(_TruncationGuard):
+    def on_chat_model_start(self, *args: Any, **kwargs: Any) -> None:
+        require_model_calls_allowed()
 
 
 def _finish_reason(generation: Generation) -> str | None:

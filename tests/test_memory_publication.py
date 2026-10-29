@@ -169,6 +169,7 @@ def test_fresh_search_serializes_backend_shapes_and_bounds_candidates(monkeypatc
     monkeypatch.setattr(db, "_get_retriever", no_full_load)
     assert db.search_fresh("topic", repo="meeting-project", tags=["meeting-memory"], limit=limit) == [{
         "id": match, "content": "Matching memory", "repo": "meeting-project", "tags": ["meeting-memory"],
+        "source_type": None, "source_id": None, "from_meeting": False,
         "created_at": CREATED, "updated_at": CREATED,
     }]
     store.similarity_search.assert_called_once_with("topic", k=candidates)

@@ -90,7 +90,8 @@ describe('ProfilesIndexPage', () => {
   it('opens the canonical detail from click or keyboard', async () => {
     renderWithProviders(<ProfilesIndexPage />);
     const name = await screen.findByText('Alex');
-    fireEvent.click(name);
+    expect(name).toHaveAttribute('href', `/profiles/${profileFixture.id}`);
+    fireEvent.click(name.closest('tr')!);
     expect(navigate).toHaveBeenCalledWith(`/profiles/${profileFixture.id}`);
     fireEvent.keyDown(screen.getByText('Speaker 1').closest('tr')!, { key: 'Enter' });
     expect(navigate).toHaveBeenLastCalledWith('/profiles/meeting-profile');

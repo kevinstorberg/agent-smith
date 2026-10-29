@@ -27,7 +27,7 @@ def test_explicit_named_speakers_reuse_one_normalized_email_across_meetings():
 def test_email_participant_matches_meeting_identity_and_normalizes_display_name():
     direct = email_participant(" Alice+Meetings@Example.com ", " Alice ")
     inferred = meeting_participants(snapshot(), [segment(0, email="alice+meetings@example.com", name="Alice")])[0]
-    assert direct == {**inferred, "segment_ids": []}
+    assert inferred == {**direct, "segment_ids": ["segment-0"], "identity_source": "speaker_email"}
     assert email_participant("alice+meetings@example.com")["display_name"] == "alice+meetings@example.com"
 
 

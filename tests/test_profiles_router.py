@@ -49,7 +49,7 @@ def test_profiles_list_pages_all_scopes_with_immutable_order_and_lean_summaries(
     assert [row["id"] for row in first["items"] + second["items"]] == [row["id"] for row in expected]
     assert {row["identity_scope"] for row in first["items"]} == {"email", "meeting"}
     for row in first["items"] + second["items"]:
-        assert set(row) == {"id", "display_name", "email", "identity_scope", "revision", "created_at", "updated_at", "claim_count", "meeting_count", "tags", "starred"}
+        assert set(row) == {"id", "display_name", "email", "identity_scope", "revision", "created_at", "updated_at", "claim_count", "meeting_count", "tags", "starred", "metadata", "nicknames", "emails"}
         assert row["claim_count"] == row["meeting_count"] == 0
     older = expected[-1]
     with get_connection() as conn, conn.cursor() as cur:
@@ -98,7 +98,7 @@ def test_profiles_canonical_and_legacy_paths_share_handlers_and_publish_one_sche
     assert not any(path.startswith("/api/meetings/profiles") for path in schema["paths"])
     operations = [operation["operationId"] for path, methods in schema["paths"].items()
                   if path.startswith("/api/profiles") for operation in methods.values()]
-    assert len(operations) == len(set(operations)) == 8
+    assert len(operations) == len(set(operations)) == 12
 
     claim_id = profile["claims"][0]["id"]
     corrected = client.post(canonical + "/claims/" + claim_id, json={
@@ -128,17 +128,21 @@ def test_profiles_http_list_accumulates_meetings_and_counts_only_visible_history
     assert original["claim_count"] == original["meeting_count"] == original["revision"] == 1
     profile_db.correct_claim(profile["id"], profile["claims"][0]["id"], 1, "reject", None, "Keep the history")
     assert listed()["claim_count"] == 1
-    digestion_db.release(claimed[0], claimed[1])
+    digestion_db.release_profile_owner(claimed[1])
     second_meeting = ready_meeting(source, "two")
     owner = "profiles-resource-second-meeting"
-    assert digestion_db.claim_digestion([(source.provider, source.account_key)], owner)["meeting_id"] == second_meeting
+    assert digestion_db.claim_profile(source.name, owner)["meeting_id"] == second_meeting
     try:
         record = digestion_db.get_record(second_meeting)
-        apply((second_meeting, owner, record["transcript_hash"]), candidate(participants, {
-            participants[0]["id"]: 2, participants[1]["id"]: 0,
-        }), participants)
+        artifact = candidate(participants, {
+            participants[0]["id"]: 2, participants[1]["id"]: 1,
+        })
+        artifact["items"][0].update(category="uncertainty", epistemic="observed", confidence="low",
+                                     content="Which reliability trade-offs are acceptable remains an open question.",
+                                     rationale="The statement gives a priority but no trade-off.")
+        apply((second_meeting, owner, record["transcript_hash"]), artifact, participants)
     finally:
-        digestion_db.release(second_meeting, owner)
+        digestion_db.release_profile_owner(owner)
     current = listed()
     assert current["id"] == original["id"] and current["created_at"] == original["created_at"]
     assert current["revision"] == 3 and current["claim_count"] == current["meeting_count"] == 2

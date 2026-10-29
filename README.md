@@ -90,6 +90,10 @@ Supports Claude, Codex, and Gemini. Only writes when content has changed. Set
 ## Memory
 
 Vector memory with time-weighted retrieval, served as MCP tools on the dashboard endpoint.
+Meeting-generated memories join this same reusable store and remain available to other agents.
+On **Memory**, enable **Meetings only** to filter by meeting provenance without changing the
+records' tags or creating another store. The list/search API accepts `meeting_only=true`;
+returned records include `from_meeting`, `source_type` and `source_id` when known.
 Defaults to LanceDB (local, stored in `memory_store/`). The supported backends are
 `lancedb`, `pinecone`, and `pgvector`. The pgvector backend uses the existing
 `DATABASE_URL_<ENV>` database and the Alembic-managed `memories` table:
@@ -135,8 +139,9 @@ environment's `.env.*` file.
 
 The `meeting_ingest` graph imports meeting summaries, selected metadata and complete transcript
 snapshots into PostgreSQL. It uses a configured provider factory; Granola is the first adapter.
-Imported context stays separate from generated memories. After capture, tool-calling agents
-generate meeting memories and cumulative participant profiles. The graph does not create tickets.
+After capture, a tool-calling agent generates reusable memories. The separate `persona` graph
+reads saved transcripts and develops cumulative Profiles. Each workflow has its own job,
+lease and retry state; failure in one does not block the other. Neither graph creates tickets.
 
 Set source configuration and the real API key only in the gitignored `.env.production`:
 
@@ -177,24 +182,24 @@ After deploying the reviewed change, apply its migration through the existing co
 flow and restart the dashboard with the updated code:
 
 Stop meeting runners on other devices before upgrading, and update every runner before
-resuming the shared job. An older runner cannot apply the new profile identity rules.
+resuming the shared jobs. Migration `f8a0b1c2d3e4` adds independent persona leases, editable
+profile context, directed relationships and meeting vocabulary. It preserves completed
+persona receipts and backfills existing relationship links without model calls.
 
 ```sh
 ./db.sh production --confirm-database <production-database-name>
 ```
 
-Open **Jobs → New Job** and enter:
+Create **two jobs** through **Jobs → New Job**, selecting **Graph** as the job type:
 
-- **Name:** `Meetings`
-- **Job type:** Graph
-- **Graph:** `meeting_ingest`
-- **Graph inputs (JSON):** `{}`
-- **Run every:** 15 minutes
-- **Timeout (seconds):** 600
-- **Run on:** All devices
+| Name | Graph preset | Graph inputs | Run every | Timeout | Run on |
+| --- | --- | --- | --- | --- | --- |
+| Meetings | `meeting_ingest` | `{}` | 15 minutes | 600 seconds | All devices |
+| Personas | `persona` | `{}` | 15 minutes | 600 seconds | All devices |
 
-Save the job. New `meeting_ingest` jobs default to **All devices**. Each running Agent Smith
-instance imports its configured connections into the shared database. Stable provider/account
+Existing installations with a meeting job must add the persona job separately; jobs are
+not created automatically. Both graph presets default to a 600-second timeout and all devices.
+Each running Agent Smith instance imports its configured connections into the shared database. Stable provider/account
 identities, per-account claims and upserts prevent duplicate records when devices overlap.
 Existing deployment configs remain visible in job details. Use **Run Now** for an immediate
 import and **Executions** to inspect execution status. The dashboard must stay running
@@ -225,11 +230,12 @@ exact evidence quotes, processing status and retry action; the same records are 
 on their detail page. Pending work resumes without
 regenerating completed windows or republishing acknowledged memories.
 
-After memories are saved, a second tool-calling agent builds participant profiles in the same
-graph run. It receives the newly generated memories directly and can retrieve older memories
-and canonical profiles. Open **Profiles** in the sidebar to search and browse profiles across
+The independent persona job reads complete saved transcripts directly from PostgreSQL; it
+does not need a Granola connection or successful memory generation. Previously published
+memories provide optional context. Open **Profiles** in the sidebar to browse people across
 meetings. Each profile has its own page, with priorities, inferred drivers, communication
-patterns and directed perceptions/interactions. Meeting profile cards link to the same records.
+patterns, strengths, development areas and directed perceptions/interactions. Meeting profile
+cards link to the same records.
 Each claim includes its confidence, whether it is self-reported, observed or inferred, and
 exact transcript evidence. Profile retries preserve completed memories.
 
@@ -248,6 +254,12 @@ profile, including in future meetings and historical meeting links. You can also
 email explicitly. Merging preserves evidence and human corrections; conflicting histories
 cause the merge to fail instead of silently choosing one.
 
+Optional human context includes nicknames, company, job role, start date, supervisor and other
+metadata, plus notes for drivers, strengths and development areas. Nicknames are searchable
+labels, not proof of identity. Human notes and claim corrections remain authoritative during
+later analysis. Directed relationships have their own editable labels and notes: A → B and
+B → A are distinct. Neither gender nor marital status is inferred from names or voice.
+
 Automatic matching across meetings uses a reliable email identity: an explicit speaker
 email or an unambiguous match between a named speaker and the meeting's named attendee roster.
 Names without an email and anonymous speaker labels remain meeting-scoped unless you explicitly
@@ -258,15 +270,25 @@ No names or email aliases are guessed.
 In a meeting's **Participants** card, add a name and email or choose an existing profile.
 Once a transcript is available, select its speaker to explicitly attribute that speaker's
 words. Participant additions are stored separately from provider metadata and survive syncs.
-Saving an enrolled meeting's participants queues updated profile analysis while preserving
-completed memories. Changed speaker assignments retire the affected earlier profile claims
+Changed speaker assignments retire the affected earlier profile claims
 from the current view while retaining their evidence and correction history. Participant
-changes wait until an active run finishes.
+changes wait until an active run finishes. Transcript pages retain the raw speaker and show
+the effective confirmed identity, linking only to existing canonical profiles. Assignments
+can update unfinished persona work; completed reviews and memories remain complete.
 
 **Process meeting** explicitly enrolls an older saved meeting or retries its missing stages.
-Requested meetings take priority in the existing meeting job; use **Run Now** in Jobs to
-process the queue sooner. This action does not create another job or restore a deliberately
-deleted transcript. Previously imported meetings are not enrolled automatically in bulk.
+With compatible jobs running, explicit requests resume on the scheduler's next five-second
+poll, including across bounded runs, rather than waiting for each 15-minute interval. Retry
+backoff still applies. The processing card shows transcript sections analyzed, staged candidates,
+saved outputs and next eligible attempt. Publication starts after all memory windows finish;
+saved candidates are not yet published memories. This action does not create a job or restore
+a deliberately deleted transcript. Previously imported meetings are not enrolled automatically in bulk.
+Repeated processing, profile/nickname edits and vocabulary changes do not reopen completed
+reviews or regenerate completed frozen memories.
+
+On **Meetings**, open **Meeting vocabulary** to define terms and abbreviations. New memory analysis selects a
+bounded matching glossary and saves it before its first model call. Retries reuse that glossary;
+editing vocabulary does not alter transcripts or replay earlier meetings.
 
 Use **Correct** or **Reject** on a profile claim to retain a human override with a reason.
 Later analysis reads those overrides. Revision checks prevent a background analysis from
@@ -276,18 +298,23 @@ it automatically. Source-unavailable claims are hidden in the reader; human over
 constraints for later analysis. Generated meeting-memory cards preserve the original output;
 edits/deletions on Memory manage the published record separately.
 
-The `meeting_memory` model role uses the existing model factory. Its default is `KIMI_K3`,
-with the curator credential as fallback; override `MEETING_MEMORY_MODEL_*` for a separate
-connection or model. Each run handles one pending meeting within a 540-second work budget,
-including up to 60 seconds for imports and 150 seconds for each agent. The `meeting_profile`
-role has the same factory/configuration convention via `MEETING_PROFILE_MODEL_*`. Use the
-600-second job timeout to leave time for cleanup. An initial account backlog drains over
-successive runs. No second job is required.
+The model roles `meeting_memory` and `persona` use the existing factory, defaulting to
+`KIMI_K3` with curator settings as fallback. Configure them independently with
+`MEETING_MEMORY_MODEL_*` and `PERSONA_MODEL_*`. `PERSONA_CONTEXT_PROVIDER=meetings` selects
+the saved-meeting context adapter; Slack context is not implemented. Persona's optional
+`source` input filters stored connection names, not live API credentials.
+
+Each graph handles one pending context within a 540-second work budget. Agent stages retain
+their 150-second budget and model calls their 45-second bound. Memory/persona jobs require
+600 seconds for execution and cleanup; legacy shorter timeouts receive that minimum at runtime.
+Successful checkpoints resume promptly for explicit requests. Zero-progress timeouts and
+dependency failures use bounded retries/backoff and expose safe, distinct error categories.
 
 To import immediately, use the graphs MCP tool:
 
 ```python
 run_graph(type="meeting_ingest", inputs={})
+run_graph(type="persona", inputs={})
 ```
 
 The optional `source` input restricts an explicitly targeted run to one connection, for
@@ -363,6 +390,10 @@ must be restarted to refresh the `run_graph` tool description after changing gra
 
 Runs backend tests (pytest) and frontend tests (Vitest). Pytest flags are forwarded:
 `./audit.sh -x` stops on first failure, `./audit.sh -k test_plans` filters by name.
+Default pytest tests and audits deny paid model inference, remove inherited paid credentials
+and tracing, and propagate that mode to child processes. Scripted models/fake agents verify
+the tool loops. Live-evaluation flags cannot override automated mode; these checks do not
+claim a general network sandbox.
 
 Install native PostgreSQL 17 and pgvector for tests. Set `POSTGRES_BIN` to the server
 bin directory if it is not on PATH (Homebrew example: `$(brew --prefix postgresql@17)/bin`).
@@ -389,6 +420,8 @@ and picked up automatically at test time.
 Runs directly against the selected application database; the dashboard need not be
 running. Defaults to production for compatibility; use `./evals.sh --env development`
 to evaluate development suites. Evals intentionally record results in that database.
+This is an explicit live, potentially billable workflow, separate from automated tests;
+`./evals.sh` enables live-evaluation collection and refuses to run in automated mode.
 Configure via `EVAL_MODEL`, `EVAL_JUDGE_MODEL`, and `EVAL_THRESHOLD` in the selected
 environment's `.env.*` file.
 

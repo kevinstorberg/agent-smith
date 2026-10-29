@@ -107,10 +107,11 @@ def test_changing_speaker_assignment_retires_wrong_attribution_without_losing_me
     profile = profile_db.get_profile(participants[0]["id"])
     claim = profile["claims"][0]
     profile_db.correct_claim(profile["id"], claim["id"], profile["revision"], "correct", "Human clarification", "Participant correction")
-    digestion_db.release(meeting_id, owner)
+    digestion_db.release_profile_owner(owner)
     before = digestion_db.get_record(meeting_id)
     response = client.get(path(meeting_id) + "/participants").json()
-    assert response["speakers"] and "transcript" not in response and "I prioritize" not in json.dumps(response)
+    assert response["speakers"] and "transcript" not in response
+    assert response["speakers"][0]["sample"] and len(response["speakers"][0]["sample"]) <= 160
     data = client.put(path(meeting_id) + "/participants", json={"expected_revision": 0, "participants": [{
         "name": "Actual speaker", "email": "actual@example.invalid", "speaker_key": response["speakers"][0]["key"],
     }]})
@@ -118,7 +119,7 @@ def test_changing_speaker_assignment_retires_wrong_attribution_without_losing_me
     after = digestion_db.get_record(meeting_id)
     assert after["snapshot"] == before["snapshot"] and after["transcript"] == before["transcript"]
     assert after["memory_artifact"] == before["memory_artifact"] and after["memory_status"] == "done"
-    assert after["profile_status"] == "pending" and after["profile_artifact"] == {}
+    assert after["profile_status"] == "done" and after["profile_artifact"] == before["profile_artifact"]
     assert profile_db.get_profile(profile["id"])["claims"] == []
     internal = profile_db.load_profiles(participants)[0]
     assert internal["claims"][0]["superseded"] and internal["claims"][0]["id"] == claim["id"]
@@ -128,7 +129,7 @@ def test_changing_speaker_assignment_retires_wrong_attribution_without_losing_me
 def test_existing_profile_can_be_assigned_but_deleted_profile_cannot(client, claimed, participants):
     apply(claimed, candidate(participants), participants)
     meeting_id, owner, _ = claimed
-    digestion_db.release(meeting_id, owner)
+    digestion_db.release_profile_owner(owner)
     speakers = client.get(path(meeting_id) + "/participants").json()["speakers"]
     person = {"name": "Alex", "profile_id": participants[0]["id"], "speaker_key": speakers[0]["key"]}
     response = client.put(path(meeting_id) + "/participants", json={"expected_revision": 0, "participants": [person]})
@@ -161,7 +162,8 @@ async def test_older_meeting_manual_roster_reaches_real_graph_catalog_without_re
     monkeypatch.setattr(profile_analysis, "analyze_profiles", analyze)
     try:
         management_db.request_processing(meeting_id)
-        result = json.loads(await dispatch("meeting_ingest", {"source": source.name}))
+        await dispatch("meeting_ingest", {"source": source.name})
+        result = json.loads(await dispatch("persona", {"source": source.name}))
         assert result["profiles"]["outcome"] == "done" and calls[0][0]["id"] == person["id"]
         profile = profile_db.get_profile(person["id"])
         original_claim = copy.deepcopy(profile["claims"][0])

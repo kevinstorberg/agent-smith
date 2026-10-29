@@ -69,6 +69,18 @@ afterEach(() => {
 
 describe('JobDetailPage', () => {
   describe('create mode', () => {
+    it('prefills the persona setup link once and preserves user edits', async () => {
+      renderWithProviders(<JobDetailPage />, { initialEntries: ['/jobs/new?graph=persona'] });
+      expect(screen.getByLabelText('Graph')).toHaveValue('persona');
+      expect(screen.getByLabelText('Graph inputs (JSON)')).toHaveValue('{}');
+      expect(screen.getByLabelText('Timeout (seconds)')).toHaveValue(600);
+      expect(screen.getByLabelText('Run on')).toHaveValue('all_devices');
+      fireEvent.change(screen.getByPlaceholderText('Job name'), { target: { value: 'My persona schedule' } });
+      fireEvent.change(screen.getByLabelText('Graph inputs (JSON)'), { target: { value: '{"source":"work"}' } });
+      expect(screen.getByPlaceholderText('Job name')).toHaveValue('My persona schedule');
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ name: 'My persona schedule', input_params: { graph_type: 'persona', graph_inputs: { source: 'work' }, timeout: 600 } })));
+    });
     beforeEach(() => { mockParams = { id: 'new' }; });
 
     it('starts in editing mode for new jobs', () => {
@@ -110,11 +122,11 @@ describe('JobDetailPage', () => {
       });
     });
 
-    it('creates an all-connections meeting schedule on all devices by default', async () => {
+    it.each(['meeting_ingest', 'persona'])('creates an all-connections %s schedule on all devices by default', async graph => {
       renderWithProviders(<JobDetailPage />);
       fireEvent.change(screen.getByPlaceholderText('Job name'), { target: { value: 'Meetings' } });
       fireEvent.change(screen.getByLabelText('Job type'), { target: { value: 'graph' } });
-      fireEvent.change(screen.getByLabelText('Graph'), { target: { value: 'meeting_ingest' } });
+      fireEvent.change(screen.getByLabelText('Graph'), { target: { value: graph } });
       fireEvent.change(screen.getByLabelText('Run every'), { target: { value: '15' } });
       expect(screen.getByLabelText('Run on')).toHaveValue('all_devices');
       fireEvent.click(screen.getByText('Save'));
@@ -122,7 +134,7 @@ describe('JobDetailPage', () => {
       await waitFor(() => expect(mockCreate).toHaveBeenCalledWith({
         name: 'Meetings',
         schedule_config: { minutes: 15 },
-        input_params: { graph_type: 'meeting_ingest', graph_inputs: {}, timeout: 600 },
+        input_params: { graph_type: graph, graph_inputs: {}, timeout: 600 },
         description: null,
       }));
     });

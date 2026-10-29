@@ -35,16 +35,21 @@ async def test_incremental_polls_do_not_repeat_completed_transcripts_or_agents(s
             return await super().get_transcript_page(external_id, cursor)
 
     monkeypatch.setitem(factory._PROVIDER_BUILDERS, "test", MeteredProvider)
-    await dispatch("meeting_ingest", {"source": source.name})
+    imported = json.loads(await dispatch("meeting_ingest", {"source": source.name}))
     initial_summary_calls = len(summary_calls)
     initial_transcript_calls = len(transcript_calls)
     assert initial_summary_calls > 0 and initial_transcript_calls == 1
-    assert len(agents.analyses) == len(profiler[0]) == 1
+    assert imported["memories"]["outcome"] == "done" and "profiles" not in imported
+    assert len(agents.analyses) == 1 and profiler[0] == []
     assert cutoffs == [None]
+    persona = json.loads(await dispatch("persona", {"source": source.name}))
+    assert persona["profiles"]["outcome"] == "done" and len(profiler[0]) == 1
+    assert len(summary_calls) == initial_summary_calls and len(transcript_calls) == initial_transcript_calls
 
     for _ in range(2):
         overlap = json.loads(await dispatch("meeting_ingest", {"source": source.name}))
         assert overlap["unchanged"] == 1
+        assert json.loads(await dispatch("persona", {"source": source.name}))["profiles"]["outcome"] == "idle"
     with get_connection() as connection, connection.cursor() as cursor:
         cursor.execute("UPDATE meeting_sync_state SET last_pull_started_at = clock_timestamp() - interval '25 hours', last_deep_completed_at = clock_timestamp() - interval '25 hours' WHERE account_key = %s", (source.account_key,))
     await dispatch("meeting_ingest", {"source": source.name})
@@ -59,5 +64,6 @@ async def test_incremental_polls_do_not_repeat_completed_transcripts_or_agents(s
 
     people.summaries = {}
     await dispatch("meeting_ingest", {"source": source.name})
+    assert json.loads(await dispatch("persona", {"source": source.name}))["profiles"]["outcome"] == "idle"
     assert len(agents.analyses) == len(agents.publications) == len(profiler[0]) == 1
     assert all(cutoff is not None for cutoff in cutoffs[1:])

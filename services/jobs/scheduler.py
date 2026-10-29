@@ -28,7 +28,6 @@ from datetime import datetime, timezone
 
 from services.config import (
     DEVICE_NAME,
-    JOB_DEFAULT_TIMEOUT,
     JOB_MAX_OUTPUT_BYTES,
     JOB_POLL_INTERVAL,
 )
@@ -154,7 +153,9 @@ async def _run_command_job(exec_id: int, job_id: int, command: str, params: dict
     proc: asyncio.subprocess.Process | None = None
     out_buf, err_buf = bytearray(), bytearray()
     try:
-        timeout = float(params.get("timeout", JOB_DEFAULT_TIMEOUT))
+        from services.jobs.service import execution_timeout
+
+        timeout = execution_timeout("", params)
         proc = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
@@ -207,7 +208,9 @@ async def _run_graph_job(exec_id: int, job_id: int, graph_type: str, params: dic
     graph_inputs = params.get("graph_inputs") or {}
     start = time.monotonic()
     try:
-        timeout = float(params.get("timeout", JOB_DEFAULT_TIMEOUT))
+        from services.jobs.service import execution_timeout
+
+        timeout = execution_timeout(graph_type, params)
         try:
             output = await asyncio.wait_for(dispatch(graph_type, graph_inputs), timeout=timeout)
         except asyncio.TimeoutError:
@@ -341,9 +344,13 @@ class JobScheduler:
                 pass
 
     async def _tick(self) -> None:
+        from services.jobs.service import has_requested_work
+
         now = _utcnow()
         for job in await asyncio.to_thread(self._eligible_jobs):
             job_id = job["id"]
+            if job_id in self._running:
+                continue
             try:
                 interval = parse_interval(job["schedule_config"])
             except ValueError:
@@ -351,7 +358,12 @@ class JobScheduler:
             next_run = self._next_run.get(job_id)
             if next_run is None:
                 self._next_run[job_id] = now + interval
-                continue
-            if next_run <= now:
+                next_run = self._next_run[job_id]
+            try:
+                requested = await asyncio.to_thread(has_requested_work, job)
+            except Exception as error:
+                log.warning("job %s requested-work check failed: %s", job_id, type(error).__name__)
+                requested = False
+            if next_run <= now or requested:
                 self._next_run[job_id] = now + interval
                 self._dispatch(job)

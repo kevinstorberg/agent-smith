@@ -96,17 +96,17 @@ def test_list_filters_tags_and_starred_with_whitelisted_sorts(client, pair, sort
 
 def test_agent_appending_claims_preserves_user_tags_and_stars(source, claimed, participants, pair):
     profile_db.update_metadata(pair[0]["id"], 1, tags=["User tag"], starred=True)
-    digestion_db.release(claimed[0], claimed[1])
+    digestion_db.release_profile_owner(claimed[1])
     meeting_id = ready_meeting(source, "second")
     owner = "profile-management-append"
-    digestion_db.claim_digestion([(source.provider, source.account_key)], owner)
+    digestion_db.claim_profile(source.name, owner)
     try:
         record = digestion_db.get_record(meeting_id)
         apply((meeting_id, owner, record["transcript_hash"]), candidate(participants, {
             participants[0]["id"]: 2, participants[1]["id"]: 1,
         }), participants)
     finally:
-        digestion_db.release(meeting_id, owner)
+        digestion_db.release_profile_owner(owner)
     updated = profile_db.get_profile(pair[0]["id"])
     assert updated["revision"] == 3 and len(updated["claims"]) == 2
     assert updated["tags"] == ["User tag"] and updated["starred"]
@@ -270,13 +270,13 @@ def test_reanalysis_reuses_legacy_claim_identity_and_reactivates_correction_thro
     winner = profile_db.merge_profiles(original["id"], pair[1]["id"], 2, 1)
     resolved = profile_db.resolve_participants(participants)
     assert len(resolved) == 1
-    digestion_db.release(claimed[0], claimed[1])
+    digestion_db.release_profile_owner(claimed[1])
 
     def reprocess(expected_revision):
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute("UPDATE meeting_digestions SET profile_status = 'pending', profile_artifact = '{}'::jsonb WHERE meeting_id = %s", (claimed[0],))
         owner = "natural-profile-replay"
-        digestion_db.claim_digestion([(source.provider, source.account_key)], owner)
+        digestion_db.claim_profile(source.name, owner)
         item = candidate(participants)["items"][0]
         item.update(subject_id=winner["id"], target_id=None, confidence="high", rationale="A later analysis of the same fact")
         item["evidence"] = list(reversed(claims[0]["evidence"]))
@@ -284,7 +284,7 @@ def test_reanalysis_reuses_legacy_claim_identity_and_reactivates_correction_thro
         try:
             profile_db.apply_profiles(claimed[0], owner, claimed[2], artifact, resolved)
         finally:
-            digestion_db.release(claimed[0], owner)
+            digestion_db.release_profile_owner(owner)
 
     reprocess(winner["revision"])
     current = profile_db.get_profile(winner["id"])

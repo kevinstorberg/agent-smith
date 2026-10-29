@@ -52,6 +52,60 @@ afterEach(() => {
 });
 
 describe('MemoryPage', () => {
+  it('applies the meeting filter before paging and preserves the search, repo, tags, and sort options', async () => {
+    mockList.mockResolvedValue({ items: fakeMemories, total: 40 });
+    mockSearch.mockResolvedValue({ items: fakeMemories, total: 40 });
+    renderWithProviders(<MemoryPage />);
+    await screen.findByText('First memory content');
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 })));
+    fireEvent.change(screen.getByPlaceholderText('Filter by repo'), { target: { value: 'agent-smith' } });
+    fireEvent.change(screen.getByPlaceholderText('Filter by tags (comma-separated)'), { target: { value: 'decision, release' } });
+    fireEvent.change(screen.getByLabelText('Sort'), { target: { value: 'updated_at_desc' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Meetings only' }));
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({
+      limit: 10, offset: 0, meeting_only: true, repo: 'agent-smith', tags: ['decision', 'release'], sort: 'updated_at_desc',
+    }));
+    fireEvent.change(screen.getByPlaceholderText('Semantic search...'), { target: { value: 'release plans' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    await waitFor(() => expect(mockSearch).toHaveBeenLastCalledWith('release plans', expect.objectContaining({ meeting_only: true, offset: 0, repo: 'agent-smith', tags: ['decision', 'release'], sort: 'relevance' })));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(mockSearch).toHaveBeenLastCalledWith('release plans', expect.objectContaining({ offset: 10, meeting_only: true })));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Meetings only' }));
+    await waitFor(() => expect(mockSearch).toHaveBeenLastCalledWith('release plans', expect.objectContaining({ offset: 0, meeting_only: false, sort: 'relevance' })));
+  });
+
+  it('shows meeting provenance and links to the source without hiding general memories', async () => {
+    const meetingId = '54853e29-12dc-4d19-8987-ec0311f9d82e';
+    mockList.mockResolvedValue({ items: [{ ...fakeMemories[0], from_meeting: true, source_id: meetingId }, fakeMemories[1]], total: 2 });
+    renderWithProviders(<MemoryPage />);
+    expect(await screen.findByText('Meeting')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Source meeting' })).toHaveAttribute('href', `/meetings/${meetingId}`);
+    expect(screen.getByText('Second memory content')).toBeInTheDocument();
+  });
+
+  it('shows a retryable read error instead of a false empty state', async () => {
+    mockList.mockRejectedValueOnce(new Error('private backend diagnostic'));
+    renderWithProviders(<MemoryPage />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load memories.');
+    expect(screen.queryByText('No memories yet')).not.toBeInTheDocument();
+    expect(screen.queryByText('private backend diagnostic')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('First memory content')).toBeInTheDocument();
+  });
+
+  it('does not replace meeting-filtered results with an older all-memory response', async () => {
+    let resolveOld!: (value: { items: typeof fakeMemories; total: number }) => void;
+    mockList.mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve; }));
+    mockList.mockResolvedValueOnce({ items: [{ ...fakeMemories[0], content: 'Current meeting memory' }], total: 1 });
+    renderWithProviders(<MemoryPage />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Meetings only' }));
+    expect(await screen.findByText('Current meeting memory')).toBeInTheDocument();
+    await act(async () => { resolveOld({ items: fakeMemories, total: 2 }); });
+    expect(screen.getByText('Current meeting memory')).toBeInTheDocument();
+    expect(screen.queryByText('Second memory content')).not.toBeInTheDocument();
+  });
+
   it('loads and displays memory items in list mode', async () => {
     renderWithProviders(<MemoryPage />);
 

@@ -3,7 +3,7 @@ import logging
 import pytest
 from uvicorn.logging import AccessFormatter
 
-from services.api.access_logging import ExpectedMCPDiscoveryFilter, configure_mcp_access_logging
+from services.api.access_logging import ExpectedMCPProbeFilter, configure_mcp_access_logging
 from services.api.app import MCP_SERVERS
 
 ACCESS_MESSAGE = '%s - "%s %s HTTP/%s" %d'
@@ -113,7 +113,7 @@ def test_configuration_is_idempotent_and_preserves_other_filters(access_logger):
     configure_mcp_access_logging({"/mcp/memory": False})
     configure_mcp_access_logging({"/mcp/jobs": True})
     assert unrelated in access_logger.filters
-    installed = [item for item in access_logger.filters if isinstance(item, ExpectedMCPDiscoveryFilter)]
+    installed = [item for item in access_logger.filters if isinstance(item, ExpectedMCPProbeFilter)]
     assert len(installed) == 1 and not installed[0].paths
 
 
@@ -121,11 +121,11 @@ def test_configuration_is_idempotent_and_preserves_other_filters(access_logger):
 def test_unknown_access_record_shapes_are_not_filtered(args):
     record = logging.LogRecord("uvicorn.access", logging.INFO, __file__, 1, "Unrecognized access message", (), None)
     record.args = args
-    assert ExpectedMCPDiscoveryFilter({"/mcp/memory": False}).filter(record)
+    assert ExpectedMCPProbeFilter({"/mcp/memory": False}).filter(record)
 
 
 def test_app_configures_filters_from_its_registered_mcp_mounts():
-    installed = [item for item in logging.getLogger("uvicorn.access").filters if isinstance(item, ExpectedMCPDiscoveryFilter)]
+    installed = [item for item in logging.getLogger("uvicorn.access").filters if isinstance(item, ExpectedMCPProbeFilter)]
     assert len(installed) == 1
     for server in MCP_SERVERS:
         path = f"/.well-known/oauth-protected-resource/mcp/{server.name.split(' - ')[0]}"
