@@ -3,9 +3,10 @@ import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { HarnessIndexPage } from '../HarnessIndexPage';
 
+const drag = vi.hoisted(() => ({ end: vi.fn() }));
 vi.mock('@hello-pangea/dnd', () => ({
-  DragDropContext: ({ children }: any) => <>{children}</>,
-  Droppable: ({ children }: any) => <div>{children({ innerRef: () => {}, droppableProps: {}, placeholder: null })}</div>,
+  DragDropContext: ({ children, onDragEnd }: any) => { drag.end = onDragEnd; return <>{children}</>; },
+  Droppable: ({ children, isDropDisabled }: any) => <div data-testid="harness-drop-zone" data-disabled={String(isDropDisabled)}>{children({ innerRef: () => {}, droppableProps: {}, placeholder: null })}</div>,
   Draggable: ({ children }: any) => <div>{children({ innerRef: () => {}, draggableProps: { style: {} }, dragHandleProps: {} }, { isDragging: false })}</div>,
 }));
 
@@ -65,6 +66,54 @@ afterEach(() => {
 });
 
 describe('HarnessIndexPage', () => {
+  it('hides a filtered subset and blocks stale reorder callbacks while clearing the filter refetches all rows', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderWithProviders(<HarnessIndexPage type="rule" />);
+    await screen.findByText('test_rule');
+    const input = screen.getByPlaceholderText('Search by name...');
+    fireEvent.change(input, { target: { value: 'subset' } });
+    await act(async () => { vi.advanceTimersByTime(300); });
+    expect(screen.getByTestId('harness-drop-zone')).toHaveAttribute('data-disabled', 'true');
+    const oldDrop = drag.end;
+    let resolve!: (value: unknown) => void;
+    mockList.mockReturnValueOnce(new Promise(complete => { resolve = complete; }));
+    input.focus();
+    fireEvent.change(input, { target: { value: '' } });
+    await act(async () => { vi.advanceTimersByTime(300); });
+    expect(screen.getByText('Loading...')).toBeInTheDocument();
+    expect(screen.queryByText('test_rule')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('harness-drop-zone')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(input).toHaveFocus();
+    await act(async () => { await oldDrop({ source: { index: 0 }, destination: { index: 1 } }); });
+    expect(mockReorder).not.toHaveBeenCalled();
+    await act(async () => { resolve({ items: [makeItem(), makeItem({ id: 2, name: 'another_rule' })], total: 2 }); });
+    expect(screen.getByText('another_rule')).toBeInTheDocument();
+    expect(screen.getByTestId('harness-drop-zone')).toHaveAttribute('data-disabled', 'false');
+  });
+
+  it('shows a retryable read error without stale rows or row mutations and preserves filter focus', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderWithProviders(<HarnessIndexPage type="rule" />);
+    await screen.findByText('test_rule');
+    mockList.mockRejectedValueOnce(new Error('Private backend diagnostic'));
+    const input = screen.getByPlaceholderText('Search by name...');
+    input.focus();
+    fireEvent.change(input, { target: { value: 'new criteria' } });
+    await act(async () => { vi.advanceTimersByTime(300); });
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not load rules.');
+    expect(screen.queryByText('test_rule')).not.toBeInTheDocument();
+    expect(screen.queryByText('No rules found')).not.toBeInTheDocument();
+    expect(screen.queryByText('Private backend diagnostic')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('harness-drop-zone')).not.toBeInTheDocument();
+    expect(input).toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await screen.findByText('test_rule');
+    expect(mockList).toHaveBeenLastCalledWith('rule', expect.objectContaining({ name: 'new criteria', offset: 0 }));
+    expect(mockReorder).not.toHaveBeenCalled();
+    expect(mockUpdateMetadata).not.toHaveBeenCalled();
+  });
+
   it('renders table with item data', async () => {
     renderWithProviders(<HarnessIndexPage type="rule" />);
 
@@ -166,6 +215,7 @@ describe('HarnessIndexPage', () => {
     mockList.mockClear();
 
     const nameInput = screen.getByPlaceholderText('Search by name...');
+    nameInput.focus();
 
     await act(async () => {
       fireEvent.change(nameInput, { target: { value: 'search_term' } });
@@ -183,5 +233,7 @@ describe('HarnessIndexPage', () => {
       'rule',
       expect.objectContaining({ name: 'search_term' }),
     );
+    expect(screen.getByPlaceholderText('Search by name...')).toBe(nameInput);
+    expect(nameInput).toHaveFocus();
   });
 });

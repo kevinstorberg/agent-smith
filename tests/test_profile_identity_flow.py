@@ -41,7 +41,7 @@ def profile_agent(agents, monkeypatch):
 
     calls = []
 
-    async def analyze(snapshot, window, previous, *, participants, profiles, memories, deadline):
+    async def analyze(snapshot, window, previous, *, participants, profiles, memories, deadline, previous_metadata=None):
         calls.append(copy.deepcopy({"snapshot": snapshot, "participants": participants, "profiles": profiles, "previous": previous}))
         if any(profile.get("deleted") for profile in profiles):
             return {"items": [], "reason": "Deleted identities remain deleted"}

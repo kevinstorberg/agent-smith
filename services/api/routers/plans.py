@@ -26,8 +26,8 @@ def list_all(
 
 
 @router.get("/search")
-def search(q: str = Query(..., min_length=1), project: str = Query("")):
-    return search_plans(q, project=empty_to_none(project))
+def search(q: str = Query(..., min_length=1), project: str = Query(""), status: str = ""):
+    return search_plans(q, project=empty_to_none(project), status=empty_to_none(status))
 
 
 @router.get("/{plan_id}")

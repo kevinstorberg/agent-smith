@@ -75,7 +75,7 @@ class BaseModel:
         where: str = "",
         params: tuple = (),
         order_by: str = "updated_at DESC",
-        limit: int = 100,
+        limit: int | None = 100,
         offset: int = 0,
     ) -> tuple[list[dict], int]:
         with get_connection() as conn:

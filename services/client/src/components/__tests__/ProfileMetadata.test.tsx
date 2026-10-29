@@ -18,6 +18,17 @@ beforeEach(() => {
 });
 
 describe('ProfileMetadata', () => {
+  it('shows generated metadata with exact evidence and distinguishes human-owned fields', () => {
+    renderWithProviders(<ProfileMetadata profile={{ ...profileFixture, metadata: { company: 'Paralign', job_role: 'Engineering lead' },
+      metadata_provenance: { company: { meeting_id: 'meeting-source', transcript_hash: 'hash', participants_revision: 0,
+        evidence: [{ segment_id: 'segment-4', quote: 'I work at Paralign.' }] }, job_role: { human: true } } }}
+      disabled={false} onBusyChange={busy} onReload={reload} />);
+    expect(screen.getByText('Paralign')).toBeInTheDocument();
+    expect(screen.getByText('I work at Paralign.')).toBeInTheDocument();
+    expect(screen.getByText('Edited by you')).toBeInTheDocument();
+    expect(screen.getByText('View source meeting')).toHaveAttribute('href', '/meetings/meeting-source#meeting-transcript');
+  });
+
   it('saves a normalized name, tags and a star with the captured revision', async () => {
     renderWithProviders(<ProfileMetadata profile={profileFixture} disabled={false} onBusyChange={busy} onReload={reload} />);
     fireEvent.click(screen.getByRole('button', { name: 'Edit profile' }));
@@ -27,6 +38,18 @@ describe('ProfileMetadata', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save profile' }));
     await waitFor(() => expect(api.profiles.update).toHaveBeenCalledWith(profileFixture.id, { expected_revision: 1, display_name: 'Alex Morgan', tags: ['team', 'priority'], starred: true }));
     expect(reload).toHaveBeenCalled();
+    expect(vi.mocked(api.profiles.update).mock.calls[0][1]).not.toHaveProperty('metadata');
+  });
+
+  it('sends only a deliberately cleared metadata field and preserves untouched empty fields for autofill', async () => {
+    renderWithProviders(<ProfileMetadata profile={{ ...profileFixture, metadata: { company: 'Paralign', job_role: 'Engineer' } }}
+      disabled={false} onBusyChange={busy} onReload={reload} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit profile' }));
+    fireEvent.change(screen.getByLabelText('Company'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save profile' }));
+    await waitFor(() => expect(api.profiles.update).toHaveBeenCalledWith(profileFixture.id,
+      expect.objectContaining({ metadata: { company: '' } })));
+    expect(vi.mocked(api.profiles.update).mock.calls[0][1].metadata).toEqual({ company: '' });
   });
 
   it('preserves a metadata draft across a conflict and requires an explicit retry', async () => {

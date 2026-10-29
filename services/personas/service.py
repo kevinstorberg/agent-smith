@@ -54,7 +54,7 @@ class PersonaRun(processing.ProcessingRun):
         participants_revision = record.get("participants_revision", 0)
         analysis_snapshot, participants, profiles = await run_db(self.provider.prepare_context, record)
         artifact = copy.deepcopy(record["profile_artifact"]) or {
-            "version": 1, "offset": 0, "items": [], "reason": "",
+            "version": 1, "offset": 0, "items": [], "metadata_updates": [], "reason": "",
             "model": resolve_model_id("persona", "curator"), "prompt_version": 1,
             "expected_revisions": {profile["id"]: profile["revision"] for profile in profiles},
             "participants_revision": participants_revision,
@@ -72,9 +72,11 @@ class PersonaRun(processing.ProcessingRun):
             window, end = transcript_window(segments, artifact["offset"])
             result = await analyze_profiles(
                 analysis_snapshot, window, artifact["items"], participants=participants,
-                profiles=profiles, memories=[], deadline=deadline,
+                profiles=profiles, memories=[], previous_metadata=artifact.get("metadata_updates", []), deadline=deadline,
             )
             artifact["items"].extend(result["items"])
+            if result.get("metadata_updates"):
+                artifact.setdefault("metadata_updates", []).extend(result["metadata_updates"])
             artifact.update(offset=end, reason=result.get("reason", ""))
             await run_db(self.provider.save_progress, context_id, self.owner, record["context_hash"], artifact)
         profile_ids = await run_db(self.provider.apply_profiles, context_id, self.owner, record["context_hash"], artifact, participants)

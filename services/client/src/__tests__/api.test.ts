@@ -17,6 +17,17 @@ beforeEach(() => {
 });
 
 describe('parseError (tested through api methods)', () => {
+  it('requests scoped plan searches, graph jobs and exact executions through existing APIs', async () => {
+    globalThis.fetch = mockFetch({ items: [], total: 0 });
+    await api.plans.search('security', { project: 'Paralign', status: 'draft' });
+    await api.jobs.forGraph('persona');
+    await api.jobs.execution(42, 77);
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    expect(Object.fromEntries(new URL(calls[0][0]).searchParams)).toEqual({ q: 'security', project: 'Paralign', status: 'draft' });
+    expect(new URL(calls[1][0]).pathname).toBe('/api/jobs/graph/persona');
+    expect(new URL(calls[2][0]).pathname).toBe('/api/jobs/42/executions/77');
+  });
+
   it('preserves a conflict status for profile revision recovery', async () => {
     globalThis.fetch = mockFetch({ detail: 'Profile changed' }, { ok: false, status: 409 });
     try {

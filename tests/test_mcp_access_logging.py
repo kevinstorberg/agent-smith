@@ -1,4 +1,5 @@
 import logging
+from http import HTTPStatus
 
 import pytest
 from uvicorn.logging import AccessFormatter
@@ -41,6 +42,17 @@ def emit(logger, path=PROBE_PATH, *, method="GET", status=404, level=logging.INF
 def test_expected_discovery_is_quiet_at_info(access_logger, caplog, path):
     emit(access_logger, path)
     assert not caplog.records
+
+
+@pytest.mark.parametrize("debug", [False, True])
+def test_integer_enum_status_keeps_expected_discovery_classification(access_logger, caplog, debug):
+    if debug:
+        caplog.set_level(logging.DEBUG, logger="uvicorn.access")
+    emit(access_logger, status=HTTPStatus.NOT_FOUND)
+    assert len(caplog.records) == int(debug)
+    if debug:
+        assert caplog.records[0].args[-1] is HTTPStatus.NOT_FOUND
+        assert caplog.records[0].name == "uvicorn.access.expected_probe"
 
 
 @pytest.mark.parametrize("path", DISCOVERY_PATHS)
@@ -121,6 +133,13 @@ def test_configuration_is_idempotent_and_preserves_other_filters(access_logger):
 def test_unknown_access_record_shapes_are_not_filtered(args):
     record = logging.LogRecord("uvicorn.access", logging.INFO, __file__, 1, "Unrecognized access message", (), None)
     record.args = args
+    assert ExpectedMCPProbeFilter({"/mcp/memory": False}).filter(record)
+
+
+@pytest.mark.parametrize("status", [True, False, "404", 404.0, None])
+def test_noninteger_and_boolean_statuses_keep_visibility(status):
+    record = logging.LogRecord("uvicorn.access", logging.INFO, __file__, 1, ACCESS_MESSAGE,
+                               ("client", "GET", PROBE_PATH, "1.1", status), None)
     assert ExpectedMCPProbeFilter({"/mcp/memory": False}).filter(record)
 
 

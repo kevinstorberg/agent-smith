@@ -141,11 +141,11 @@ async def execute_job(job: dict) -> dict:
             error="input_params requires exactly one of 'command' or 'graph_type'",
         )
         await asyncio.to_thread(complete_execution, exec_id, status="failed", result=result)
-        return result
-
-    if command:
-        return await _run_command_job(exec_id, job_id, command, params)
-    return await _run_graph_job(exec_id, job_id, graph_type, params)
+    elif command:
+        result = await _run_command_job(exec_id, job_id, command, params)
+    else:
+        result = await _run_graph_job(exec_id, job_id, graph_type, params)
+    return {**result, "execution_id": exec_id}
 
 
 async def _run_command_job(exec_id: int, job_id: int, command: str, params: dict) -> dict:

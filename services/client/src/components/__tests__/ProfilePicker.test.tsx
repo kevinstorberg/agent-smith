@@ -12,8 +12,8 @@ it('searches inside an existing editor without submitting its parent form', asyn
   renderWithProviders(<form onSubmit={submit}><ProfilePicker label="Find person" selectionLabel="Person" value="" onSelect={select} /></form>);
   await screen.findByRole('option', { name: 'Alex · alex@example.test' });
   fireEvent.change(screen.getByLabelText('Find person'), { target: { value: ' Alex ' } });
-  fireEvent.keyDown(screen.getByLabelText('Find person'), { key: 'Enter' });
   await waitFor(() => expect(api.profiles.list).toHaveBeenLastCalledWith({ q: 'Alex', limit: 25 }));
+  fireEvent.keyDown(screen.getByLabelText('Find person'), { key: 'Enter' });
   expect(submit).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText('Person'), { target: { value: profileFixture.id } });
   expect(select).toHaveBeenLastCalledWith(expect.objectContaining({ id: profileFixture.id, revision: 1 }));

@@ -32,11 +32,14 @@ afterEach(() => vi.useRealTimers());
 
 describe('MeetingMemories', () => {
   it('shows generated memories with exact source evidence and existing navigation', async () => {
+    mockRead.mockResolvedValue({ ...done, items: [{ ...done.items[0], tags: ['product', 'paralign'] }] });
     renderWithProviders(<MeetingMemories meetingId="meeting-id" />);
 
     expect(screen.getByText('Loading meeting memories...')).toBeInTheDocument();
     expect(await screen.findByText(done.items[0].content)).toBeInTheDocument();
     expect(screen.getByText('Decision')).toBeInTheDocument();
+    expect(screen.getByText('product')).toBeInTheDocument();
+    expect(screen.getByText('paralign')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Source evidence'));
     expect(screen.getByText(done.items[0].evidence[0].quote)).toBeVisible();
     expect(screen.getByText('Transcript segment-650')).toBeVisible();

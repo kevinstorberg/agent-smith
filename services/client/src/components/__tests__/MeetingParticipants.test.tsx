@@ -63,9 +63,8 @@ describe('MeetingParticipants', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Add participant' }));
     await screen.findByRole('option', { name: 'Alex · alex@example.test' });
     fireEvent.change(screen.getByLabelText('Find an existing profile'), { target: { value: ' Alex ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Find profiles' }));
     await screen.findByRole('option', { name: 'Alex · alex@example.test' });
-    expect(api.profiles.list).toHaveBeenCalledWith({ q: 'Alex', limit: 10 });
+    await waitFor(() => expect(api.profiles.list).toHaveBeenCalledWith({ q: 'Alex', limit: 10 }));
     fireEvent.change(screen.getByLabelText('Existing participant profile'), { target: { value: existing.id } });
     expect(screen.getByLabelText('Name')).toHaveValue('Alex');
     expect(screen.getByLabelText('Email')).toHaveValue('alex@example.test');

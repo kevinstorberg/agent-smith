@@ -25,6 +25,7 @@ SEGMENTS = [{
 }]
 ITEM = {
     "content": "The team decided to ship on Friday.", "kind": "decision",
+    "tags": ["product", "releases"],
     "evidence": [{"segment_id": "segment-4", "quote": "We decided to ship on Friday."}],
 }
 
@@ -177,6 +178,20 @@ def invalid_submission(case):
         item["execute"] = "private instruction"
     elif case == "no_evidence":
         item["evidence"] = []
+    elif case == "no_tags":
+        item.pop("tags")
+    elif case == "blank_tag":
+        item["tags"] = [" "]
+    elif case == "long_tag":
+        item["tags"] = ["x" * 51]
+    elif case == "too_many_tags":
+        item["tags"] = [f"topic-{index}" for index in range(9)]
+    elif case == "origin_tag":
+        item["tags"] = ["product", "meeting-memory"]
+    elif case == "id_tag":
+        item["tags"] = ["product", "meeting:" + str(uuid4())]
+    elif case == "generic_tags":
+        item["tags"] = ["decision", "fact"]
     elif case == "too_many":
         return {"items": [item] * 21}
     elif case == "zero_without_reason":
@@ -188,6 +203,7 @@ def invalid_submission(case):
 @pytest.mark.parametrize("case", [
     "unknown_segment", "invented_quote", "blank_quote", "blank_content", "long_content", "unknown_kind",
     "extra_field", "no_evidence", "too_many", "zero_without_reason",
+    "no_tags", "blank_tag", "long_tag", "too_many_tags", "origin_tag", "id_tag", "generic_tags",
 ])
 async def test_malformed_or_ungrounded_output_is_rejected(backend, model, case):
     instance, _ = model([
@@ -234,7 +250,7 @@ async def test_plain_final_json_without_staging_is_not_a_result(backend, model):
 async def test_twenty_distinct_evidence_lookups_can_stage_and_tool_budget_resets_per_window(backend, model):
     segments = [{"id": f"segment-{index}", "text": f"The team agreed to checkpoint {index:02d}.", "speaker": {}}
                 for index in range(20)]
-    items = [{"content": segment["text"], "kind": "decision",
+    items = [{"content": segment["text"], "kind": "decision", "tags": ["product", "delivery"],
               "evidence": [{"segment_id": segment["id"], "quote": segment["text"]}]} for segment in segments]
     lookups = [{"name": "search_transcript", "args": {"query": f"checkpoint {index:02d}."},
                 "id": f"evidence-{index}", "type": "tool_call"} for index in range(20)]

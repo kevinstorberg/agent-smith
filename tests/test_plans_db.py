@@ -133,3 +133,11 @@ def test_delete_plan():
     plan_id = create_plan("To Delete", "body")
     delete_plan(plan_id)
     assert get_plan(plan_id) is None
+
+
+def test_search_combines_title_project_and_status_before_limit():
+    target = create_plan("Security follow-up", "body", project="paralign", status="draft")
+    create_plan("Security approved", "body", project="paralign", status="final")
+    create_plan("Security elsewhere", "body", project="other", status="draft")
+    rows = search_plans("security", "paralign", 1, status="draft")
+    assert [row["id"] for row in rows] == [target]

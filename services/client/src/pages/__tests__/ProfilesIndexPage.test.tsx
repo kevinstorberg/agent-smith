@@ -13,7 +13,7 @@ vi.mock('react-router', async importOriginal => {
 });
 vi.mock('../../api', async importOriginal => {
   const actual = await importOriginal<typeof import('../../api')>();
-  return { ...actual, api: { profiles: { list: vi.fn(), update: vi.fn(), create: vi.fn() } } };
+  return { ...actual, api: { profiles: { list: vi.fn(), update: vi.fn(), create: vi.fn() }, jobs: { forGraph: vi.fn(), runNow: vi.fn() } } };
 });
 import { api, ApiError } from '../../api';
 
@@ -29,10 +29,37 @@ beforeEach(() => {
   read.mockResolvedValue({ items: profiles, total: 2 });
   vi.mocked(api.profiles.update).mockResolvedValue(profileFixture);
   vi.mocked(api.profiles.create).mockResolvedValue(profileFixture);
+  vi.mocked(api.jobs.forGraph).mockResolvedValue({ items: [], total: 0 });
 });
 afterEach(() => vi.useRealTimers());
 
 describe('ProfilesIndexPage', () => {
+  it('refreshes the current filters and page when a persona run finishes after the user changes the search', async () => {
+    vi.mocked(api.jobs.forGraph).mockResolvedValue({ items: [{ id: 42, name: 'Persona review', input_params: { graph_type: 'persona' },
+      schedule_config: { minutes: 15 }, runs_on_device: true, configs: [] }], total: 1 } as never);
+    let complete!: (value: never) => void;
+    vi.mocked(api.jobs.runNow).mockReturnValueOnce(new Promise(resolve => { complete = resolve; }));
+    read.mockResolvedValue({ items: profiles, total: 25 });
+    renderWithProviders(<ProfilesIndexPage />);
+    await screen.findByText('Alex');
+    await screen.findByRole('link', { name: 'Persona review' });
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 })));
+    fireEvent.click(screen.getByRole('button', { name: 'Run personas' }));
+    fireEvent.change(screen.getByLabelText('Search profiles'), { target: { value: 'new person' } });
+    fireEvent.change(screen.getByLabelText('Filter by tags'), { target: { value: 'team' } });
+    fireEvent.click(screen.getByLabelText('Starred only'));
+    fireEvent.change(screen.getByLabelText('Sort'), { target: { value: 'name_asc' } });
+    const expected = { limit: 10, offset: 0, q: 'new person', tags: ['team'], starred: true, sort: 'name_asc' };
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith(expected));
+    read.mockClear();
+    await act(async () => complete({ success: true, execution_id: 77, output: '{"profiles":{"outcome":"idle"}}' } as never));
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith(expected));
+    expect(screen.getByLabelText('Search profiles')).toHaveValue('new person');
+    expect(screen.getByLabelText('Filter by tags')).toHaveValue('team');
+    expect(screen.getByLabelText('Starred only')).toBeChecked();
+  });
+
   it('creates a profile by trimmed name without requiring an email or meeting', async () => {
     renderWithProviders(<ProfilesIndexPage />);
     fireEvent.click(screen.getByRole('button', { name: 'New profile' }));
@@ -104,7 +131,6 @@ describe('ProfilesIndexPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: undefined, sort: 'created_at_desc' }));
     fireEvent.change(screen.getByLabelText('Search profiles'), { target: { value: ' alex@example.test ' } });
-    fireEvent.submit(screen.getByRole('button', { name: 'Search' }).closest('form')!);
     await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'alex@example.test', sort: 'created_at_desc' }));
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
     await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: undefined, sort: 'created_at_desc' }));
@@ -116,7 +142,6 @@ describe('ProfilesIndexPage', () => {
     expect(screen.getByText('Loading profiles...')).toBeInTheDocument();
     expect(await screen.findByText(/No profiles saved yet/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Search profiles'), { target: { value: 'Nobody' } });
-    fireEvent.submit(screen.getByRole('button', { name: 'Search' }).closest('form')!);
     expect(await screen.findByText('No profiles match your search.')).toBeInTheDocument();
   });
 
@@ -136,7 +161,6 @@ describe('ProfilesIndexPage', () => {
     renderWithProviders(<ProfilesIndexPage />);
     await screen.findByText('Alex');
     fireEvent.change(screen.getByLabelText('Search profiles'), { target: { value: 'alex' } });
-    fireEvent.submit(screen.getByRole('button', { name: 'Search' }).closest('form')!);
     await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'alex', sort: 'created_at_desc' }));
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: 'alex', sort: 'created_at_desc' }));

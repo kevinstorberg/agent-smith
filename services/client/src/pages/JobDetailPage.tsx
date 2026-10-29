@@ -14,6 +14,7 @@ import { useNotification } from '../context/useNotification';
 import { MAX_TITLE_LENGTH } from '../constants';
 import { validators } from '../utils/validation';
 import { formatSchedule } from '../utils/schedule';
+import { useApiRead } from '../hooks/useApiRead';
 
 const INTERVAL_UNITS = ['seconds', 'minutes', 'hours', 'days'];
 
@@ -67,13 +68,18 @@ export function JobDetailPage() {
   const navigate = useNavigate();
   const { notify } = useNotification();
   const isNew = id === 'new' || !id;
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const personaPreset = isNew && searchParams.get('graph') === 'persona';
   const presetApplied = useRef(false);
 
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(!isNew);
-  const [tab, setTab] = useState<'details' | 'executions'>('details');
+  const tab = searchParams.get('tab') === 'executions' ? 'executions' : 'details';
+  const setTab = (value: 'details' | 'executions') => setSearchParams(previous => {
+    const next = new URLSearchParams(previous); next.set('tab', value); return next;
+  });
+  const executionValue = Number(searchParams.get('execution'));
+  const executionId = Number.isSafeInteger(executionValue) && executionValue > 0 ? executionValue : null;
   const [execRefresh, setExecRefresh] = useState(0);
   const [graphInputsText, setGraphInputsText] = useState<string | null>(null);
   const [deviceScope, setDeviceScope] = useState<'all_devices' | 'this_device'>('all_devices');
@@ -121,7 +127,12 @@ export function JobDetailPage() {
     onSuccess: (result) => {
       notify(result.success ? 'Job ran successfully' : 'Job ran but reported failure', result.success ? 'success' : 'error');
       setExecRefresh(n => n + 1);
-      setTab('executions');
+      setSearchParams(previous => {
+        const next = new URLSearchParams(previous); next.set('tab', 'executions');
+        if (result.execution_id) next.set('execution', String(result.execution_id));
+        else next.delete('execution');
+        return next;
+      });
     },
   });
 
@@ -129,6 +140,11 @@ export function JobDetailPage() {
     (l, o) => (isNew ? Promise.resolve({ items: [], total: 0 }) : api.jobs.executions(Number(id), { limit: l, offset: o })),
     [id, execRefresh],
   );
+  const readExecution = useCallback(() => !isNew && executionId ? api.jobs.execution(Number(id), executionId) : Promise.resolve(null), [id, isNew, executionId]);
+  const selectedExecution = useApiRead(readExecution);
+  usePolling(() => selectedExecution.refresh({ showLoading: false }), {
+    enabled: !isNew && tab === 'executions' && selectedExecution.data?.status === 'running',
+  });
   usePolling(
     () => loadJob({ showLoading: false }),
     {
@@ -430,6 +446,13 @@ export function JobDetailPage() {
 
           {tab === 'executions' && (
             <div>
+              {executionId && <section className="card" aria-label={`Execution ${executionId}`}>
+                <h3>Execution #{executionId}</h3>
+                {selectedExecution.loading ? <p>Loading execution...</p> : selectedExecution.error ? <p role="alert">Could not load this execution. <button className="btn btn-sm" onClick={() => selectedExecution.refresh()}>Retry execution</button></p> : selectedExecution.data && <>
+                  <p>Status: {selectedExecution.data.status}</p>
+                  <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{String(selectedExecution.data.result.error || selectedExecution.data.result.output || 'No output recorded.')}</pre>
+                </>}
+              </section>}
               <table className="table">
                 <thead><tr><th>Status</th><th>Started</th><th>Completed</th><th>Exit</th></tr></thead>
                 <tbody>

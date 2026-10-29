@@ -32,7 +32,6 @@ describe('ProfileIdentity', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Merge profile' }));
     await screen.findByRole('option', { name: 'Jordan · jordan@example.test' });
     fireEvent.change(screen.getByLabelText('Find merge target'), { target: { value: ' Jordan ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Find profiles' }));
     await waitFor(() => expect(api.profiles.list).toHaveBeenLastCalledWith({ q: 'Jordan', limit: 25 }));
     fireEvent.change(screen.getByLabelText('Keep this profile'), { target: { value: target.id } });
     fireEvent.click(screen.getByRole('button', { name: 'Merge into selected profile' }));

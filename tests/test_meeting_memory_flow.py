@@ -64,6 +64,7 @@ def agents(monkeypatch):
             self.analyses.append(copy.deepcopy((snapshot, window, previous)))
             return {"items": [{
                 "content": "A recorded decision", "kind": "decision",
+                "tags": ["product", "paralign"],
                 "evidence": [{"segment_id": window[0]["id"], "quote": window[0]["text"]}],
             }], "reason": ""}
 

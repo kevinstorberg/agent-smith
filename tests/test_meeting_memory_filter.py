@@ -62,10 +62,12 @@ def test_meeting_provenance_filters_before_pagination_and_survives_human_edits(c
 def test_legacy_meeting_origin_is_read_without_mutating_the_backend():
     meeting_id, memory_id = str(uuid4()), str(uuid4())
     seed_legacy(memory_id, "Legacy meeting", meeting_id, repo="")
+    raw_tags = json.loads(get_backend().get_row(memory_id)["metadata"]["tags"])
     assert get_backend().get_row(memory_id)["metadata"].get("source_type") is None
     first = db.get(memory_id)
     assert first["from_meeting"] and first["source_id"] == meeting_id
-    assert db.publish(memory_id, "Legacy meeting", tags=first["tags"], created_at=CREATED,
+    assert first["tags"] == ["preference"]
+    assert db.publish(memory_id, "Legacy meeting", tags=raw_tags, created_at=CREATED,
                       source_type="meeting", source_id=meeting_id) == memory_id
     assert get_backend().get_row(memory_id)["metadata"].get("source_type") is None
     assert db._to_row(content="Unknown", id=str(uuid4()), meta={"tags": ["meeting-memory"]})["from_meeting"] is False

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api';
 import type { MemoryItem } from '../api';
@@ -6,10 +6,9 @@ import { Pagination } from '../components/Pagination';
 import { CopyButton } from '../components/CopyButton';
 import { useNotification } from '../context/useNotification';
 import { usePolling } from '../hooks/usePolling';
-import { useApiRead } from '../hooks/useApiRead';
+import { usePagination } from '../hooks/usePagination';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { parseTags } from '../utils/tags';
-
-type Mode = 'list' | 'search';
 
 const LIST_SORT_OPTIONS = [
   { value: 'created_at_desc', label: 'Newest first' },
@@ -26,12 +25,10 @@ const SEARCH_SORT_OPTIONS = [
 export function MemoryPage() {
   const { notify } = useNotification();
   const [query, setQuery] = useState('');
-  const [mode, setMode] = useState<Mode>('list');
-  const [limit, setLimit] = useState(10);
-  const [offset, setOffset] = useState(0);
   const [filterRepo, setFilterRepo] = useState('');
   const [filterTags, setFilterTags] = useState('');
-  const [sort, setSort] = useState('created_at_desc');
+  const [listSort, setListSort] = useState('created_at_desc');
+  const [searchSort, setSearchSort] = useState('relevance');
   const [meetingsOnly, setMeetingsOnly] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
@@ -40,51 +37,35 @@ export function MemoryPage() {
   const [saving, setSaving] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  const tagsArray = useMemo(
-    () => parseTags(filterTags),
-    [filterTags],
-  );
+  const debouncedQuery = useDebouncedValue(query.trim());
+  const searchTerm = query.trim() ? debouncedQuery : '';
+  const repo = useDebouncedValue(filterRepo.trim());
+  const tagText = useDebouncedValue(filterTags);
+  const tagsArray = useMemo(() => parseTags(tagText), [tagText]);
+  const mode = searchTerm ? 'search' : 'list';
+  const sort = mode === 'search' ? searchSort : listSort;
   const sortOptions = mode === 'search' ? SEARCH_SORT_OPTIONS : LIST_SORT_OPTIONS;
 
-  const read = useCallback(() => {
+  const { items, total, loading, error, refresh, limit, offset, setLimit, setOffset } = usePagination<MemoryItem>((limit, offset) => {
     const opts = {
       limit,
       offset,
       meeting_only: meetingsOnly,
-      ...(filterRepo ? { repo: filterRepo } : {}),
+      ...(repo ? { repo } : {}),
       ...(tagsArray.length ? { tags: tagsArray } : {}),
       ...(sort ? { sort } : {}),
     };
-    return mode === 'search' && query.trim()
-      ? api.memory.search(query, opts)
+    return searchTerm
+      ? api.memory.search(searchTerm, opts)
       : api.memory.list(opts);
-  }, [mode, query, limit, offset, meetingsOnly, filterRepo, tagsArray, sort]);
-  const { data, loading, error, refresh } = useApiRead(read);
-  const items = data?.items || [];
-  const total = data?.total || 0;
+  }, [searchTerm, meetingsOnly, repo, tagsArray, sort]);
 
   usePolling(
     () => refresh({ showLoading: false }),
     { enabled: !editingId && !saving && !confirmDeleteId },
   );
 
-  const onFilterRepoChange = (v: string) => { setFilterRepo(v); setOffset(0); };
-  const onFilterTagsChange = (v: string) => { setFilterTags(v); setOffset(0); };
-  const onSortChange = (v: string) => { setSort(v); setOffset(0); };
-
-  const doSearch = () => {
-    if (!query.trim()) return;
-    setMode('search');
-    setSort('relevance');
-    setOffset(0);
-  };
-
-  const clearSearch = () => {
-    setQuery('');
-    setMode('list');
-    setSort('created_at_desc');
-    setOffset(0);
-  };
+  const onSortChange = (value: string) => { if (mode === 'search') setSearchSort(value); else setListSort(value); };
 
   const startEdit = (item: MemoryItem) => {
     setEditingId(item.id);
@@ -136,11 +117,9 @@ export function MemoryPage() {
           placeholder="Semantic search..."
           value={query}
           onChange={e => setQuery(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && doSearch()}
         />
-        <button className="btn btn-primary" onClick={doSearch}>Search</button>
-        {mode === 'search' && (
-          <button className="btn" onClick={clearSearch}>Clear</button>
+        {query && (
+          <button className="btn" onClick={() => setQuery('')}>Clear</button>
         )}
       </div>
 
@@ -153,13 +132,13 @@ export function MemoryPage() {
           className="input"
           placeholder="Filter by repo"
           value={filterRepo}
-          onChange={e => onFilterRepoChange(e.target.value)}
+          onChange={e => setFilterRepo(e.target.value)}
         />
         <input
           className="input"
           placeholder="Filter by tags (comma-separated)"
           value={filterTags}
-          onChange={e => onFilterTagsChange(e.target.value)}
+          onChange={e => setFilterTags(e.target.value)}
         />
         <label htmlFor="memory-sort" style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sort</label>
         <select

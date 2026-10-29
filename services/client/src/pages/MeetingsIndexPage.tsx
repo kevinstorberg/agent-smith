@@ -8,21 +8,18 @@ import { usePagination } from '../hooks/usePagination';
 import { usePolling } from '../hooks/usePolling';
 import { makeRowClickable } from '../utils/a11y';
 import { MeetingVocabulary } from '../components/MeetingVocabulary';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 
 export function MeetingsIndexPage() {
   const navigate = useNavigate();
   const [searchText, setSearchText] = useState('');
-  const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(searchText.trim());
+  const query = searchText.trim() ? debouncedQuery : '';
   const { items, total, loading, error, limit, offset, setLimit, setOffset, refresh } = usePagination<MeetingSummary>(
     (pageLimit, pageOffset) => api.meetings.list({ limit: pageLimit, offset: pageOffset, q: query || undefined }),
     [query],
   );
   usePolling(() => refresh({ showLoading: false }));
-
-  const search = (value: string) => {
-    setQuery(value.trim());
-    setOffset(0);
-  };
 
   return (
     <div>
@@ -30,7 +27,7 @@ export function MeetingsIndexPage() {
       <p className="text-muted-sm" style={{ marginBottom: 16 }}>Saved summaries from all meeting connections.</p>
       <MeetingVocabulary />
 
-      <form className="search-bar" onSubmit={event => { event.preventDefault(); search(searchText); }}>
+      <div className="search-bar">
         <input
           aria-label="Search meetings"
           placeholder="Search titles and summaries..."
@@ -38,11 +35,10 @@ export function MeetingsIndexPage() {
           value={searchText}
           onChange={event => setSearchText(event.target.value)}
         />
-        <button className="btn btn-primary" type="submit">Search</button>
-        {query && (
-          <button className="btn" type="button" onClick={() => { setSearchText(''); search(''); }}>Clear</button>
+        {searchText && (
+          <button className="btn" type="button" onClick={() => setSearchText('')}>Clear</button>
         )}
-      </form>
+      </div>
 
       {loading ? <div className="loading">Loading meetings...</div> : error ? (
         <div className="card" role="alert">

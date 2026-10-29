@@ -49,11 +49,11 @@ export default function App() {
           <NotificationBar />
           <Routes>
           <Route path="/" element={<Navigate to="/harness/rules" replace />} />
-          <Route path="/harness/rules" element={<HarnessIndexPage type="rule" />} />
-          <Route path="/harness/skills" element={<HarnessIndexPage type="skill" />} />
-          <Route path="/harness/tools" element={<HarnessIndexPage type="tool" />} />
-          <Route path="/harness/hooks" element={<HarnessIndexPage type="hook" />} />
-          <Route path="/harness/agents" element={<HarnessIndexPage type="agent" />} />
+          <Route path="/harness/rules" element={<HarnessIndexPage key="rule" type="rule" />} />
+          <Route path="/harness/skills" element={<HarnessIndexPage key="skill" type="skill" />} />
+          <Route path="/harness/tools" element={<HarnessIndexPage key="tool" type="tool" />} />
+          <Route path="/harness/hooks" element={<HarnessIndexPage key="hook" type="hook" />} />
+          <Route path="/harness/agents" element={<HarnessIndexPage key="agent" type="agent" />} />
           <Route path="/harness/rule/new" element={<HarnessCreatePage />} />
           <Route path="/harness/skill/new" element={<HarnessCreatePage />} />
           <Route path="/harness/tool/new" element={<HarnessCreatePage />} />

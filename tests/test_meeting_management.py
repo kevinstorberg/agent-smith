@@ -153,7 +153,7 @@ async def test_older_meeting_manual_roster_reaches_real_graph_catalog_without_re
     assert digestion_db.get_record(meeting_id) is None
     calls = []
 
-    async def analyze(snapshot, window, previous, *, participants, profiles, memories, deadline):
+    async def analyze(snapshot, window, previous, *, participants, profiles, memories, deadline, previous_metadata=None):
         calls.append(copy.deepcopy(participants))
         return {"items": [{"subject_id": participants[0]["id"], "target_id": None, "category": "priority",
                            "content": "Prioritizes accurate records", "epistemic": "self_report", "confidence": "high",

@@ -42,7 +42,7 @@ def profiler(agents, monkeypatch):
 
     calls = []
 
-    async def analyze(snapshot, window, previous, *, participants, profiles, memories, deadline):
+    async def analyze(snapshot, window, previous, *, participants, profiles, memories, deadline, previous_metadata=None):
         calls.append(copy.deepcopy({"previous": previous, "profiles": profiles, "memories": memories, "window": window}))
         items = []
         for segment in window:
