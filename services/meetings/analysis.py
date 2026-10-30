@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Annotated
 from uuid import UUID
 
@@ -93,8 +93,9 @@ class ModelCallTimeoutError(TimeoutError):
 
 
 class _ModelDeadline(AgentMiddleware):
-    def __init__(self, deadline: float):
+    def __init__(self, deadline: float, validate_context: Callable[[], Awaitable[None]] | None = None):
         self.deadline = deadline
+        self.validate_context = validate_context
 
     async def awrap_model_call(self, request, handler):
         model_limit = asyncio.get_running_loop().time() + MODEL_TIMEOUT_SECONDS
@@ -102,6 +103,8 @@ class _ModelDeadline(AgentMiddleware):
         attempt = asyncio.timeout_at(min(self.deadline, model_limit))
         try:
             async with attempt:
+                if self.validate_context is not None:
+                    await self.validate_context()
                 return await handler(request)
         except TimeoutError:
             if attempt.expired():
@@ -257,6 +260,7 @@ async def run_analysis(
     model_call_limit: int | None = None,
     tool_call_limit: int | None = None,
     middleware: list | None = None,
+    validate_context: Callable[[], Awaitable[None]] | None = None,
 ) -> dict:
     loop = asyncio.get_running_loop()
     model_call_limit = MODEL_CALL_LIMIT if model_call_limit is None else model_call_limit
@@ -279,7 +283,7 @@ async def run_analysis(
                 tools=tools, middleware=[
                     ModelCallLimitMiddleware(run_limit=model_call_limit, exit_behavior="error"),
                     ToolCallLimitMiddleware(run_limit=tool_call_limit, exit_behavior="error"),
-                    _ModelDeadline(deadline),
+                    _ModelDeadline(deadline, validate_context),
                     *(middleware or []),
                 ],
             )
@@ -307,6 +311,7 @@ async def analyze_memories(
     previous: list[dict],
     *,
     deadline: float | None = None,
+    validate_context: Callable[[], Awaitable[None]] | None = None,
 ) -> dict:
     context = AnalysisContext(snapshot, segments, previous)
 
@@ -329,4 +334,5 @@ async def analyze_memories(
             "do not include meeting-memory or meeting:<id> tags."
         ))],
         data=context.quoted_data(), label="Memory", error_class=MemoryAnalysisError, deadline=deadline,
+        validate_context=validate_context,
     )

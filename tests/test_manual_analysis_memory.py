@@ -27,7 +27,7 @@ def scripted(monkeypatch):
             self.syncs = []
             self.fail_publish_once = False
 
-        async def analyze(self, snapshot, window, previous, *, deadline):
+        async def analyze(self, snapshot, window, previous, *, deadline, validate_context=None):
             self.analyses.append(copy.deepcopy((snapshot, window, previous)))
             duplicate = {key: value for key, value in previous[-1].items() if key != "id"}
             duplicate["content"] = "  " + duplicate["content"].upper() + "  "

@@ -59,6 +59,8 @@ def record_failure(stage: str, meeting_id: str, owner: str, error_type: str) -> 
         raise ValueError("Meeting stage error must be a safe category")
     with _cursor() as cur:
         row = _owned(cur, meeting_id, owner, profile=stage == "profile")
+        if row[stage + "_status"] != "pending":
+            return
         manual = row.get("manual_analysis", {}).get(stage, {}).get("active")
         attempts = row[stage + "_attempts"] + (0 if manual and error_type == "ManualAnalysisJobUnavailable" else 1)
         if manual and error_type == "ManualAnalysisInputChanged":
