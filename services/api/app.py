@@ -30,6 +30,7 @@ from services.api.routers import (
     evals,
     jobs,
     meetings,
+    meeting_analysis,
     memory,
     plans,
     profiles,
@@ -87,6 +88,7 @@ app.include_router(harness_router, prefix="/api/harness", tags=["harness"])
 app.include_router(action_items.router, prefix="/api/action-items", tags=["action-items"])
 app.include_router(memory.router, prefix="/api/memory", tags=["memory"])
 app.include_router(meetings.router, prefix="/api/meetings", tags=["meetings"])
+app.include_router(meeting_analysis.router, prefix="/api/meeting-analysis", tags=["manual meeting analysis"])
 app.include_router(profiles.router, prefix="/api/profiles", tags=["profiles"])
 app.include_router(evals.router, prefix="/api/evals", tags=["evals"])
 app.include_router(plans.router, prefix="/api/plans", tags=["plans"])

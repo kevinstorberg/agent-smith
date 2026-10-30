@@ -48,6 +48,7 @@ it('does not refresh an abandoned profile after a long-running assessment finish
 it('does not offer a build without evidence and explains protected empty profiles', () => {
   renderWithProviders(<ProfileAssessment profile={{ ...profileFixture, claims: [], assessment: { status: 'insufficient_evidence', attempts: 0, next_attempt_at: null, error: null, coverage: { claim_count: 0, meeting_count: 0 }, can_generate: false } }} disabled={false} onBusyChange={busy} onReload={reload} />);
   expect(screen.getByRole('button', { name: 'Build assessment' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Review past meetings' })).toBeEnabled();
   expect(screen.getByText(/More evidence is needed/)).toBeInTheDocument();
 });
 

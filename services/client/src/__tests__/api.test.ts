@@ -58,6 +58,38 @@ describe('action items', () => {
   });
 });
 
+describe('manual meeting analysis', () => {
+  it('sends explicit candidate filters, frozen authorization and receipt-only Resume with 30 second deadlines', async () => {
+    globalThis.fetch = mockFetch({});
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    const expected = { provider: 'granola', account_key: 'work', source_name: 'work', meeting_revision: 3, transcript_hash: 'a'.repeat(64), participants_revision: 2, speaker_updated_at: null, profile_updated_at: null, memory_updated_at: null };
+    const input = { request_id: 'a3b8c4d5-e678-4567-89ab-cdef01234567', confirmed: true as const, scope: 'profiles' as const, target_profile: { id: 'profile', expected_revision: 7 }, meetings: [{ id: 'meeting', expected }] };
+    await api.meetingAnalysis.candidates({ profile_id: 'profile', related: false, q: 'roadmap', search_transcript: true, source: 'work', after: '2026-10-28T04:00:00.000Z', before: '2026-10-30T03:59:59.999Z', limit: 10, offset: 20 });
+    await api.meetingAnalysis.request(input);
+    await api.meetingAnalysis.progress(input.request_id);
+    await api.meetingAnalysis.resume(input.request_id);
+    const calls = vi.mocked(globalThis.fetch).mock.calls;
+    expect(Object.fromEntries(new URL(String(calls[0][0])).searchParams)).toEqual({ profile_id: 'profile', related: 'false', q: 'roadmap', search_transcript: 'true', source: 'work', after: '2026-10-28T04:00:00.000Z', before: '2026-10-30T03:59:59.999Z', limit: '10', offset: '20' });
+    expect(JSON.parse(String(calls[1][1]?.body))).toEqual(input);
+    expect(String(calls[2][0])).toContain(`/meeting-analysis/requests/${input.request_id}`);
+    expect(JSON.parse(String(calls[3][1]?.body))).toEqual({ confirmed: true });
+    expect(timeout.mock.calls).toEqual([[30_000], [30_000], [30_000], [30_000]]);
+    for (const [, options] of calls) expect(options?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it.each([true, false])('keeps its deadline through success=%s JSON decoding after response headers', async ok => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok, status: 503, statusText: 'Unavailable', json: () => Promise.reject(new DOMException('Body stopped', 'AbortError')) });
+    await expect(api.meetingAnalysis.progress('request')).rejects.toThrow('Refresh to check whether your change was saved');
+  });
+
+  it('reports an uncertain POST timeout and preserves existing long-running job behavior', async () => {
+    globalThis.fetch = vi.fn().mockRejectedValueOnce(new DOMException('Deadline', 'TimeoutError')).mockImplementation(mockFetch({}));
+    await expect(api.meetingAnalysis.resume('request')).rejects.toThrow('Refresh to check whether your change was saved');
+    await api.jobs.runNow(1);
+    expect(vi.mocked(globalThis.fetch).mock.calls[1][1]).not.toHaveProperty('signal');
+  });
+});
+
 describe('parseError (tested through api methods)', () => {
   it('requests paged vocabulary searches and reads an exact term outside the current page', async () => {
     globalThis.fetch = mockFetch({ items: [], total: 0 });

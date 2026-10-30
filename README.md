@@ -230,6 +230,8 @@ Migration `7f2a9c6d8e10` adds resumable statement attribution. Completed memory 
 marked legacy instead of automatically being processed again; partial memory receipts are preserved.
 Migration `8a3b0d7e9f21` keeps relationship analysis ownership and its publication evidence on
 each directed relationship. It preserves existing notes and performs no model work.
+Migration `a2c5e8f1b4d7` adds manual analysis receipts and stage controls. It preserves completed
+work and does not queue any historical meetings or make model calls.
 
 ```sh
 ./db.sh production --confirm-database <production-database-name>
@@ -296,8 +298,8 @@ meetings. Each profile has four addressable tabs: **Overview**, **Assessment**, 
 and **Evidence**.
 Overview combines its summary and metadata; optional metadata remains visible as **Not set**
 when empty. Assessment contains motivations, strengths, development areas and working style.
-Relationships has one entry per linked person, grouping the two directed perspectives when
-both exist. The analysis and its edit controls belong to the same relationship record.
+Relationships has one card per person, titled with their name and linked to their profile
+when available. One analysis and its edit controls belong inside that card.
 Evidence has All, Observed, Self-reported and Hypotheses tabs, plus automatically applied
 search, category, confidence, review-status and sort filters. Its compact list loads 20 matching
 observations per page; open an observation for exact quotations and correction/rejection controls.
@@ -312,6 +314,29 @@ missing job setup when needed. A run uses saved, unreviewed transcripts and pres
 memory indexing is not a prerequisite. The same job updates assessments when their saved
 evidence changes. A profile's build action uses its existing saved evidence without reading
 transcripts again. Transcript capture still belongs to the Meetings job.
+
+To recover missed context for a person, open their profile and choose **Review past meetings**,
+even if the profile has no saved observations. **Related meetings** finds saved participant,
+speaker, name, nickname and email matches; **All saved meetings** lets you search more broadly.
+Attendee matches help discovery but do not identify who said a statement. Use **Assign
+transcript speakers** when the person's statements are not mapped yet, then return to review.
+
+Select up to ten completed meetings and review the exact selection before confirming.
+Profile reviews update only the selected person. From a meeting, **Reanalyze completed...**
+offers Profiles, Memories, or both; adding memories from a profile also analyzes the whole
+selected meetings. Memory reviews keep existing memories and publication receipts, adding
+new information. These actions use saved transcripts and the existing eligible Personas and
+Meetings jobs; they do not fetch transcripts, change job configuration, or create another job.
+The confirmation explains normal model costs. Progress links to the jobs and survives reload
+through the analysis request URL. An uncertain submission retries the same frozen request.
+
+**Resume unfinished** retains its analysis and publication checkpoints. Reanalyzing completed
+work requires a new explicit confirmation; scheduled jobs never reopen it automatically.
+Changes to the saved source or speaker assignments invalidate a queued manual review before
+another agent call. A profile review can be confirmed again against the corrected context.
+If a memory review's source changes while publication is unacknowledged, it remains blocked,
+preserving its staged IDs and receipts. Fully acknowledged work can be confirmed again;
+unpublished or uncertain memories are never silently discarded or republished.
 
 Profiles accumulate evidence as new meetings are digested. The profile list shows the number
 of available source meetings and when each profile was last updated. The list and detail pages
@@ -332,9 +357,8 @@ cause the merge to fail instead of silently choosing one.
 Optional human context includes nicknames, company, job role, start date, supervisor and other
 metadata, plus editable assessment sections. Nicknames are searchable
 labels, not proof of identity. Human notes and claim corrections remain authoritative during
-later analysis. Directed relationships have editable labels and one shared analysis field:
-the agent and human editor update that same text. A → B and B → A are distinct perspectives
-under the same person entry. Editing or explicitly clearing an analysis protects it; **Allow
+later analysis. Relationships have editable labels and one analysis field per person card:
+the agent and human editor update that same text. Editing or explicitly clearing an analysis protects it; **Allow
 automatic updates** releases that protection. Editing only a label preserves analysis ownership.
 Allowing automatic updates keeps the current text until an agent publishes its replacement.
 Earlier human-written or deliberately cleared combined relationship notes stay protected;

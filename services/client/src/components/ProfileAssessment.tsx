@@ -5,6 +5,7 @@ import type { ParticipantProfile, ProfileBuildResult } from '../api';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { personaOutcome } from '../utils/personaOutcome';
 import { formatProfileCoverage } from '../utils/profileFields';
+import { ManualMeetingAnalysis } from './ManualMeetingAnalysis';
 
 const STATUS: Record<string, string> = { pending: 'Waiting for an assessment update', running: 'Updating assessment', failed: 'Assessment needs attention', current: 'Assessment is current', insufficient_evidence: 'More evidence is needed' };
 
@@ -13,6 +14,7 @@ export function ProfileAssessment({ profile, disabled, onBusyChange, onReload }:
 }) {
   const [result, setResult] = useState<ProfileBuildResult | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [reviewBusy, setReviewBusy] = useState(false);
   const onReloadRef = useRef(onReload);
   const mounted = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -26,7 +28,7 @@ export function ProfileAssessment({ profile, disabled, onBusyChange, onReload }:
       if (failure instanceof ApiError && failure.status === 409) onReloadRef.current();
     },
   });
-  useEffect(() => { onBusyChange(build.loading); }, [build.loading, onBusyChange]);
+  useEffect(() => { onBusyChange(build.loading || reviewBusy); }, [build.loading, reviewBusy, onBusyChange]);
   const canGenerate = profile.assessment?.can_generate ?? (profile.claim_count ?? profile.claims.filter(claim => claim.status !== 'rejected').length) > 0;
   const hasAssessment = Object.values(profile.section_notes || {}).some(Boolean);
   return <section className="profile-assessment-status" aria-label="Assessment processing">
@@ -34,11 +36,12 @@ export function ProfileAssessment({ profile, disabled, onBusyChange, onReload }:
       <div><p className="profile-assessment-state">{profile.assessment ? STATUS[profile.assessment.status] : hasAssessment ? 'Assessment saved' : 'No assessment yet'}</p>
         <p className="text-muted-sm">{formatProfileCoverage(profile.assessment?.coverage ?? { claim_count: profile.claim_count ?? profile.claims.length, meeting_count: profile.meeting_count ?? new Set(profile.claims.map(claim => claim.meeting_id)).size })}</p>
       </div>
-      <button className="btn btn-sm" disabled={disabled || build.loading || !canGenerate || profile.assessment?.status === 'running'} onClick={() => { setResult(null); setNotice(null); build.mutate(); }}>
+      <div className="flex-wrap"><ManualMeetingAnalysis profile={profile} disabled={disabled || build.loading} onChanged={onReload} onBusyChange={setReviewBusy} />
+      <button className="btn btn-sm" disabled={disabled || build.loading || reviewBusy || !canGenerate || profile.assessment?.status === 'running'} onClick={() => { setResult(null); setNotice(null); build.mutate(); }}>
         {build.loading ? 'Updating assessment...' : hasAssessment ? 'Refresh assessment' : 'Build assessment'}
-      </button>
+      </button></div>
     </div>
-    {!canGenerate && <p className="text-muted-sm">Link observations from meetings to give the assessment a reliable starting point.</p>}
+    {!canGenerate && <p className="text-muted-sm">Review past meetings to find this person's context. Assign their transcript statements if needed, then request profile analysis.</p>}
     <details className="profile-assessment-help"><summary>Assessment details</summary>
       <p className="text-muted-sm">Updates use saved observations and are recorded in History. Your edits stay protected.</p>
       <p className="text-muted-sm">Uses your configured <Link className="text-link" to="/jobs">persona job</Link>. <Link className="text-link" to="/jobs/new?graph=persona">Create persona job</Link> if needed.</p>

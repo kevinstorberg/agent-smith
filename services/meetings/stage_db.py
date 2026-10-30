@@ -32,8 +32,11 @@ def _stage(stage: str) -> str:
 
 
 def pending(cur, meeting_id: str, owner: str, transcript_hash: str, stage: str) -> dict:
+    from services.meetings import manual_stage
+
     stage = _stage(stage)
     row = _owned(cur, meeting_id, owner, profile=stage == "profile")
+    manual_stage.validate(cur, row, stage)
     cur.execute("SELECT available FROM meeting_summaries WHERE id = %s FOR SHARE", (meeting_id,))
     meeting = cur.fetchone()
     if (not meeting or not meeting["available"] or row["transcript_status"] != "ready"
@@ -62,6 +65,10 @@ def write_progress(cur, stage: str, meeting_id: str, artifact: dict, *, complete
            {stage}_error = NULL, {stage}_updated_at = clock_timestamp(), updated_at = clock_timestamp()
            WHERE meeting_id = %s""", (Json(artifact), "done" if complete else "pending", meeting_id),
     )
+    if complete:
+        from services.meetings import manual_stage
+
+        manual_stage.finish(cur, {"meeting_id": meeting_id}, stage, status="done", artifact=artifact)
 
 
 def record_failure(stage: str, meeting_id: str, owner: str, error_type: str) -> None:
@@ -70,11 +77,18 @@ def record_failure(stage: str, meeting_id: str, owner: str, error_type: str) -> 
         raise ValueError("Meeting stage error must be a safe category")
     with _cursor() as cur:
         row = _owned(cur, meeting_id, owner, profile=stage == "profile")
-        attempts = row[stage + "_attempts"] + 1
-        delay = min(900, 60 * 5 ** (attempts - 1)) * random.uniform(0.8, 1.2)
+        manual = row.get("manual_analysis", {}).get(stage, {}).get("active")
+        attempts = row[stage + "_attempts"] + (0 if manual and error_type == "ManualAnalysisJobUnavailable" else 1)
+        if manual and error_type == "ManualAnalysisInputChanged":
+            attempts = 3
+        delay = min(900, 60 * 5 ** max(0, attempts - 1)) * random.uniform(0.8, 1.2)
         cur.execute(
             f"""UPDATE meeting_digestions SET {stage}_status = %s, {stage}_attempts = %s, {stage}_error = %s,
                {stage}_next_attempt_at = clock_timestamp() + %s * interval '1 second',
                {stage}_updated_at = clock_timestamp(), updated_at = clock_timestamp() WHERE meeting_id = %s""",
             ("failed" if attempts >= 3 else "pending", attempts, error_type, delay, meeting_id),
         )
+        if attempts >= 3:
+            from services.meetings import manual_stage
+
+            manual_stage.finish(cur, row, stage, status="failed", error_type=error_type)

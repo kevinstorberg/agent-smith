@@ -53,6 +53,8 @@ identity and source scope; never merge by name, identify an anonymous label from
 roster, or infer an identity from 'me', 'them' or a shared microphone. Do not profile silent
 attendees. Every citation must be an exact quote from a current-window segment mapped to the
 claim's subject speaker. A quoted third-person opinion is not that person's self-report.
+When the snapshot includes analysis_target_profile_id, stage claims and metadata only for
+that exact subject. Other profiles remain context and possible relationship targets.
 
 Stage at most 20 claims and 20 metadata patches. Separate self_report, observed and inference. Inferences require an
 explicit rationale and low/medium confidence; never turn one ambiguous interaction into a
@@ -240,6 +242,9 @@ def _profile_tools(context: AnalysisContext, catalog: dict[str, dict], profiles:
             return _json({"error": "Profile directory read failed", "error_type": type(error).__name__})
 
     def validate_output(item: ProfileClaim | ProfileMetadataPatch) -> str | None:
+        allowed_subject = context.snapshot.get("analysis_target_profile_id")
+        if allowed_subject and item.subject_id != allowed_subject:
+            return "This manual analysis may only update the selected target profile"
         target = item.target_id if isinstance(item, ProfileClaim) else None
         if item.subject_id not in catalog or (target is not None and target not in catalog):
             return "Subject and target must use IDs from the supplied participant catalog"

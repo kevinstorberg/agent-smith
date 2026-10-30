@@ -72,7 +72,7 @@ def _mapping(cur, snapshot: dict, segments: list[dict]) -> dict:
 
 
 def apply(meeting_id: str, owner: str, transcript_hash: str, artifact: dict) -> bool:
-    from services.meetings import management_db
+    from services.meetings import management_db, manual_stage
 
     stage_db.validate_artifact(artifact)
     with profile_db.profile_write_cursor() as cur:
@@ -93,12 +93,13 @@ def apply(meeting_id: str, owner: str, transcript_hash: str, artifact: dict) -> 
             cur.execute("UPDATE meeting_summaries SET participants_revision=participants_revision+1 WHERE id=%s", (meeting_id,))
             management_db._refresh_rebased(cur, rebased)
             reopen = bool(artifact.get("repair"))
-            cur.execute("""UPDATE meeting_digestions SET participants_revision=%s,participant_snapshot=%s,
-                profile_status=CASE WHEN profile_status!='done' OR %s THEN 'pending' ELSE profile_status END,
-                profile_artifact=CASE WHEN profile_status!='done' OR %s THEN '{}'::jsonb ELSE profile_artifact END,
-                profile_attempts=0,profile_error=NULL,profile_next_attempt_at=clock_timestamp() WHERE meeting_id=%s""",
+            if not manual_stage.protected_profile(record):
+                cur.execute("""UPDATE meeting_digestions SET participants_revision=%s,participant_snapshot=%s,
+                    profile_status=CASE WHEN profile_status!='done' OR %s THEN 'pending' ELSE profile_status END,
+                    profile_artifact=CASE WHEN profile_status!='done' OR %s THEN '{}'::jsonb ELSE profile_artifact END,
+                    profile_attempts=0,profile_error=NULL,profile_next_attempt_at=clock_timestamp() WHERE meeting_id=%s""",
                         (meeting["participants_revision"] + 1, Json(meeting["manual_participants"]), reopen, reopen, meeting_id))
-        if artifact.get("repair") and artifact.get("profile_repair_required"):
+        if artifact.get("repair") and artifact.get("profile_repair_required") and not manual_stage.protected_profile(record):
             cur.execute("""UPDATE meeting_digestions SET profile_status='pending',profile_artifact='{}'::jsonb,
                 profile_attempts=0,profile_error=NULL,profile_next_attempt_at=clock_timestamp() WHERE meeting_id=%s""", (meeting_id,))
         cur.execute("UPDATE meeting_digestions SET participant_snapshot=%s,participants_revision=%s WHERE meeting_id=%s",
@@ -107,6 +108,7 @@ def apply(meeting_id: str, owner: str, transcript_hash: str, artifact: dict) -> 
                     "changed": changed, "repair": False,
                     "profile_repair_required": bool(artifact.get("profile_repair_required")) and not artifact.get("repair", False)}
         stage_db.write_progress(cur, "speaker", meeting_id, complete, complete=True)
+        manual_stage.invalidate_source(cur, meeting_id)
         return changed
 
 
