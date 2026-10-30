@@ -23,6 +23,7 @@ from services.db import init_db, init_pool, close_pool
 from services.db.seed import seed_all
 from services.api.routers import harness_router
 from services.api.routers import (
+    action_items,
     audit,
     chat,
     eval_suites as eval_configs,
@@ -42,9 +43,10 @@ from services.graphs.server import mcp as graphs_mcp
 from services.jobs.server import mcp as jobs_mcp
 from services.chat.server import mcp as chat_mcp
 from services.meetings.server import mcp as meetings_mcp
+from services.action_items.server import mcp as action_items_mcp
 from services.jobs.scheduler import JobScheduler
 
-MCP_SERVERS = [memory_mcp, plans_mcp, harness_mcp, evals_mcp, graphs_mcp, jobs_mcp, chat_mcp, meetings_mcp]
+MCP_SERVERS = [memory_mcp, plans_mcp, harness_mcp, evals_mcp, graphs_mcp, jobs_mcp, chat_mcp, meetings_mcp, action_items_mcp]
 
 # Stateless transports finish after every request, so their INFO cleanup messages are routine noise.
 logging.getLogger("mcp.server.streamable_http").setLevel(logging.WARNING)
@@ -82,6 +84,7 @@ app.add_middleware(
 )
 
 app.include_router(harness_router, prefix="/api/harness", tags=["harness"])
+app.include_router(action_items.router, prefix="/api/action-items", tags=["action-items"])
 app.include_router(memory.router, prefix="/api/memory", tags=["memory"])
 app.include_router(meetings.router, prefix="/api/meetings", tags=["meetings"])
 app.include_router(profiles.router, prefix="/api/profiles", tags=["profiles"])

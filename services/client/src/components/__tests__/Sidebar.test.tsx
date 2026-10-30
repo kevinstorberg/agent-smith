@@ -59,7 +59,7 @@ describe('Sidebar', () => {
     expect(sections).toEqual([
       ['Agents', 'Hooks', 'Rules', 'Skills', 'Tools'],
       ['Audit', 'Evals', 'Jobs', 'Proposals', 'Results'],
-      ['Chat', 'Meetings', 'Memory', 'Plans', 'Profiles'],
+      ['Action items', 'Chat', 'Meetings', 'Memory', 'Plans', 'Profiles'],
       [],
     ]);
   });

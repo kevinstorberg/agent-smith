@@ -46,9 +46,10 @@ describe('PlansIndexPage', () => {
   });
 
   it('coalesces typing into one search request without requiring Enter or a button', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers();
     renderWithProviders(<PlansIndexPage />);
-    await screen.findByText('Plan Alpha');
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText('Plan Alpha')).toBeInTheDocument();
     const input = screen.getByPlaceholderText('Search by title...');
     input.focus();
     fireEvent.change(input, { target: { value: 'Fo' } });

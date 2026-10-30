@@ -59,6 +59,7 @@ docs/                # generated artifacts (ERD, etc.)
 evals/               # LLM-as-judge evaluation framework (DeepEval + G-Eval)
 scripts/             # sync, generation, and shared utilities
 services/
+  action_items/      # shared to-do list, persistence, and MCP tools
   api/               # FastAPI app, routers, models, validators
   chat/              # shared Chat Rooms service and agent MCP tools
   client/            # React dashboard (Vite + TypeScript)
@@ -91,6 +92,31 @@ agent's config files — globally (`~/.claude/`, `~/.codex/`, `~/.gemini/`) or p
 
 Supports Claude, Codex, and Gemini. Only writes when content has changed. Set
 `DEVICE_NAME` in your environment's `.env.*` file to enable device-scoped filtering.
+
+## Action items
+
+Open **Action items** (`/action-items`) to create tasks, edit their Markdown descriptions,
+complete or reopen them, and search by title or description. Project and tag filters apply
+before pagination; all selected tags must match. **Open**, **Completed**, and **All** have
+separate default sorts. Drag the handle in the unfiltered Open/manual-order view to change
+the shared queue. Dropping at the bottom of a page places a task after that page's last
+visible neighbor, preserving the order of tasks on other pages.
+
+The dashboard and agents use the same records. `/mcp/action-items/` exposes
+`action_item_list`, `action_item_get`, `action_item_create`, `action_item_update`,
+`action_item_delete`, and `action_item_move`. Update accepts `changes`, including the
+current `expected_revision` and explicit `status: "completed"` or `"open"`. Moves take
+the source revision and exactly one `before_id` or `after_id`. Reread after a conflict.
+Creation accepts an optional UUID `request_id`: reuse the same ID and original input
+after an uncertain failure to retrieve the existing task without duplicating or resetting
+it. Deleted request IDs remain reserved. No meeting graph or model call runs as a side
+effect of managing tasks.
+
+Deploy the additive action-items migration with the normal production command
+`./db.sh production --confirm-database <database-name>`, then restart the updated
+dashboard. Startup registers the MCP connection without replacing customized settings.
+Use the existing **Sync** action and reconnect agent clients to discover the tools.
+No new API key or scheduled job is required.
 
 ## Memory
 
