@@ -79,7 +79,9 @@ it('groups reciprocal perspectives in one linked person entry without duplicatin
   expect(person.getByText('Human context')).toBeVisible();
   expect(person.getByText(outgoing.notes)).toBeVisible();
   expect(person.getAllByRole('button', { name: 'Edit relationship' })).toHaveLength(2);
-  expect(screen.queryByText('Old combined relationship narrative.')).not.toBeInTheDocument();
+  expect(screen.getByText('Old combined relationship narrative.')).not.toBeVisible();
+  fireEvent.click(screen.getByText('Saved relationship context'));
+  expect(screen.getByText('Old combined relationship narrative.')).toBeVisible();
 });
 
 it('keeps a label-only change from protecting an unchanged generated assessment', async () => {
@@ -147,20 +149,88 @@ it.each([
   [{ relationships: 'Legacy human text without proof.' }, undefined],
 ])('preserves previous human relationship protection until explicitly released', async (section_notes, section_evidence) => {
   renderWithProviders(<ProfileRelationships profile={{ ...profileFixture, section_notes, section_evidence }} disabled={false} onBusyChange={busy} onReload={reload} />);
-  expect(screen.getByText(/Your previous combined relationship notes remain protected in History/)).toBeVisible();
+  expect(screen.getByText('Edited by you')).toBeVisible();
   expect(api.profiles.update).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Allow automatic relationship updates' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Allow automatic updates to relationships and perceptions' }));
   await waitFor(() => expect(api.profiles.update).toHaveBeenCalledWith(profileFixture.id, { expected_revision: 1, allow_agent_sections: ['relationships'] }));
 });
 
 it('does not require releasing an automatically generated legacy aggregate', () => {
   renderWithProviders(<ProfileRelationships profile={{ ...profileFixture, section_notes: { relationships: 'Earlier automatic text.' }, section_evidence: { relationships: { human: false } } }} disabled={false} onBusyChange={busy} onReload={reload} />);
-  expect(screen.queryByRole('button', { name: 'Allow automatic relationship updates' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Allow automatic updates to relationships and perceptions' })).not.toBeInTheDocument();
 });
 
 it('uses an existing legacy proof without human ownership instead of treating its text as human', () => {
   renderWithProviders(<ProfileRelationships profile={{ ...profileFixture, section_notes: { relationships: 'Earlier analysis.' }, section_evidence: JSON.parse('{"relationships":{"status":"supported"}}') }} disabled={false} onBusyChange={busy} onReload={reload} />);
-  expect(screen.queryByRole('button', { name: 'Allow automatic relationship updates' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Allow automatic updates to relationships and perceptions' })).not.toBeInTheDocument();
+});
+
+it('shows saved combined analysis once alongside linked people without empty duplicate assessments', () => {
+  const text = 'Alex trusts Jordan’s operational judgment and values Casey’s technical perspective.';
+  renderWithProviders(<ProfileRelationships profile={{ ...profileFixture,
+    section_notes: { relationships: text },
+    section_evidence: { relationships: { human: false, status: 'supported', generated_at: profileFixture.updated_at, coverage: { claim_count: 9, meeting_count: 1 } } },
+    relationships: [{ ...edge, notes: '', claim_count: 2, analysis_evidence: { human: false, status: 'insufficient_evidence', coverage: { claim_count: 0, meeting_count: 0 } } }],
+  }} disabled={false} onBusyChange={busy} onReload={reload} />);
+  expect(screen.getAllByText(text)).toHaveLength(1);
+  expect(screen.getByText(text)).toBeVisible();
+  expect(screen.getByRole('link', { name: 'Jordan' })).toHaveAttribute('href', `/profiles/${other.id}`);
+  expect(screen.getByRole('link', { name: 'Meeting evidence (2)' })).toBeVisible();
+  expect(screen.queryByText(/not enough saved evidence/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/0 observations/)).not.toBeInTheDocument();
+});
+
+it('keeps saved context visible even when there are no linked profiles', () => {
+  renderWithProviders(<ProfileRelationships profile={{ ...profileFixture, section_notes: { relationships: 'Saved analysis without a linked profile.' }, section_evidence: { relationships: { human: false } } }} disabled={false} onBusyChange={busy} onReload={reload} />);
+  expect(screen.getByText('Saved analysis without a linked profile.')).toBeVisible();
+  expect(screen.getByText(/No linked profiles yet/)).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Edit relationships and perceptions' })).toBeEnabled();
+});
+
+it('does not discard remaining saved context when one person receives a newer assessment', () => {
+  const legacy = 'Saved context about both Jordan and Casey.';
+  const initial = { ...profileFixture, section_notes: { relationships: legacy }, section_evidence: { relationships: { human: false } }, relationships: [{ ...edge, notes: '' }] };
+  const { rerender } = renderWithProviders(<ProfileRelationships profile={initial} disabled={false} onBusyChange={busy} onReload={reload} />);
+  expect(screen.getByText(legacy)).toBeVisible();
+  rerender(<ProfileRelationships profile={{ ...initial, relationships: [{ ...edge, notes: 'New Jordan-only analysis.' }] }} disabled={false} onBusyChange={busy} onReload={reload} />);
+  expect(screen.getAllByText('New Jordan-only analysis.')).toHaveLength(1);
+  expect(screen.getByRole('group', { name: 'Saved relationship context' })).toBeInTheDocument();
+  fireEvent.click(screen.getByText('Saved relationship context'));
+  expect(screen.getByText(legacy)).toBeVisible();
+});
+
+it.each([
+  { human: true },
+  { human: false, origin: 'human' as const },
+  { human: false, status: 'insufficient_evidence' as const, generated_at: profileFixture.updated_at },
+])('keeps earlier context collapsed after an explicit per-person clear or attempted assessment: %j', analysis_evidence => {
+  const text = 'Earlier combined relationship context.';
+  renderWithProviders(<ProfileRelationships profile={{ ...profileFixture,
+    section_notes: { relationships: text }, section_evidence: { relationships: { human: false } },
+    relationships: [{ ...edge, notes: '', analysis_evidence }],
+  }} disabled={false} onBusyChange={busy} onReload={reload} />);
+  expect(screen.getByText(text)).not.toBeVisible();
+  fireEvent.click(screen.getByText('Saved relationship context'));
+  expect(screen.getByText(text)).toBeVisible();
+  expect(screen.getByText(/Earlier relationship context remains available for reference/)).toBeVisible();
+});
+
+it('removes saved context when the current API projection withdraws it', () => {
+  const { rerender } = renderWithProviders(<ProfileRelationships profile={{ ...profileFixture, section_notes: { relationships: 'Withdrawn source analysis.' }, section_evidence: { relationships: { human: false } } }} disabled={false} onBusyChange={busy} onReload={reload} />);
+  expect(screen.getByText('Withdrawn source analysis.')).toBeVisible();
+  rerender(<ProfileRelationships profile={{ ...profileFixture, section_notes: {}, section_evidence: {} }} disabled={false} onBusyChange={busy} onReload={reload} />);
+  expect(screen.queryByText('Withdrawn source analysis.')).not.toBeInTheDocument();
+  expect(screen.queryByText('Saved relationship context')).not.toBeInTheDocument();
+});
+
+it('distinguishes an unattempted relationship assessment from insufficient evidence after generation', () => {
+  const pending = { ...edge, notes: '', analysis_evidence: { human: false, status: 'insufficient_evidence' as const, coverage: { claim_count: 0, meeting_count: 0 } } };
+  const { rerender } = renderWithProviders(<ProfileRelationships profile={{ ...profileFixture, relationships: [pending] }} disabled={false} onBusyChange={busy} onReload={reload} />);
+  expect(screen.getByText('This relationship assessment has not been generated yet.')).toBeVisible();
+  expect(screen.queryByText(/More evidence needed/)).not.toBeInTheDocument();
+  rerender(<ProfileRelationships profile={{ ...profileFixture, relationships: [{ ...pending, analysis_evidence: { ...pending.analysis_evidence, generated_at: profileFixture.updated_at } }] }} disabled={false} onBusyChange={busy} onReload={reload} />);
+  expect(screen.getByText('There is not enough saved evidence to assess this relationship yet.')).toBeVisible();
+  expect(screen.getByText('More evidence needed · 0 observations from 0 meetings')).toBeVisible();
 });
 
 it('keeps released human text visible and labels permission without claiming an automatic rewrite', () => {
@@ -168,4 +238,56 @@ it('keeps released human text visible and labels permission without claiming an 
   expect(screen.getByText(edge.notes)).toBeVisible();
   expect(screen.getByText('Automatic updates allowed')).toBeVisible();
   expect(screen.queryByText('Updated automatically')).not.toBeInTheDocument();
+});
+
+it('edits saved combined context with the captured profile revision and locks edge controls', async () => {
+  const { rerender } = renderWithProviders(<ProfileRelationships profile={{ ...profileFixture, section_notes: { relationships: 'Existing combined context.' }, relationships: [edge] }} disabled={false} onBusyChange={busy} onReload={reload} />);
+  fireEvent.click(screen.getByText('Saved relationship context'));
+  fireEvent.click(screen.getByRole('button', { name: 'Edit relationships and perceptions' }));
+  expect(screen.getByRole('button', { name: 'Add relationship' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Edit relationship' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Remove relationship' })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Relationships and perceptions'), { target: { value: ' My saved context ' } });
+  rerender(<ProfileRelationships profile={{ ...profileFixture, revision: 4, section_notes: { relationships: 'Existing combined context.' }, relationships: [edge] }} disabled={false} onBusyChange={busy} onReload={reload} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Save section' }));
+  await waitFor(() => expect(api.profiles.update).toHaveBeenCalledWith(profileFixture.id, { expected_revision: 1, section_notes: { relationships: 'My saved context' } }));
+  expect(api.profiles.updateRelationship).not.toHaveBeenCalled();
+});
+
+it('retains the saved-context draft through409 and requires a visible accepted reread before retry', async () => {
+  vi.mocked(api.profiles.update).mockRejectedValueOnce(new ApiError('Conflict', 409));
+  const initial = { ...profileFixture, section_notes: { relationships: 'Initial analysis.' } };
+  const { rerender } = renderWithProviders(<ProfileRelationships profile={initial} disabled={false} onBusyChange={busy} onReload={reload} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Edit relationships and perceptions' }));
+  fireEvent.change(screen.getByLabelText('Relationships and perceptions'), { target: { value: 'My retained draft.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save section' }));
+  await screen.findByRole('alert');
+  expect(screen.getByRole('button', { name: 'Save section' })).toBeDisabled();
+  fireEvent.submit(screen.getByRole('button', { name: 'Save section' }).closest('form')!);
+  expect(api.profiles.update).toHaveBeenCalledTimes(1);
+  expect(screen.getByLabelText('Relationships and perceptions')).toHaveValue('My retained draft.');
+  expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry section refresh' }));
+  expect(reload).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole('button', { name: 'Save section' })).toBeDisabled();
+  expect(screen.getByLabelText('Relationships and perceptions')).toHaveValue('My retained draft.');
+  rerender(<ProfileRelationships profile={{ ...initial, revision: 3, section_notes: { relationships: 'New concurrent saved context.' } }} disabled={false} onBusyChange={busy} onReload={reload} />);
+  expect(within(screen.getByRole('region', { name: 'Current saved section' })).getByText('New concurrent saved context.')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Save section' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Save section' }));
+  await waitFor(() => expect(api.profiles.update).toHaveBeenLastCalledWith(profileFixture.id, { expected_revision: 3, section_notes: { relationships: 'My retained draft.' } }));
+});
+
+it('keeps the context editor and Cancel when the saved source disappears during an edit', () => {
+  const initial = { ...profileFixture, section_notes: { relationships: 'Source-projected analysis.' }, section_evidence: { relationships: { human: false } } };
+  const { rerender } = renderWithProviders(<ProfileRelationships profile={initial} disabled={false} onBusyChange={busy} onReload={reload} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Edit relationships and perceptions' }));
+  fireEvent.change(screen.getByLabelText('Relationships and perceptions'), { target: { value: 'User draft.' } });
+  rerender(<ProfileRelationships profile={{ ...profileFixture, revision: 2, section_notes: {}, section_evidence: {}, relationships: [edge] }} disabled={false} onBusyChange={busy} onReload={reload} />);
+  expect(screen.getByLabelText('Relationships and perceptions')).toHaveValue('User draft.');
+  expect(screen.getByRole('button', { name: 'Cancel' })).toBeVisible();
+  expect(screen.queryByText('Source-projected analysis.')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(screen.queryByText('Saved relationship context')).not.toBeInTheDocument();
+  expect(busy).toHaveBeenLastCalledWith(false);
 });

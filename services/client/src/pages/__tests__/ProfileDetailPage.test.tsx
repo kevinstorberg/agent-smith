@@ -56,22 +56,33 @@ describe('ProfileDetailPage', () => {
     expect(screen.getByRole('button', { name: 'Edit' })).toBeDisabled();
   });
 
-  it('puts current relationship assessments in their own view and keeps combined text historical only', async () => {
+  it('keeps saved combined context accessible in Relationships alongside current per-person assessments', async () => {
     read.mockResolvedValue({ ...compact, relationships: [edge], section_notes: { ...compact.section_notes, relationships: 'Previous combined assessment.' } });
     renderPage('assessment');
     await screen.findByRole('heading', { name: 'Strengths' });
     expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(4);
-    expect(screen.queryByText('Previous combined assessment.')).not.toBeInTheDocument();
+    expect(screen.getByText('Previous combined assessment.')).not.toBeVisible();
     await open('Relationships');
     const relations = within(screen.getByRole('region', { name: 'Profile relationships' }));
     expect(relations.getByText(edge.notes)).toBeVisible();
     expect(relations.getByRole('link', { name: 'Jordan' })).toHaveAttribute('href', `/profiles/${edge.target_id}`);
     expect(relations.getByRole('button', { name: 'Edit relationship' })).toBeVisible();
+    expect(relations.getByText('Previous combined assessment.')).not.toBeVisible();
+    fireEvent.click(relations.getByText('Saved relationship context'));
+    expect(relations.getByText('Previous combined assessment.')).toBeVisible();
+    fireEvent.click(relations.getByRole('button', { name: 'Edit relationships and perceptions' }));
+    fireEvent.change(relations.getByLabelText('Relationships and perceptions'), { target: { value: 'Retained combined context draft.' } });
+    expect(relations.getByRole('button', { name: 'Edit relationship' })).toBeDisabled();
     expect(claims).not.toHaveBeenCalled();
+    await open('Overview');
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeDisabled();
+    await open('Relationships');
+    expect(relations.getByLabelText('Relationships and perceptions')).toHaveValue('Retained combined context draft.');
+    fireEvent.click(relations.getByRole('button', { name: 'Cancel' }));
     await open('Overview');
     fireEvent.click(screen.getByText('History'));
     fireEvent.click(await screen.findByText('Previous combined relationship assessment'));
-    expect(screen.getByText('Previous combined assessment.')).toBeVisible();
+    expect(within(screen.getByText('History').closest('details')!).getByText('Previous combined assessment.')).toBeVisible();
   });
 
   it('loads evidence lazily in fixed pages of 20 and uses URL navigation', async () => {
