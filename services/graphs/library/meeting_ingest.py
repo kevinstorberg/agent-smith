@@ -24,6 +24,8 @@ class State(TypedDict):
 async def _sync_summaries(state: State) -> dict:
     from services.meetings.service import sync_sources
 
+    if await state["digestion"].prepare_manual():
+        return {"result": {"outcome": "completed", "summary_outcome": "skipped", "transcript": state["digestion"].transcript_report}}
     result = {"outcome": "completed"} if state.get("meeting_id") else await sync_sources(state.get("source"), run_budget_seconds=IMPORT_SECONDS, raise_on_failure=False)
     result["summary_outcome"] = result["outcome"]
     await state["digestion"].prepare()

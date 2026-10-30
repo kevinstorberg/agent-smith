@@ -56,7 +56,7 @@ export function MeetingDetailPage() {
             {['Summary', 'Participants', 'Transcript', 'Memories', 'Profiles'].map(label => <a className="text-link" key={label} href={`#meeting-${label.toLowerCase()}`}>{label}</a>)}
           </nav>
           <MeetingLabels key={`labels-${meeting.id}`} meeting={meeting} onReload={() => load({ showLoading: false })} onBusyChange={setLabelsBusy} />
-          <MeetingProcessing meetingId={meeting.id} transcript={transcript} memories={memories} personas={personas} onChanged={processingChanged} />
+          <MeetingProcessing key={`processing-${meeting.id}`} meetingId={meeting.id} transcript={transcript} memories={memories} personas={personas} onChanged={processingChanged} disabled={participantsBusy || labelsBusy} />
           <details className="card"><summary>Meeting details · {meeting.source_name}</summary>
             <dl style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '8px 16px', margin: 0 }}>
               <dt>Connection</dt><dd style={{ margin: 0 }}>{meeting.source_name}</dd>

@@ -24,8 +24,11 @@ class MeetingContextProvider:
         if row is None:
             return None
         # Keep meeting fields for existing readers; persona orchestration uses normalized keys.
+        control = row.get("manual_analysis", {}).get("profile", {})
+        target = (control.get("target") or {}).get("id") if control.get("active") else None
         return {**row, "context_id": row["meeting_id"], "context_hash": row["transcript_hash"],
-                "segments": row["transcript"].get("segments", [])}
+                "segments": row["transcript"].get("segments", []), "analysis_target_profile_id": target,
+                "analysis_request_id": control.get("request_id") if control.get("active") else None}
 
     def claim(self, owner: str, *, source: str | None = None) -> dict | None:
         from services.meetings.digestion_db import claim_profile
@@ -41,6 +44,20 @@ class MeetingContextProvider:
         from services.meetings.digestion_db import get_record
 
         return self._record(get_record(context_id))
+
+    def validate_context(self, record: dict, owner: str) -> dict:
+        from services.meetings import digestion_db, manual_stage
+
+        control = record.get("manual_analysis", {}).get("profile", {})
+        if not control.get("active"):
+            return record
+        current = manual_stage.before_analysis(record["context_id"], owner, record["context_hash"], "profile")
+        if not current:
+            raise manual_stage.ManualAnalysisInputChanged("Manual profile analysis control was removed")
+        target_id = (current.get("target") or {}).get("id")
+        snapshot = digestion_db.get_context(record["context_id"])
+        return {**record, "snapshot": {**snapshot, **({"analysis_target_profile_id": target_id} if target_id else {})},
+                "analysis_target_profile_id": target_id, "analysis_request_id": current["request_id"]}
 
     def prepare_context(self, record: dict) -> tuple[dict, list[dict], list[dict]]:
         from services.meetings import profile_db

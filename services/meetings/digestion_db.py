@@ -33,6 +33,12 @@ def claim_digestion(identities: list[tuple[str, str]], owner: str) -> dict | Non
     return _claim(identities, owner, _MEMORY_ELIGIBILITY)
 
 
+def claim_manual_memory(identities: list[tuple[str, str]], owner: str) -> dict | None:
+    eligibility = """d.transcript_status='ready' AND d.speaker_status!='pending' AND d.memory_status='pending'
+        AND d.memory_next_attempt_at<=clock_timestamp() AND d.manual_analysis->'memory'->>'active'='true'"""
+    return _claim(identities, owner, eligibility)
+
+
 def claim_identification(source: str | None, owner: str, meeting_id: str | None = None) -> dict | None:
     if meeting_id is not None:
         meeting_id = str(UUID(meeting_id))
@@ -256,6 +262,9 @@ def get_transcript(meeting_id: str, *, limit: int = 100, offset: int = 0) -> dic
 def delete_transcript(meeting_id: str) -> None:
     UUID(meeting_id)
     with _cursor() as cur:
+        from services.meetings import manual_stage
+
+        manual_stage.invalidate_source(cur, meeting_id)
         cur.execute(
             """INSERT INTO meeting_digestions (meeting_id, transcript_status) VALUES (%s, 'deleted')
                ON CONFLICT (meeting_id) DO UPDATE SET transcript_status = 'deleted', transcript = '{}'::jsonb,

@@ -17,7 +17,7 @@ it('shows checkpoint progress and queues a resume without claiming staged candid
   expect(screen.getByRole('progressbar', { name: 'Memory analysis progress' })).toHaveValue(100);
   expect(screen.getByText('8 candidates saved · 0 memories published')).toBeInTheDocument();
   expect(screen.getByText(/completed sections will not be repeated/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Resume processing' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Resume unfinished' }));
   await waitFor(() => expect(api.meetings.process).toHaveBeenCalledWith('meeting-id'));
   expect(changed).toHaveBeenCalledTimes(1);
 });
@@ -31,8 +31,9 @@ it('keeps persona state independent when memories fail and allows a memory-only 
   expect(screen.getByText(/run independently/)).toBeInTheDocument();
 });
 
-it('does not offer regeneration for completed outputs', () => {
+it('keeps completed outputs intact and offers a separate explicit reanalysis control', () => {
   renderWithProviders(<MeetingProcessing meetingId="meeting-id" transcript={transcript} memories={{ ...memories, status: 'done' }} personas={{ ...personas, status: 'done' }} onChanged={changed} />);
   expect(screen.getByRole('button', { name: 'Processing complete' })).toBeDisabled();
-  expect(screen.queryByRole('button', { name: /regenerate/i })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Reanalyze completed...' })).toBeEnabled();
+  expect(api.meetings.process).not.toHaveBeenCalled();
 });

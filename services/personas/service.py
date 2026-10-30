@@ -27,6 +27,7 @@ class PersonaRun(processing.ProcessingRun):
         super().__init__(self._release_all, get_record=self.provider.get_record)
         self.source = source
         self.profile_id = str(UUID(profile_id)) if profile_id is not None else None
+        self.analysis_target_id: str | None = None
         self.profile_report: dict = {"outcome": "idle"}
         self.assessment_report: dict = {"outcome": "idle", "profiles": 0}
 
@@ -42,6 +43,7 @@ class PersonaRun(processing.ProcessingRun):
         if self.profile_id is not None:
             return
         self.record = await run_db(self.provider.claim, self.owner, source=self.source)
+        self.analysis_target_id = (self.record or {}).get("analysis_target_profile_id")
         if self.record is not None and (
             not isinstance(self.record.get("context_id"), str) or not self.record["context_id"].strip()
             or not isinstance(self.record.get("context_hash"), str) or not self.record["context_hash"].strip()
@@ -61,7 +63,9 @@ class PersonaRun(processing.ProcessingRun):
         if self.remaining < 50:
             self.assessment_report.update(outcome="continued")
             return
-        snapshot = await run_db(assessment_db.claim, self.owner, self.profile_id)
+        if self.analysis_target_id and self.profile_report.get("outcome") != "done":
+            return
+        snapshot = await run_db(assessment_db.claim, self.owner, self.profile_id or self.analysis_target_id)
         if not snapshot:
             return
         if snapshot.get("skipped"):
@@ -100,8 +104,14 @@ class PersonaRun(processing.ProcessingRun):
         from services.meetings import profile_directory
 
         context_id = record["context_id"]
+        validate_context = getattr(self.provider, "validate_context", None)
+        if validate_context:
+            record = await run_db(validate_context, record, self.owner)
+        self.analysis_target_id = record.get("analysis_target_profile_id")
         participants_revision = record.get("participants_revision", 0)
         analysis_snapshot, participants, profiles = await run_db(self.provider.prepare_context, record)
+        if self.analysis_target_id:
+            analysis_snapshot = {**analysis_snapshot, "analysis_target_profile_id": self.analysis_target_id}
         artifact = copy.deepcopy(record["profile_artifact"]) or {
             "version": 1, "offset": 0, "items": [], "metadata_updates": [], "reason": "",
             "model": resolve_model_id("persona", "curator"), "prompt_version": 1,
@@ -110,6 +120,8 @@ class PersonaRun(processing.ProcessingRun):
         }
         if artifact["version"] != 1:
             raise ValueError("Unsupported persona profile artifact version")
+        if record.get("analysis_request_id"):
+            artifact["manual_request_id"] = record["analysis_request_id"]
         if artifact.get("participants_revision", 0) != participants_revision:
             raise profile_db.ProfileRevisionConflict("Context participants changed; rebuild the profile candidate")
         restored = profile_directory.extend_catalog(participants, artifact)
@@ -123,10 +135,15 @@ class PersonaRun(processing.ProcessingRun):
         await run_db(self.provider.save_progress, context_id, self.owner, record["context_hash"], artifact)
         while artifact["offset"] < len(segments):
             window, end = transcript_window(segments, artifact["offset"])
+            if validate_context:
+                await run_db(validate_context, record, self.owner)
             result = await analyze_profiles(
                 analysis_snapshot, window, artifact["items"], participants=participants,
                 profiles=profiles, memories=[], previous_metadata=artifact.get("metadata_updates", []), deadline=deadline,
             )
+            if self.analysis_target_id:
+                result = {**result, "items": [item for item in result["items"] if item["subject_id"] == self.analysis_target_id],
+                    "metadata_updates": [item for item in result.get("metadata_updates", []) if item["subject_id"] == self.analysis_target_id]}
             extended = profile_directory.checkpoint_targets(artifact, participants, result)
             if len(extended) != len(participants):
                 participants = extended

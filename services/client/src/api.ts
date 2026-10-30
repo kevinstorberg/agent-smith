@@ -273,6 +273,43 @@ export interface MeetingGeneration {
   };
 }
 
+export type MeetingAnalysisScope = 'profiles' | 'memories' | 'both';
+export interface MeetingAnalysisExpected {
+  provider: string; account_key: string; source_name: string; meeting_revision: number;
+  transcript_hash: string | null; participants_revision: number; speaker_updated_at: string | null;
+  profile_updated_at: string | null; memory_updated_at: string | null;
+}
+export interface MeetingAnalysisCandidate {
+  id: string; title: string; source_name: string; meeting_start: string | null; labels: string[];
+  match_reasons: string[]; attribution_ready: boolean; expected: MeetingAnalysisExpected;
+  stages: Record<'profile' | 'memory', {
+    status: string; can_reanalyze: boolean; blocked_reason: string | null;
+    progress: NonNullable<MeetingGeneration['progress']>; job_id: number | null; job_name: string | null;
+  }>;
+}
+export interface MeetingAnalysisCandidates extends Paginated<MeetingAnalysisCandidate> {
+  profile: { id: string; revision: number; display_name: string } | null;
+}
+export interface MeetingAnalysisInput {
+  request_id: string; confirmed: true; scope: MeetingAnalysisScope;
+  target_profile?: { id: string; expected_revision: number };
+  meetings: { id: string; expected: MeetingAnalysisExpected }[];
+}
+export interface MeetingAnalysisReceipt {
+  request_id: string; scope: MeetingAnalysisScope; target_profile_id: string | null;
+  created_at: string; updated_at: string;
+  status: 'queued' | 'running' | 'continued' | 'done' | 'failed';
+  items: { meeting_id: string; title: string; stages: Partial<Record<'profile' | 'memory', {
+    status: MeetingAnalysisReceipt['status']; error_type: string | null;
+    progress: NonNullable<MeetingGeneration['progress']>; job_id: number; job_name: string;
+    waiting_for?: 'job';
+  }>> }[];
+}
+export interface MeetingAnalysisCandidateParams extends PaginationParams {
+  profile_id?: string; meeting_id?: string; related?: boolean; q?: string; search_transcript?: boolean;
+  source?: string; after?: string; before?: string;
+}
+
 export interface MeetingMemories extends MeetingGeneration {
   items: MeetingMemory[];
   updated_at: string | null;
@@ -794,6 +831,22 @@ export const api = {
       update: (id: string, body: { expected_revision: number; term?: string; definition?: string }) => patch<MeetingVocabulary>(`/meetings/vocabulary/${encodeURIComponent(id)}`, body),
       remove: (id: string, expected_revision: number) => del<{ deleted: boolean; id: string }>(`/meetings/vocabulary/${encodeURIComponent(id)}`, { expected_revision }),
     },
+  },
+  meetingAnalysis: {
+    candidates: (params: MeetingAnalysisCandidateParams) => get<MeetingAnalysisCandidates>('/meeting-analysis/candidates', {
+      ...paginationToParams(params),
+      ...(params.profile_id ? { profile_id: params.profile_id } : {}),
+      ...(params.meeting_id ? { meeting_id: params.meeting_id } : {}),
+      ...(params.related !== undefined ? { related: String(params.related) } : {}),
+      ...(params.q ? { q: params.q } : {}),
+      ...(params.search_transcript !== undefined ? { search_transcript: String(params.search_transcript) } : {}),
+      ...(params.source ? { source: params.source } : {}),
+      ...(params.after ? { after: params.after } : {}),
+      ...(params.before ? { before: params.before } : {}),
+    }, 30_000),
+    request: (body: MeetingAnalysisInput) => post<MeetingAnalysisReceipt>('/meeting-analysis/requests', body, 30_000),
+    progress: (id: string) => get<MeetingAnalysisReceipt>(`/meeting-analysis/requests/${encodeURIComponent(id)}`, undefined, 30_000),
+    resume: (id: string) => post<MeetingAnalysisReceipt>(`/meeting-analysis/requests/${encodeURIComponent(id)}/resume`, { confirmed: true }, 30_000),
   },
   profiles: {
     create: (body: { display_name: string; email?: string }) => post<ParticipantProfile>('/profiles?include_evidence=false', body),

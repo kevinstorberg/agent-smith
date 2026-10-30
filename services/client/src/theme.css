@@ -1205,6 +1205,30 @@ pre {
 .relationship-actions { align-items: center; margin-top: 12px; }
 .relationship-assignment-dialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); overflow: auto; }
 .relationship-assignment-dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
+.manual-analysis-dialog { width: min(920px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); overflow: auto; }
+.manual-analysis-dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
+.manual-analysis-dialog .page-header { gap: 16px; }
+.manual-analysis-dialog p { margin: 10px 0; }
+.manual-analysis-filters { display: grid; grid-template-columns: minmax(180px, 2fr) minmax(140px, 1fr) repeat(2, minmax(130px, 1fr)); gap: 12px; margin: 16px 0 8px; }
+.manual-analysis-filters .form-label { min-width: 0; }
+.manual-analysis-filters .input { margin-top: 6px; }
+.manual-analysis-scope { display: block; max-width: 360px; margin: 16px 0; }
+.manual-analysis-scope .input { margin-top: 6px; }
+.manual-analysis-meeting { border-top: 1px solid var(--border); padding: 16px 0; overflow-wrap: anywhere; }
+.manual-analysis-meeting h4 { margin-bottom: 12px; }
+.manual-analysis-metadata { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; margin: 10px 0; }
+.manual-analysis-candidate-title { white-space: normal; }
+.manual-analysis-selection { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: flex-end; margin-top: 16px; }
+.manual-analysis-confirm ul { margin: 12px 0 16px 20px; }
+.manual-analysis-stage { margin: 12px 0; }
+.manual-analysis-stage progress { width: min(100%, 420px); }
+@media (max-width: 700px) {
+  .manual-analysis-dialog { padding: 16px; }
+  .manual-analysis-filters { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .manual-analysis-filters > :first-child { grid-column: 1 / -1; }
+  .manual-analysis-dialog .pagination { align-items: flex-start; gap: 12px; }
+  .manual-analysis-dialog .pagination-controls { flex-wrap: wrap; }
+}
 .relationship-assignment-dialog > h3 { margin-bottom: 16px; }
 .relationship-perspective .participant-form { margin-top: 12px; }
 .relationship-protection-notice .btn { margin-top: 12px; }
@@ -1257,7 +1281,8 @@ pre {
 .profile-picker .search-bar input:not([type="checkbox"]):not([type="radio"]) { min-width: 0; flex: 1 1 160px; }
 .processing-stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 16px; margin-bottom: 16px; }
 .processing-stages > div { min-width: 0; border-top: 1px solid var(--border); padding-top: 12px; }
-.processing-progress progress { width: 100%; accent-color: var(--success); }
+.processing-progress progress { width: 100%; }
+.processing-progress progress, .manual-analysis-stage progress { accent-color: var(--success); }
 .processing-progress { margin-top: 8px; }
 .management-form textarea,
 .profile-detail textarea { resize: vertical; }

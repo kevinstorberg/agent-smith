@@ -197,6 +197,8 @@ def retry_memories(summary_id: UUID):
     require_found(db.get_summary(key), "Meeting summary", key)
     try:
         memory_db.retry_memories(key)
+    except profile_db.ProfileRevisionConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
     return {"success": True}

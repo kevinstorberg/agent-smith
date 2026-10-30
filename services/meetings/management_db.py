@@ -256,6 +256,8 @@ def _refresh_rebased(cur, rebased: list[str]) -> None:
 
 
 def update_participants(meeting_id: str, expected_revision: int, participants: list[dict], expected_transcript_hash: str | None = None) -> dict:
+    from services.meetings import manual_stage
+
     if type(expected_revision) is not int or expected_revision < 0:
         raise ValueError("Expected participant revision must be a nonnegative integer")
     with _editable(meeting_id) as (cur, meeting, digestion):
@@ -281,16 +283,20 @@ def update_participants(meeting_id: str, expected_revision: int, participants: l
                 cur.execute("UPDATE meeting_digestions SET speaker_artifact=%s,speaker_attempts=0,speaker_error=NULL,speaker_next_attempt_at=clock_timestamp() WHERE meeting_id=%s", (Json(artifact), meeting_id))
             elif artifact != digestion["speaker_artifact"]:
                 cur.execute("UPDATE meeting_digestions SET speaker_artifact=%s WHERE meeting_id=%s", (Json(artifact), meeting_id))
-            cur.execute(
-                """UPDATE meeting_digestions SET profile_status = 'pending', profile_artifact = '{}'::jsonb,
-                   profile_attempts = 0, profile_error = NULL, profile_next_attempt_at = clock_timestamp(),
-                   profile_updated_at = clock_timestamp(), updated_at = clock_timestamp(),
-                   requested_at = coalesce(requested_at, clock_timestamp()) WHERE meeting_id = %s AND profile_status != 'done'""", (meeting_id,),
-            )
+            if not manual_stage.protected_profile(digestion):
+                cur.execute(
+                    """UPDATE meeting_digestions SET profile_status = 'pending', profile_artifact = '{}'::jsonb,
+                       profile_attempts = 0, profile_error = NULL, profile_next_attempt_at = clock_timestamp(),
+                       profile_updated_at = clock_timestamp(), updated_at = clock_timestamp(),
+                       requested_at = coalesce(requested_at, clock_timestamp()) WHERE meeting_id = %s AND profile_status != 'done'""", (meeting_id,),
+                )
+            manual_stage.invalidate_source(cur, meeting_id)
         return _participants(cur, meeting_id)
 
 
 def request_processing(meeting_id: str) -> dict:
+    from services.meetings import manual_stage
+
     with _editable(meeting_id, allow_running=True) as (cur, _, digestion):
         if digestion and digestion["running"]:
             return {"status": "running"}
@@ -299,6 +305,11 @@ def request_processing(meeting_id: str) -> dict:
         if digestion and digestion["profile_status"] == "done" and digestion["memory_status"] == "done":
             return {"status": "done"}
         digestion_db.enroll(cur, meeting_id)
+        for stage in ("profile", "memory"):
+            if digestion and digestion[stage + "_status"] == "failed":
+                manual_stage.resume_stage(cur, digestion, stage)
+                cur.execute("SELECT * FROM meeting_digestions WHERE meeting_id=%s", (meeting_id,))
+                digestion = dict(cur.fetchone())
         cur.execute(
             """UPDATE meeting_digestions SET requested_at = coalesce(requested_at, clock_timestamp()),
                transcript_status = CASE WHEN transcript_status IN ('failed', 'unsupported', 'unavailable') THEN 'pending' ELSE transcript_status END,

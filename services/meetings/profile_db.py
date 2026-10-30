@@ -513,10 +513,14 @@ def apply_profiles(meeting_id: str, owner: str, transcript_hash: str, artifact: 
     catalog = _catalog(participants)
     with profile_write_cursor() as cur:
         record = stage_db.pending(cur, meeting_id, owner, transcript_hash, "profile")
+        control = record.get("manual_analysis", {}).get("profile", {})
+        manual_target = (control.get("target") or {}).get("id") if control.get("active") else None
         if record.get("participants_revision", 0) != artifact.get("participants_revision", 0):
             raise ProfileRevisionConflict("Meeting participants changed; rebuild the profile candidate")
         claims = _validate_candidates(artifact, catalog, record)
         metadata_updates = _validated_outputs(artifact.get("metadata_updates", []), ProfileMetadataPatch, catalog, record)
+        if manual_target and any(item["subject_id"] != manual_target for item in [*claims, *metadata_updates]):
+            raise ProfileRevisionConflict("Manual analysis may only publish changes to the selected target profile")
         rows = {}
         if catalog:
             cur.execute("SELECT * FROM participant_profiles WHERE id IN %s ORDER BY id FOR UPDATE", (tuple(catalog),))
@@ -547,6 +551,8 @@ def apply_profiles(meeting_id: str, owner: str, transcript_hash: str, artifact: 
         applied = []
         affected = ({claim[key] for claim in claims for key in ("subject_id", "target_id") if claim.get(key)}
                     | {patch["subject_id"] for patch in metadata_updates})
+        if manual_target:
+            affected &= {manual_target}
         for profile_id in sorted(affected):
             additions = [claim for claim in claims if claim["subject_id"] == profile_id]
             row = rows.get(profile_id)
@@ -582,6 +588,8 @@ def apply_profiles(meeting_id: str, owner: str, transcript_hash: str, artifact: 
 
         links = [{**claim, "subject_id": canonical_ids.get(claim["subject_id"], claim["subject_id"]),
                   "target_id": canonical_ids.get(claim.get("target_id"), claim.get("target_id"))} for claim in all_claims]
+        if manual_target:
+            links = [claim for claim in links if claim["subject_id"] == manual_target and claim.get("target_id") in rows]
         ensure_claim_links(cur, links)
         completed = {**copy.deepcopy(artifact), "profile_ids": applied}
         stage_db.write_progress(cur, "profile", meeting_id, completed, complete=True)
@@ -832,8 +840,14 @@ def meeting_profiles(meeting_id: str) -> dict | None:
 
 
 def retry_profiles(meeting_id: str) -> None:
+    from services.meetings import manual_stage
+
     UUID(meeting_id)
-    with _cursor() as cur:
+    with profile_write_cursor() as cur:
+        cur.execute("SELECT * FROM meeting_digestions WHERE meeting_id=%s FOR UPDATE", (meeting_id,))
+        row = cur.fetchone()
+        if row and manual_stage.resume_stage(cur, dict(row), "profile"):
+            return
         cur.execute(
             """UPDATE meeting_digestions d SET profile_status = 'pending', profile_attempts = 0,
                profile_next_attempt_at = clock_timestamp(), profile_error = NULL, profile_updated_at = clock_timestamp(),

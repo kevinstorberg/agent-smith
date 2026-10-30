@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { api } from '../api';
 import type { MeetingGeneration, MeetingMemories, MeetingProfiles, MeetingTranscript } from '../api';
 import { useApiMutation } from '../hooks/useApiMutation';
+import { ManualMeetingAnalysis } from './ManualMeetingAnalysis';
 
 const LABELS: Record<string, string> = { not_imported: 'Not queued', pending: 'Queued', running: 'Running', capturing: 'Running', ready: 'Complete', done: 'Complete', blocked: 'Waiting for transcript', failed: 'Needs attention', unavailable: 'Unavailable', unsupported: 'Unsupported', deleted: 'Deleted' };
 
@@ -20,8 +21,8 @@ function Progress({ result, output }: { result: MeetingGeneration; output: 'memo
   </div>;
 }
 
-export function MeetingProcessing({ meetingId, transcript, memories, personas, onChanged }: {
-  meetingId: string; transcript: MeetingTranscript | null; memories: MeetingMemories | null; personas: MeetingProfiles | null; onChanged: () => void;
+export function MeetingProcessing({ meetingId, transcript, memories, personas, onChanged, disabled = false }: {
+  meetingId: string; transcript: MeetingTranscript | null; memories: MeetingMemories | null; personas: MeetingProfiles | null; onChanged: () => void; disabled?: boolean;
 }) {
   const [notice, setNotice] = useState<string | null>(null);
   const process = useApiMutation({ mutationFn: () => api.meetings.process(meetingId),
@@ -37,9 +38,10 @@ export function MeetingProcessing({ meetingId, transcript, memories, personas, o
   const resumable = memories?.progress?.processed_units || personas?.progress?.processed_units || transcript?.status === 'pending';
   return <section className="card" aria-label="Meeting processing">
     <div className="page-header profiles-header"><h3 className="section-title">Processing</h3>
-      <button className="btn" disabled={!loaded || done || running || process.loading || retry.loading || transcript?.status === 'deleted'} onClick={() => process.mutate()}>
-        {process.loading ? 'Queuing...' : done ? 'Processing complete' : running ? 'Processing...' : resumable ? 'Resume processing' : 'Process meeting'}
+      <div className="flex-wrap"><button className="btn" disabled={disabled || !loaded || done || running || process.loading || retry.loading || transcript?.status === 'deleted'} onClick={() => process.mutate()}>
+        {process.loading ? 'Queuing...' : done ? 'Processing complete' : running ? 'Processing...' : resumable ? 'Resume unfinished' : 'Process meeting'}
       </button>
+      <ManualMeetingAnalysis meetingId={meetingId} disabled={disabled || !loaded || running || process.loading || retry.loading || transcript?.status !== 'ready'} onChanged={onChanged} /></div>
     </div>
     <div className="processing-stages">
       <div><h4><a className="text-link" href="#meeting-transcript">Transcript</a></h4><p>{transcript ? LABELS[transcript.status] : 'Loading...'}</p></div>

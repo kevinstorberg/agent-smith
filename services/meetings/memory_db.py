@@ -51,8 +51,14 @@ def get_memories(meeting_id: str) -> dict | None:
 
 
 def retry_memories(meeting_id: str) -> None:
+    from services.meetings import manual_stage
+
     UUID(meeting_id)
     with _cursor() as cur:
+        cur.execute("SELECT * FROM meeting_digestions WHERE meeting_id=%s FOR UPDATE", (meeting_id,))
+        row = cur.fetchone()
+        if row and manual_stage.resume_stage(cur, dict(row), "memory"):
+            return
         cur.execute(
             """UPDATE meeting_digestions SET memory_status = 'pending', memory_attempts = 0,
                memory_next_attempt_at = clock_timestamp(), memory_error = NULL, memory_updated_at = clock_timestamp(),

@@ -43,6 +43,14 @@ class DigestionRun(processing.ProcessingRun):
         self.memory_report: dict = {"outcome": "idle"}
         self.speaker_report: dict = {"outcome": "idle"}
 
+    async def prepare_manual(self) -> bool:
+        if not self.digest or self.meeting_id is not None:
+            return False
+        self.record = await run_db(digestion_db.claim_manual_memory, list(self.configs), self.owner)
+        if self.record:
+            self.transcript_report = {"outcome": "ready", "meeting_id": self.record["meeting_id"]}
+        return self.record is not None
+
     async def prepare(self) -> None:
         claim = digestion_db.claim_digestion if self.digest else digestion_db.claim_transcript
         if self.digest:
@@ -89,14 +97,22 @@ class DigestionRun(processing.ProcessingRun):
         from services.graphs.model_config import resolve_model_id
         from services.meetings.analysis import analyze_memories
         from services.memory.db import publish
+        from services.meetings import manual_stage
 
         meeting_id = record["meeting_id"]
+        control = record.get("manual_analysis", {}).get("memory", {})
+        if control.get("active"):
+            if not await run_db(manual_stage.before_analysis, meeting_id, self.owner, record["transcript_hash"], "memory"):
+                raise manual_stage.ManualAnalysisInputChanged("Manual memory analysis control was removed")
+            record = {**record, "snapshot": await run_db(digestion_db.get_context, meeting_id)}
         artifact = copy.deepcopy(record["memory_artifact"]) or {
             "version": 1, "offset": 0, "items": [], "published_ids": [],
             "created_at": datetime.now(timezone.utc).isoformat(), "reason": "",
             "model": resolve_model_id("meeting_memory", "curator"), "prompt_version": 3,
         }
-        if not record["memory_artifact"]:
+        if control.get("active"):
+            artifact["manual_request_id"] = control["request_id"]
+        if "vocabulary" not in artifact and artifact.get("offset", 0) == 0:
             from services.meetings.vocabulary_db import relevant
 
             text = "\n".join([record["snapshot"].get("title") or "", record["snapshot"].get("summary_text") or "",
@@ -134,9 +150,13 @@ class DigestionRun(processing.ProcessingRun):
         snapshot = {**record["snapshot"], **({"vocabulary": artifact["vocabulary"]} if artifact.get("vocabulary") else {})}
         while artifact["offset"] < len(segments):
             window, end = transcript_window(segments, artifact["offset"])
+            if control.get("active"):
+                await run_db(manual_stage.before_analysis, meeting_id, self.owner, record["transcript_hash"], "memory")
             result = await analyze_memories(snapshot, window, artifact["items"], deadline=deadline)
             for atom in result["items"]:
                 atom = dict(atom)
+                if control.get("active") and any(_same_memory(atom, previous) for previous in artifact["items"]):
+                    continue
                 atom["id"] = str(uuid5(_MEMORY_NAMESPACE, f"{meeting_id}:{len(artifact['items'])}"))
                 artifact["items"].append(atom)
             artifact.update(offset=end, reason=result.get("reason", ""))
@@ -164,6 +184,13 @@ class DigestionRun(processing.ProcessingRun):
         await run_db(memory_db.save_progress, meeting_id, self.owner, record["transcript_hash"], artifact, complete=True)
         record.update(memory_status="done", memory_artifact=artifact)
         self.memory_report.update(outcome="done", memories=len(artifact["items"]), memory_ids=artifact["published_ids"])
+
+
+def _same_memory(left: dict, right: dict) -> bool:
+    def identity(item: dict) -> tuple:
+        return (" ".join(item["content"].casefold().split()), item.get("kind"),
+                sorted((entry["segment_id"], entry["quote"]) for entry in item.get("evidence", [])))
+    return identity(left) == identity(right)
 
 
 async def speaker_db_guard(run: DigestionRun, work) -> None:
