@@ -721,7 +721,8 @@ export const api = {
     identifyParticipants: (id: string) => post<{ status: 'queued' | 'running' | 'done' }>(`/meetings/${encodeURIComponent(id)}/identify-participants`, {}),
     process: (id: string) => post<{ status: 'queued' | 'running' | 'done' }>(`/meetings/${encodeURIComponent(id)}/process`, {}),
     vocabulary: {
-      list: () => get<Paginated<MeetingVocabulary>>('/meetings/vocabulary'),
+      list: (params?: PaginationParams & { q?: string }) => get<Paginated<MeetingVocabulary>>('/meetings/vocabulary', { ...paginationToParams(params), ...(params?.q ? { q: params.q } : {}) }),
+      get: (id: string) => get<MeetingVocabulary>(`/meetings/vocabulary/${encodeURIComponent(id)}`),
       create: (body: { term: string; definition: string }) => post<MeetingVocabulary>('/meetings/vocabulary', body),
       update: (id: string, body: { expected_revision: number; term?: string; definition?: string }) => patch<MeetingVocabulary>(`/meetings/vocabulary/${encodeURIComponent(id)}`, body),
       remove: (id: string, expected_revision: number) => del<{ deleted: boolean; id: string }>(`/meetings/vocabulary/${encodeURIComponent(id)}`, { expected_revision }),

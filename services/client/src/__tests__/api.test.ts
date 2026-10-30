@@ -17,6 +17,14 @@ beforeEach(() => {
 });
 
 describe('parseError (tested through api methods)', () => {
+  it('requests paged vocabulary searches and reads an exact term outside the current page', async () => {
+    globalThis.fetch = mockFetch({ items: [], total: 0 });
+    await api.meetings.vocabulary.list({ q: 'security', limit: 10, offset: 20 });
+    await api.meetings.vocabulary.get('term/id');
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    expect(Object.fromEntries(new URL(calls[0][0]).searchParams)).toEqual({ q: 'security', limit: '10', offset: '20' });
+    expect(new URL(calls[1][0]).pathname).toBe('/api/meetings/vocabulary/term%2Fid');
+  });
   it('requests scoped plan searches, graph jobs and exact executions through existing APIs', async () => {
     globalThis.fetch = mockFetch({ items: [], total: 0 });
     await api.plans.search('security', { project: 'Paralign', status: 'draft' });
