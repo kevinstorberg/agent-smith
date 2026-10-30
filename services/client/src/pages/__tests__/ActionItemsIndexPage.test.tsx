@@ -38,13 +38,14 @@ const drop = (source = 0, destination = 2, id = 1): DropResult => ({
 const titles = () => within(screen.getByRole('table')).getAllByRole('button').filter(button => button.hasAttribute('aria-expanded')).map(button => button.getAttribute('aria-label'));
 
 beforeEach(() => {
-  vi.resetAllMocks(); drag.start = null; drag.end = null;
+  vi.resetAllMocks();
+  vi.spyOn(window, 'confirm').mockReturnValue(true); drag.start = null; drag.end = null;
   vi.mocked(api.actionItems.list).mockResolvedValue({ items: rows, total: 3 });
   vi.mocked(api.actionItems.get).mockImplementation(async id => actionItem(id));
   vi.mocked(api.actionItems.update).mockResolvedValue(actionItem(1, { revision: 2, status: 'completed' }));
   vi.mocked(api.actionItems.move).mockResolvedValue(actionItem(1, { revision: 2 }));
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 async function renderReady() {
   const rendered = renderWithProviders(<ActionItemsIndexPage />);
@@ -61,10 +62,10 @@ describe('ActionItemsIndexPage', () => {
     expect(screen.getByRole('button', { name: 'Task 1' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('link', { name: 'Task 1' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reorder Task 1' }).closest('tr')).toHaveAttribute('data-interactive-drag', 'true');
-    fireEvent.click(screen.getByRole('button', { name: 'Mark complete Task 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete Task 1' }));
     expect(api.actionItems.update).toHaveBeenCalledWith(1, { expected_revision: 1, status: 'completed' });
-    expect(screen.getByRole('button', { name: 'Mark complete Task 2' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Mark complete Task 1' })).toHaveTextContent('Mark complete');
+    expect(screen.getByRole('button', { name: 'Complete Task 2' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Complete Task 1' })).toHaveTextContent('Complete');
     await act(async () => { saving.resolve(actionItem(1, { revision: 2, status: 'completed' })); });
   });
 
@@ -138,8 +139,8 @@ describe('ActionItemsIndexPage', () => {
       .mockResolvedValueOnce({ items: rows, total: 10 });
     await renderReady();
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    await screen.findByRole('button', { name: 'Mark complete Task 11' });
-    fireEvent.click(screen.getByRole('button', { name: 'Mark complete Task 11' }));
+    await screen.findByRole('button', { name: 'Complete Task 11' });
+    fireEvent.click(screen.getByRole('button', { name: 'Complete Task 11' }));
     await screen.findByRole('button', { name: 'Task 1' });
     expect(api.actionItems.update).toHaveBeenCalledWith(11, { expected_revision: 1, status: 'completed' });
     expect(api.actionItems.list).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 0 }));
@@ -153,7 +154,7 @@ describe('ActionItemsIndexPage', () => {
     await renderReady();
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() => expect(api.actionItems.list).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 })));
-    fireEvent.click(screen.getByRole('button', { name: 'Mark complete Task 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete Task 1' }));
     fireEvent.change(screen.getByLabelText('Search action items'), { target: { value: 'Current scope' } });
     await act(async () => { vi.advanceTimersByTime(300); });
     await waitFor(() => expect(api.actionItems.list).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 0, q: 'Current scope' })));
@@ -167,7 +168,7 @@ describe('ActionItemsIndexPage', () => {
     const saving = deferred<ReturnType<typeof actionItem>>();
     vi.mocked(api.actionItems.update).mockReturnValueOnce(saving.promise);
     const rendered = await renderReady();
-    fireEvent.click(screen.getByRole('button', { name: 'Mark complete Task 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete Task 1' }));
     rendered.unmount();
     vi.mocked(api.actionItems.list).mockClear();
     await act(async () => { saving.resolve(actionItem(1, { status: 'completed' })); });
@@ -193,7 +194,7 @@ describe('ActionItemsIndexPage', () => {
     expect(screen.getByRole('button', { name: 'Task 12' }).closest('tr')?.querySelector('.action-item-priority')).toHaveTextContent('11');
     expect(screen.getByLabelText('Search action items')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Mark complete Task 12' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Complete Task 12' })).toBeDisabled();
     await act(async () => { saving.resolve(actionItem(11, { revision: 2 })); await ended; });
   });
 
@@ -243,7 +244,7 @@ describe('ActionItemsIndexPage', () => {
     fireEvent.click(title);
     await screen.findByRole('region', { name: 'Task 1' });
     expect(screen.queryByRole('region', { name: 'Task 2' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Mark complete Task 3' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete Task 3' }));
     expect(title).toHaveAttribute('aria-expanded', 'true');
   });
 
@@ -311,7 +312,7 @@ describe('ActionItemsIndexPage', () => {
     expect(titles()).toEqual(['Task 2', 'Task 3', 'Task 1']);
     await act(async () => { saving.reject(new ApiError('Source changed', 409)); await ended; });
     expect(titles()).toEqual(['Task 1', 'Task 2', 'Task 3']);
-    expect(screen.getByRole('button', { name: 'Mark complete Task 1' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Complete Task 1' })).toBeEnabled();
     expect(api.actionItems.list).toHaveBeenCalledTimes(2);
   });
 

@@ -12,6 +12,7 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useNotification } from '../context/useNotification';
 import { useApiRead } from '../hooks/useApiRead';
 import { actionItemTags } from '../utils/actionItems';
+import { ActionItemStatusButton } from '../components/ActionItemStatusButton';
 
 const TABS = [['open', 'Open'], ['completed', 'Completed'], ['all', 'All']] as const;
 type Status = NonNullable<ActionItemFilters['status']>;
@@ -198,10 +199,7 @@ export function ActionItemsIndexPage() {
                       {item.tags.map(tag => <span className="tag" key={tag}>{tag}</span>)}</td>
                     <td><DateCell date={item.updated_at} /></td>
                     <td><div className="flex-row">
-                      <button type="button" className="btn btn-sm" aria-label={`${item.status === 'completed' ? 'Reopen' : 'Mark complete'} ${item.title}`}
-                        disabled={busy || Boolean(snapshot)} onClick={event => { event.stopPropagation(); void changeStatus(item); }}>
-                        {item.status === 'completed' ? 'Reopen' : 'Mark complete'}
-                      </button>
+                      <ActionItemStatusButton item={item} small disabled={busy || Boolean(snapshot)} onChange={() => { void changeStatus(item); }} />
                       <button type="button" className="btn btn-sm" aria-label={`Edit ${item.title}`}
                         disabled={busy || Boolean(snapshot)} onClick={event => { event.stopPropagation(); editItem(item); }}>Edit</button>
                       {pendingId === item.id && <span className="text-muted-sm" role="status">Saving…</span>}
