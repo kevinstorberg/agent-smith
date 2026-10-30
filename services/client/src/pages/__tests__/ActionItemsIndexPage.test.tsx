@@ -205,6 +205,66 @@ describe('ActionItemsIndexPage', () => {
     expect(api.actionItems.move).toHaveBeenCalledWith(3, { expected_revision: 1, before_id: 1 });
   });
 
+  it('retains the same disabled handles throughout a move and its delayed reconciliation', async () => {
+    const saving = deferred<ReturnType<typeof actionItem>>();
+    const reread = deferred<Paginated<ActionItemRow>>();
+    vi.mocked(api.actionItems.move).mockReturnValueOnce(saving.promise);
+    await renderReady();
+    const table = screen.getByRole('table');
+    const handles = screen.getAllByRole('button', { name: /^Reorder / });
+    handles[0].focus();
+    vi.mocked(api.actionItems.list).mockReturnValueOnce(reread.promise);
+    act(() => drag.start!());
+    let ended!: Promise<void>;
+    act(() => { ended = drag.end!(drop()); });
+    expect(screen.getByRole('table')).toBe(table);
+    expect(screen.getAllByRole('button', { name: /^Reorder / })).toHaveLength(3);
+    for (const handle of handles) { expect(handle).toBeInTheDocument(); expect(handle).toBeDisabled(); }
+    handles[0].blur();
+    expect(screen.getByRole('status')).toHaveTextContent('Saving order…');
+    expect(screen.getByRole('status')).toHaveClass('visually-hidden');
+    await act(async () => { saving.resolve(actionItem(1, { revision: 2 })); });
+    expect(screen.getByRole('table')).toBe(table);
+    for (const handle of handles) expect(handle).toBeDisabled();
+    await act(async () => { reread.resolve({ items: [rows[1], rows[2], actionItem(1, { revision: 2 })], total: 3 }); await ended; });
+    expect(screen.getByRole('table')).toBe(table);
+    for (const handle of handles) expect(handle).toBeEnabled();
+    expect(handles[0]).toHaveFocus();
+  });
+
+  it('does not steal focus when the user moves away during reconciliation', async () => {
+    const saving = deferred<ReturnType<typeof actionItem>>();
+    vi.mocked(api.actionItems.move).mockReturnValueOnce(saving.promise);
+    await renderReady();
+    screen.getByRole('button', { name: 'Reorder Task 1' }).focus();
+    act(() => drag.start!());
+    let ended!: Promise<void>;
+    act(() => { ended = drag.end!(drop()); });
+    const create = screen.getByRole('link', { name: 'New action item' });
+    create.focus();
+    await act(async () => { saving.resolve(actionItem(1, { revision: 2 })); await ended; });
+    expect(create).toHaveFocus();
+  });
+
+  it('retains populated rows after a failed move reread and blocks stale completion until Retry succeeds', async () => {
+    await renderReady();
+    const table = screen.getByRole('table');
+    vi.mocked(api.actionItems.list).mockRejectedValueOnce(new Error('Synthetic read failure'));
+    act(() => drag.start!());
+    await act(async () => { await drag.end!(drop()); });
+    expect(screen.getByRole('table')).toBe(table);
+    expect(titles()).toEqual(['Task 2', 'Task 3', 'Task 1']);
+    expect(screen.getByRole('alert')).toHaveTextContent('The current list is kept.');
+    expect(screen.getAllByRole('button', { name: /^Reorder / })).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Complete Task 1' })).toBeDisabled();
+    expect(api.actionItems.move).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Complete Task 1' })).toBeEnabled());
+    expect(screen.getByRole('table')).toBe(table);
+    expect(api.actionItems.move).toHaveBeenCalledTimes(1);
+    expect(api.actionItems.update).not.toHaveBeenCalled();
+  });
+
   it('shows actual queue priorities in filtered title order and completed rows', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await renderReady();

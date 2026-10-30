@@ -40,6 +40,7 @@ export function ActionItemsIndexPage() {
   const tags = useDebouncedValue(tagsInput.trim());
   const [snapshot, setSnapshot] = useState<DragSnapshot | null>(null);
   const drag = useRef<DragSnapshot | null>(null);
+  const dragFocus = useRef<HTMLButtonElement | null>(null);
   const [savingOrder, setSavingOrder] = useState(false);
   const [pendingId, setPendingId] = useState<number | null>(null);
   const writing = useRef(false);
@@ -60,8 +61,17 @@ export function ActionItemsIndexPage() {
   const current = useRef({ view, items });
   useEffect(() => { current.current = { view, items }; });
   const busy = savingOrder || pendingId !== null;
+  useEffect(() => {
+    if (busy || snapshot) return;
+    const handle = dragFocus.current;
+    dragFocus.current = null;
+    if (handle?.isConnected && !handle.disabled && document.activeElement === document.body) handle.focus({ preventScroll: true });
+  }, [busy, snapshot]);
   const filtered = Boolean(queryInput.trim() || projectInput.trim() || tagsInput.trim() || query || project || tags);
-  const canDrag = status === 'open' && sort === 'manual' && !filtered && !loading && !error && !busy;
+  const reorderableView = status === 'open' && sort === 'manual' && !filtered;
+  // Retain SDK handle identity through its post-drop focus lookup.
+  const dragSurfaceEnabled = reorderableView && !loading && !error;
+  const canDrag = dragSurfaceEnabled && !busy;
   const canDragRef = useRef(canDrag);
   useEffect(() => { canDragRef.current = canDrag; }, [canDrag]);
 
@@ -79,7 +89,7 @@ export function ActionItemsIndexPage() {
   }
 
   async function changeStatus(item: ActionItemRow) {
-    if (writing.current || drag.current) return;
+    if (writing.current || drag.current || loading || error) return;
     writing.current = true;
     setPendingId(item.id);
     try {
@@ -99,6 +109,8 @@ export function ActionItemsIndexPage() {
 
   function startDrag() {
     if (!canDragRef.current || writing.current) return;
+    const focused = document.activeElement;
+    dragFocus.current = focused instanceof HTMLButtonElement && focused.classList.contains('action-item-drag') ? focused : null;
     const captured = { view: current.current.view, items: [...current.current.items] };
     drag.current = captured;
     setSnapshot(captured);
@@ -173,45 +185,48 @@ export function ActionItemsIndexPage() {
       </select></label>
     </div>
     {(filtered || status !== 'open' || sort !== 'manual') && <p className="text-muted-sm">To drag items into order, use Open with Manual order and clear the filters.</p>}
-    {savingOrder && <p role="status">Saving order…</p>}
-    {!snapshot && loading && <p className="loading">Loading action items…</p>}
-    {!snapshot && error && <div className="card" role="alert">Could not load action items. <button className="btn" onClick={() => refresh()}>Retry</button></div>}
-    {(snapshot || (!loading && !error)) && <>
+    <span className="visually-hidden" role="status">{savingOrder ? 'Saving order…' : pendingId !== null ? 'Saving action item…' : ''}</span>
+    {!snapshot && loading && !items.length && <p className="loading">Loading action items…</p>}
+    {!snapshot && error && <div className="card" role="alert">{items.length ? 'Could not refresh action items. The current list is kept.' : 'Could not load action items.'} <button className="btn" onClick={() => refresh({ showLoading: false })}>Retry</button></div>}
+    {(snapshot || items.length > 0 || (!loading && !error)) && <>
       <DragDropContext onBeforeCapture={() => setExpanded(null)} onDragStart={startDrag} onDragEnd={endDrag}>
-        <div className="table-container action-items-container" style={{ overflowX: 'auto' }}>
-          <table className="table action-items-table">
-            <thead><tr><th>Priority</th><th>Title</th><th>Project / tags</th><th>Updated</th><th>Actions</th></tr></thead>
-            <Droppable droppableId="action-items" isDropDisabled={!canDrag}>
-              {provided => <tbody ref={provided.innerRef} {...provided.droppableProps}>
-                {displayed.map((item, index) => <Draggable key={item.id} draggableId={String(item.id)} index={index} isDragDisabled={!canDrag} disableInteractiveElementBlocking>
-                  {(row, state) => <Fragment><tr ref={row.innerRef} {...row.draggableProps} aria-busy={pendingId === item.id}
-                    style={{ ...row.draggableProps.style, background: state.isDragging ? 'var(--surface-hover)' : undefined }}>
-                    <td><div className="flex-row">{canDrag && <button type="button" className="btn btn-sm action-item-drag" {...row.dragHandleProps}
-                      aria-label={`Reorder ${item.title}`} title="Drag to reorder; press Space to use the keyboard">⠿</button>}
-                      <span className="action-item-priority" aria-label={item.priority === null ? 'No open queue priority' : `Priority ${item.priority}`}>{item.priority ?? '—'}</span>
-                    </div></td>
-                    <td><button type="button" id={`action-title-${item.id}`} className="inline-clear action-item-title" aria-label={item.title}
-                      aria-expanded={expandedId === item.id} aria-controls={`action-description-${item.id}`} disabled={busy || Boolean(snapshot)}
-                      onClick={event => { event.stopPropagation(); if (!writing.current && !drag.current) setExpanded(expandedId === item.id ? null : { id: item.id, view }); }}>
-                      <span aria-hidden="true">{expandedId === item.id ? '⌄' : '›'}</span>{item.title}
-                    </button></td>
-                    <td>{item.project && <span className="tag tag-project">{item.project}</span>}
-                      {item.tags.map(tag => <span className="tag" key={tag}>{tag}</span>)}</td>
-                    <td><DateCell date={item.updated_at} /></td>
-                    <td><div className="flex-row">
-                      <ActionItemStatusButton item={item} small disabled={busy || Boolean(snapshot)} onChange={() => { void changeStatus(item); }} />
-                      <button type="button" className="btn btn-sm" aria-label={`Edit ${item.title}`}
-                        disabled={busy || Boolean(snapshot)} onClick={event => { event.stopPropagation(); editItem(item); }}>Edit</button>
-                      {pendingId === item.id && <span className="text-muted-sm" role="status">Saving…</span>}
-                    </div></td>
-                  </tr>{expandedId === item.id && <tr className="evidence-row-expanded"><td colSpan={5}><ActionItemDescription key={`${item.id}:${item.revision}`} item={item} /></td></tr>}</Fragment>}
-                </Draggable>)}
-                {displayed.length === 0 && <tr><td colSpan={5} className="loading">No {status === 'all' ? '' : `${status} `}action items found.</td></tr>}
-                {provided.placeholder}
-              </tbody>}
-            </Droppable>
-          </table>
-        </div>
+        {/* Track page scrolling outside the horizontal table viewport. */}
+        <Droppable droppableId="action-items" isDropDisabled={!canDrag}>
+          {provided => <div ref={provided.innerRef} {...provided.droppableProps}>
+            <div className="table-container action-items-container" style={{ overflowX: 'auto' }}>
+              <table className="table action-items-table">
+                <colgroup><col className="action-priority-column" /><col /><col className="action-topics-column" /><col className="action-updated-column" /><col className="action-controls-column" /></colgroup>
+                <thead><tr><th>Priority</th><th>Title</th><th>Project / tags</th><th>Updated</th><th>Actions</th></tr></thead>
+                <tbody>
+                  {displayed.map((item, index) => <Draggable key={item.id} draggableId={String(item.id)} index={index} isDragDisabled={!dragSurfaceEnabled} disableInteractiveElementBlocking>
+                    {(row, state) => <Fragment><tr ref={row.innerRef} {...row.draggableProps} className="action-item-row" aria-busy={pendingId === item.id}
+                      style={{ ...row.draggableProps.style, display: state.isDragging ? 'table' : undefined, tableLayout: state.isDragging ? 'fixed' : undefined, background: state.isDragging ? 'var(--surface-hover)' : undefined }}>
+                      <td><div className="flex-row">{reorderableView && <button type="button" className="btn btn-sm action-item-drag" {...row.dragHandleProps} disabled={!canDrag}
+                        aria-label={`Reorder ${item.title}`} title="Drag to reorder; press Space to use the keyboard">⠿</button>}
+                        <span className="action-item-priority" aria-label={item.priority === null ? 'No open queue priority' : `Priority ${item.priority}`}>{item.priority ?? '—'}</span>
+                      </div></td>
+                      <td><button type="button" id={`action-title-${item.id}`} className="inline-clear action-item-title" aria-label={item.title}
+                        aria-expanded={expandedId === item.id} aria-controls={`action-description-${item.id}`} disabled={busy || Boolean(snapshot)}
+                        onClick={event => { event.stopPropagation(); if (!writing.current && !drag.current) setExpanded(expandedId === item.id ? null : { id: item.id, view }); }}>
+                        <span aria-hidden="true">{expandedId === item.id ? '⌄' : '›'}</span>{item.title}
+                      </button></td>
+                      <td>{item.project && <span className="tag tag-project">{item.project}</span>}
+                        {item.tags.map(tag => <span className="tag" key={tag}>{tag}</span>)}</td>
+                      <td><DateCell date={item.updated_at} /></td>
+                      <td><div className="flex-row">
+                        <ActionItemStatusButton item={item} small disabled={busy || Boolean(snapshot) || loading || Boolean(error)} onChange={() => { void changeStatus(item); }} />
+                        <button type="button" className="btn btn-sm" aria-label={`Edit ${item.title}`}
+                          disabled={busy || Boolean(snapshot)} onClick={event => { event.stopPropagation(); editItem(item); }}>Edit</button>
+                      </div></td>
+                    </tr>{expandedId === item.id && <tr className="evidence-row-expanded"><td colSpan={5}><ActionItemDescription key={`${item.id}:${item.revision}`} item={item} /></td></tr>}</Fragment>}
+                  </Draggable>)}
+                  {displayed.length === 0 && <tr><td colSpan={5} className="loading">No {status === 'all' ? '' : `${status} `}action items found.</td></tr>}
+                  {provided.placeholder}
+                </tbody>
+              </table>
+            </div>
+          </div>}
+        </Droppable>
       </DragDropContext>
       <Pagination total={total} limit={limit} offset={offset} disabled={freezeControls}
         onPageChange={setOffset} onLimitChange={value => { setLimit(value); setOffset(0); }} />
