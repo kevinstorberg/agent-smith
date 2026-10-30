@@ -78,11 +78,14 @@ describe('ActionItemsIndexPage', () => {
   });
 
   it('debounces typing once, keeps search focused, and resets paging before the new query', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers();
     vi.mocked(api.actionItems.list).mockResolvedValue({ items: rows, total: 25 });
-    await renderReady();
+    renderWithProviders(<ActionItemsIndexPage />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole('link', { name: 'Task 1' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    await waitFor(() => expect(api.actionItems.list).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 })));
+    await act(async () => { await Promise.resolve(); });
+    expect(api.actionItems.list).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 }));
     vi.mocked(api.actionItems.list).mockClear();
     const search = screen.getByLabelText('Search action items');
     search.focus();
