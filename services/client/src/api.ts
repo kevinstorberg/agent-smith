@@ -406,6 +406,8 @@ export interface ProfileMetadataFields {
   start_date?: string; supervisor?: string; other?: string;
 }
 
+export type ProfileMetadataOptions = Record<'gender' | 'marital_status', string[]>;
+
 export type ProfileMetadataSource = { human: true } | {
   human?: false; meeting_id: string; transcript_hash?: string; participants_revision?: number;
   evidence: { segment_id: string; quote: string }[];
@@ -849,6 +851,7 @@ export const api = {
     resume: (id: string) => post<MeetingAnalysisReceipt>(`/meeting-analysis/requests/${encodeURIComponent(id)}/resume`, { confirmed: true }, 30_000),
   },
   profiles: {
+    metadataOptions: () => get<ProfileMetadataOptions>('/profiles/metadata-options'),
     create: (body: { display_name: string; email?: string }) => post<ParticipantProfile>('/profiles?include_evidence=false', body),
     list: (params?: PaginationParams & { q?: string; tags?: string[]; starred?: boolean; sort?: string }) => get<Paginated<ProfileSummary>>('/profiles', {
       ...paginationToParams(params),
