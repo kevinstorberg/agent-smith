@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from services.meetings.profile_fields import METADATA_CHOICES
 from services.meetings.topics import MemoryKind as MemoryKind, TOPIC_LENGTH, TOPIC_LIMIT, normalize_topics
 
 
@@ -81,7 +82,8 @@ class ProfileClaim(_Output):
 
 class ProfileMetadataPatch(_Output):
     subject_id: str = Field(min_length=1, max_length=200)
-    fields: dict[str, str] = Field(min_length=1, max_length=7)
+    fields: dict[str, str] = Field(min_length=1, max_length=7, description="Explicitly supported optional metadata. "
+                                 + "; ".join(f"{key}: {', '.join(choices)}" for key, choices in METADATA_CHOICES.items()))
     evidence: list[Evidence] = Field(min_length=1, max_length=10)
 
     @field_validator("fields")

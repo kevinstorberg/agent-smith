@@ -46,9 +46,9 @@ def test_optional_human_fields_are_partial_searchable_and_revision_checked(clien
     profile = people("Alex")
     assert profile["metadata"] == profile["section_notes"] == {}
     assert profile["nicknames"] == profile["emails"] == profile["relationships"] == []
-    first = save(client, profile, metadata={"company": "Example Labs", "job_role": "Engineer", "gender": "Self-described", "start_date": "2024-02-29"},
+    first = save(client, profile, metadata={"company": "Example Labs", "job_role": "Engineer", "gender": "Other", "start_date": "2024-02-29"},
                  nicknames=[" Lex ", "LEX", "Al"], section_notes={"drivers": "Values reliability", "strengths": "Clear communicator"})
-    second = save(client, first, metadata={"marital_status": "Not specified", "supervisor": "A future contact", "other": "Human context"},
+    second = save(client, first, metadata={"marital_status": "", "supervisor": "A future contact", "other": "Human context"},
                   section_notes={"development_areas": "Delegate earlier"})
     assert second["metadata"]["company"] == "Example Labs"
     assert second["section_notes"] == {"drivers": "Values reliability", "strengths": "Clear communicator", "development_areas": "Delegate earlier"}
