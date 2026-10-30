@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from uuid import UUID
 
-from services.meetings import profile_db
+from services.meetings import profile_db, profile_metadata
 from services.meetings.db import _cursor
 
 DIRECTORY_CHARS = 8_000
@@ -26,11 +26,17 @@ def names(query: str = "", *, offset: int = 0, limit: int = 20) -> dict:
     with _cursor() as cur:
         cur.execute(f"SELECT count(*) AS total FROM participant_profiles p WHERE {where}", params)
         total = cur.fetchone()["total"]
-        cur.execute(f"""SELECT p.id::text,p.display_name,p.nicknames,
+        cur.execute(f"""SELECT p.id::text,p.display_name,p.nicknames,p.revision,
+            ARRAY(SELECT DISTINCT alias.display_name FROM participant_profiles alias
+                WHERE alias.merged_into=p.id ORDER BY alias.display_name) AS aliases,
+            jsonb_strip_nulls(jsonb_build_object('company',left(visible.metadata->>'company',300),
+                'job_role',left(visible.metadata->>'job_role',300),'supervisor',left(visible.metadata->>'supervisor',300))) AS metadata,
+            (SELECT coalesce(jsonb_object_agg(field.key,jsonb_build_object('human',true)), '{{}}'::jsonb)
+                FROM jsonb_each(p.metadata_provenance) field WHERE field.value->>'human'='true') AS metadata_provenance,
             ARRAY(SELECT DISTINCT lower(email) FROM participant_profiles identity
                 WHERE (identity.id=p.id OR identity.merged_into=p.id) AND identity.email IS NOT NULL
                 ORDER BY lower(email)) AS emails
-            FROM participant_profiles p WHERE {where}
+            FROM participant_profiles p CROSS JOIN LATERAL (SELECT {profile_metadata.visible_sql('p')} AS metadata) visible WHERE {where}
             ORDER BY lower(p.display_name),p.id LIMIT %s OFFSET %s""", [*params, limit, offset])
         rows = [dict(row) for row in cur.fetchall()]
     items = []

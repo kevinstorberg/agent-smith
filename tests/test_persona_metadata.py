@@ -14,7 +14,7 @@ from services import config
 from services.db import get_connection
 from services.db.create import create_database
 from services.graphs.runtime import dispatch
-from services.meetings import digestion_db, profile_db, profile_metadata, stage_db
+from services.meetings import digestion_db, profile_db, profile_directory, profile_metadata, speaker_profiles, stage_db
 from services.meetings.analysis import AnalysisBudgetExpired
 from services.meetings.outputs import ProfileMetadataPatch
 from services.personas import service as persona_service
@@ -94,6 +94,8 @@ def test_metadata_apply_and_completion_roll_back_together(metadata_claimed, part
 @pytest.mark.parametrize("change", ["withdrawn", "transcript_deleted", "hash_changed", "attribution_changed"])
 def test_generated_metadata_visibility_matches_source_on_every_read(metadata_claimed, participants, change):
     profile_db.apply_profiles(*metadata_claimed, artifact(participants), participants)
+    before = profile_directory.names(participants[0]["email"])["items"][0]
+    assert before["metadata"]["company"] == "Example Co"
     with get_connection() as connection, connection.cursor() as cursor:
         if change == "withdrawn":
             cursor.execute("UPDATE meeting_summaries SET available=false WHERE id=%s", (metadata_claimed[0],))
@@ -106,6 +108,8 @@ def test_generated_metadata_visibility_matches_source_on_every_read(metadata_cla
     profile = profile_db.get_profile(participants[0]["id"])
     assert profile["metadata"] == profile["metadata_provenance"] == {}
     assert profile_db.load_profiles(participants)[0]["metadata"] == {}
+    assert profile_directory.names(participants[0]["email"])["items"][0]["metadata"] == {}
+    assert speaker_profiles.read_contexts(participants[0]["email"], None, set())["items"][0]["metadata"] == {}
     assert profile_db.list_profiles(query="Example Co")["total"] == 0
     listed = profile_db.list_profiles(query=participants[0]["email"])["items"]
     assert len(listed) == 1 and listed[0]["metadata"] == {}

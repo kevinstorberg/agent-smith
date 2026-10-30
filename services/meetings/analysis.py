@@ -84,6 +84,10 @@ class AnalysisBudgetExpired(TimeoutError):
     pass
 
 
+class AnalysisInputChanged(RuntimeError):
+    pass
+
+
 class ModelCallTimeoutError(TimeoutError):
     pass
 
@@ -252,6 +256,7 @@ async def run_analysis(
     deadline: float | None = None,
     model_call_limit: int | None = None,
     tool_call_limit: int | None = None,
+    middleware: list | None = None,
 ) -> dict:
     loop = asyncio.get_running_loop()
     model_call_limit = MODEL_CALL_LIMIT if model_call_limit is None else model_call_limit
@@ -275,6 +280,7 @@ async def run_analysis(
                     ModelCallLimitMiddleware(run_limit=model_call_limit, exit_behavior="error"),
                     ToolCallLimitMiddleware(run_limit=tool_call_limit, exit_behavior="error"),
                     _ModelDeadline(deadline),
+                    *(middleware or []),
                 ],
             )
             await agent.ainvoke(
@@ -284,7 +290,7 @@ async def run_analysis(
             )
             if not context.collector:
                 raise error_class(f"{label} analysis ended without a valid staged result")
-    except (error_class, AnalysisBudgetExpired):
+    except (error_class, AnalysisBudgetExpired, AnalysisInputChanged):
         raise
     except TimeoutError as error:
         if attempt.expired():

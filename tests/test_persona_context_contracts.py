@@ -124,6 +124,7 @@ def test_agent_profile_context_keeps_human_edits_without_duplicate_relationship_
         "id": identifier, "display_name": "Alex", "revision": 4, "identity_scope": "email",
         "metadata": {"job_role": "Engineering lead"}, "nicknames": ["Lex"],
         "section_notes": {"drivers": "Human priority"},
+        "section_evidence": {"drivers": {"human": True, "status": "supported", "claim_ids": ["private-hash"], "sources": ["private-source"]}},
         "claims": [{"content": "source evidence " * 2000}],
         "relationships": [{"subject_id": identifier, "target_id": str(uuid4()), "notes": "Human relationship context",
                            "claims": [{"content": "duplicate evidence " * 2000}], "history": [{"content": "old context " * 2000}]}],
@@ -131,6 +132,7 @@ def test_agent_profile_context_keeps_human_edits_without_duplicate_relationship_
     result = profile_analysis._profiles_context([profile], max_chars=2000)[0]
     assert result["section_notes"] == profile["section_notes"] and result["metadata"] == profile["metadata"]
     assert result["nicknames"] == ["Lex"] and result["claim_count"] == 1
+    assert result["section_evidence"] == {"drivers": {"human": True, "status": "supported"}}
     assert result["relationships"][0]["notes"] == "Human relationship context"
     assert "claims" not in result["relationships"][0] and "history" not in result["relationships"][0]
     assert len(json.dumps(result)) <= 2000

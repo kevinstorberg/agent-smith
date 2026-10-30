@@ -5,14 +5,16 @@ import copy
 from psycopg2.extras import Json
 
 from services.meetings import profile_db, stage_db
-from services.meetings.db import _cursor
+from services.meetings.analysis import AnalysisInputChanged
+from services.meetings.db import _cursor, _serialize
+from services.meetings.digestion_db import _SNAPSHOT_FIELDS
 
 
-class AttributionInputChanged(RuntimeError):
+class AttributionInputChanged(AnalysisInputChanged):
     pass
 
 
-class PersonaAttributionBusy(RuntimeError):
+class PersonaAttributionBusy(AnalysisInputChanged):
     pass
 
 
@@ -37,12 +39,19 @@ def prepare(meeting_id: str, owner: str, transcript_hash: str) -> tuple[dict, di
         if record.get("profile_claim_until") and record["profile_claim_until"] > meeting["checked_at"]:
             raise PersonaAttributionBusy("An active persona review is finishing its participant snapshot")
         artifact = copy.deepcopy(record["speaker_artifact"])
+        profiles_current = _profiles_current(cur, artifact.get("profile_revisions", {}))
         if (artifact.get("input_transcript_hash") != transcript_hash
-                or artifact.get("input_participants_revision") != meeting["participants_revision"]):
+                or artifact.get("input_participants_revision") != meeting["participants_revision"]
+                or artifact.get("input_source_revision") != meeting["revision"] or not profiles_current):
             artifact = {key: artifact[key] for key in ("assignments", "committed_transcript_hash", "repair", "profile_repair_required") if key in artifact}
             artifact.update(version=1, offset=0, draft_assignments=[], input_transcript_hash=transcript_hash,
-                            input_participants_revision=meeting["participants_revision"], manual_snapshot=meeting["manual_participants"])
-        return record, artifact
+                            input_participants_revision=meeting["participants_revision"], manual_snapshot=meeting["manual_participants"],
+                            input_source_revision=meeting["revision"], profile_revisions={})
+        ids = {entry["profile_id"] for entry in artifact["manual_snapshot"] if entry.get("profile_id")}
+        canonical = profile_db.canonical_rows(cur, list(ids), metadata_only=True)
+        manual_context = [{**entry, **({"profile_id": str(canonical[entry["profile_id"]]["id"])}
+                          if entry.get("profile_id") and canonical.get(entry["profile_id"]) else {})} for entry in artifact["manual_snapshot"]]
+        return {**record, "snapshot": _serialize({key: meeting[key] for key in _SNAPSHOT_FIELDS}), "manual_context": manual_context}, artifact
 
 
 def _current(cur, meeting_id: str, owner: str, transcript_hash: str, artifact: dict) -> tuple[dict, dict]:
@@ -51,9 +60,33 @@ def _current(cur, meeting_id: str, owner: str, transcript_hash: str, artifact: d
     meeting = dict(cur.fetchone())
     if meeting["participants_revision"] != artifact.get("input_participants_revision"):
         raise AttributionInputChanged("Participant assignments changed; restart only the unfinished identification draft")
+    if meeting["revision"] != artifact.get("input_source_revision", meeting["revision"]):
+        raise AttributionInputChanged("Meeting context changed; restart only the unfinished identification draft")
     if record.get("profile_claim_until") and record["profile_claim_until"] > meeting["checked_at"]:
         raise PersonaAttributionBusy("An active persona review is finishing its participant snapshot")
     return record, meeting
+
+
+def _profiles_current(cur, expected: dict, *, lock: bool = False) -> bool:
+    rows = profile_db.canonical_rows(cur, list(expected), metadata_only=True, lock=lock)
+    return all(rows.get(key) and not rows[key]["deleted"] and str(rows[key]["id"]) == key
+               and rows[key]["revision"] == revision for key, revision in expected.items())
+
+
+def validate_context(meeting_id: str, owner: str, transcript_hash: str, artifact: dict, expected_profiles: dict) -> dict:
+    with _cursor() as cur:
+        _current(cur, meeting_id, owner, transcript_hash, artifact)
+        expected = dict(artifact.get("profile_revisions", {}))
+        for key, revision in expected_profiles.items():
+            if expected.get(key) is not None and revision is not None and expected[key] != revision:
+                raise AttributionInputChanged("Known profile context changed between speaker windows")
+            if expected.get(key) is None:
+                expected[key] = revision
+        rows = profile_db.canonical_rows(cur, list(expected), metadata_only=True)
+        if any(not rows.get(key) or rows[key]["deleted"] or str(rows[key]["id"]) != key
+               or revision is not None and rows[key]["revision"] != revision for key, revision in expected.items()):
+            raise AttributionInputChanged("Known profile context changed; restart only the unfinished identification draft")
+        return {key: rows[key]["revision"] for key in expected}
 
 
 def save_progress(meeting_id: str, owner: str, transcript_hash: str, artifact: dict) -> None:
@@ -77,6 +110,8 @@ def apply(meeting_id: str, owner: str, transcript_hash: str, artifact: dict) -> 
     stage_db.validate_artifact(artifact)
     with profile_db.profile_write_cursor() as cur:
         record, meeting = _current(cur, meeting_id, owner, transcript_hash, artifact)
+        if not _profiles_current(cur, artifact.get("profile_revisions", {}), lock=True):
+            raise AttributionInputChanged("Known profile context changed before participant publication")
         assignments = artifact.get("draft_assignments", [])
         ids = {entry["profile_id"] for entry in assignments if entry.get("profile_id")}
         if ids:

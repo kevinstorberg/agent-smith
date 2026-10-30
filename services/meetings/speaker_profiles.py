@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from services.meetings import profile_db, profile_directory
+from services.meetings.speaker_context import candidates, encoded_size, identities
 
 PROFILE_CONTEXT_BYTES = 8_000
 
@@ -16,9 +17,13 @@ def _context(profile: dict) -> dict:
     relationships = profile.get("relationships") or []
     return {
         "profile_id": profile["id"], "name": profile["display_name"],
+        "revision": profile.get("revision", 0),
         "nicknames": [_text(name, 200) for name in profile.get("nicknames", [])[:6]],
+        "aliases": [_text(alias["display_name"], 200) for alias in profile.get("aliases", [])[:6]],
         "emails": profile.get("emails", [])[:6],
         "company": _text(metadata.get("company"), 300), "job_role": _text(metadata.get("job_role"), 300),
+        "metadata": {field: _text(value, 1000 if field == "other" else 300) for field, value in metadata.items()},
+        "metadata_provenance": {field: {"human": bool(proof.get("human"))} for field, proof in profile.get("metadata_provenance", {}).items()},
         "overview": _text((profile.get("section_notes") or {}).get("overview"), 1500),
         "relationships": [{key: _text(edge.get(key), 200) for key in ("subject_name", "target_name", "label", "notes")} | {
             "human_confirmed": bool(edge.get("human_confirmed")),
@@ -57,6 +62,27 @@ def read_contexts(query: str, profile_id: str | None, known_ids: set[str]) -> di
 
 
 def identity_candidates(contexts: list[dict]) -> list[dict]:
-    return [{"name": name, "profile_id": profile["profile_id"], **({"email": email} if email else {})}
-            for profile in contexts for name in [profile["name"], *profile.get("nicknames", [])]
-            for email in (profile.get("emails") or [None])]
+    return identities(contexts)
+
+
+def directory_candidates(rows: list[dict]) -> list[dict]:
+    return identity_candidates([{**row, "name": row["display_name"], "profile_id": row["id"]} for row in rows])
+
+
+def attached_candidates(snapshot: dict) -> list[dict]:
+    selected, seen = [], set()
+    for person in candidates(snapshot):
+        key = person.get("profile_id") or person.get("email")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        if len(seen) > 6:
+            break
+        envelope = read_contexts("" if person.get("profile_id") else person["email"], person.get("profile_id"), {key})
+        for context in envelope.get("items", []):
+            context = {**context, "metadata": {field: value for field, value in context["metadata"].items()
+                                               if field in {"company", "job_role", "supervisor"}}}
+            for candidate in identity_candidates([context]):
+                if candidate not in selected and encoded_size([*selected, candidate]) <= PROFILE_CONTEXT_BYTES:
+                    selected.append(candidate)
+    return selected

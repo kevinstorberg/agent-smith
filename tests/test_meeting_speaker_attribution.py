@@ -250,7 +250,7 @@ async def test_identity_continuation_resumes_disjoint_windows_without_replaying_
     segments = [TranscriptSegment(f"I'm Person {index}.", {"source": "speaker", "attribution": "them"}).to_dict(index) for index in range(41)]
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("UPDATE meeting_digestions SET speaker_status='pending',transcript=%s WHERE meeting_id=%s", (Json({"segments": segments}), ready))
-    windows, paused = [], False
+    windows, contexts, paused = [], [], False
 
     async def identify(snapshot, targets, **kwargs):
         nonlocal paused
@@ -258,7 +258,8 @@ async def test_identity_continuation_resumes_disjoint_windows_without_replaying_
             paused = True
             raise AnalysisBudgetExpired("Synthetic stage budget")
         windows.append([target["id"] for target in targets])
-        return {"assignments": [], "reason": "Unresolved"}
+        contexts.append(kwargs)
+        return {"assignments": [assignment(targets[0], "Person 0")] if targets[0]["id"] == "segment-0" else [], "reason": "Unresolved"}
 
     monkeypatch.setattr(speaker_analysis, "identify_statements", identify)
     async with DigestionRun(source.name) as run:
@@ -272,6 +273,9 @@ async def test_identity_continuation_resumes_disjoint_windows_without_replaying_
         await run.identify_participants()
         assert run.speaker_report["outcome"] == "done"
     assert [key for window in windows for key in window] == [segment["id"] for segment in segments]
+    assert any(row["id"] == "segment-0" and row["text"] == "I'm Person 0." for row in contexts[-1]["context"])
+    assert contexts[-1]["anchors"][0]["segment_id"] == "segment-0"
+    assert contexts[-1]["anchors"][0]["text"] == "I'm Person 0." and contexts[-1]["anchors"][0]["source"] == "earlier_window"
 
 
 def test_real_roster_is_retained_when_directory_exceeds_candidate_budget():
