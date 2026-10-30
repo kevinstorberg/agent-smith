@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from services.api.routers.base import delete_response
+from services.api.routers.base import delete_response, require_found
 from services.meetings import vocabulary_db
 
 router = APIRouter()
@@ -26,9 +26,9 @@ class DeleteTermRequest(BaseModel):
     expected_revision: int = Field(ge=1, strict=True)
 
 
-def _change(function, *args):
+def _change(function, *args, **kwargs):
     try:
-        return function(*args)
+        return function(*args, **kwargs)
     except vocabulary_db.VocabularyConflictError as error:
         raise HTTPException(status_code=409, detail=str(error)) from None
     except LookupError as error:
@@ -38,8 +38,13 @@ def _change(function, *args):
 
 
 @router.get("")
-def list_terms():
-    return vocabulary_db.list_terms()
+def list_terms(q: str = Query("", max_length=1000), limit: int | None = Query(None, ge=1, le=100), offset: int = Query(0, ge=0)):
+    return _change(vocabulary_db.list_terms, query=q, limit=limit, offset=offset)
+
+
+@router.get("/{term_id}")
+def get_term(term_id: UUID):
+    return require_found(_change(vocabulary_db.get_term, str(term_id)), "Vocabulary term", str(term_id))
 
 
 @router.post("", status_code=201)
