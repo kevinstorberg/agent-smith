@@ -11,6 +11,8 @@ import { EvalsPage } from './pages/EvalsPage';
 import { EvalDetailPage } from './pages/EvalDetailPage';
 import { PlansIndexPage } from './pages/PlansIndexPage';
 import { PlanDetailPage } from './pages/PlanDetailPage';
+import { ActionItemsIndexPage } from './pages/ActionItemsIndexPage';
+import { ActionItemDetailPage } from './pages/ActionItemDetailPage';
 import { JobsIndexPage } from './pages/JobsIndexPage';
 import { JobDetailPage } from './pages/JobDetailPage';
 import { ProposalsIndexPage } from './pages/ProposalsIndexPage';
@@ -61,6 +63,9 @@ export default function App() {
           <Route path="/harness/agent/new" element={<HarnessCreatePage />} />
           <Route path="/harness/:type/:id" element={<HarnessDetailPage />} />
           <Route path="/memory" element={<MemoryPage />} />
+          <Route path="/action-items" element={<ActionItemsIndexPage />} />
+          <Route path="/action-items/new" element={<ActionItemDetailPage />} />
+          <Route path="/action-items/:id" element={<ActionItemDetailPage />} />
           <Route path="/meetings" element={<MeetingsIndexPage />} />
           <Route path="/meetings/:id" element={<MeetingRoute />} />
           <Route path="/meetings/profiles/:id" element={<LegacyProfileRedirect />} />

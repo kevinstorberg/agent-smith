@@ -11,7 +11,7 @@ export class ApiError extends Error {
 }
 
 async function parseError(res: Response): Promise<never> {
-  const body = await res.json().catch(() => null);
+  const body = await res.json().catch(error => { if (isAborted(error)) throw error; return null; });
   const detail = body?.detail;
   const message = typeof detail === 'string'
     ? detail
@@ -22,7 +22,31 @@ async function parseError(res: Response): Promise<never> {
   throw new ApiError(message, res.status);
 }
 
-async function get<T>(path: string, params?: Record<string, string | string[]>): Promise<T> {
+function isAborted(error: unknown): boolean {
+  const name = error && typeof error === 'object' && 'name' in error ? error.name : null;
+  return typeof name === 'string' && ['TimeoutError', 'AbortError'].includes(name);
+}
+
+async function request<T>(input: string, options?: RequestInit, timeoutMs?: number, allowEmpty = false): Promise<T> {
+  try {
+    const res = await (timeoutMs === undefined
+      ? options === undefined ? fetch(input) : fetch(input, options)
+      : fetch(input, { ...options, signal: AbortSignal.timeout(timeoutMs) }));
+    if (!res.ok) await parseError(res);
+    if (allowEmpty) {
+      const text = await res.text();
+      return text ? JSON.parse(text) : (undefined as T);
+    }
+    return await res.json();
+  } catch (error) {
+    if (timeoutMs !== undefined && isAborted(error)) {
+      throw new Error('The request timed out. Refresh to check whether your change was saved before trying again.');
+    }
+    throw error;
+  }
+}
+
+async function get<T>(path: string, params?: Record<string, string | string[]>, timeoutMs?: number): Promise<T> {
   const url = new URL(path, window.location.origin);
   url.pathname = BASE + path;
   if (params) {
@@ -34,49 +58,38 @@ async function get<T>(path: string, params?: Record<string, string | string[]>):
       }
     });
   }
-  const res = await fetch(url.toString());
-  if (!res.ok) await parseError(res);
-  return res.json();
+  return request<T>(url.toString(), undefined, timeoutMs);
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(BASE + path, {
+async function post<T>(path: string, body: unknown, timeoutMs?: number): Promise<T> {
+  return request<T>(BASE + path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  });
-  if (!res.ok) await parseError(res);
-  return res.json();
+  }, timeoutMs);
 }
 
 async function put<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(BASE + path, {
+  return request<T>(BASE + path, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) await parseError(res);
-  return res.json();
 }
 
-async function patch<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(BASE + path, {
+async function patch<T>(path: string, body: unknown, timeoutMs?: number): Promise<T> {
+  return request<T>(BASE + path, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  });
-  if (!res.ok) await parseError(res);
-  return res.json();
+  }, timeoutMs);
 }
 
-async function del<T = void>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(BASE + path, {
+async function del<T = void>(path: string, body?: unknown, timeoutMs?: number): Promise<T> {
+  return request<T>(BASE + path, {
     method: 'DELETE',
     ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-  });
-  if (!res.ok) await parseError(res);
-  const text = await res.text();
-  return text ? JSON.parse(text) : (undefined as T);
+  }, timeoutMs, true);
 }
 
 export interface Paginated<T> {
@@ -88,6 +101,25 @@ export interface PaginationParams {
   limit?: number;
   offset?: number;
 }
+
+export type ActionItemStatus = 'open' | 'completed';
+export type ActionItemSort = 'manual' | 'newest' | 'updated' | 'title' | 'completed';
+export interface ActionItemRow {
+  id: number; title: string; project: string | null; tags: string[]; status: ActionItemStatus;
+  completed_at: string | null; revision: number; created_at: string; updated_at: string;
+}
+export interface ActionItem extends ActionItemRow { description: string }
+export interface ActionItemFields {
+  title: string; description?: string | null; project?: string | null; tags?: string[] | null; status?: ActionItemStatus;
+}
+export interface ActionItemCreate extends Omit<ActionItemFields, 'description' | 'tags'> { description?: string; tags?: string[]; request_id: string }
+export interface ActionItemPatch extends Partial<ActionItemFields> { expected_revision: number }
+export type ActionItemMove = { expected_revision: number } & ({ before_id: number; after_id?: never } | { after_id: number; before_id?: never });
+export interface ActionItemFilters extends PaginationParams {
+  q?: string; project?: string; tags?: string[]; status?: ActionItemStatus | 'all'; sort?: ActionItemSort;
+}
+
+const ACTION_ITEM_TIMEOUT_MS = 30_000;
 
 export interface AssignableAgents {
   agents: string[];
@@ -659,6 +691,22 @@ function paginationToParams(p?: PaginationParams): Record<string, string> {
 }
 
 export const api = {
+  actionItems: {
+    list: (filters: ActionItemFilters = {}) => {
+      const params: Record<string, string | string[]> = paginationToParams(filters);
+      if (filters.q) params.q = filters.q;
+      if (filters.project) params.project = filters.project;
+      if (filters.tags?.length) params.tags = filters.tags;
+      if (filters.status) params.status = filters.status;
+      if (filters.sort) params.sort = filters.sort;
+      return get<Paginated<ActionItemRow>>('/action-items', params, ACTION_ITEM_TIMEOUT_MS);
+    },
+    get: (id: number) => get<ActionItem>(`/action-items/${id}`, undefined, ACTION_ITEM_TIMEOUT_MS),
+    create: (body: ActionItemCreate) => post<ActionItem>('/action-items', body, ACTION_ITEM_TIMEOUT_MS),
+    update: (id: number, body: ActionItemPatch) => patch<ActionItem>(`/action-items/${id}`, body, ACTION_ITEM_TIMEOUT_MS),
+    remove: (id: number, expectedRevision: number) => del<{ deleted: boolean; id: number }>(`/action-items/${id}`, { expected_revision: expectedRevision }, ACTION_ITEM_TIMEOUT_MS),
+    move: (id: number, body: ActionItemMove) => post<ActionItem>(`/action-items/${id}/move`, body, ACTION_ITEM_TIMEOUT_MS),
+  },
   harness: {
     assignableAgents: () => get<AssignableAgents>('/harness/agents/assignable'),
     rules: () => get<Rule[]>('/harness/rules'),

@@ -10,6 +10,7 @@ export interface DetailPageHeaderProps {
   deleteConfirmMessage?: string;
   showActions?: boolean;
   disabled?: boolean;
+  saveDisabled?: boolean;
 }
 
 /**
@@ -28,6 +29,7 @@ export function DetailPageHeader({
   deleteConfirmMessage,
   showActions = true,
   disabled = false,
+  saveDisabled = false,
 }: DetailPageHeaderProps) {
   const handleDelete = () => {
     if (deleteConfirmMessage && !confirm(deleteConfirmMessage)) {
@@ -83,7 +85,7 @@ export function DetailPageHeader({
               <button
                 className="btn"
                 onClick={onSave}
-                disabled={saving || disabled}
+                disabled={saving || disabled || saveDisabled}
               >
                 {saving ? 'Saving...' : 'Save'}
               </button>

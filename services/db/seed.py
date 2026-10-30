@@ -3,6 +3,7 @@ from __future__ import annotations
 from services.config import ALL_AGENTS, MCP_BASE
 
 MCP_SERVERS = [
+    ("action-items", f"{MCP_BASE}/mcp/action-items/", "Create and manage a shared to-do list"),
     ("memory", f"{MCP_BASE}/mcp/memory/", "Store and search observations, learnings, and context"),
     ("plans", f"{MCP_BASE}/mcp/plans/", "Save and retrieve implementation plans and strategies"),
     ("harness", f"{MCP_BASE}/mcp/harness/", "Manage rules, skills, tools, hooks, and agents"),

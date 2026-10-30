@@ -16,6 +16,48 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('action items', () => {
+  it('sends paging, combined filters and a bounded deadline to the real fetch boundary', async () => {
+    globalThis.fetch = mockFetch({ items: [], total: 0 });
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    await api.actionItems.list({ q: 'roadmap', project: 'Paralign', tags: ['product', 'growth'], status: 'open', sort: 'manual', limit: 10, offset: 20 });
+    const [url, options] = vi.mocked(globalThis.fetch).mock.calls[0];
+    const query = new URL(String(url)).searchParams;
+    expect(query.getAll('tags')).toEqual(['product', 'growth']);
+    expect(Object.fromEntries(query)).toMatchObject({ q: 'roadmap', project: 'Paralign', status: 'open', sort: 'manual', limit: '10', offset: '20' });
+    expect(timeout).toHaveBeenCalledWith(30_000);
+    expect(options?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('preserves request identity, explicit clears, revisions and a relative move anchor', async () => {
+    globalThis.fetch = mockFetch({ id: 5 });
+    await api.actionItems.create({ title: 'Review scope', request_id: '9d773b2b-9ab3-4a56-925e-ac41634522fa' });
+    await api.actionItems.update(5, { expected_revision: 3, project: null, tags: [], description: '', status: 'completed' });
+    await api.actionItems.move(5, { expected_revision: 4, after_id: 10 });
+    await api.actionItems.remove(5, 5);
+    const calls = vi.mocked(globalThis.fetch).mock.calls;
+    expect(JSON.parse(String(calls[0][1]?.body))).toEqual({ title: 'Review scope', request_id: '9d773b2b-9ab3-4a56-925e-ac41634522fa' });
+    expect(JSON.parse(String(calls[1][1]?.body))).toEqual({ expected_revision: 3, project: null, tags: [], description: '', status: 'completed' });
+    expect(JSON.parse(String(calls[2][1]?.body))).toEqual({ expected_revision: 4, after_id: 10 });
+    expect(JSON.parse(String(calls[3][1]?.body))).toEqual({ expected_revision: 5 });
+    expect(calls[3][1]?.method).toBe('DELETE');
+  });
+
+  it('reports uncertain timeout outcomes without adding deadlines to existing job calls', async () => {
+    globalThis.fetch = vi.fn().mockRejectedValueOnce(new DOMException('Timed out', 'TimeoutError')).mockImplementation(mockFetch({}));
+    await expect(api.actionItems.create({ title: 'Task', request_id: '9d773b2b-9ab3-4a56-925e-ac41634522fa' })).rejects.toThrow('Refresh to check whether your change was saved');
+    await api.jobs.runNow(1);
+    expect(vi.mocked(globalThis.fetch).mock.calls[1][1]).not.toHaveProperty('signal');
+  });
+
+  it.each(['json', 'text', 'error'] as const)('keeps the deadline through %s response decoding after headers arrive', async kind => {
+    const aborted = () => Promise.reject(new DOMException('Body stopped', 'AbortError'));
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: kind !== 'error', status: 503, statusText: 'Unavailable', json: aborted, text: aborted });
+    const result = kind === 'text' ? api.actionItems.remove(5, 1) : api.actionItems.get(5);
+    await expect(result).rejects.toThrow('Refresh to check whether your change was saved');
+  });
+});
+
 describe('parseError (tested through api methods)', () => {
   it('requests scoped plan searches, graph jobs and exact executions through existing APIs', async () => {
     globalThis.fetch = mockFetch({ items: [], total: 0 });

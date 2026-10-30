@@ -18,6 +18,7 @@ const NAV_SECTIONS = [{ id: 'harness', links: [
   { path: '/proposals', label: 'Proposals' },
   { path: '/evals', label: 'Results' },
 ] }, { id: 'external', links: [
+  { path: '/action-items', label: 'Action items' },
   { path: '/chat', label: 'Chat' },
   { path: '/meetings', label: 'Meetings' },
   { path: '/memory', label: 'Memory' },
