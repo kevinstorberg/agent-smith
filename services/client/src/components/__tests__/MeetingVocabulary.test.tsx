@@ -236,9 +236,9 @@ describe('MeetingVocabulary', () => {
     expect(await screen.findByText('This term was removed. Cancel to add a new entry.')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Save term' })).toBeDisabled();
     expect(screen.getByLabelText('Term')).toHaveValue('LTV');
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Cancel' })); });
     fireEvent.click(screen.getByRole('button', { name: 'Delete LTV' }));
-    fireEvent.change(screen.getByLabelText('Search vocabulary'), { target: { value: 'LTV' } });
+    await act(async () => { fireEvent.change(screen.getByLabelText('Search vocabulary'), { target: { value: 'LTV' } }); });
     expect(screen.queryByRole('button', { name: 'Confirm delete' })).not.toBeInTheDocument();
     expect(vocabulary.remove).not.toHaveBeenCalled();
   });

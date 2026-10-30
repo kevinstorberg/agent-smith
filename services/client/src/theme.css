@@ -1136,9 +1136,10 @@ pre {
 .management-list { list-style: none; display: grid; gap: 12px; }
 .vocabulary-table { table-layout: fixed; }
 .vocabulary-term-cell { width: 28%; }
-.vocabulary-actions-cell { width: 132px; }
+.vocabulary-actions-cell { width: 160px; }
 .vocabulary-actions { display: flex; flex-wrap: nowrap; justify-content: flex-end; align-items: center; gap: 8px; }
 .vocabulary-preview { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meeting-vocabulary .pagination-controls { flex-wrap: wrap; min-width: 0; }
 .management-row,
 .relationship-row { border-top: 1px solid var(--border); padding: 12px 0; overflow-wrap: anywhere; }
 .profile-field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; margin: 12px 0; }

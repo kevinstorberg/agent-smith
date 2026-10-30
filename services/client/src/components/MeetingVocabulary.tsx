@@ -81,7 +81,7 @@ export function MeetingVocabulary() {
     change.mutate({ action: 'save', draft: { ...draft, term: draft.term.trim(), definition: draft.definition.trim(), entry: conflicted ? latest! : draft.entry } });
   };
   const loading = list.loading || clamping;
-  return <section className="card" aria-label="Meeting vocabulary">
+  return <section className="card meeting-vocabulary" aria-label="Meeting vocabulary">
     <div className="page-header profiles-header">
       <h3 className="section-title">Vocabulary</h3>
       {!draft && <button className="btn btn-primary" disabled={busy || loading} onClick={() => start()}>Add term</button>}
@@ -89,7 +89,7 @@ export function MeetingVocabulary() {
     <p className="text-muted-sm" style={{ marginTop: 12 }}>Terms and meanings that guide new meeting memories.</p>
     <div className="search-bar" style={{ marginTop: 16 }}>
       <label className="form-label" htmlFor="vocabulary-search">Search vocabulary</label>
-      <input id="vocabulary-search" className="input" value={search} placeholder="Search terms or definitions..." onChange={event => { setSearch(event.target.value); setRemoving(null); }} />
+      <input id="vocabulary-search" className="input" maxLength={1000} value={search} placeholder="Search terms or definitions..." onChange={event => { setSearch(event.target.value); setRemoving(null); }} />
     </div>
     {loading && <p role="status">Loading vocabulary...</p>}
     {list.error && <p role="alert">Could not load vocabulary. <button className="btn btn-sm" onClick={() => list.refresh()}>Retry</button></p>}
@@ -107,7 +107,7 @@ export function MeetingVocabulary() {
     </form>}
     {!loading && !list.error && list.total === 0 && <p className="text-muted-sm">{query ? 'No vocabulary terms match your search.' : 'No vocabulary terms yet.'}</p>}
     {!loading && !list.error && list.items.length > 0 && <div className="table-container" style={{ marginTop: 16 }}>
-      <table className="table vocabulary-table" aria-label="Vocabulary terms"><thead><tr><th className="vocabulary-term-cell">Term</th><th>Definition</th><th className="vocabulary-actions-cell">Actions</th></tr></thead>
+      <table className="table vocabulary-table" aria-label="Vocabulary terms"><thead><tr><th className="vocabulary-term-cell">Term</th><th>Meaning</th><th className="vocabulary-actions-cell">Actions</th></tr></thead>
         <tbody>{list.items.map(entry => <tr key={entry.id}>
           <td><strong className="vocabulary-preview" title={entry.term}>{entry.term}</strong></td>
           <td><span className="vocabulary-preview" title={entry.definition}>{entry.definition || '—'}</span></td>
