@@ -2,15 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Link } from 'react-router';
 import { api, ApiError } from '../api';
-import type { ParticipantProfile, ProfileRelationship, ProfileSummary } from '../api';
+import type { ParticipantProfile, ProfileRelationshipCard, ProfileSummary } from '../api';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { formatProfileCoverage } from '../utils/profileFields';
 import { ProfilePicker } from './ProfilePicker';
-import { ProfileNotes } from './ProfileNotes';
 
 interface Draft {
-  edge: ProfileRelationship | null; target: ProfileSummary | null; label: string; notes: string;
-  notesChanged: boolean; revision: number; refreshAfter: ParticipantProfile | null;
+  kind: 'create' | 'edit' | 'assign'; card: ProfileRelationshipCard | null;
+  name: string; profileId: string | null; targetRevision: number | null;
+  identityChanged: boolean; label: string; labelChanged: boolean; notes: string; notesChanged: boolean;
+  revision: number; assignmentVersion: string | null;
 }
 
 export function ProfileRelationships({ profile, disabled, onBusyChange, onReload }: {
@@ -18,117 +19,144 @@ export function ProfileRelationships({ profile, disabled, onBusyChange, onReload
 }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [refreshAfter, setRefreshAfter] = useState<ParticipantProfile | null>(null);
   const [targets, setTargets] = useState<ProfileSummary[]>([]);
-  const [contextBusy, setContextBusy] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const latestProfile = useRef(profile);
+  const mutating = useRef(false);
+  const assignmentDialog = useRef<HTMLDialogElement>(null);
+  const assignmentButton = useRef<HTMLButtonElement>(null);
+  const addButton = useRef<HTMLButtonElement>(null);
+  const focusAfterClose = useRef<'assign' | 'add' | null>(null);
   useEffect(() => { latestProfile.current = profile; }, [profile]);
-  const legacyProof = profile.section_evidence?.relationships;
-  const legacyProtected = legacyProof ? legacyProof.human === true : Object.hasOwn(profile.section_notes || {}, 'relationships');
-  const edges = (profile.relationships || []).filter(edge => !edge.dismissed);
-  const hasSavedContext = profile.section_notes?.relationships !== undefined || legacyProtected || contextBusy;
-  const hasContextText = Boolean(profile.section_notes?.relationships);
-  const hasPersonAnalysis = edges.some(edge => Boolean(edge.notes) || edge.analysis_evidence?.human === true
-    || edge.analysis_evidence?.origin === 'human' || Boolean(edge.analysis_evidence?.generated_at));
-  const currentEdge = draft?.edge ? edges.find(edge => edge.id === draft.edge!.id) : undefined;
-  const failed = (failure: Error) => {
-    if (failure instanceof ApiError && failure.status === 409) {
-      const refreshedAfter = latestProfile.current;
-      setDraft(previous => previous && { ...previous, refreshAfter: refreshedAfter });
-      setRefreshVersion(value => value + 1);
-      setNotice('This relationship or profile changed. Review the refreshed information and save again.'); onReload();
-    } else setNotice('Could not save this relationship. Your draft is retained.');
+  useEffect(() => {
+    if (draft?.kind === 'assign' && assignmentDialog.current && !assignmentDialog.current.open) assignmentDialog.current.showModal();
+    else if (draft?.kind !== 'assign' && focusAfterClose.current) {
+      (focusAfterClose.current === 'assign' ? assignmentButton.current || addButton.current : addButton.current)?.focus();
+      focusAfterClose.current = null;
+    }
+  }, [draft?.kind]);
+  const cards = profile.relationship_cards;
+  const currentCard = draft?.card ? cards.find(card => card.id === draft.card!.id) : undefined;
+  const unassigned = profile.relationship_unassigned;
+  const waitingForRefresh = refreshAfter !== null && profile === refreshAfter;
+  const unavailable = Boolean(draft?.card && (!currentCard || (currentCard.status === 'stale' && !currentCard.notes && draft.card.status !== 'stale')))
+    || Boolean(draft?.kind === 'assign' && !unassigned);
+  const refreshedCard = refreshAfter !== null && !waitingForRefresh ? currentCard : undefined;
+  const name = refreshedCard && !draft?.identityChanged ? refreshedCard.name : draft?.name || '';
+  const profileId = refreshedCard && !draft?.identityChanged ? refreshedCard.profile_id : draft?.profileId;
+  const label = refreshedCard && !draft?.labelChanged ? refreshedCard.label : draft?.label || '';
+  const notes = draft?.kind === 'assign' ? unassigned?.notes || '' : refreshedCard && !draft?.notesChanged ? refreshedCard.notes : draft?.notes || '';
+  const closeDraft = (restoreAssignmentFocus: boolean) => {
+    if (draft?.kind === 'assign') focusAfterClose.current = restoreAssignmentFocus ? 'assign' : 'add';
+    setDraft(null); setNotice(null); setRefreshAfter(null);
   };
-  const saved = () => { setDraft(null); setNotice(null); onReload(); };
-  const save = useApiMutation({
-    mutationFn: () => {
-      const edit = draft!;
-      const notes = edit.notesChanged ? { notes: edit.notes.trim() } : {};
-      if (edit.edge) return api.profiles.updateRelationship(profile.id, edit.edge.id, {
-        expected_revision: edit.refreshAfter === null ? edit.edge.revision : currentEdge!.revision,
-        label: edit.label.trim(), ...notes,
-      });
-      return api.profiles.createRelationship(profile.id, {
-        expected_revision: edit.refreshAfter === null ? edit.revision : profile.revision,
-        target_id: edit.target!.id,
-        target_revision: edit.refreshAfter === null ? edit.target!.revision : targets.find(target => target.id === edit.target!.id)?.revision ?? edit.target!.revision,
-        label: edit.label.trim(), ...notes,
-      });
-    }, onSuccess: saved, onError: failed,
-  });
-  const remove = useApiMutation({ mutationFn: (edge: ProfileRelationship) => api.profiles.removeRelationship(profile.id, edge.id, edge.revision), onSuccess: saved, onError: failed });
-  const release = useApiMutation({ mutationFn: (edge: ProfileRelationship) => api.profiles.updateRelationship(profile.id, edge.id, { expected_revision: edge.revision, allow_agent_notes: true }), onSuccess: saved, onError: failed });
+  const cancel = () => closeDraft(true);
+  const failed = (error: Error) => {
+    if (error instanceof ApiError && error.status === 409) {
+      setRefreshAfter(latestProfile.current);
+      setRefreshVersion(value => value + 1);
+      setNotice('This relationship changed. Review the refreshed analysis before saving again.');
+      onReload();
+    } else if (error instanceof ApiError && error.status === 422) setNotice(error.message);
+    else setNotice(draft ? 'Could not save this relationship. Your draft is retained.' : 'Could not update this relationship. Refresh and try again.');
+  };
+  const saved = () => { closeDraft(false); onReload(); };
+  const save = useApiMutation({ mutationFn: () => {
+    const edit = draft!;
+    const identity = edit.identityChanged || !edit.card ? {
+      name: edit.name.trim(), profile_id: edit.profileId,
+      ...(edit.profileId ? { target_revision: refreshAfter === null ? edit.targetRevision! : targets.find(target => target.id === edit.profileId)?.revision ?? edit.targetRevision! } : {}),
+    } : {};
+    const notes = edit.notesChanged ? { notes: edit.notes.trim() } : {};
+    if (edit.card) return api.profiles.updateRelationshipCard(profile.id, edit.card.id, {
+      version: refreshAfter === null ? edit.card.version : currentCard!.version,
+      ...identity, label: label.trim(), ...notes,
+    });
+    return api.profiles.createRelationshipCard(profile.id, {
+      expected_revision: refreshAfter === null ? edit.revision : profile.revision,
+      name: edit.name.trim(), ...identity, label: edit.label.trim(), ...notes,
+      ...(edit.kind === 'assign' ? { assignment_version: refreshAfter === null ? edit.assignmentVersion! : unassigned!.version } : {}),
+    });
+  }, onSuccess: saved, onError: failed });
+  const remove = useApiMutation({ mutationFn: (card: ProfileRelationshipCard) => api.profiles.removeRelationshipCard(profile.id, card.id, card.version), onSuccess: saved, onError: failed });
+  const release = useApiMutation({ mutationFn: (card: ProfileRelationshipCard) => api.profiles.updateRelationshipCard(profile.id, card.id, { version: card.version, allow_agent_notes: true }), onSuccess: saved, onError: failed });
   const saving = save.loading || remove.loading || release.loading;
-  const busy = Boolean(draft) || saving || contextBusy;
+  const busy = Boolean(draft) || saving;
   useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
-  const canSave = !saving && (!draft?.edge || Boolean(currentEdge && (draft.refreshAfter === null || profile !== draft.refreshAfter)));
-  const editor = draft && <form className="participant-form" onSubmit={event => {
-    event.preventDefault(); if (!canSave) return;
-    if (!draft.edge && !draft.target) { setNotice('Select the other profile.'); return; }
-    save.mutate();
+  const mutate = (operation: () => Promise<void>) => {
+    if (mutating.current) return;
+    mutating.current = true;
+    void operation().finally(() => { mutating.current = false; });
+  };
+  const canSave = !saving && !waitingForRefresh && !unavailable;
+  const start = (card: ProfileRelationshipCard | null, assign = false) => {
+    setNotice(null); setRefreshAfter(null);
+    setDraft({ kind: card ? 'edit' : assign ? 'assign' : 'create', card,
+      name: card?.name || '', profileId: card?.profile_id || null, targetRevision: null,
+      identityChanged: false, label: card?.label || '', labelChanged: false, notes: card?.notes || '', notesChanged: false,
+      revision: profile.revision, assignmentVersion: assign ? unassigned!.version : null });
+  };
+  const editor = draft && <form className="participant-form" aria-label={draft.kind === 'assign' ? 'Assign saved analysis' : draft.card ? `Edit relationship with ${draft.card.name}` : 'New relationship'} onSubmit={event => {
+    event.preventDefault(); if (!canSave || mutating.current) return;
+    if (!draft.name.trim()) { setNotice('Enter the person’s name or select a profile.'); return; }
+    mutate(() => save.mutate());
   }}>
-    {draft.edge ? currentEdge ? <p>Editing {currentEdge.subject_name} → {currentEdge.target_name}</p>
-      : <p>This relationship is no longer available. Reload the profile or cancel this draft.</p> : <>
-      <p>Relationship from {profile.display_name} to the selected person.</p>
-      <ProfilePicker label="Find related person" selectionLabel="Related profile" value={draft.target?.id || ''} onSelect={target => setDraft({ ...draft, target })}
-        excludeId={profile.id} disabled={saving} refreshVersion={refreshVersion} onResults={setTargets} selectedLabel={draft.target?.display_name} />
+    {unavailable ? <p>This relationship or its saved analysis is no longer available. Refresh or cancel to return to the current relationships.</p> : <>
+      <div><label className="form-label" htmlFor="relationship-name">Name</label>
+        <input id="relationship-name" className="input" disabled={saving} readOnly={Boolean(profileId)} required maxLength={200} value={name}
+          onChange={event => setDraft({ ...draft, name: event.target.value, identityChanged: true })} /></div>
+      <ProfilePicker label="Find a profile (optional)" selectionLabel="Linked profile" value={profileId || ''} selectedLabel={name}
+        emptyLabel="No linked profile" preserveSelectionOnSearch excludeId={profile.id} disabled={saving} refreshVersion={refreshVersion} onResults={setTargets}
+        onSelect={target => setDraft({ ...draft, profileId: target?.id || null, targetRevision: target?.revision ?? null, name: target?.display_name || name, identityChanged: true })} />
+      <div><label className="form-label" htmlFor="relationship-notes">Analysis</label>
+        <textarea id="relationship-notes" className="input" disabled={saving} readOnly={draft.kind === 'assign'} rows={6} maxLength={4000}
+          value={notes} onChange={event => setDraft({ ...draft, notes: event.target.value, notesChanged: true })} /></div>
+      <div><label className="form-label" htmlFor="relationship-label">Relationship label (optional)</label>
+        <input id="relationship-label" className="input" disabled={saving} maxLength={200} value={label} placeholder="e.g. colleague" onChange={event => setDraft({ ...draft, label: event.target.value, labelChanged: true })} /></div>
+      <p className="text-muted-sm">{draft.kind === 'assign' ? 'Choose the person described by this analysis. Enter a name or link an existing profile.' : 'Your analysis edits, including an empty analysis, stay protected from automatic updates.'}</p>
+      {refreshAfter !== null && <div role="region" aria-label="Current saved analysis">
+        <p><strong>Current saved analysis</strong></p>
+        {!waitingForRefresh && currentCard && <p className="text-muted-sm">{currentCard.name}{currentCard.label && ` · ${currentCard.label}`}</p>}
+        <p style={{ whiteSpace: 'pre-wrap' }}>{waitingForRefresh ? 'Waiting for refreshed information. Your draft is retained.' : (currentCard?.notes ?? unassigned?.notes) || 'The saved analysis is empty.'}</p>
+      </div>}
     </>}
-    {(!draft.edge || currentEdge) && <>
-      {draft.refreshAfter !== null && currentEdge && <details><summary>Current saved assessment</summary><p style={{ whiteSpace: 'pre-wrap' }}>{currentEdge.notes || 'Empty'}</p></details>}
-      <div><label className="form-label" htmlFor="relationship-label">Relationship label</label>
-        <input id="relationship-label" className="input" disabled={saving} maxLength={200} value={draft.label} placeholder="e.g. reports to" onChange={event => setDraft({ ...draft, label: event.target.value })} /></div>
-      <div><label className="form-label" htmlFor="relationship-notes">Relationship assessment</label>
-        <textarea id="relationship-notes" className="input" disabled={saving} rows={5} maxLength={4000} value={draft.notes} onChange={event => setDraft({ ...draft, notes: event.target.value, notesChanged: true })} /></div>
-      <p className="text-muted-sm">Your assessment edits, including an empty assessment, are protected from automatic updates. Changing only the label keeps the current assessment ownership.</p>
-    </>}
-    <div className="flex-wrap"><button className="btn" disabled={!canSave}>{save.loading ? 'Saving...' : 'Save relationship'}</button>
-      <button className="btn" type="button" disabled={saving} onClick={() => { setDraft(null); setNotice(null); }}>Cancel</button></div>
+    {(waitingForRefresh || unavailable) && <button className="btn btn-sm" type="button" disabled={saving} onClick={onReload}>Retry relationship refresh</button>}
+    <div className="flex-wrap"><button className="btn" disabled={!canSave}>{save.loading ? 'Saving...' : draft.kind === 'assign' ? 'Assign analysis' : 'Save relationship'}</button>
+      <button className="btn" type="button" disabled={saving} onClick={cancel}>Cancel</button></div>
   </form>;
-  const groups = new Map<string, { id: string; name: string; edges: ProfileRelationship[] }>();
-  for (const edge of edges) {
-    const outgoing = edge.subject_id === profile.id;
-    const id = outgoing ? edge.target_id : edge.subject_id;
-    const group = groups.get(id) || { id, name: outgoing ? edge.target_name : edge.subject_name, edges: [] };
-    group.edges.push(edge); groups.set(id, group);
-  }
   return <section aria-label="Profile relationships">
     <div className="page-header profiles-header"><h3 className="section-title">Relationships</h3>
-      <button className="btn" disabled={disabled || busy} onClick={() => { setNotice(null); setDraft({ edge: null, target: null, label: '', notes: '', notesChanged: false, revision: profile.revision, refreshAfter: null }); }}>Add relationship</button>
+      <div className="flex-wrap">
+        {unassigned && <button ref={assignmentButton} className="btn" disabled={disabled || busy || waitingForRefresh} onClick={() => start(null, true)}>Assign saved analysis</button>}
+        <button ref={addButton} className="btn" disabled={disabled || busy || waitingForRefresh} onClick={() => start(null)}>Add relationship</button>
+      </div>
     </div>
-    {notice && <p className="card" role="alert">{notice}</p>}
-    {hasSavedContext && <details className="profile-legacy-assessment" open={!hasPersonAnalysis || contextBusy} aria-label="Saved relationship context">
-      <summary>Saved relationship context</summary>
-      <p className="text-muted-sm">{hasPersonAnalysis ? 'Earlier relationship context remains available for reference. Individual relationships below contain the latest updates.' : 'Saved relationship analysis remains available as individual relationships are updated. Your edits stay protected.'}</p>
-      <ProfileNotes profile={profile} sectionKeys={['relationships']} embedded disabled={disabled || Boolean(draft) || saving}
-        onBusyChange={setContextBusy} onReload={onReload} />
-    </details>}
-    {draft && !draft.edge && <div className="card">{editor}</div>}
-    {draft?.edge && !currentEdge && <section className="card" aria-label="Relationship draft recovery">{editor}</section>}
-    {groups.size === 0 && <p className="card text-muted-sm">{hasContextText ? 'No linked profiles yet. Add a relationship to connect a person to this profile.' : 'No relationships saved. Add someone you know, or refresh the assessment after meeting observations are available.'}</p>}
-    {[...groups.values()].sort((first, second) => first.name.localeCompare(second.name) || first.id.localeCompare(second.id)).map(group => <article key={group.id} className="card relationship-person" aria-label={`Relationship with ${group.name}`}>
-      <h4 className="relationship-person-name"><Link className="text-link" to={`/profiles/${group.id}`}>{group.name}</Link></h4>
-      {group.edges.map(edge => {
-        const proof = edge.analysis_evidence;
-        const count = edge.claim_count ?? edge.claims.length;
-        return <section className="relationship-perspective" key={edge.id} aria-label={`${edge.subject_name} to ${edge.target_name} relationship`}>
-          <h5>{edge.subject_name} → {edge.target_name}</h5>
-          {edge.label && <p className="text-muted-sm relationship-label">{edge.label}</p>}
-          {draft?.edge?.id === edge.id ? editor : <>
-            {edge.notes ? <div className="markdown-content"><ReactMarkdown>{edge.notes}</ReactMarkdown></div>
-              : proof?.human ? <p className="text-muted-sm">You have kept this assessment empty.</p>
-                : (!hasContextText || proof?.generated_at || proof?.status === 'stale') && <p className="text-muted-sm">{proof?.status === 'stale' ? 'This relationship assessment needs a refresh.' : proof?.generated_at ? 'There is not enough saved evidence to assess this relationship yet.' : 'This relationship assessment has not been generated yet.'}</p>}
-            <div className="flex-wrap relationship-evidence">
-              {proof?.human ? <span className="tag">Edited by you</span> : proof && (proof.origin === 'human' || proof.generated_at || proof.status === 'stale') && <span className="text-muted-sm">{proof.origin === 'human' ? 'Automatic updates allowed' : proof.status === 'supported' ? 'Updated automatically' : proof.status === 'stale' ? 'Needs assessment refresh' : 'More evidence needed'}{proof.coverage && ` · ${formatProfileCoverage(proof.coverage)}`}</span>}
-              {count > 0 && <Link className="text-link" to={`/profiles/${edge.subject_id}?tab=evidence&target_id=${encodeURIComponent(edge.target_id)}`}>Meeting evidence ({count})</Link>}
-            </div>
-            <div className="flex-wrap relationship-actions">
-              <button className="btn btn-sm" disabled={disabled || busy} onClick={() => { setNotice(null); setDraft({ edge, target: null, label: edge.label, notes: edge.notes, notesChanged: false, revision: profile.revision, refreshAfter: null }); }}>Edit relationship</button>
-              {proof?.human && <button className="btn btn-sm" disabled={disabled || busy} onClick={() => release.mutate(edge)}>Allow automatic updates</button>}
-              <button className="btn btn-sm btn-danger" disabled={disabled || busy} onClick={() => { if (confirm(`Remove the relationship from ${edge.subject_name} to ${edge.target_name}?`)) remove.mutate(edge); }}>Remove relationship</button>
-            </div>
-          </>}
-        </section>;
-      })}
+    {notice && draft?.kind !== 'assign' && <p className="card" role="alert">{notice}{!draft && waitingForRefresh && <button className="btn btn-sm" onClick={onReload}>Retry relationship refresh</button>}</p>}
+    {draft?.kind === 'create' && <section className="card" aria-label="New relationship">{editor}</section>}
+    {draft?.kind === 'assign' && <dialog ref={assignmentDialog} className="relationship-assignment-dialog" aria-label="Assign saved analysis" onCancel={event => { event.preventDefault(); if (!saving) cancel(); }}>
+      <h3>Assign saved analysis</h3>{notice && <p role="alert">{notice}</p>}{editor}
+    </dialog>}
+    {draft?.kind === 'edit' && !currentCard && <section className="card" aria-label="Relationship draft recovery">{editor}</section>}
+    {cards.length === 0 && <p className="card text-muted-sm">No relationships saved yet. Add a person to begin.</p>}
+    {cards.map(card => <article key={card.id} className="card relationship-person" aria-label={`Relationship with ${card.name}`}>
+      <h4 className="relationship-person-name">{card.profile_id ? <Link className="text-link" to={`/profiles/${card.profile_id}`}>{card.name}</Link> : card.name}</h4>
+      <div className="markdown-content" role="region" aria-label={`Relationship analysis for ${card.name}`}>
+        {draft?.card?.id === card.id ? editor : card.notes ? <ReactMarkdown>{card.notes}</ReactMarkdown> : <p className="text-muted-sm">{card.human ? 'You have kept this analysis empty.' : card.status === 'stale' ? 'This analysis needs a refresh.' : card.status === 'insufficient_evidence' ? 'More evidence is needed to build this analysis.' : 'This analysis has not been generated yet.'}</p>}
+      </div>
+      {draft?.card?.id !== card.id && <>
+        <div className="flex-wrap relationship-evidence">
+          {card.label && <span className="tag">{card.label}</span>}
+          {card.human ? <span className="tag">Edited by you</span> : card.notes && <span className="text-muted-sm">{card.status === 'supported' ? 'Updated automatically' : card.status === 'stale' ? 'Needs assessment refresh' : 'Saved analysis'}</span>}
+          {card.coverage.claim_count > 0 && <span className="text-muted-sm">{formatProfileCoverage(card.coverage)}</span>}
+          {card.evidence_links.map(link => <Link key={`${link.profile_id}-${link.target_id}`} className="text-link" to={`/profiles/${link.profile_id}?tab=evidence&target_id=${encodeURIComponent(link.target_id)}`}>Meeting evidence ({link.count})</Link>)}
+        </div>
+        <div className="flex-wrap relationship-actions">
+          <button className="btn btn-sm" disabled={disabled || busy || waitingForRefresh} onClick={() => start(card)}>Edit relationship</button>
+          {card.human && <button className="btn btn-sm" disabled={disabled || busy || waitingForRefresh} onClick={() => mutate(() => release.mutate(card))}>Allow automatic updates</button>}
+          <button className="btn btn-sm btn-danger" disabled={disabled || busy || waitingForRefresh} onClick={() => { if (confirm(`Remove the relationship with ${card.name}?`)) mutate(() => remove.mutate(card)); }}>Remove relationship</button>
+        </div>
+      </>}
     </article>)}
   </section>;
 }

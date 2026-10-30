@@ -204,6 +204,22 @@ describe('paginationToParams (tested through api methods)', () => {
 });
 
 describe('specific API methods', () => {
+  it('sends literal-name cards, optional links and opaque versions through the card endpoints', async () => {
+    globalThis.fetch = mockFetch({ relationship_cards: [] });
+    await api.profiles.createRelationshipCard('profile/id', { expected_revision: 3, name: 'Casey', profile_id: null, notes: '' });
+    await api.profiles.createRelationshipCard('person', { expected_revision: 4, name: 'Jordan', profile_id: 'target', target_revision: 2, assignment_version: 'assignment-version' });
+    await api.profiles.updateRelationshipCard('person', 'profile:target/id', { version: 'captured-version', notes: '' });
+    await api.profiles.updateRelationshipCard('person', 'name:casey', { version: 'current-version', allow_agent_notes: true });
+    await api.profiles.removeRelationshipCard('person', 'name:casey', 'delete-version');
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.map(call => call[0])).toEqual(['/api/profiles/profile%2Fid/relationship-cards', '/api/profiles/person/relationship-cards', '/api/profiles/person/relationship-cards/profile%3Atarget%2Fid', '/api/profiles/person/relationship-cards/name%3Acasey', '/api/profiles/person/relationship-cards/name%3Acasey']);
+    expect(JSON.parse(calls[0][1].body)).toEqual({ expected_revision: 3, name: 'Casey', profile_id: null, notes: '' });
+    expect(JSON.parse(calls[1][1].body)).not.toHaveProperty('notes');
+    expect(JSON.parse(calls[2][1].body)).toEqual({ version: 'captured-version', notes: '' });
+    expect(JSON.parse(calls[3][1].body)).toEqual({ version: 'current-version', allow_agent_notes: true });
+    expect(calls[4][1].method).toBe('DELETE');
+    expect(JSON.parse(calls[4][1].body)).toEqual({ version: 'delete-version' });
+  });
   it('serializes topic filters, label preview and revision-checked label saves separately', async () => {
     globalThis.fetch = mockFetch({ items: [], total: 0 });
     await api.meetings.list({ labels: ['security', 'paralign'] });

@@ -80,9 +80,15 @@ def _canonical(cur, profile_id: str, *, lock: bool = False, include_history: boo
     return canonical_rows(cur, [profile_id], lock=lock, include_history=include_history)[str(UUID(profile_id))]
 
 
+def canonical_identity_ids(cur, profile_id: str) -> list[str]:
+    cur.execute("SELECT id::text FROM participant_profiles WHERE id=%s OR merged_into=%s ORDER BY id", (profile_id, profile_id))
+    return [row["id"] for row in cur.fetchall()]
+
+
 def _compact_profile(profile: dict) -> dict:
     fields = ("id", "display_name", "email", "identity_scope", "revision", "deleted", "created_at", "updated_at",
-              "tags", "starred", "aliases", "emails", "nicknames", "metadata", "section_notes", "assessment", "relationships")
+              "tags", "starred", "aliases", "emails", "nicknames", "metadata", "section_notes", "assessment", "relationships",
+              "relationship_cards", "relationship_unassigned")
     result = {key: profile[key] for key in fields if key in profile}
     claims = profile["claims"]
     provenance = profile.get("metadata_provenance", {})
@@ -120,6 +126,9 @@ def _detail(cur, row: dict, *, include_evidence: bool = True) -> dict:
     contexts = _source_contexts(cur, [row], {claim["meeting_id"] for claim in row["claims"] if claim.get("meeting_id")})
     result = {**visible, "aliases": aliases, "emails": emails, "relationships": relationships[str(row["id"])],
               "assessment": describe(row, sections.effective_claims(row, contexts), relationships[str(row["id"])])}
+    from services.meetings.relationship_card_db import for_profile
+
+    result.update(for_profile(cur, row, visible))
     return result if include_evidence else _compact_profile(result)
 
 

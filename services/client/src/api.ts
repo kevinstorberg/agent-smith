@@ -325,6 +325,8 @@ export interface ParticipantProfile extends MeetingProfileSummary {
   section_evidence?: Partial<Record<ProfileSectionKey, ProfileSectionEvidence>>;
   assessment?: ProfileAssessmentState;
   relationships?: ProfileRelationship[];
+  relationship_cards: ProfileRelationshipCard[];
+  relationship_unassigned?: { notes: string; version: string } | null;
   evidence_loaded?: boolean;
   claim_count?: number;
   meeting_count?: number;
@@ -370,7 +372,7 @@ export interface ProfileRevision {
 export interface ProfileBuildResult extends JobRunResult { job_id: number; profile_id: string }
 
 export interface ProfileRelationship {
-  id: string; subject_id: string; target_id: string; subject_name: string; target_name: string;
+  id: string; subject_id: string; target_id: string | null; subject_name: string; target_name: string;
   label: string; notes: string; revision: number; dismissed: boolean; claims: ProfileClaim[];
   created_at: string; updated_at: string;
   claim_count?: number;
@@ -393,6 +395,23 @@ export interface ProfileRelationshipUpdateInput {
   label?: string;
   notes?: string;
   allow_agent_notes?: true;
+}
+
+export interface ProfileRelationshipCard {
+  id: string; name: string; profile_id: string | null; notes: string; label: string; version: string; human: boolean;
+  status: 'pending' | 'supported' | 'insufficient_evidence' | 'stale';
+  coverage: { claim_count: number; meeting_count: number };
+  evidence_links: { profile_id: string; target_id: string; count: number }[];
+}
+
+export interface ProfileRelationshipCardCreateInput {
+  expected_revision: number; name: string; profile_id?: string | null; target_revision?: number;
+  notes?: string; label?: string; assignment_version?: string;
+}
+
+export interface ProfileRelationshipCardUpdateInput {
+  version: string; name?: string; profile_id?: string | null; target_revision?: number;
+  notes?: string; label?: string; allow_agent_notes?: boolean;
 }
 
 export interface ProfileClaimsPage extends Paginated<ProfileClaim> {
@@ -761,6 +780,12 @@ export const api = {
       patch<ProfileRelationship>(`/profiles/${encodeURIComponent(id)}/relationships/${encodeURIComponent(relationshipId)}?include_evidence=false`, body),
     removeRelationship: (id: string, relationshipId: string, expected_revision: number) =>
       del<{ deleted: boolean; id: string }>(`/profiles/${encodeURIComponent(id)}/relationships/${encodeURIComponent(relationshipId)}`, { expected_revision }),
+    createRelationshipCard: (id: string, body: ProfileRelationshipCardCreateInput) =>
+      post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/relationship-cards`, body),
+    updateRelationshipCard: (id: string, cardId: string, body: ProfileRelationshipCardUpdateInput) =>
+      patch<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/relationship-cards/${encodeURIComponent(cardId)}`, body),
+    removeRelationshipCard: (id: string, cardId: string, version: string) =>
+      del<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/relationship-cards/${encodeURIComponent(cardId)}`, { version }),
     correctClaim: (id: string, claimId: string, body: ClaimCorrectionInput) =>
       post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/claims/${encodeURIComponent(claimId)}?include_evidence=false`, body),
     remove: (id: string, expectedRevision: number) =>
