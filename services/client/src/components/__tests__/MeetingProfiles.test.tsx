@@ -26,7 +26,7 @@ describe('MeetingProfiles', () => {
     expect(screen.getByText('Loading participant profiles...')).toBeInTheDocument();
     const profile = await screen.findByRole('link', { name: 'Alex' });
     expect(profile).toHaveAttribute('href', `/profiles/${profileFixture.id}`);
-    expect(screen.getByRole('heading', { name: 'Personas' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Participant profiles' })).toBeInTheDocument();
     expect(screen.getByText(/alex@example.test/)).toBeInTheDocument();
   });
 

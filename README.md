@@ -258,6 +258,13 @@ connections. Select a meeting to read its summary, transcript, connection/provid
 timestamps, revision and source link. Meeting context is shared across devices and is separate
 from the generated memories shown on the Memory page.
 
+Meeting details use **Overview**, **Transcript**, **Memories** and **Profiles** tabs.
+The compact header keeps transcript, speaker, memory and profile status visible in every tab;
+expand **Processing details** for progress, failures and retries. Only the active tab loads
+its detailed records. Existing meeting and statement links open the corresponding tab,
+including a single bounded transcript page for a later statement. Participant and label
+drafts survive tab changes; manual analysis receipt links continue to show the same request.
+
 Transcript capture starts when a meeting is first stored after this feature is enabled. This
 includes older meetings from a newly connected account that have not already been imported.
 Previously stored meetings, summary edits and repeated imports do not start another capture;
@@ -413,7 +420,7 @@ Each bounded window checkpoints progress, and the completed overlay publishes at
 Terminal identification failure is visible but permits memory/persona processing with known
 manual/provider identities and unknowns. It never silently selects a larger model.
 
-In a meeting's **Participants** card, add a name and email or choose an existing profile.
+In a meeting's **Transcript** tab, use **Participants** to add a name and email or choose an existing profile.
 Once a transcript is available, select its speaker to explicitly attribute that speaker's
 words. Participant additions are stored separately from provider metadata and survive syncs.
 Changed speaker assignments retire the affected earlier profile claims
@@ -421,7 +428,11 @@ from the current view while retaining their evidence and correction history. Par
 changes wait for capture, identification or persona extraction to finish. Transcript pages retain the raw speaker and show
 the effective confirmed identity, linking only to existing canonical profiles. Assignments
 can update unfinished persona work; completed reviews and memories remain complete.
-Use **Assign statement** on a transcript row for a specific utterance, rather than assigning
+Known profiles and their verified email aliases appear once with their exact statement and
+channel assignments underneath. **Remove assignment** removes only that selected assignment;
+provider attendance and other assignments are kept. Unlinked names remain distinct until an
+identity is selected. **Audio channels** can contain more than one person.
+Use **Assign this statement** on a transcript row for a specific utterance, rather than assigning
 every voice in an anonymous channel to one person. Participant edits remain available during
 unrelated memory generation; active capture, identity processing or persona extraction shows
 its specific lock reason. **Identify participants** explicitly queues an older saved transcript

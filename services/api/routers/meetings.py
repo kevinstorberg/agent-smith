@@ -10,7 +10,7 @@ from services.api.routers.base import delete_response, empty_to_none, require_fo
 from services.api.routers.profiles import profile_change, router as profiles_router
 from services.api.routers.meeting_vocabulary import router as vocabulary_router
 from services.meetings import db, digestion_db, management_db, memory_db, profile_db
-from services.meetings import labels_db
+from services.meetings import labels_db, processing_db
 
 router = APIRouter()
 router.include_router(profiles_router, prefix="/profiles", include_in_schema=False)
@@ -130,6 +130,12 @@ async def suggest_labels(summary_id: UUID, body: MeetingLabelSuggestionRequest):
     except LabelAnalysisError as error:
         raise HTTPException(status_code=502, detail=f"Label suggestions failed ({error.error_type}); saved labels are unchanged") from None
     return {"labels": result["labels"], "labels_revision": original["labels_revision"], "meeting_revision": original["revision"]}
+
+
+@router.get("/{summary_id}/processing")
+def get_processing(summary_id: UUID):
+    key = str(summary_id)
+    return require_found(processing_db.get_processing(key), "Meeting", key)
 
 
 @router.get("/{summary_id}/participants")

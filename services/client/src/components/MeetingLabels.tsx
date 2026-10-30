@@ -6,8 +6,8 @@ import { parseTags } from '../utils/tags';
 
 interface Draft { text: string; revision: number; meetingRevision?: number; conflicted: boolean }
 
-export function MeetingLabels({ meeting, onReload, onBusyChange }: {
-  meeting: MeetingSummary; onReload: () => void; onBusyChange?: (busy: boolean) => void;
+export function MeetingLabels({ meeting, onReload, onBusyChange, active = true }: {
+  meeting: MeetingSummary; active?: boolean; onReload: () => void; onBusyChange?: (busy: boolean) => void;
 }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -37,6 +37,7 @@ export function MeetingLabels({ meeting, onReload, onBusyChange }: {
   const busy = save.loading || suggest.loading;
   useEffect(() => { onBusyChange?.(Boolean(draft) || busy); }, [draft, busy, onBusyChange]);
   const edit = () => { setNotice(null); setDraft({ text: (meeting.labels || []).join(', '), revision: meeting.labels_revision || 0, conflicted: false }); };
+  if (!active) return null;
   return <section className="card" aria-label="Meeting purpose and topics">
     <div className="page-header profiles-header"><h3 className="section-title">Purpose and topics</h3>
       {!draft && <div className="flex-wrap">

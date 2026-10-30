@@ -37,3 +37,17 @@ it('keeps completed outputs intact and offers a separate explicit reanalysis con
   expect(screen.getByRole('button', { name: 'Reanalyze completed...' })).toBeEnabled();
   expect(api.meetings.process).not.toHaveBeenCalled();
 });
+
+it('respects parent editing and unread status for stage retry buttons', () => {
+  const { rerender } = renderWithProviders(<MeetingProcessing meetingId="meeting-id" disabled transcript={transcript} memories={{ ...memories, status: 'failed' }} personas={personas} onChanged={changed} />);
+  expect(screen.getByRole('button', { name: 'Retry memories' })).toBeDisabled();
+  rerender(<MeetingProcessing meetingId="meeting-id" transcript={null} memories={{ ...memories, status: 'failed' }} personas={personas} onChanged={changed} />);
+  expect(screen.getByRole('button', { name: 'Retry memories' })).toBeDisabled();
+});
+
+it('blocks reanalysis and retries while speaker identification owns the transcript', () => {
+  renderWithProviders(<MeetingProcessing meetingId="meeting-id" transcript={transcript} speakers={{ status: 'running', error_type: null, progress: memories.progress! }} memories={{ ...memories, status: 'failed' }} personas={{ ...personas, status: 'done' }} onChanged={changed} />);
+  expect(screen.getByRole('button', { name: 'Processing...' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Reanalyze completed...' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Retry memories' })).toBeDisabled();
+});

@@ -31,6 +31,51 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('MeetingParticipants', () => {
+  it('renders one canonical person with all statement assignments and removes only the selected assignment', async () => {
+    const first = { name: 'Alex Work', email: 'work@example.test', profile_id: existing.id, segment_id: 'segment-9' };
+    const second = { name: 'Alex Personal', email: 'personal@example.test', profile_id: existing.id, segment_id: 'segment-25' };
+    read.mockResolvedValue({ ...empty, revision: 7, transcript_hash: 'b'.repeat(64), items: [first, second],
+      provider_participants: [{ name: 'Duplicate raw provider', email: 'personal@example.test' }], unlinked_attendees: [],
+      people: [{ key: `profile:${existing.id}`, profile_id: existing.id, display_name: 'Alex', names: ['Alex', 'Alex Work', 'Alex Personal'], emails: ['work@example.test', 'personal@example.test'], sources: ['provider', 'manual'], assignments: [first, second] }] });
+    renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
+    const heading = await screen.findByRole('heading', { name: 'Alex' });
+    const person = heading.closest('article')!;
+    expect(screen.getAllByRole('heading', { level: 4, name: 'Alex' })).toHaveLength(1);
+    expect(screen.queryByText('Duplicate raw provider')).not.toBeInTheDocument();
+    expect(within(person).getByRole('link', { name: 'Alex' })).toHaveAttribute('href', `/profiles/${existing.id}`);
+    expect(within(person).getByText('2 assignments')).toBeInTheDocument();
+    fireEvent.click(within(person).getByText('2 assignments'));
+    const row = within(person).getByRole('link', { name: 'Statement segment-9' }).closest('li')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'Remove assignment' }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith('meeting-id', { expected_revision: 7, expected_transcript_hash: 'b'.repeat(64), participants: [second] }));
+  });
+
+  it('keeps same-named unlinked people distinct and labels shared audio channels honestly', async () => {
+    const one = { name: 'Jordan', segment_id: 'segment-1' };
+    const two = { name: 'Jordan', segment_id: 'segment-2' };
+    read.mockResolvedValue({ ...empty, items: [one, two], people: [one, two].map(person => ({ key: `statement:${person.segment_id}`, display_name: 'Jordan', profile_id: null, emails: [], names: ['Jordan'], sources: ['manual'], assignments: [person] })), unlinked_attendees: [] });
+    renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
+    expect(await screen.findAllByRole('heading', { name: 'Jordan' })).toHaveLength(2);
+    fireEvent.click(screen.getByText('Audio channels (1)'));
+    expect(screen.getByText(/A shared channel can contain several people/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Assign speaker' })).toBeEnabled();
+  });
+
+  it('keeps distinct raw roster aliases in one canonical person without duplicate row keys', async () => {
+    const first = { name: 'Alex Former', email: 'former@example.test', profile_id: 'old-profile' };
+    const second = { name: 'Alex', email: 'current@example.test', profile_id: existing.id };
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      read.mockResolvedValue({ ...empty, items: [first, second], people: [{ key: `profile:${existing.id}`, profile_id: existing.id, display_name: 'Alex', emails: [], sources: ['manual'], assignments: [first, second] }], unlinked_attendees: [] });
+      renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
+      fireEvent.click(await screen.findByText('2 assignments'));
+      expect(screen.getAllByText('Meeting participant')).toHaveLength(2);
+      expect(errors.mock.calls.some(([message]) => String(message).includes('same key'))).toBe(false);
+      fireEvent.click(screen.getAllByRole('button', { name: 'Remove assignment' })[0]);
+      await waitFor(() => expect(update).toHaveBeenCalledWith('meeting-id', { expected_revision: 0, participants: [second] }));
+    } finally { errors.mockRestore(); }
+  });
+
   it('shows speaker context and opens its explicit assignment with the group preselected', async () => {
     read.mockResolvedValue({ ...empty, speakers: [{ ...empty.speakers[0], source: 'microphone', attribution: 'me', sample: 'A useful recorded statement.' }] });
     renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
@@ -45,7 +90,7 @@ describe('MeetingParticipants', () => {
   it('keeps the provider roster read-only and appends an explicit manual speaker assignment', async () => {
     renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
     await screen.findByText(/Provider Person/);
-    expect(screen.queryByRole('button', { name: 'Remove participant' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove assignment' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Add participant' }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: ' Manual Person ' } });
@@ -78,7 +123,7 @@ describe('MeetingParticipants', () => {
     read.mockResolvedValue({ ...empty, revision: 3, items: [{ name: 'Manual A' }, { name: 'Manual B' }] });
     renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
     const person = (await screen.findByText('Manual A')).closest('li')!;
-    fireEvent.click(within(person).getByRole('button', { name: 'Remove participant' }));
+    fireEvent.click(within(person).getByRole('button', { name: 'Remove assignment' }));
     await waitFor(() => expect(update).toHaveBeenCalledWith('meeting-id', { expected_revision: 3, participants: [{ name: 'Manual B' }] }));
   });
 
@@ -86,7 +131,7 @@ describe('MeetingParticipants', () => {
     read.mockResolvedValue({ ...empty, running: true, items: [{ name: 'Manual A' }] });
     renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
     expect(await screen.findByRole('button', { name: 'Add participant' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Remove participant' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Remove assignment' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Assign speaker' })).toBeDisabled();
     expect(screen.getByText(/changes are available after processing finishes/)).toBeInTheDocument();
   });
@@ -105,6 +150,24 @@ describe('MeetingParticipants', () => {
     fireEvent.submit(screen.getByRole('button', { name: 'Save participant' }).closest('form')!);
     await waitFor(() => expect(update).toHaveBeenLastCalledWith('meeting-id', { expected_revision: 2,
       participants: [{ name: 'Added elsewhere' }, { name: 'My manual draft', email: 'draft@example.test' }] }));
+  });
+
+  it('retains a conflicted draft when its required reread fails and provides an explicit reread retry', async () => {
+    update.mockRejectedValueOnce(new ApiError('Participants changed.', 409));
+    renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Add participant' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Retained draft' } });
+    read.mockRejectedValueOnce(new Error('Unavailable'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save participant' }));
+    await screen.findByRole('button', { name: 'Refresh participants' });
+    expect(screen.getByRole('button', { name: 'Save participant' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+    expect(screen.getByLabelText('Name')).toHaveValue('Retained draft');
+    read.mockResolvedValue({ ...empty, revision: 8 });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh participants' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save participant' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Save participant' }));
+    await waitFor(() => expect(update).toHaveBeenLastCalledWith('meeting-id', { expected_revision: 8, participants: [{ name: 'Retained draft' }] }));
   });
 
   it('keeps a blocked draft and resumes its availability check after processing finishes', async () => {
@@ -201,7 +264,7 @@ describe('MeetingParticipants', () => {
     read.mockResolvedValue({ ...empty, transcript_hash: 'b'.repeat(64), items: [statement, { name: 'Other attendee' }] });
     renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
     const row = (await screen.findByText('Other attendee')).closest('li')!;
-    fireEvent.click(within(row).getByRole('button', { name: 'Remove participant' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Remove assignment' }));
     await waitFor(() => expect(update).toHaveBeenCalledWith('meeting-id', { expected_revision: 0, expected_transcript_hash: 'b'.repeat(64), participants: [statement] }));
   });
 

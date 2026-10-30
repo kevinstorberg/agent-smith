@@ -21,21 +21,22 @@ const BLOCKED_MESSAGES: Record<string, string> = {
   transcript_failed: 'Transcript capture failed. Retry transcript capture before generating memories.',
 };
 
-export function MeetingMemories({ meetingId, refreshVersion, onState }: { meetingId: string; refreshVersion?: number; onState?: (state: Memories) => void }) {
+export function MeetingMemories({ meetingId, refreshVersion, onState, active = true, onChanged }: { meetingId: string; active?: boolean; onChanged?: () => void; refreshVersion?: number; onState?: (state: Memories) => void }) {
   const read = useCallback(() => api.meetings.memories(meetingId), [meetingId]);
-  const { data: memories, loading, error, refresh: load } = useApiRead(read);
+  const { data: memories, loading, error, refresh: load } = useApiRead(read, { enabled: active });
   useRefreshSignal(refreshVersion, load);
   useEffect(() => { if (memories) onState?.(memories); }, [memories, onState]);
 
   const retry = useApiMutation({
     mutationFn: () => api.meetings.retryMemories(meetingId),
-    onSuccess: () => load(),
+    onSuccess: () => { load(); onChanged?.(); },
     onError: () => undefined,
   });
   usePolling(() => load({ showLoading: false }), {
-    enabled: !retry.loading && (memories?.status === 'pending' || memories?.status === 'running' || memories?.reason === 'transcript_pending'),
+    enabled: active && !retry.loading && (memories?.status === 'pending' || memories?.status === 'running' || memories?.reason === 'transcript_pending'),
   });
 
+  if (!active) return null;
   return (
     <section id="meeting-memories" className="card" aria-label="Meeting memories">
       <h3 className="section-title">Generated memories</h3>

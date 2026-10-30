@@ -310,6 +310,18 @@ export interface MeetingAnalysisCandidateParams extends PaginationParams {
   source?: string; after?: string; before?: string;
 }
 
+export interface MeetingProcessingState {
+  transcript: Pick<MeetingTranscript, 'status' | 'total' | 'error_type' | 'captured_at'>;
+  speakers: NonNullable<MeetingParticipants['attribution']>;
+  memories: MeetingGeneration;
+  profiles: MeetingGeneration;
+  edit_lock_reason: MeetingParticipants['edit_lock_reason'];
+}
+export interface MeetingPerson {
+  key: string; profile_id: string | null; display_name: string; emails: string[]; names?: string[];
+  sources: ('provider' | 'manual')[]; assignments: MeetingParticipantInput[];
+}
+
 export interface MeetingMemories extends MeetingGeneration {
   items: MeetingMemory[];
   updated_at: string | null;
@@ -335,6 +347,8 @@ export interface MeetingParticipantInput {
 }
 
 export interface MeetingParticipants {
+  people?: MeetingPerson[];
+  unlinked_attendees?: { source: 'provider' | 'manual'; participant: MeetingParticipantInput }[];
   revision: number;
   items: MeetingParticipantInput[];
   provider_participants: { name?: string; email?: string }[];
@@ -809,6 +823,7 @@ export const api = {
       ...(params?.labels?.length ? { labels: params.labels } : {}),
     }),
     get: (id: string) => get<MeetingSummary>(`/meetings/${encodeURIComponent(id)}`),
+    processing: (id: string) => get<MeetingProcessingState>(`/meetings/${encodeURIComponent(id)}/processing`, undefined, 30_000),
     updateLabels: (id: string, body: { expected_revision: number; labels: string[]; expected_meeting_revision?: number }) =>
       patch<MeetingLabels>(`/meetings/${encodeURIComponent(id)}/labels`, body),
     suggestLabels: (id: string, expected_revision: number) =>

@@ -11,7 +11,7 @@ from psycopg2.extras import Json
 from psycopg2.errors import LockNotAvailable
 from pydantic import ValidationError
 
-from services.meetings import stage_db
+from services.meetings import stage_db, stage_state
 from services.meetings.db import _cursor, _serialize
 from services.meetings.outputs import (ProfileClaim, ProfileMetadataPatch, ProfileCategory, ProfileEpistemic,
                                       ProfileConfidence, ProfileReviewStatus, ProfileClaimSort)
@@ -818,25 +818,17 @@ def meeting_profiles(meeting_id: str) -> dict | None:
         row = cur.fetchone()
         if row is None:
             return None
-        status, reason, items = "not_imported", None, []
-        if row["meeting_id"] is not None:
-            status = row["profile_status"]
-            if status == "done":
-                reason = row["profile_artifact"].get("reason")
-                ids = row["profile_artifact"].get("profile_ids", [])
-                if ids:
-                    cur.execute(
-                        f"""SELECT DISTINCT canonical.id, canonical.display_name, canonical.email, canonical.revision
-                            {_CANONICAL_JOIN} WHERE requested.id IN %s AND NOT canonical.deleted
-                            ORDER BY canonical.display_name, canonical.id""", (tuple(ids),),
-                    )
-                    items = [dict(item) for item in cur.fetchall()]
-            elif row["transcript_status"] != "ready":
-                status, reason = "blocked", "transcript_" + row["transcript_status"]
-            elif row["running"]:
-                status = "running"
-        return _serialize({"status": status, "items": items, "reason": reason, "error_type": row["profile_error"],
-                           "progress": stage_db.progress(row, "profile", total_units=row["total_units"])})
+        state = stage_state.generation(dict(row), "profile")
+        items = []
+        ids = row["profile_artifact"].get("profile_ids", []) if state["status"] == "done" else []
+        if ids:
+            cur.execute(
+                f"""SELECT DISTINCT canonical.id, canonical.display_name, canonical.email, canonical.revision
+                    {_CANONICAL_JOIN} WHERE requested.id IN %s AND NOT canonical.deleted
+                    ORDER BY canonical.display_name, canonical.id""", (tuple(ids),),
+            )
+            items = [dict(item) for item in cur.fetchall()]
+        return _serialize({**state, "items": items})
 
 
 def retry_profiles(meeting_id: str) -> None:

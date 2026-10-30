@@ -7,7 +7,7 @@ from uuid import UUID
 
 from psycopg2.extras import Json
 
-from services.meetings import digestion_db, profile_db
+from services.meetings import digestion_db, profile_db, stage_state, participant_view
 from services.meetings.db import _cursor, _serialize
 from services.meetings.participants import current_manual, email_participant, meeting_participants, speaker_key
 
@@ -46,15 +46,7 @@ _LOCK_MESSAGES = {
 }
 
 
-def _edit_lock(row: dict) -> str | None:
-    if row.get("persona_running"):
-        return "analyzing_personas"
-    if row.get("memory_running"):
-        if row.get("transcript_status") == "pending":
-            return "capturing_transcript"
-        if row.get("speaker_status") == "pending":
-            return "identifying_participants"
-    return None
+_edit_lock = stage_state.edit_lock
 
 
 def _speaker_groups(cur, meeting_id: str) -> list[dict]:
@@ -92,8 +84,6 @@ def _participants(cur, meeting_id: str) -> dict | None:
     speakers = _speaker_groups(cur, meeting_id)
     from services.meetings.participants_db import effective_speakers
 
-    from services.meetings import stage_db
-
     snapshot = {"id": meeting_id, "manual_participants": [person for person in row["manual_participants"] if not person.get("segment_id")],
                 "metadata": row["metadata"]}
     effective = effective_speakers(cur, snapshot, [{"id": group["key"], "speaker": group["speaker"], "text": group["sample"]} for group in speakers])
@@ -104,12 +94,12 @@ def _participants(cur, meeting_id: str) -> dict | None:
         group["effective_speaker"] = effective.get(group["key"])
     keys = {group["key"] for group in speakers}
     return _serialize({
+        **participant_view.people(cur, row["metadata"].get("attendees", []), row["manual_participants"]),
         "revision": row["participants_revision"], "items": row["manual_participants"],
         "provider_participants": row["metadata"].get("attendees", []), "speakers": speakers,
         "running": row["memory_running"] or row["persona_running"], "enrolled": row["enrolled"],
         "transcript_hash": row["transcript_hash"], "edit_lock_reason": _edit_lock(dict(row)),
-        "attribution": {"status": "running" if row["speaker_status"] == "pending" and row["memory_running"] else row["speaker_status"] or "not_imported",
-                        "error_type": row["speaker_error"], "progress": stage_db.progress(dict(row), "speaker")},
+        "attribution": stage_state.speakers(dict(row)),
         "stale_segment_ids": _stale_segments(cur, meeting_id, row["manual_participants"]),
         "stale_speaker_keys": sorted({item["speaker_key"] for item in row["manual_participants"] if item.get("speaker_key") and item["speaker_key"] not in keys}),
     })

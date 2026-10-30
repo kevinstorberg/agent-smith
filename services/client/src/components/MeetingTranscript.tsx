@@ -24,9 +24,9 @@ function transcriptTime(value: string): string {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-export function MeetingTranscript({ meetingId, refreshVersion, onState, onAssign, assignmentDisabled = false }: {
+export function MeetingTranscript({ meetingId, refreshVersion, onState, onAssign, assignmentDisabled = false, active = true, targetSegment = null, onChanged, onShowBeginning }: {
   meetingId: string; refreshVersion?: number; onState?: (state: Transcript) => void; onAssign?: (statement: TranscriptSegment) => void;
-  assignmentDisabled?: boolean;
+  assignmentDisabled?: boolean; active?: boolean; targetSegment?: number | null; onChanged?: () => void; onShowBeginning?: () => void;
 }) {
   const [transcript, setTranscript] = useState<Transcript | null>(null);
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
@@ -36,61 +36,73 @@ export function MeetingTranscript({ meetingId, refreshVersion, onState, onAssign
   const [failedPreserve, setFailedPreserve] = useState(false);
   const requestId = useRef(0);
   const loadedCount = useRef(0);
-
-  const load = useCallback(async (offset = 0, preserveLoaded = false) => {
+  const baseOffset = useRef(0);
+  const activeRef = useRef(active);
+  const mounted = useRef(false);
+  const [windowStart, setWindowStart] = useState(0);
+  const [failedReplace, setFailedReplace] = useState(true);
+  const focusedTarget = useRef<number | null>(null);
+  useEffect(() => { activeRef.current = active; }, [active]);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const load = useCallback(async (offset = baseOffset.current, preserveLoaded = false, replace = true) => {
+    if (!activeRef.current || !mounted.current) return;
     const currentRequest = ++requestId.current;
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
       const collected: TranscriptSegment[] = [];
-      const wanted = preserveLoaded ? Math.max(100, loadedCount.current) : 100;
+      const wanted = preserveLoaded ? loadedCount.current || 100 : 100;
       let result: Transcript;
       let pageOffset = offset;
       do {
         result = await api.meetings.transcript(meetingId, { limit: 100, offset: pageOffset });
-        if (currentRequest !== requestId.current) return;
+        if (currentRequest !== requestId.current || !mounted.current || !activeRef.current) return;
         collected.push(...result.items);
         pageOffset += result.items.length;
       } while (preserveLoaded && result.items.length > 0 && collected.length < wanted && pageOffset < result.total);
-      if (currentRequest === requestId.current) {
-        setTranscript(result);
-        loadedCount.current = offset === 0 ? collected.length : loadedCount.current + collected.length;
-        setSegments(previous => offset === 0 ? collected : [...previous, ...collected]);
-      }
+      setTranscript(result);
+      if (replace) { baseOffset.current = offset; loadedCount.current = collected.length; setWindowStart(offset); setSegments(collected); }
+      else { loadedCount.current += collected.length; setSegments(previous => [...previous, ...collected]); }
     } catch (err) {
-      if (currentRequest === requestId.current) {
-        setError(err instanceof Error ? err.message : String(err));
-        setFailedOffset(offset);
-        setFailedPreserve(preserveLoaded);
+      if (currentRequest === requestId.current && mounted.current) {
+        setError(err instanceof Error ? err.message : String(err)); setFailedOffset(offset); setFailedPreserve(preserveLoaded); setFailedReplace(replace);
       }
     } finally {
-      if (currentRequest === requestId.current) setLoading(false);
+      if (currentRequest === requestId.current && mounted.current) setLoading(false);
     }
   }, [meetingId]);
-  const refreshLoaded = useCallback(() => load(0, true), [load]);
+  const refreshLoaded = useCallback(() => load(baseOffset.current, true), [load]);
   useRefreshSignal(refreshVersion, refreshLoaded);
   useEffect(() => { if (transcript) onState?.(transcript); }, [transcript, onState]);
-
   useEffect(() => {
-    load();
+    if (active) {
+      const outside = targetSegment !== null && (targetSegment < baseOffset.current || targetSegment >= baseOffset.current + loadedCount.current);
+      load(outside ? Math.floor(targetSegment / 100) * 100 : baseOffset.current, !outside && loadedCount.current > 0);
+    }
     return () => { requestId.current += 1; };
-  }, [load]);
+  }, [active, load, targetSegment]);
+  useEffect(() => {
+    if (targetSegment === null) { focusedTarget.current = null; return; }
+    if (!active || loading || focusedTarget.current === targetSegment) return;
+    const target = document.getElementById(`transcript-segment-${targetSegment}`);
+    if (target) { target.scrollIntoView({ block: 'start' }); target.setAttribute('tabindex', '-1'); target.focus({ preventScroll: true }); focusedTarget.current = targetSegment; }
+  }, [active, targetSegment, loading, segments]);
   const deletion = useApiMutation({
     mutationFn: () => api.meetings.deleteTranscript(meetingId),
     onSuccess: () => {
+      if (!mounted.current) return;
       requestId.current += 1;
       setTranscript(previous => previous && { ...previous, status: 'deleted', items: [], total: 0, captured_at: null, error_type: null });
       setSegments([]);
       setError(null);
-      setLoading(false);
+      setLoading(false); onChanged?.();
     },
   });
   const retryCapture = useApiMutation({
     mutationFn: () => api.meetings.retryTranscript(meetingId),
-    onSuccess: () => load(),
+    onSuccess: () => { if (mounted.current) { load(); onChanged?.(); } },
   });
   usePolling(() => load(), {
-    enabled: !deletion.loading && !retryCapture.loading && (transcript?.status === 'pending' || transcript?.status === 'capturing'),
+    enabled: active && !deletion.loading && !retryCapture.loading && (transcript?.status === 'pending' || transcript?.status === 'capturing'),
   });
 
   const deleteTranscript = () => {
@@ -102,6 +114,7 @@ export function MeetingTranscript({ meetingId, refreshVersion, onState, onAssign
   const canDelete = transcript && transcript.status !== 'not_imported' && transcript.status !== 'deleted';
   const canRetry = transcript && ['failed', 'unsupported', 'unavailable'].includes(transcript.status);
 
+  if (!active) return null;
   return (
     <section id="meeting-transcript" className="card" aria-label="Meeting transcript">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -116,7 +129,7 @@ export function MeetingTranscript({ meetingId, refreshVersion, onState, onAssign
       {error && (
         <div role="alert">
           <p>Could not load transcript: {error}</p>
-          <button className="btn" onClick={() => load(failedOffset, failedPreserve)} disabled={loading || deletion.loading || retryCapture.loading}>Retry</button>
+          <button className="btn" onClick={() => load(failedOffset, failedPreserve, failedReplace)} disabled={loading || deletion.loading || retryCapture.loading}>Retry</button>
         </div>
       )}
       {transcript && transcript.status !== 'ready' && (
@@ -136,7 +149,9 @@ export function MeetingTranscript({ meetingId, refreshVersion, onState, onAssign
       {transcript?.status === 'ready' && (
         <>
           <p style={{ marginBottom: 12 }}><a className="text-link" href="#meeting-participants">Identify speakers</a></p>
-          {segments.length === 0 && <p className="text-muted-sm">The saved transcript is empty.</p>}
+          {windowStart > 0 && <div className="flex-wrap">{segments.length > 0 && <p className="text-muted-sm">Showing statements {windowStart + 1}–{windowStart + segments.length} of {transcript.total}</p>}<button className="btn btn-sm" onClick={() => { baseOffset.current = 0; loadedCount.current = 0; onShowBeginning?.(); if (!onShowBeginning || targetSegment === null) load(0); }}>Show beginning</button></div>}
+          {targetSegment !== null && !loading && !error && !segments.some(segment => segment.id === `segment-${targetSegment}`) && <p role="status">This statement is not available in the saved transcript.</p>}
+          {transcript.total === 0 && <p className="text-muted-sm">The saved transcript is empty.</p>}
           {segments.map(segment => (
             <article key={segment.id} id={`transcript-${segment.id}`} style={{ marginBottom: 16 }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
@@ -158,8 +173,8 @@ export function MeetingTranscript({ meetingId, refreshVersion, onState, onAssign
               <p style={{ whiteSpace: 'pre-wrap', marginTop: 4 }}>{segment.text}</p>
             </article>
           ))}
-          {segments.length < transcript.total && (
-            <button className="btn" onClick={() => load(segments.length)} disabled={loading || deletion.loading}>
+          {windowStart + segments.length < transcript.total && (
+            <button className="btn" onClick={() => load(windowStart + segments.length, false, false)} disabled={loading || deletion.loading}>
               {loading ? 'Loading...' : 'Load more transcript'}
             </button>
           )}

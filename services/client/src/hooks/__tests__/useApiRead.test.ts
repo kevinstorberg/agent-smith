@@ -73,4 +73,34 @@ describe('useApiRead', () => {
     expect(result.current.data).toBeNull();
     expect(read).toHaveBeenCalledTimes(1);
   });
+
+  it('does not read while disabled and retains accepted data when reactivated', async () => {
+    const read = vi.fn().mockResolvedValueOnce('cached').mockResolvedValueOnce('fresh');
+    const { result, rerender } = renderHook(({ enabled }) => useApiRead(read, { enabled }), { initialProps: { enabled: false } });
+    expect(result.current.loading).toBe(false);
+    await act(async () => { await result.current.refresh(); });
+    expect(read).not.toHaveBeenCalled();
+    rerender({ enabled: true });
+    await waitFor(() => expect(result.current.data).toBe('cached'));
+    const oldRefresh = result.current.refresh;
+    rerender({ enabled: false });
+    expect(result.current.data).toBe('cached');
+    await act(async () => { await oldRefresh(); await result.current.refresh(); });
+    expect(read).toHaveBeenCalledTimes(1);
+    rerender({ enabled: true });
+    expect(result.current.data).toBe('cached');
+    await waitFor(() => expect(result.current.data).toBe('fresh'));
+  });
+
+  it('invalidates a pending response on deactivation and starts a fresh read on activation', async () => {
+    let resolve!: (value: string) => void;
+    const read = vi.fn().mockReturnValueOnce(new Promise(done => { resolve = done; })).mockResolvedValueOnce('active result');
+    const { result, rerender } = renderHook(({ enabled }) => useApiRead(read, { enabled }), { initialProps: { enabled: true } });
+    rerender({ enabled: false });
+    await act(async () => { resolve('hidden result'); });
+    expect(result.current.data).toBeNull();
+    rerender({ enabled: true });
+    await waitFor(() => expect(result.current.data).toBe('active result'));
+    expect(read).toHaveBeenCalledTimes(2);
+  });
 });
