@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router';
 import { api, ApiError } from '../api';
 import type { ProfileSummary } from '../api';
 import { Pagination } from '../components/Pagination';
@@ -117,7 +117,7 @@ export function ProfilesIndexPage() {
             <tbody>
               {items.map(profile => <tr key={profile.id} {...makeRowClickable(() => navigate(`/profiles/${profile.id}`))} style={{ cursor: 'pointer' }}>
                 <td><ProfileStar name={profile.display_name} starred={profile.starred} disabled={star.loading} onClick={() => star.mutate(profile)} /></td>
-                <td><Link className="text-link" to={`/profiles/${profile.id}`} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>{profile.display_name}</Link>
+                <td>{profile.display_name}
                   {(profile.metadata?.job_role || profile.metadata?.company) && <p className="text-muted-sm">{[profile.metadata.job_role, profile.metadata.company].filter(Boolean).join(' · ')}</p>}
                 </td>
                 <td>{profile.email || '—'}{(profile.emails?.length || 0) > 1 && <p className="text-muted-sm">+{profile.emails!.length - 1} more</p>}</td>
