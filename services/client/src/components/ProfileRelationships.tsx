@@ -6,6 +6,7 @@ import type { ParticipantProfile, ProfileRelationship, ProfileSummary } from '..
 import { useApiMutation } from '../hooks/useApiMutation';
 import { formatProfileCoverage } from '../utils/profileFields';
 import { ProfilePicker } from './ProfilePicker';
+import { ProfileNotes } from './ProfileNotes';
 
 interface Draft {
   edge: ProfileRelationship | null; target: ProfileSummary | null; label: string; notes: string;
@@ -18,12 +19,17 @@ export function ProfileRelationships({ profile, disabled, onBusyChange, onReload
   const [draft, setDraft] = useState<Draft | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [targets, setTargets] = useState<ProfileSummary[]>([]);
+  const [contextBusy, setContextBusy] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const latestProfile = useRef(profile);
   useEffect(() => { latestProfile.current = profile; }, [profile]);
   const legacyProof = profile.section_evidence?.relationships;
   const legacyProtected = legacyProof ? legacyProof.human === true : Object.hasOwn(profile.section_notes || {}, 'relationships');
   const edges = (profile.relationships || []).filter(edge => !edge.dismissed);
+  const hasSavedContext = profile.section_notes?.relationships !== undefined || legacyProtected || contextBusy;
+  const hasContextText = Boolean(profile.section_notes?.relationships);
+  const hasPersonAnalysis = edges.some(edge => Boolean(edge.notes) || edge.analysis_evidence?.human === true
+    || edge.analysis_evidence?.origin === 'human' || Boolean(edge.analysis_evidence?.generated_at));
   const currentEdge = draft?.edge ? edges.find(edge => edge.id === draft.edge!.id) : undefined;
   const failed = (failure: Error) => {
     if (failure instanceof ApiError && failure.status === 409) {
@@ -52,9 +58,8 @@ export function ProfileRelationships({ profile, disabled, onBusyChange, onReload
   });
   const remove = useApiMutation({ mutationFn: (edge: ProfileRelationship) => api.profiles.removeRelationship(profile.id, edge.id, edge.revision), onSuccess: saved, onError: failed });
   const release = useApiMutation({ mutationFn: (edge: ProfileRelationship) => api.profiles.updateRelationship(profile.id, edge.id, { expected_revision: edge.revision, allow_agent_notes: true }), onSuccess: saved, onError: failed });
-  const releaseLegacy = useApiMutation({ mutationFn: () => api.profiles.update(profile.id, { expected_revision: profile.revision, allow_agent_sections: ['relationships'] }), onSuccess: saved, onError: failed });
-  const saving = save.loading || remove.loading || release.loading || releaseLegacy.loading;
-  const busy = Boolean(draft) || saving;
+  const saving = save.loading || remove.loading || release.loading;
+  const busy = Boolean(draft) || saving || contextBusy;
   useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
   const canSave = !saving && (!draft?.edge || Boolean(currentEdge && (draft.refreshAfter === null || profile !== draft.refreshAfter)));
   const editor = draft && <form className="participant-form" onSubmit={event => {
@@ -91,13 +96,15 @@ export function ProfileRelationships({ profile, disabled, onBusyChange, onReload
       <button className="btn" disabled={disabled || busy} onClick={() => { setNotice(null); setDraft({ edge: null, target: null, label: '', notes: '', notesChanged: false, revision: profile.revision, refreshAfter: null }); }}>Add relationship</button>
     </div>
     {notice && <p className="card" role="alert">{notice}</p>}
-    {legacyProtected && <div className="card relationship-protection-notice">
-      <p className="text-muted-sm">Your previous combined relationship notes remain protected in History. Allow automatic relationship updates to generate per-person assessments.</p>
-      <button className="btn btn-sm" disabled={disabled || busy} onClick={() => releaseLegacy.mutate()}>Allow automatic relationship updates</button>
-    </div>}
+    {hasSavedContext && <details className="profile-legacy-assessment" open={!hasPersonAnalysis || contextBusy} aria-label="Saved relationship context">
+      <summary>Saved relationship context</summary>
+      <p className="text-muted-sm">{hasPersonAnalysis ? 'Earlier relationship context remains available for reference. Individual relationships below contain the latest updates.' : 'Saved relationship analysis remains available as individual relationships are updated. Your edits stay protected.'}</p>
+      <ProfileNotes profile={profile} sectionKeys={['relationships']} embedded disabled={disabled || Boolean(draft) || saving}
+        onBusyChange={setContextBusy} onReload={onReload} />
+    </details>}
     {draft && !draft.edge && <div className="card">{editor}</div>}
     {draft?.edge && !currentEdge && <section className="card" aria-label="Relationship draft recovery">{editor}</section>}
-    {groups.size === 0 && <p className="card text-muted-sm">No relationships saved. Add someone you know, or refresh the assessment after meeting observations are available.</p>}
+    {groups.size === 0 && <p className="card text-muted-sm">{hasContextText ? 'No linked profiles yet. Add a relationship to connect a person to this profile.' : 'No relationships saved. Add someone you know, or refresh the assessment after meeting observations are available.'}</p>}
     {[...groups.values()].sort((first, second) => first.name.localeCompare(second.name) || first.id.localeCompare(second.id)).map(group => <article key={group.id} className="card relationship-person" aria-label={`Relationship with ${group.name}`}>
       <h4 className="relationship-person-name"><Link className="text-link" to={`/profiles/${group.id}`}>{group.name}</Link></h4>
       {group.edges.map(edge => {
@@ -108,9 +115,10 @@ export function ProfileRelationships({ profile, disabled, onBusyChange, onReload
           {edge.label && <p className="text-muted-sm relationship-label">{edge.label}</p>}
           {draft?.edge?.id === edge.id ? editor : <>
             {edge.notes ? <div className="markdown-content"><ReactMarkdown>{edge.notes}</ReactMarkdown></div>
-              : <p className="text-muted-sm">{proof?.human ? 'You have kept this assessment empty.' : 'There is not enough saved evidence to assess this relationship yet.'}</p>}
+              : proof?.human ? <p className="text-muted-sm">You have kept this assessment empty.</p>
+                : (!hasContextText || proof?.generated_at || proof?.status === 'stale') && <p className="text-muted-sm">{proof?.status === 'stale' ? 'This relationship assessment needs a refresh.' : proof?.generated_at ? 'There is not enough saved evidence to assess this relationship yet.' : 'This relationship assessment has not been generated yet.'}</p>}
             <div className="flex-wrap relationship-evidence">
-              {proof?.human ? <span className="tag">Edited by you</span> : proof && <span className="text-muted-sm">{proof.origin === 'human' ? 'Automatic updates allowed' : proof.status === 'supported' ? 'Updated automatically' : proof.status === 'stale' ? 'Needs assessment refresh' : 'More evidence needed'}{proof.coverage && ` · ${formatProfileCoverage(proof.coverage)}`}</span>}
+              {proof?.human ? <span className="tag">Edited by you</span> : proof && (proof.origin === 'human' || proof.generated_at || proof.status === 'stale') && <span className="text-muted-sm">{proof.origin === 'human' ? 'Automatic updates allowed' : proof.status === 'supported' ? 'Updated automatically' : proof.status === 'stale' ? 'Needs assessment refresh' : 'More evidence needed'}{proof.coverage && ` · ${formatProfileCoverage(proof.coverage)}`}</span>}
               {count > 0 && <Link className="text-link" to={`/profiles/${edge.subject_id}?tab=evidence&target_id=${encodeURIComponent(edge.target_id)}`}>Meeting evidence ({count})</Link>}
             </div>
             <div className="flex-wrap relationship-actions">

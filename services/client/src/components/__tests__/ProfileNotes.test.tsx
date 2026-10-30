@@ -27,10 +27,29 @@ it('keeps the edited note on409 while preserving other refreshed sections', asyn
   fireEvent.change(screen.getByLabelText('Strengths'), { target: { value: 'My draft' } });
   fireEvent.submit(screen.getByRole('button', { name: 'Save section' }).closest('form')!);
   await screen.findByRole('alert');
+  expect(screen.getByRole('button', { name: 'Save section' })).toBeDisabled();
   rerender(<ProfileNotes profile={{ ...profileFixture, revision: 3, section_notes: { drivers: 'Changed elsewhere' } }} disabled={false} onBusyChange={busy} onReload={reload} />);
   expect(screen.getByLabelText('Strengths')).toHaveValue('My draft');
   fireEvent.submit(screen.getByRole('button', { name: 'Save section' }).closest('form')!);
   await waitFor(() => expect(api.profiles.update).toHaveBeenLastCalledWith(profileFixture.id, { expected_revision: 3, section_notes: { strengths: 'My draft' } }));
+});
+
+it('allows an unchanged-revision retry only after an accepted reread and shows the saved section', async () => {
+  vi.mocked(api.profiles.update).mockRejectedValueOnce(new ApiError('Profile busy', 409));
+  const initial = { ...profileFixture, section_notes: { strengths: 'Current strength.' } };
+  const { rerender } = renderWithProviders(<ProfileNotes profile={initial} disabled={false} onBusyChange={busy} onReload={reload} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Edit strengths' }));
+  fireEvent.change(screen.getByLabelText('Strengths'), { target: { value: 'My draft.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save section' }));
+  await screen.findByRole('alert');
+  expect(screen.getByRole('button', { name: 'Save section' })).toBeDisabled();
+  expect(screen.getByLabelText('Strengths')).toHaveValue('My draft.');
+  fireEvent.click(screen.getByRole('button', { name: 'Retry section refresh' }));
+  expect(reload).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole('button', { name: 'Save section' })).toBeDisabled();
+  rerender(<ProfileNotes profile={{ ...initial }} disabled={false} onBusyChange={busy} onReload={reload} />);
+  expect(within(screen.getByRole('region', { name: 'Current saved section' })).getByText('Current strength.')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Save section' })).toBeEnabled();
 });
 
 it('locks the submitted note while saving so later typing cannot be discarded', async () => {
