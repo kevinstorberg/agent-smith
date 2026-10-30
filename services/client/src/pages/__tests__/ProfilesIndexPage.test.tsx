@@ -117,9 +117,16 @@ describe('ProfilesIndexPage', () => {
   it('opens the canonical detail from click or keyboard', async () => {
     renderWithProviders(<ProfilesIndexPage />);
     const name = await screen.findByText('Alex');
-    expect(name).toHaveAttribute('href', `/profiles/${profileFixture.id}`);
-    fireEvent.click(name.closest('tr')!);
+    const row = name.closest('tr')!;
+    expect(screen.queryByRole('link', { name: 'Alex' })).not.toBeInTheDocument();
+    expect(name).not.toHaveAttribute('href');
+    expect(row).toHaveAttribute('tabindex', '0');
+    fireEvent.click(name);
     expect(navigate).toHaveBeenCalledWith(`/profiles/${profileFixture.id}`);
+    navigate.mockClear();
+    fireEvent.click(screen.getByText('alex@example.test'));
+    expect(navigate).toHaveBeenCalledWith(`/profiles/${profileFixture.id}`);
+    navigate.mockClear();
     fireEvent.keyDown(screen.getByText('Speaker 1').closest('tr')!, { key: 'Enter' });
     expect(navigate).toHaveBeenLastCalledWith('/profiles/meeting-profile');
   });
@@ -187,6 +194,7 @@ describe('ProfilesIndexPage', () => {
     renderWithProviders(<ProfilesIndexPage />);
     const button = await screen.findByRole('button', { name: 'Star Alex' });
     fireEvent.keyDown(button, { key: 'Enter' });
+    fireEvent.keyDown(button, { key: ' ' });
     fireEvent.click(button);
     await waitFor(() => expect(api.profiles.update).toHaveBeenCalledWith(profileFixture.id, { expected_revision: 1, starred: true }));
     expect(navigate).not.toHaveBeenCalled();
