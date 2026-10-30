@@ -15,6 +15,7 @@ const mockDelete = vi.mocked(api.meetings.deleteTranscript);
 const mockRetry = vi.mocked(api.meetings.retryTranscript);
 const ready: Transcript = {
   status: 'ready', total: 1, limit: 100, offset: 0, error_type: null, captured_at: '2026-10-28T12:30:00Z',
+  transcript_hash: 'b'.repeat(64),
   items: [{
     id: 'segment-0', text: 'We should ship the release next week.',
     speaker: { name: 'Alex', attribution: 'provider', source: 'granola' },
@@ -39,6 +40,22 @@ afterEach(() => {
 });
 
 describe('MeetingTranscript', () => {
+  it('keeps each displayed statement bound to the hash of the page that supplied it', async () => {
+    const assign = vi.fn();
+    mockRead.mockImplementation(async (_id, params) => ({ ...ready, total: 2, offset: params?.offset || 0,
+      transcript_hash: (params?.offset ? 'c' : 'b').repeat(64),
+      items: [{ ...ready.items[0], id: `segment-${params?.offset || 0}`, text: params?.offset ? 'New page statement' : 'Original page statement' }],
+    }));
+    renderWithProviders(<MeetingTranscript meetingId="meeting-id" onAssign={assign} />);
+    await screen.findByText('Original page statement');
+    fireEvent.click(screen.getByRole('button', { name: 'Load more transcript' }));
+    await screen.findByText('New page statement');
+    const buttons = screen.getAllByRole('button', { name: 'Assign this statement' });
+    fireEvent.click(buttons[0]); fireEvent.click(buttons[1]);
+    expect(assign.mock.calls[0][1]).toBe('b'.repeat(64));
+    expect(assign.mock.calls[1][1]).toBe('c'.repeat(64));
+  });
+
   it('refreshes effective assignments across loaded pages without resetting transcript pagination or raw speakers', async () => {
     let identified = false;
     mockRead.mockImplementation(async (_id, params) => ({ ...ready, total: 200, offset: params?.offset || 0,

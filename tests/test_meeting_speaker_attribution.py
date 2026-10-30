@@ -1,20 +1,29 @@
 import asyncio
 import copy
+import hashlib
 import json
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
+from psycopg2.extras import Json
 
+from services.api.routers.meetings import router
 from services.db import get_connection
 from services.graphs.runtime import dispatch
+from services.jobs.scheduler import JobScheduler
 from services.meetings import digestion_db, management_db, speaker_analysis, speaker_db
 from services.meetings.participants import meeting_participants, speaker_key
 from services.meetings.speaker_analysis import identify_statements as real_identify
 from services.meetings.types import TranscriptSegment
+from tests.test_manual_analysis import saved as saved
 from tests.test_meeting_memory_agent import call, model as model
 from tests.test_meeting_memory_flow import agents as agents, feed as feed, ready as ready
 from tests.test_meeting_sync import source as source
+from tests.test_speaker_context import request_data
 
 
 def assignment(segment, name, **fields):
@@ -140,6 +149,93 @@ async def test_explicit_old_identification_never_replays_memories(source, feed, 
     assert len(agents.analyses) == len(agents.publications) == 1
     after = digestion_db.get_record(meeting_id)
     assert after["memory_artifact"] == before["memory_artifact"] and after["memory_status"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_explicit_legacy_request_wakes_existing_job_and_commits_scripted_known_speakers_only(
+        source, saved, model, monkeypatch):
+    from services.meetings import analysis, factory, profile_db
+    from services.memory import db as vector_db
+
+    selected, untouched, completed = (saved(suffix=name) for name in ("selected", "untouched", "completed"))
+    person = profile_db.create_profile("Alex Taylor " + uuid4().hex, "alex-" + uuid4().hex + "@example.test")
+    person = profile_db.update_metadata(person["id"], person["revision"], nicknames=["Lex"],
+        metadata={"company": "Example Clinic", "job_role": "Security lead", "supervisor": "Blair"})
+    segments = [TranscriptSegment(f"Review topic {index}.", {"source": "speaker", "attribution": "them"}).to_dict(index)
+                for index in range(42)]
+    segments[0]["text"] = "I'm Lex, the security lead at Example Clinic."
+    segments[9]["text"] = "I own the threat model review."
+    segments[40]["text"] = "I'll finish that threat model review."
+    content_hash = hashlib.sha256(json.dumps(segments, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+    manual = [{"name": person["display_name"], "profile_id": person["id"], "segment_id": "segment-9"}]
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE meeting_summaries SET manual_participants=%s,summary_text=%s WHERE id=%s",
+            (Json(manual), "Product security and threat model planning.", selected))
+        cur.execute("UPDATE meeting_digestions SET speaker_status='legacy' WHERE meeting_id IN %s", ((selected, untouched),))
+        cur.execute("UPDATE meeting_digestions SET transcript=%s,transcript_hash=%s WHERE meeting_id=%s",
+            (Json({"segments": segments}), content_hash, selected))
+        cur.execute("UPDATE meeting_digestions SET speaker_status='done' WHERE meeting_id=%s", (completed,))
+    before = {meeting_id: digestion_db.get_record(meeting_id) for meeting_id in (selected, untouched, completed)}
+    first = assignment(segments[0], "Lex", profile_id=person["id"])
+    later = assignment(segments[40], "Lex", profile_id=person["id"])
+    later["evidence"] = [{"segment_id": "segment-9", "quote": segments[9]["text"]}]
+    instance, roles = model([
+        call("stage_speakers", assignments=[first], reason="Other statements are uncertain"), AIMessage(content="Done"),
+        call("stage_speakers", assignments=[later], reason="The adjacent statement stays uncertain"), AIMessage(content="Done"),
+    ])
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Explicit saved speaker review must not pull notes or generate/publish memories")
+    monkeypatch.setitem(factory._PROVIDER_BUILDERS, "test", forbidden)
+    monkeypatch.setattr(analysis, "analyze_memories", forbidden)
+    monkeypatch.setattr(vector_db, "publish", forbidden)
+    job = {"id": 123, "schedule_config": {"minutes": 15}, "input_params": {
+        "graph_type": "meeting_ingest", "graph_inputs": {"source": source.name}, "timeout": 600}}
+    scheduler = JobScheduler(device_name="synthetic-device")
+    scheduler._eligible_jobs = lambda: [job]
+    scheduler._next_run[job["id"]] = datetime.now(timezone.utc) + timedelta(hours=1)
+    dispatched = []
+    scheduler._dispatch = lambda row: dispatched.append(row["id"])
+    app = FastAPI()
+    app.include_router(router, prefix="/api/meetings")
+    try:
+        assert management_db.request_processing(selected) == {"status": "done"}
+        assert digestion_db.get_record(selected) == before[selected]
+        await scheduler._tick()
+        assert dispatched == [] and instance.seen == []
+        assert digestion_db.claim_identification(source.name, "automatic-canary") is None
+        assert digestion_db.claim_digestion([(source.provider, source.account_key)], "automatic-canary") is None
+        with TestClient(app) as client:
+            response = client.post(f"/api/meetings/{selected}/identify-participants")
+        assert response.status_code == 200 and response.json() == {"status": "queued"}
+        assert instance.seen == []
+        assert digestion_db.get_record(selected)["speaker_status"] == "pending"
+        await scheduler._tick()
+        assert dispatched == [job["id"]]
+        result = json.loads(await dispatch("meeting_ingest", {"source": source.name, "meeting_id": selected}))
+        assert result["participants"]["outcome"] == "done" and "memories" not in result
+        assert roles == [("meeting_speaker", "curator"), ("meeting_speaker", "curator")]
+        assert len(instance.seen) == 4
+        quoted = request_data(instance.seen[2])
+        assert any(row["id"] == "segment-0" and row["text"] == segments[0]["text"] for row in quoted["read_only_context"])
+        assert any(row["source"] == "human" and row["segment_id"] == "segment-9" and row["profile_id"] == person["id"]
+                   and row["text"] == segments[9]["text"] for row in quoted["read_only_identity_anchors"])
+        candidate = next(row for row in quoted["candidates"] if row.get("profile_id") == person["id"])
+        assert "Lex" in candidate["aliases"] and candidate["metadata"] == person["metadata"]
+        assert quoted["meeting"]["summary_excerpt"] == "Product security and threat model planning."
+        transcript = digestion_db.get_transcript(selected)
+        assert {index for index, row in enumerate(transcript["items"]) if row.get("effective_speaker")} == {0, 9, 40}
+        assert all(transcript["items"][index]["effective_speaker"]["profile_id"] == person["id"] for index in (0, 9, 40))
+        after = digestion_db.get_record(selected)
+        assert after["speaker_status"] == "done" and after["transcript"]["segments"] == segments
+        assert after["memory_status"] == "done" and after["memory_artifact"] == before[selected]["memory_artifact"]
+        assert all(digestion_db.get_record(meeting_id) == before[meeting_id] for meeting_id in (untouched, completed))
+        await scheduler._tick()
+        assert dispatched == [job["id"]]
+        assert digestion_db.claim_identification(source.name, "automatic-canary") is None
+        assert digestion_db.claim_digestion([(source.provider, source.account_key)], "automatic-canary") is None
+    finally:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM participant_profiles WHERE id=%s", (person["id"],))
 
 
 def test_disjoint_window_skips_oversized_statement_without_reusing_ids():

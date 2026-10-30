@@ -254,7 +254,8 @@ def get_transcript(meeting_id: str, *, limit: int = 100, offset: int = 0) -> dic
         return None
     from services.meetings import stage_state
 
-    return _serialize({**stage_state.transcript(dict(row)), "items": row["items"], "limit": limit, "offset": offset})
+    return _serialize({**stage_state.transcript(dict(row)), "transcript_hash": row["transcript_hash"],
+                       "items": row["items"], "limit": limit, "offset": offset})
 
 
 def delete_transcript(meeting_id: str) -> None:

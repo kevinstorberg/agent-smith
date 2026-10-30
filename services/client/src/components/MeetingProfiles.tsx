@@ -30,21 +30,27 @@ export function MeetingProfiles({ meetingId, refreshVersion, onState, active = t
   if (!active) return null;
   return (
     <section id="meeting-profiles" className="card" aria-label="Meeting participant profiles">
-      <h3 className="section-title">Participant profiles</h3>
+      <div className="participants-header">
+        <h3 className="section-title">Linked profiles</h3>
+        <a className="btn" href="#meeting-participants">Manage participants</a>
+      </div>
       {!data && loading && <p className="text-muted-sm">Loading participant profiles...</p>}
       {error && <div role="alert"><p>Could not load participant profiles. Try again.</p><button className="btn" onClick={() => refresh()} disabled={loading}>Retry</button></div>}
-      {data && <MeetingGenerationState result={data} output="profiles" blockedMessage={blockedMessage(data.reason)}
-        retrying={retry.loading} retryFailed={Boolean(retry.error)} onRetry={() => retry.mutate()} />}
-      {data?.status === 'done' && (data.items.length === 0 ? (
-        <p className="text-muted-sm">{data.reason || 'No participant profiles were generated for this meeting.'}</p>
-      ) : (
-        <ul style={{ listStyle: 'none' }}>
-          {data.items.map(profile => <li key={profile.id} style={{ marginBottom: 8 }}>
-            <Link to={`/profiles/${profile.id}`}>{profile.display_name}</Link>
-            {profile.email && <span className="text-muted-sm"> · {profile.email}</span>}
-          </li>)}
-        </ul>
-      ))}
+      {data && <>
+        {data.items.length > 0 ? <div className="meeting-linked-profiles" role="region" aria-label="Linked profiles list" tabIndex={0}>
+          <table className="table" aria-label="Linked participant profiles">
+            <thead><tr><th>Name</th><th>Email</th><th className="text-right">Actions</th></tr></thead>
+            <tbody>{data.items.map(profile => <tr key={profile.id}>
+              <td>{profile.display_name}</td><td className="text-muted-sm">{profile.email || '—'}</td>
+              <td className="text-right"><Link className="btn btn-sm" aria-label={`View ${profile.display_name}'s profile`} to={`/profiles/${profile.id}`}>View profile</Link></td>
+            </tr>)}</tbody>
+          </table>
+        </div> : <p className="text-muted-sm">No profiles are linked to this meeting yet. Use Manage participants to connect an existing profile.</p>}
+        <h4>Profile analysis</h4>
+        <MeetingGenerationState result={data} output="profiles" blockedMessage={blockedMessage(data.reason)}
+          retrying={retry.loading} retryFailed={Boolean(retry.error)} onRetry={() => retry.mutate()} />
+        {data.status === 'done' && <p className="text-muted-sm">{data.reason || 'Profile analysis is complete. Linked profiles reflect their current saved information.'}</p>}
+      </>}
     </section>
   );
 }

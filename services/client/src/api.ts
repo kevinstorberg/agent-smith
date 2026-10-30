@@ -253,6 +253,7 @@ export interface MeetingTranscript extends Paginated<TranscriptSegment> {
   limit: number;
   error_type: string | null;
   captured_at: string | null;
+  transcript_hash?: string | null;
 }
 
 export interface MeetingMemory {

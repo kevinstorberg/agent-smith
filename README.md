@@ -435,12 +435,18 @@ identity is selected. **Audio channels** can contain more than one person.
 Use **Assign this statement** on a transcript row for a specific utterance, rather than assigning
 every voice in an anonymous channel to one person. Participant edits remain available during
 unrelated memory generation; active capture, identity processing or persona extraction shows
-its specific lock reason. **Identify participants** explicitly queues an older saved transcript
+its specific lock reason. **Identify speakers** explicitly queues an older saved transcript
 through the existing meeting job; it preserves completed memories and reopens profile work
 only when that repair changes identities or a prior manual reassignment requires it.
+Older meetings marked **Not reviewed** have not run speaker identification; resuming other
+unfinished work does not implicitly request it. **Add participant** offers an existing profile
+or a name and optional email. Statement assignment uses the same editor for just the selected quote.
+The meeting's **Profiles** tab lists already-linked profiles even while persona analysis is
+queued or interrupted. Its analysis status separately shows saved progress and the last timeout;
+staged observations do not become new published profiles until the analysis finishes.
 
 **Process meeting** explicitly enrolls an older saved meeting or retries its missing stages.
-With compatible jobs running, explicit requests resume on the scheduler's next five-second
+With compatible jobs running, explicit requests resume on the scheduler's next configured
 poll, including across bounded runs, rather than waiting for each 15-minute interval. Retry
 backoff still applies. The processing card shows transcript sections analyzed, staged candidates,
 saved outputs and next eligible attempt. Publication starts after all memory windows finish;
