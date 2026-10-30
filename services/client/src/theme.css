@@ -1128,6 +1128,12 @@ pre {
 .profile-create h3 { margin-bottom: 0; }
 .profiles-table { overflow-x: auto; max-width: 100%; }
 .profiles-table .table { min-width: 860px; }
+.plans-table { overflow-x: auto; }
+.plans-table .table { table-layout: fixed; min-width: 600px; }
+.plans-table td { overflow-wrap: anywhere; }
+.plans-status-column { width: 90px; }
+.plans-project-column { width: 140px; }
+.plans-date-column { width: 160px; }
 .profiles-table th:nth-child(2),
 .profiles-table td:nth-child(2) { min-width: 170px; }
 .profiles-table:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
