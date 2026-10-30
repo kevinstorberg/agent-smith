@@ -32,7 +32,9 @@ def _snapshot(cur, row: dict) -> tuple[dict, list[dict]]:
     targets = profile_db.canonical_rows(cur, [claim["target_id"] for claim in claims if claim.get("target_id")], metadata_only=True)
     claims = [{**claim, "canonical_target_id": str(targets[claim["target_id"]]["id"]) if targets.get(claim.get("target_id")) else claim.get("target_id")} for claim in claims]
     visible = profile_db._visible(cur, [row], include_overrides=True)[0]
-    visible["relationships"] = for_profiles(cur, [row], include_dismissed=True, include_overrides=True, include_unavailable=True)[str(row["id"])]
+    visible["_card_owner_ids"] = profile_db.canonical_identity_ids(cur, str(row["id"]))
+    visible["relationships"] = for_profiles(cur, [row], include_dismissed=True, include_overrides=True,
+                                             include_unavailable=True, include_card_state=True)[str(row["id"])]
     return visible, claims
 
 

@@ -38,7 +38,7 @@ multiple claims repeating the same source utterance count once. Overview may use
 If support is insufficient, stage status insufficient_evidence, empty text and no asserted
 claim. A supported section must cite only the supplied current claim IDs and describe what
 those observations justify, with uncertainty and changes over time. Never invent evidence.
-Stage each editable ordinary section and each editable outgoing relationship exactly once through stage_assessment. Never generate an aggregate relationships section. If the legacy relationships section is human-protected, stage no relationship entries until its owner explicitly releases it. Relationship claim IDs must all concern that target; preserve human relationship notes including clears. Keep each text concise,
+Stage each editable ordinary section and each editable outgoing relationship exactly once through stage_assessment. Never generate an aggregate relationships section. The supplied editable_relationship_targets is authoritative: legacy human protection excludes unconverted relationships, while explicitly converted and released individual relationships may be updated. Relationship claim IDs must all concern that target; preserve human relationship notes including clears. Named relationships without a linked profile are context only, never editable targets. Keep each text concise,
 specific, actionable and at most 4000 characters. Relationships retain direction and name
 the known target only when supported. Source evidence remains secondary to the narrative.
 You can research previous memories but cannot write memories, execute tasks or edit metadata.
@@ -99,10 +99,12 @@ def validate_item(item: dict, known: dict, *, minimum: int = 2) -> dict:
 
 
 def editable_relationships(row: dict) -> list[dict]:
-    if sections.human("relationships", row):
-        return []
+    from services.meetings.relationship_cards import import_keys
+
+    legacy_protected = sections.human("relationships", row)
     edges = [edge for edge in row.get("relationships", []) if edge["subject_id"] == str(row["id"])
-             and not edge.get("dismissed") and not relationship_analysis.human(edge)]
+             and edge.get("target_id") and not edge.get("dismissed") and not relationship_analysis.human(edge)
+             and (not legacy_protected or import_keys(edge.get("history", []), row.get("_card_owner_ids", [str(row["id"])])))]
     if len(edges) > 30:
         raise AssessmentError("Profile has more than 30 editable outgoing relationships; reduce the context before retrying", error_type="ProfileContextTooLarge")
     return edges
