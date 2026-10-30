@@ -125,10 +125,10 @@ describe('ActionItemDetailPage', () => {
     expect(vi.mocked(api.actionItems.create).mock.calls[1][0]).toEqual(vi.mocked(api.actionItems.create).mock.calls[0][0]);
   });
 
-  it('does not submit a blank title and retains Cancel', () => {
+  it('does not submit a blank title and retains Cancel', async () => {
     renderPage('new');
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: '   ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save' })); });
     expect(api.actionItems.create).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(navigate).toHaveBeenCalledWith('/action-items');
@@ -211,26 +211,29 @@ describe('ActionItemDetailPage', () => {
   });
 
   it('resumes polling after a status conflict is reread and successfully retried', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers();
     vi.mocked(api.actionItems.update).mockRejectedValueOnce(new ApiError('Conflict', 409));
     vi.mocked(api.actionItems.get).mockResolvedValueOnce(actionItem(1))
       .mockResolvedValueOnce(actionItem(1, { revision: 3 }))
       .mockResolvedValue(actionItem(1, { revision: 4, status: 'completed' }));
     renderPage();
-    await screen.findByRole('button', { name: 'Mark complete' });
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole('button', { name: 'Mark complete' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'Mark complete' }));
-    await screen.findByRole('alert');
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Mark complete' })).toBeEnabled());
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mark complete' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'Mark complete' }));
-    await screen.findByRole('button', { name: 'Reopen action item' });
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole('button', { name: 'Reopen action item' })).toBeEnabled();
     expect(api.actionItems.update).toHaveBeenLastCalledWith(1, { expected_revision: 3, status: 'completed' });
     vi.mocked(api.actionItems.get).mockClear();
-    await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS); });
     expect(api.actionItems.get).toHaveBeenCalledTimes(1);
   });
 
   it.each(['status', 'delete'] as const)('resumes read-only polling after a %s conflict is reread without another write', async operation => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers();
     if (operation === 'status') vi.mocked(api.actionItems.update).mockRejectedValueOnce(new ApiError('Conflict', 409));
     else {
       vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -240,15 +243,17 @@ describe('ActionItemDetailPage', () => {
       .mockResolvedValueOnce(actionItem(1, { revision: 3, title: 'Current saved task' }))
       .mockResolvedValueOnce(actionItem(1, { revision: 4, title: 'Later agent update' }));
     renderPage();
-    await screen.findByRole('heading', { name: 'Task 1' });
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole('heading', { name: 'Task 1' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: operation === 'status' ? 'Mark complete' : 'Delete' }));
-    await screen.findByRole('heading', { name: 'Current saved task' });
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole('heading', { name: 'Current saved task' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Edit' })).toBeEnabled();
     expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
     vi.mocked(api.actionItems.get).mockClear();
-    await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS); });
     expect(api.actionItems.get).toHaveBeenCalledTimes(1);
-    expect(await screen.findByRole('heading', { name: 'Later agent update' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Later agent update' })).toBeVisible();
     expect(operation === 'status' ? api.actionItems.update : api.actionItems.remove).toHaveBeenCalledTimes(1);
   });
 

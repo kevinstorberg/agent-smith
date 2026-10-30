@@ -238,11 +238,12 @@ describe('ActionItemsIndexPage', () => {
   });
 
   it('pauses polling during a drag and ignores canceled or unchanged drops', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    await renderReady();
-    act(() => { drag.start!(); });
+    vi.useFakeTimers();
+    renderWithProviders(<ActionItemsIndexPage />);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { drag.start!(); });
     vi.mocked(api.actionItems.list).mockClear();
-    await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS * 2); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2); });
     expect(api.actionItems.list).not.toHaveBeenCalled();
     await act(async () => { await drag.end!({ ...drop(), destination: null, reason: 'CANCEL' }); });
     act(() => { drag.start!(); });
