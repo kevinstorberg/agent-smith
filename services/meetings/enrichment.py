@@ -101,9 +101,13 @@ class DigestionRun(processing.ProcessingRun):
 
         meeting_id = record["meeting_id"]
         control = record.get("manual_analysis", {}).get("memory", {})
+        async def validate_manual_source() -> None:
+            current = await run_db(manual_stage.before_analysis, meeting_id, self.owner, record["transcript_hash"], "memory")
+            if not current or current.get("request_id") != control["request_id"]:
+                raise manual_stage.ManualAnalysisInputChanged("Manual memory analysis control was removed or replaced")
+
         if control.get("active"):
-            if not await run_db(manual_stage.before_analysis, meeting_id, self.owner, record["transcript_hash"], "memory"):
-                raise manual_stage.ManualAnalysisInputChanged("Manual memory analysis control was removed")
+            await validate_manual_source()
             record = {**record, "snapshot": await run_db(digestion_db.get_context, meeting_id)}
         artifact = copy.deepcopy(record["memory_artifact"]) or {
             "version": 1, "offset": 0, "items": [], "published_ids": [],
@@ -151,8 +155,9 @@ class DigestionRun(processing.ProcessingRun):
         while artifact["offset"] < len(segments):
             window, end = transcript_window(segments, artifact["offset"])
             if control.get("active"):
-                await run_db(manual_stage.before_analysis, meeting_id, self.owner, record["transcript_hash"], "memory")
-            result = await analyze_memories(snapshot, window, artifact["items"], deadline=deadline)
+                await validate_manual_source()
+            result = await analyze_memories(snapshot, window, artifact["items"], deadline=deadline,
+                **({"validate_context": validate_manual_source} if control.get("active") else {}))
             for atom in result["items"]:
                 atom = dict(atom)
                 if control.get("active") and any(_same_memory(atom, previous) for previous in artifact["items"]):

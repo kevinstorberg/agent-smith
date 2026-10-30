@@ -5,6 +5,7 @@ import re
 from uuid import uuid4
 
 from services.meetings import digestion_db, stage_db
+from services.meetings.db import ClaimLostError
 from services.meetings.service import run_db
 from services.meetings.windows import WINDOW_CHARS, WINDOW_SEGMENTS
 
@@ -45,6 +46,24 @@ def graph_outcome(result: dict, stages: list[dict]) -> dict:
     return {**result, "outcome": outcome}
 
 
+def _terminal_report(latest: dict | None, stage: str, request_id: str | None, before: dict, report: dict) -> bool:
+    if latest is None:
+        return False
+    current_request = latest.get("manual_analysis", {}).get(stage, {}).get("request_id")
+    if request_id and current_request != request_id:
+        report.update(outcome="failed", error_type="ManualAnalysisSuperseded", progress=before)
+        return True
+    status = latest.get(stage + "_status")
+    if status not in {"done", "failed"}:
+        return False
+    report.update(outcome=status, progress=stage_db.progress(latest, stage))
+    if status == "failed":
+        report["error_type"] = latest.get(stage + "_error") or report.get("error_type") or "StageFailed"
+    else:
+        report.pop("error_type", None)
+    return True
+
+
 class ProcessingRun:
     def __init__(self, release_owner, *, get_record=digestion_db.get_record) -> None:
         self.owner = str(uuid4())
@@ -80,6 +99,7 @@ class ProcessingRun:
         if "meeting_id" in record:
             report["meeting_id"] = record["meeting_id"]
         before = stage_db.progress(record, stage)
+        request_id = record.get("manual_analysis", {}).get(stage, {}).get("request_id")
         if self.remaining < 50:
             report["progress"] = before
             return
@@ -92,12 +112,21 @@ class ProcessingRun:
             expired = isinstance(error, AnalysisBudgetExpired) or (isinstance(error, TimeoutError) and attempt.expired())
             if expired:
                 latest = await run_db(self._get_record, context_id)
+                if _terminal_report(latest, stage, request_id, before, report):
+                    return
                 after = stage_db.progress(latest, stage)
                 if after["processed_units"] > before["processed_units"] or after["saved_count"] > before["saved_count"]:
                     report["progress"] = after
                     return
             category = "StageNoProgressTimeout" if expired else failure_category(error)
-            await run_db(record_failure, context_id, self.owner, category)
+            try:
+                await run_db(record_failure, context_id, self.owner, category)
+            except ClaimLostError:
+                latest = await run_db(self._get_record, context_id)
+                if request_id and _terminal_report(latest, stage, request_id, before, report):
+                    return
+                raise
             report.update(outcome="failed", error_type=category)
         latest = await run_db(self._get_record, context_id)
-        report["progress"] = stage_db.progress(latest, stage)
+        if not _terminal_report(latest, stage, request_id, before, report):
+            report["progress"] = stage_db.progress(latest, stage)
