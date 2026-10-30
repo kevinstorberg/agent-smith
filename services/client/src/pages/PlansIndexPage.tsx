@@ -67,39 +67,47 @@ export function PlansIndexPage() {
       {loading && <div className="loading">Loading...</div>}
       {error && <div role="alert" className="card">Could not load plans. <button className="btn" onClick={() => refresh()}>Retry</button></div>}
 
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Title</th>
-            <th>Status</th>
-            <th>Project</th>
-            <th>Last Updated</th>
-          </tr>
-        </thead>
-        <tbody>
-          {!loading && !error && items.map(plan => (
-            <tr
-              key={plan.id}
-              {...makeRowClickable(() => navigate(`/plans/${plan.id}`))}
-              style={{ cursor: 'pointer' }}
-            >
-              <td>{plan.title}</td>
-              <td><StatusBadge status={plan.status} kind="plan" /></td>
-              <td>
-                {plan.project ? (
-                  <span className="tag tag-project">{plan.project}</span>
-                ) : (
-                  <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>--</span>
-                )}
-              </td>
-              <td><DateCell date={plan.updated_at} /></td>
+      <div className="table-container plans-table">
+        <table className="table">
+          <colgroup>
+            <col />
+            <col className="plans-status-column" />
+            <col className="plans-project-column" />
+            <col className="plans-date-column" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Status</th>
+              <th>Project</th>
+              <th>Last Updated</th>
             </tr>
-          ))}
-          {!loading && !error && items.length === 0 && (
-            <tr><td colSpan={4} className="loading">No plans found</td></tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {!loading && !error && items.map(plan => (
+              <tr
+                key={plan.id}
+                {...makeRowClickable(() => navigate(`/plans/${plan.id}`))}
+                style={{ cursor: 'pointer' }}
+              >
+                <td>{plan.title}</td>
+                <td><StatusBadge status={plan.status} kind="plan" /></td>
+                <td>
+                  {plan.project ? (
+                    <span className="tag tag-project">{plan.project}</span>
+                  ) : (
+                    <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>--</span>
+                  )}
+                </td>
+                <td><DateCell date={plan.updated_at} /></td>
+              </tr>
+            ))}
+            {!loading && !error && items.length === 0 && (
+              <tr><td colSpan={4} className="loading">No plans found</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {!loading && !error && (
         <Pagination
