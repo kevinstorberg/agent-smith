@@ -10,9 +10,10 @@ interface Props {
   excludeId?: string; disabled?: boolean; limit?: number; emptyLabel?: string;
   refreshVersion?: number; onResults?: (items: ProfileSummary[]) => void;
   selectedLabel?: string;
+  preserveSelectionOnSearch?: boolean;
 }
 
-export function ProfilePicker({ label, selectionLabel, value, onSelect, excludeId, disabled = false, limit = 25, emptyLabel = 'Select a profile', refreshVersion, onResults, selectedLabel }: Props) {
+export function ProfilePicker({ label, selectionLabel, value, onSelect, excludeId, disabled = false, limit = 25, emptyLabel = 'Select a profile', refreshVersion, onResults, selectedLabel, preserveSelectionOnSearch = false }: Props) {
   const id = useId();
   const [text, setText] = useState('');
   const debouncedQuery = useDebouncedValue(text.trim());
@@ -24,7 +25,7 @@ export function ProfilePicker({ label, selectionLabel, value, onSelect, excludeI
   return <div className="profile-picker">
     <label className="form-label" htmlFor={id}>{label}</label>
     <div className="search-bar">
-      <input id={id} value={text} maxLength={1000} disabled={disabled} onChange={event => { setText(event.target.value); onSelect(null); }}
+      <input id={id} value={text} maxLength={1000} disabled={disabled} onChange={event => { setText(event.target.value); if (!preserveSelectionOnSearch) onSelect(null); }}
         onKeyDown={event => { if (event.key === 'Enter') event.preventDefault(); }} />
     </div>
     {error ? <div role="alert">Could not load profiles. <button type="button" className="btn" onClick={() => refresh()}>Retry</button></div> : <>

@@ -18,3 +18,13 @@ it('searches inside an existing editor without submitting its parent form', asyn
   fireEvent.change(screen.getByLabelText('Person'), { target: { value: profileFixture.id } });
   expect(select).toHaveBeenLastCalledWith(expect.objectContaining({ id: profileFixture.id, revision: 1 }));
 });
+
+it('can search for a replacement without implicitly unlinking the current selection', async () => {
+  const select = vi.fn();
+  renderWithProviders(<ProfilePicker label="Find person" selectionLabel="Person" value={profileFixture.id} selectedLabel="Alex" onSelect={select} preserveSelectionOnSearch />);
+  await screen.findByRole('option', { name: 'Alex · alex@example.test' });
+  fireEvent.change(screen.getByLabelText('Find person'), { target: { value: 'Jordan' } });
+  expect(select).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('Person'), { target: { value: '' } });
+  expect(select).toHaveBeenCalledWith(null);
+});
