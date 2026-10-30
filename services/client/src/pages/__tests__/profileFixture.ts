@@ -1,4 +1,13 @@
-import type { ParticipantProfile } from '../../api';
+import type { ParticipantProfile, ProfileRelationshipCard } from '../../api';
+
+export const relationshipCardFixture: ProfileRelationshipCard = {
+  id: 'profile:b813c24e-e32a-4440-b6da-dfe39771bf46', name: 'Jordan',
+  profile_id: 'b813c24e-e32a-4440-b6da-dfe39771bf46',
+  notes: 'Alex values Jordan’s judgment and seeks clear delivery commitments.', label: 'colleague',
+  version: 'a'.repeat(64), human: false, status: 'supported',
+  coverage: { claim_count: 2, meeting_count: 1 },
+  evidence_links: [{ profile_id: 'b1bb54a0-60ec-44f8-a9ec-82e3456ee637', target_id: 'b813c24e-e32a-4440-b6da-dfe39771bf46', count: 2 }],
+};
 
 export const profileFixture: ParticipantProfile = {
   id: 'b1bb54a0-60ec-44f8-a9ec-82e3456ee637',
@@ -11,6 +20,8 @@ export const profileFixture: ParticipantProfile = {
   tags: [],
   starred: false,
   aliases: [],
+  relationship_cards: [],
+  relationship_unassigned: null,
   claims: [{
     id: '97221ea0-a995-42c6-90c0-d242fb2ddd54',
     category: 'perception', epistemic: 'inference', confidence: 'medium',

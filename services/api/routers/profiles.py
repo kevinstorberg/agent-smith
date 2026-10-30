@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from services.api.routers.base import delete_response, empty_to_none, require_found
-from services.meetings import profile_db, relationship_db
+from services.meetings import profile_db, relationship_db, relationship_card_db
 from services.meetings.outputs import ProfileCategory, ProfileEpistemic, ProfileConfidence, ProfileReviewStatus, ProfileClaimSort
 from services.personas import assessment_db, revisions
 
@@ -78,6 +78,49 @@ class RelationshipUpdate(ProfileRevisionRequest):
             fields = {key for key in ("label", "notes") if key in value}
             if (not fields and value.get("allow_agent_notes") is not True) or any(value[key] is None for key in fields):
                 raise ValueError("Provide relationship fields or release automatic notes updates")
+            if "notes" in fields and value.get("allow_agent_notes"):
+                raise ValueError("Notes cannot be edited and released together")
+        return value
+
+
+class RelationshipCardCreate(ProfileRevisionRequest):
+    name: str = Field(min_length=1, max_length=200, strict=True)
+    profile_id: UUID | None = None
+    target_revision: int | None = Field(None, ge=1, strict=True)
+    notes: str | None = Field(None, max_length=4000, strict=True)
+    label: str = Field(default="", max_length=200, strict=True)
+    assignment_version: str | None = Field(None, pattern="^[0-9a-f]{64}$", strict=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def non_null_notes(cls, value):
+        if isinstance(value, dict) and "notes" in value and value["notes"] is None:
+            raise ValueError("Relationship notes must be text; use an empty string to clear them")
+        return value
+
+
+class RelationshipCardVersion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: str = Field(pattern="^[0-9a-f]{64}$", strict=True)
+
+
+class RelationshipCardUpdate(RelationshipCardVersion):
+    name: str | None = Field(None, min_length=1, max_length=200, strict=True)
+    profile_id: UUID | None = None
+    target_revision: int | None = Field(None, ge=1, strict=True)
+    notes: str | None = Field(None, max_length=4000, strict=True)
+    label: str | None = Field(None, max_length=200, strict=True)
+    allow_agent_notes: bool = Field(default=False, strict=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def require_change(cls, value):
+        if isinstance(value, dict):
+            fields = {key for key in ("name", "notes", "label", "profile_id") if key in value}
+            if not fields and value.get("allow_agent_notes") is not True:
+                raise ValueError("Provide relationship fields or release automatic updates")
+            if any(value[key] is None for key in fields - {"profile_id"}):
+                raise ValueError("Relationship fields must be text; use an empty notes string to clear")
             if "notes" in fields and value.get("allow_agent_notes"):
                 raise ValueError("Notes cannot be edited and released together")
         return value
@@ -179,6 +222,28 @@ def list_relationships(profile_id: UUID, include_evidence: bool = True):
     key = str(profile_id)
     profile = require_found(profile_db.get_profile(key, include_evidence=include_evidence), "Profile", key)
     return {"items": profile["relationships"], "total": len(profile["relationships"])}
+
+
+@router.post("/{profile_id}/relationship-cards", status_code=201)
+def create_relationship_card(profile_id: UUID, body: RelationshipCardCreate):
+    return profile_change(relationship_card_db.create, str(profile_id), body.expected_revision, body.name,
+                          profile_id_target=str(body.profile_id) if body.profile_id else None,
+                          target_revision=body.target_revision, notes=body.notes, label=body.label,
+                          assignment_version=body.assignment_version)
+
+
+@router.patch("/{profile_id}/relationship-cards/{card_id}")
+def edit_relationship_card(profile_id: UUID, card_id: str, body: RelationshipCardUpdate):
+    values = body.model_dump(include={"notes", "label", "name", "target_revision", "allow_agent_notes"}, exclude_unset=True)
+    if "profile_id" in body.model_fields_set:
+        values["profile_id_target"] = str(body.profile_id) if body.profile_id else None
+    return profile_change(relationship_card_db.update, str(profile_id), card_id, body.version, **values)
+
+
+@router.delete("/{profile_id}/relationship-cards/{card_id}")
+def remove_relationship_card(profile_id: UUID, card_id: str, body: RelationshipCardVersion):
+    profile_change(relationship_card_db.delete, str(profile_id), card_id, body.version)
+    return delete_response(card_id)
 
 
 @router.post("/{profile_id}/relationships", status_code=201)

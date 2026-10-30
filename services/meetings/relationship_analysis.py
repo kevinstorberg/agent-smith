@@ -13,6 +13,10 @@ def human(edge: dict) -> bool:
 
 def valid(edge: dict, claims: list[dict], contexts: dict) -> bool:
     proof = edge.get("analysis_evidence") or {}
+    if proof.get("origin") == "legacy":
+        return (str(edge["subject_id"]) == proof.get("subject_id")
+                and (str(edge["target_id"]) if edge.get("target_id") else None) == proof.get("target_id")
+                and sections.proof_valid(proof, claims, contexts))
     return (str(edge["subject_id"]) == proof.get("subject_id") and str(edge["target_id"]) == proof.get("target_id")
             and all(claim.get("canonical_target_id", claim.get("target_id")) == str(edge["target_id"])
                     for claim in claims if claim["id"] in proof.get("claim_ids", []))
@@ -26,6 +30,8 @@ def project(edge: dict, claims: list[dict], contexts: dict, *, full_proof: bool 
     chosen = [claim for claim in claims if claim["id"] in proof.get("claim_ids", [])] if supported else []
     summary = {"human": protected, "status": proof.get("status", "insufficient_evidence"),
                "claim_count": len(chosen), "coverage": sections.coverage(chosen), "generated_at": proof.get("generated_at")}
+    if proof.get("origin"):
+        summary["origin"] = proof["origin"]
     if not protected and proof.get("status") == "supported" and not supported:
         summary["status"] = "stale"
     return {**edge, "notes": edge.get("notes", "") if protected or supported or proof.get("origin") == "human" else "",

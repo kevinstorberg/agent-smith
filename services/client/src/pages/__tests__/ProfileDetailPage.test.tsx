@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useLocation } from 'react-router';
 import { renderWithProviders } from '../../test-utils';
 import { ProfileDetailPage } from '../ProfileDetailPage';
-import { profileFixture } from './profileFixture';
-import type { ParticipantProfile, ProfileRelationship } from '../../api';
+import { profileFixture, relationshipCardFixture } from './profileFixture';
+import type { ParticipantProfile } from '../../api';
 import { POLL_INTERVAL_MS } from '../../constants';
 
 const navigate = vi.fn();
@@ -14,13 +14,13 @@ vi.mock('react-router', async importOriginal => {
 });
 vi.mock('../../api', async importOriginal => {
   const actual = await importOriginal<typeof import('../../api')>();
-  return { ...actual, api: { profiles: { get: vi.fn(), claims: vi.fn(), correctClaim: vi.fn(), remove: vi.fn(), update: vi.fn(), list: vi.fn(), merge: vi.fn(), linkEmail: vi.fn(), rebuild: vi.fn(), history: vi.fn(), historyOne: vi.fn(), createRelationship: vi.fn(), updateRelationship: vi.fn(), removeRelationship: vi.fn() } } };
+  return { ...actual, api: { profiles: { get: vi.fn(), claims: vi.fn(), correctClaim: vi.fn(), remove: vi.fn(), update: vi.fn(), list: vi.fn(), merge: vi.fn(), linkEmail: vi.fn(), rebuild: vi.fn(), history: vi.fn(), historyOne: vi.fn(), createRelationshipCard: vi.fn(), updateRelationshipCard: vi.fn(), removeRelationshipCard: vi.fn() } } };
 });
 import { api, ApiError } from '../../api';
 
 const compact: ParticipantProfile = { ...profileFixture, claims: [], claim_count: 1, meeting_count: 1, evidence_loaded: false,
   section_notes: { overview: 'Alex combines product planning with careful follow-through.', strengths: 'Builds clarity for the team.' } };
-const edge: ProfileRelationship = { id: 'edge', subject_id: profileFixture.id, target_id: profileFixture.claims[0].target_id!, subject_name: 'Alex', target_name: 'Jordan', label: 'works with', notes: 'Shared project context', revision: 2, dismissed: false, claims: [], claim_count: 1, created_at: profileFixture.updated_at, updated_at: profileFixture.updated_at };
+const card = { ...relationshipCardFixture, notes: 'Shared project context' };
 const read = vi.mocked(api.profiles.get);
 const claims = vi.mocked(api.profiles.claims);
 function Location() { return <output data-testid="location">{useLocation().search}</output>; }
@@ -37,7 +37,7 @@ beforeEach(() => {
   vi.mocked(api.profiles.remove).mockResolvedValue({ deleted: true, id: compact.id });
   vi.mocked(api.profiles.list).mockResolvedValue({ items: [], total: 0 });
   vi.mocked(api.profiles.history).mockResolvedValue({ items: [], total: 0 });
-  vi.mocked(api.profiles.updateRelationship).mockResolvedValue(edge);
+  vi.mocked(api.profiles.updateRelationshipCard).mockResolvedValue(compact);
 });
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
@@ -56,28 +56,28 @@ describe('ProfileDetailPage', () => {
     expect(screen.getByRole('button', { name: 'Edit' })).toBeDisabled();
   });
 
-  it('keeps saved combined context accessible in Relationships alongside current per-person assessments', async () => {
-    read.mockResolvedValue({ ...compact, relationships: [edge], section_notes: { ...compact.section_notes, relationships: 'Previous combined assessment.' } });
+  it('shows one relationship card and retains its edit across tabs without rendering combined analysis', async () => {
+    read.mockResolvedValue({ ...compact, relationship_cards: [card], section_notes: { ...compact.section_notes, relationships: 'Previous combined assessment.' } });
     renderPage('assessment');
     await screen.findByRole('heading', { name: 'Strengths' });
     expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(4);
-    expect(screen.getByText('Previous combined assessment.')).not.toBeVisible();
+    expect(screen.queryByText('Previous combined assessment.')).not.toBeInTheDocument();
     await open('Relationships');
     const relations = within(screen.getByRole('region', { name: 'Profile relationships' }));
-    expect(relations.getByText(edge.notes)).toBeVisible();
-    expect(relations.getByRole('link', { name: 'Jordan' })).toHaveAttribute('href', `/profiles/${edge.target_id}`);
+    expect(relations.getByText(card.notes)).toBeVisible();
+    expect(relations.getByRole('link', { name: 'Jordan' })).toHaveAttribute('href', `/profiles/${card.profile_id}`);
     expect(relations.getByRole('button', { name: 'Edit relationship' })).toBeVisible();
-    expect(relations.getByText('Previous combined assessment.')).not.toBeVisible();
-    fireEvent.click(relations.getByText('Saved relationship context'));
-    expect(relations.getByText('Previous combined assessment.')).toBeVisible();
-    fireEvent.click(relations.getByRole('button', { name: 'Edit relationships and perceptions' }));
-    fireEvent.change(relations.getByLabelText('Relationships and perceptions'), { target: { value: 'Retained combined context draft.' } });
-    expect(relations.getByRole('button', { name: 'Edit relationship' })).toBeDisabled();
+    expect(relations.queryByText('Previous combined assessment.')).not.toBeInTheDocument();
+    expect(relations.queryByText('Saved relationship context')).not.toBeInTheDocument();
+    fireEvent.click(relations.getByRole('button', { name: 'Edit relationship' }));
+    fireEvent.change(relations.getByLabelText('Analysis'), { target: { value: 'Retained relationship draft.' } });
+    expect(relations.getAllByRole('article')).toHaveLength(1);
+    expect(within(relations.getByRole('article')).getAllByRole('heading')).toHaveLength(1);
     expect(claims).not.toHaveBeenCalled();
     await open('Overview');
     expect(screen.getByRole('button', { name: 'Edit' })).toBeDisabled();
     await open('Relationships');
-    expect(relations.getByLabelText('Relationships and perceptions')).toHaveValue('Retained combined context draft.');
+    expect(relations.getByLabelText('Analysis')).toHaveValue('Retained relationship draft.');
     fireEvent.click(relations.getByRole('button', { name: 'Cancel' }));
     await open('Overview');
     fireEvent.click(screen.getByText('History'));
@@ -118,7 +118,7 @@ describe('ProfileDetailPage', () => {
   });
 
   it('retains an assessment draft across views and prevents competing relationship changes', async () => {
-    read.mockResolvedValue({ ...compact, relationships: [edge] });
+    read.mockResolvedValue({ ...compact, relationship_cards: [card] });
     renderPage('assessment');
     fireEvent.click(await screen.findByRole('button', { name: 'Edit strengths' }));
     fireEvent.change(screen.getByLabelText('Strengths'), { target: { value: 'My assessment draft' } });
@@ -132,7 +132,7 @@ describe('ProfileDetailPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit relationship' }));
     await open('Overview');
     await open('Relationships');
-    expect(screen.getByLabelText('Relationship assessment')).toHaveValue(edge.notes);
+    expect(screen.getByLabelText('Analysis')).toHaveValue(card.notes);
     expect(screen.getByRole('button', { name: 'Refresh assessment' })).toBeDisabled();
   });
 

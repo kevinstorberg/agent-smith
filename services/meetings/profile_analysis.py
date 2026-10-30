@@ -111,7 +111,7 @@ def _json(value: object) -> str:
 def _agent_profile(profile: dict) -> dict:
     if profile.get("deleted"):
         return {"id": profile["id"], "revision": profile["revision"], "deleted": True}
-    result = {key: value for key, value in profile.items() if key != "merge_history"}
+    result = {key: value for key, value in profile.items() if key not in {"merge_history", "relationship_cards", "relationship_unassigned"}}
     if "metadata_provenance" in profile:
         result["metadata_provenance"] = {
             field: {key: value for key, value in source.items() if key != "evidence"}

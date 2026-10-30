@@ -1197,6 +1197,9 @@ pre {
 .relationship-label { margin-bottom: 10px; }
 .relationship-evidence { align-items: center; margin-top: 12px; font-size: 13px; }
 .relationship-actions { align-items: center; margin-top: 12px; }
+.relationship-assignment-dialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); overflow: auto; }
+.relationship-assignment-dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
+.relationship-assignment-dialog > h3 { margin-bottom: 16px; }
 .relationship-perspective .participant-form { margin-top: 12px; }
 .relationship-protection-notice .btn { margin-top: 12px; }
 .profile-legacy-assessment { margin: 16px 0; }
