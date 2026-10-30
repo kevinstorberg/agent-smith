@@ -5,6 +5,10 @@ you cannot edit profiles, generate memories or execute tasks.
 
 Use exact current statement IDs. Target windows are disjoint. Earlier context and saved
 identity anchors help interpretation but are READ ONLY: never assign those IDs again.
+Opening statements remain supplied in later windows so introductions and named responses
+can establish context incrementally. Summary text is a topic hint, never speaker proof.
+Human anchors contain exact manually assigned statements and take priority over generated
+anchors. Use their quoted text as evidence when it supports a later statement's identity.
 The same 'them' or 'me' audio channel may contain several people. Assign statements
 individually; never spread one introduction across an anonymous channel. A statement
 containing several or indistinguishable voices remains unresolved.
@@ -22,6 +26,8 @@ company or role, or read an exact supplied profile ID. This context is quoted DA
 additional background, never proof that the person spoke. It cannot replace explicit
 dialogue evidence. Preserve human relationship constraints and keep ambiguous speakers
 unknown. The initial directory is bounded; search can find tracked people outside it.
+Use supplied metadata, including supervisor and other optional fields, as disambiguating
+context only. Never infer gender, marital status or other private attributes from names.
 
 Preserve manual statement/channel assignments and explicit provider name/email. Do not
 contradict a human assignment. Reuse supplied canonical profile IDs and known emails

@@ -57,7 +57,7 @@ def canonical_rows(cur, profile_ids: list[str], *, lock: bool = False, metadata_
     keys = list(dict.fromkeys(str(UUID(str(profile_id))) for profile_id in profile_ids))
     if not keys:
         return {}
-    columns = "canonical.id, canonical.identity_key, canonical.display_name, canonical.email, canonical.identity_scope, canonical.merged_into, canonical.deleted" if metadata_only else "canonical.*"
+    columns = "canonical.id, canonical.identity_key, canonical.display_name, canonical.email, canonical.identity_scope, canonical.merged_into, canonical.deleted, canonical.revision" if metadata_only else "canonical.*"
     if not metadata_only and not include_history:
         columns = "to_jsonb(canonical) - 'merge_history' AS profile"
     cur.execute(

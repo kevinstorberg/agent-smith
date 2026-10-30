@@ -95,6 +95,8 @@ def _profiles_context(profiles: list[dict], max_chars: int = 64_000) -> list[dic
             compact = {
                 key: profile.get(key) for key in ("id", "display_name", "identity_scope", "revision", "deleted", "metadata", "metadata_provenance", "nicknames", "section_notes", "relationships", "merge_history_count")
             } | {
+                "section_evidence": {key: {field: proof[field] for field in ("human", "status", "coverage", "generated_at") if field in proof}
+                                     for key, proof in profile.get("section_evidence", {}).items()},
                 "claim_count": len(profile.get("claims", [])), "claims_available_via": "get_profile",
                 "claims": [{key: value for key, value in claim.items() if key in {
                     "id", "subject_id", "target_id", "category", "content", "status", "correction", "correction_count", "source_unavailable",
