@@ -661,7 +661,6 @@ def update_metadata(profile_id: str, expected_revision: int, *, display_name: st
         raise ValueError("Provide profile fields to update")
     normalized_name = _profile_name(display_name) if display_name is not None else None
     normalized_tags = _tags(tags) if tags is not None else None
-    normalized_metadata = profile_fields.fields(metadata, profile_fields.METADATA_FIELDS, "metadata") if metadata is not None else None
     normalized_notes = profile_fields.fields(section_notes, profile_fields.SECTION_FIELDS, "section_notes") if section_notes is not None else None
     normalized_nicknames = profile_fields.nicknames(nicknames) if nicknames is not None else None
     if allow_agent_sections is not None and (not isinstance(allow_agent_sections, list)
@@ -671,6 +670,7 @@ def update_metadata(profile_id: str, expected_revision: int, *, display_name: st
         raise ValueError("Profile starred state must be a boolean")
     with profile_write_cursor() as cur:
         row = _editable(cur, profile_id, expected_revision)
+        normalized_metadata = profile_fields.fields(metadata, profile_fields.METADATA_FIELDS, "metadata", existing=row["metadata"]) if metadata is not None else None
         new_tags = normalized_tags if normalized_tags is not None else row["tags"]
         new_starred = starred if starred is not None else row["starred"]
         new_name = normalized_name if normalized_name is not None else row["display_name"]

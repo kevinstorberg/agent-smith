@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from services.api.routers.base import delete_response, empty_to_none, require_found
-from services.meetings import profile_db, relationship_db, relationship_card_db
+from services.meetings import profile_db, profile_fields, relationship_db, relationship_card_db
 from services.meetings.outputs import ProfileCategory, ProfileEpistemic, ProfileConfidence, ProfileReviewStatus, ProfileClaimSort
 from services.personas import assessment_db, revisions
 
@@ -148,6 +148,11 @@ def list_all(
         return profile_db.list_profiles(query=empty_to_none(q), limit=limit, offset=offset, tags=tags, starred=starred, sort=sort)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
+
+
+@router.get("/metadata-options")
+def metadata_options() -> dict[str, tuple[str, ...]]:
+    return profile_fields.METADATA_CHOICES
 
 
 @router.get("/{profile_id}")

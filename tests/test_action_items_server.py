@@ -49,11 +49,14 @@ async def test_action_items_actual_mounted_mcp_and_rest_share_one_resource():
         assert next(tool for tool in tools if tool["name"] == "action_item_delete")["annotations"]["destructiveHint"]
         assert next(tool for tool in tools if tool["name"] == "action_item_get")["annotations"]["readOnlyHint"]
         created = (await rpc("tools/call", {"name": "action_item_create", "arguments": {"title": "Real protocol task"}}))["structuredContent"]
+        assert created["priority"] == 1
+        listed = (await rpc("tools/call", {"name": "action_item_list", "arguments": {}}))["structuredContent"]
+        assert listed["items"][0]["priority"] == 1
         assert (await client.get(f"/api/action-items/{created['id']}")).json() == created
         edited = (await client.patch(f"/api/action-items/{created['id']}", json={"expected_revision": created["revision"], "description": "Shared content"})).json()
         assert (await rpc("tools/call", {"name": "action_item_get", "arguments": {"item_id": created["id"]}}))["structuredContent"] == edited
         completed = await call("action_item_update", item_id=created["id"], changes={"expected_revision": edited["revision"], "status": "completed"})
-        assert completed["completed_at"] and completed["status"] == "completed"
+        assert completed["completed_at"] and completed["status"] == "completed" and completed["priority"] is None
         reopened = await call("action_item_update", item_id=created["id"], changes={"expected_revision": completed["revision"], "status": "open"})
         assert reopened["completed_at"] is None
         assert (await call("action_item_list"))["total"] == 1
@@ -64,11 +67,13 @@ async def test_action_items_actual_mounted_mcp_and_rest_share_one_resource():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("tool,arguments", [
     ("action_item_create", {"title": "Task", "revision": 99}),
+    ("action_item_create", {"title": "Task", "priority": 1}),
     ("action_item_create", {"title": 12}),
     ("action_item_get", {"item_id": True}),
     ("action_item_get", {"item_id": "1"}),
     ("action_item_list", {"limit": "10"}),
     ("action_item_update", {"item_id": 1, "changes": {"expected_revision": 1, "sort_key": 7}}),
+    ("action_item_update", {"item_id": 1, "changes": {"expected_revision": 1, "priority": 7}}),
     ("action_item_move", {"item_id": 1, "expected_revision": 1}),
 ])
 async def test_action_items_mcp_raw_inputs_are_strict(tool, arguments):
