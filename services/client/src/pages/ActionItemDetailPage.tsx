@@ -12,6 +12,7 @@ import { usePolling } from '../hooks/usePolling';
 import { useNotification } from '../context/useNotification';
 import { MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from '../constants';
 import { actionItemTags } from '../utils/actionItems';
+import { ActionItemStatusButton } from '../components/ActionItemStatusButton';
 
 interface Draft { title: string; description: string; project: string; tags: string; revision: number }
 
@@ -137,9 +138,7 @@ function ActionItemDetail({ id }: { id?: string }) {
       </section>}
     </div> : <>
       <div className="page-header"><h2 className="page-title">{item!.title}</h2>
-        <button className="btn" disabled={saving || Boolean(read.error) || !rereadAccepted} onClick={() => { void status.mutate(); }}>
-          {item!.status === 'completed' ? 'Reopen action item' : 'Mark complete'}
-        </button>
+        <ActionItemStatusButton item={item!} disabled={saving || Boolean(read.error) || !rereadAccepted} onChange={() => { void status.mutate(); }} />
       </div>
       <div className="flex-wrap" style={{ marginBottom: 16 }}>
         <span className="tag">{item!.status === 'completed' ? 'Completed' : 'Open'}</span>

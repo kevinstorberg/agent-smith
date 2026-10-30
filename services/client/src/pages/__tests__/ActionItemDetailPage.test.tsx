@@ -32,6 +32,7 @@ function RouteLocation() {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
   routing.real = false;
   vi.mocked(api.actionItems.get).mockResolvedValue(actionItem(1));
   vi.mocked(api.actionItems.create).mockResolvedValue(actionItem(2));
@@ -239,10 +240,10 @@ describe('ActionItemDetailPage', () => {
     vi.mocked(api.actionItems.get).mockResolvedValueOnce(actionItem(1)).mockResolvedValueOnce(complete).mockResolvedValueOnce(actionItem(1, { revision: 3 }));
     renderPage();
     await screen.findByRole('heading', { name: 'Task 1' });
-    fireEvent.click(screen.getByRole('button', { name: 'Mark complete' }));
-    await screen.findByRole('button', { name: 'Reopen action item' });
+    fireEvent.click(screen.getByRole('button', { name: 'Complete Task 1' }));
+    await screen.findByRole('button', { name: 'Reopen Task 1' });
     expect(api.actionItems.update).toHaveBeenNthCalledWith(1, 1, { expected_revision: 1, status: 'completed' });
-    fireEvent.click(screen.getByRole('button', { name: 'Reopen action item' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reopen Task 1' }));
     await waitFor(() => expect(api.actionItems.update).toHaveBeenNthCalledWith(2, 1, { expected_revision: 2, status: 'open' }));
   });
 
@@ -254,14 +255,14 @@ describe('ActionItemDetailPage', () => {
       .mockResolvedValue(actionItem(1, { revision: 4, status: 'completed' }));
     renderPage();
     await act(async () => { await Promise.resolve(); });
-    expect(screen.getByRole('button', { name: 'Mark complete' })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Mark complete' }));
+    expect(screen.getByRole('button', { name: 'Complete Task 1' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Complete Task 1' }));
     await act(async () => { await Promise.resolve(); });
     expect(screen.getByRole('alert')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Mark complete' })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Mark complete' }));
+    expect(screen.getByRole('button', { name: 'Complete Task 1' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Complete Task 1' }));
     await act(async () => { await Promise.resolve(); });
-    expect(screen.getByRole('button', { name: 'Reopen action item' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Reopen Task 1' })).toBeEnabled();
     expect(api.actionItems.update).toHaveBeenLastCalledWith(1, { expected_revision: 3, status: 'completed' });
     vi.mocked(api.actionItems.get).mockClear();
     await act(async () => { await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS); });
@@ -281,7 +282,7 @@ describe('ActionItemDetailPage', () => {
     renderPage();
     await act(async () => { await Promise.resolve(); });
     expect(screen.getByRole('heading', { name: 'Task 1' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: operation === 'status' ? 'Mark complete' : 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: operation === 'status' ? 'Complete Task 1' : 'Delete' }));
     await act(async () => { await Promise.resolve(); });
     expect(screen.getByRole('heading', { name: 'Current saved task' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Edit' })).toBeEnabled();
