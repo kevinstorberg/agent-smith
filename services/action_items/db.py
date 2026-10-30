@@ -12,7 +12,7 @@ from services.db import get_connection
 from pydantic import TypeAdapter
 
 _WRITE_LOCK = "agent-smith:action-items-write"
-_PUBLIC = "id, title, description, project, tags, status, completed_at, revision, created_at, updated_at"
+_PUBLIC = "id, title, description, project, tags, status, completed_at, revision, created_at, updated_at, sort_key AS priority"
 _LIST = _PUBLIC.replace("description, ", "")
 _SORTS = {"manual": "sort_key, id", "newest": "created_at DESC, id DESC", "updated": "updated_at DESC, id DESC",
           "title": "lower(title), id", "completed": "completed_at DESC, id DESC"}

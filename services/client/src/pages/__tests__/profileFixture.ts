@@ -1,5 +1,10 @@
 import type { ParticipantProfile, ProfileRelationshipCard } from '../../api';
 
+export const metadataOptionsFixture = {
+  gender: ['Male', 'Female', 'Non-binary', 'Other'],
+  marital_status: ['Single', 'Married', 'Divorced', 'Separated', 'Widowed', 'Domestic partnership', 'Other'],
+};
+
 export const relationshipCardFixture: ProfileRelationshipCard = {
   id: 'profile:b813c24e-e32a-4440-b6da-dfe39771bf46', name: 'Jordan',
   profile_id: 'b813c24e-e32a-4440-b6da-dfe39771bf46',

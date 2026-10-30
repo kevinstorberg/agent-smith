@@ -50,7 +50,7 @@ export default function App() {
         <div className="main-content">
           <NotificationBar />
           <Routes>
-          <Route path="/" element={<Navigate to="/harness/rules" replace />} />
+          <Route path="/" element={<Navigate to="/action-items" replace />} />
           <Route path="/harness/rules" element={<HarnessIndexPage key="rule" type="rule" />} />
           <Route path="/harness/skills" element={<HarnessIndexPage key="skill" type="skill" />} />
           <Route path="/harness/tools" element={<HarnessIndexPage key="tool" type="tool" />} />

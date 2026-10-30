@@ -21,6 +21,10 @@ vi.mock('../pages/MemoryPage', () => ({
   MemoryPage: () => <div data-testid="memory-page">MemoryPage</div>,
 }));
 
+vi.mock('../pages/ActionItemsIndexPage', () => ({
+  ActionItemsIndexPage: () => <div data-testid="action-items-page">ActionItemsPage</div>,
+}));
+
 vi.mock('../pages/MeetingsIndexPage', () => ({
   MeetingsIndexPage: () => <div data-testid="meetings-index">MeetingsIndex</div>,
 }));
@@ -94,12 +98,12 @@ describe('App', () => {
     expect(screen.getByTestId('notification-bar')).toBeInTheDocument();
   });
 
-  it('redirects / to /harness/rules', async () => {
+  it('redirects / to /action-items', async () => {
     renderApp(['/']);
 
     await waitFor(() => {
-      expect(screen.getByTestId('harness-index')).toBeInTheDocument();
-      expect(screen.getByText('HarnessIndex:rule')).toBeInTheDocument();
+      expect(screen.getByTestId('action-items-page')).toBeInTheDocument();
+      expect(screen.getByTestId('location')).toHaveTextContent('/action-items');
     });
   });
 

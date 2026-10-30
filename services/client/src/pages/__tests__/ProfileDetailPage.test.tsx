@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useLocation } from 'react-router';
 import { renderWithProviders } from '../../test-utils';
 import { ProfileDetailPage } from '../ProfileDetailPage';
-import { profileFixture, relationshipCardFixture } from './profileFixture';
+import { metadataOptionsFixture, profileFixture, relationshipCardFixture } from './profileFixture';
 import type { ParticipantProfile } from '../../api';
 import { POLL_INTERVAL_MS } from '../../constants';
 
@@ -14,7 +14,7 @@ vi.mock('react-router', async importOriginal => {
 });
 vi.mock('../../api', async importOriginal => {
   const actual = await importOriginal<typeof import('../../api')>();
-  return { ...actual, api: { profiles: { get: vi.fn(), claims: vi.fn(), correctClaim: vi.fn(), remove: vi.fn(), update: vi.fn(), list: vi.fn(), merge: vi.fn(), linkEmail: vi.fn(), rebuild: vi.fn(), history: vi.fn(), historyOne: vi.fn(), createRelationshipCard: vi.fn(), updateRelationshipCard: vi.fn(), removeRelationshipCard: vi.fn() } } };
+  return { ...actual, api: { profiles: { get: vi.fn(), claims: vi.fn(), correctClaim: vi.fn(), remove: vi.fn(), update: vi.fn(), list: vi.fn(), merge: vi.fn(), linkEmail: vi.fn(), rebuild: vi.fn(), history: vi.fn(), historyOne: vi.fn(), createRelationshipCard: vi.fn(), updateRelationshipCard: vi.fn(), removeRelationshipCard: vi.fn(), metadataOptions: vi.fn() } } };
 });
 import { api, ApiError } from '../../api';
 
@@ -31,6 +31,7 @@ const open = async (label: string) => fireEvent.click(await screen.findByRole('l
 beforeEach(() => {
   vi.clearAllMocks();
   read.mockResolvedValue(compact);
+  vi.mocked(api.profiles.metadataOptions).mockResolvedValue(metadataOptionsFixture);
   claims.mockResolvedValue({ profile_id: compact.id, revision: 1, items: profileFixture.claims, total: 1 });
   vi.mocked(api.profiles.update).mockResolvedValue(compact);
   vi.mocked(api.profiles.correctClaim).mockResolvedValue(compact);

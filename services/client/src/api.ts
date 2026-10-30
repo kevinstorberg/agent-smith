@@ -106,7 +106,7 @@ export type ActionItemStatus = 'open' | 'completed';
 export type ActionItemSort = 'manual' | 'newest' | 'updated' | 'title' | 'completed';
 export interface ActionItemRow {
   id: number; title: string; project: string | null; tags: string[]; status: ActionItemStatus;
-  completed_at: string | null; revision: number; created_at: string; updated_at: string;
+  completed_at: string | null; revision: number; created_at: string; updated_at: string; priority: number | null;
 }
 export interface ActionItem extends ActionItemRow { description: string }
 export interface ActionItemFields {
@@ -419,6 +419,8 @@ export interface ProfileMetadataFields {
   gender?: string; marital_status?: string; company?: string; job_role?: string;
   start_date?: string; supervisor?: string; other?: string;
 }
+
+export type ProfileMetadataOptions = Record<'gender' | 'marital_status', string[]>;
 
 export type ProfileMetadataSource = { human: true } | {
   human?: false; meeting_id: string; transcript_hash?: string; participants_revision?: number;
@@ -864,6 +866,7 @@ export const api = {
     resume: (id: string) => post<MeetingAnalysisReceipt>(`/meeting-analysis/requests/${encodeURIComponent(id)}/resume`, { confirmed: true }, 30_000),
   },
   profiles: {
+    metadataOptions: () => get<ProfileMetadataOptions>('/profiles/metadata-options'),
     create: (body: { display_name: string; email?: string }) => post<ParticipantProfile>('/profiles?include_evidence=false', body),
     list: (params?: PaginationParams & { q?: string; tags?: string[]; starred?: boolean; sort?: string }) => get<Paginated<ProfileSummary>>('/profiles', {
       ...paginationToParams(params),

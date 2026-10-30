@@ -3,6 +3,7 @@ import type { Ref } from 'react';
 import { api, ApiError } from '../api';
 import type { ParticipantProfile, ProfileUpdateInput, ProfileMetadataFields } from '../api';
 import { useApiMutation } from '../hooks/useApiMutation';
+import { useApiRead } from '../hooks/useApiRead';
 import { parseTags } from '../utils/tags';
 import { BadgeCell } from './table';
 import { ProfileStar } from './ProfileStar';
@@ -18,6 +19,37 @@ interface Props {
   onEditingChange?: (editing: boolean) => void;
   onSavingChange?: (saving: boolean) => void;
   formRef?: Ref<HTMLFormElement>;
+}
+
+function MetadataInputs({ metadata, initialMetadata, disabled, onChange }: {
+  metadata: ProfileMetadataFields;
+  initialMetadata: ProfileMetadataFields;
+  disabled: boolean;
+  onChange: (key: keyof ProfileMetadataFields, value: string) => void;
+}) {
+  const { data: choices, loading, error, refresh } = useApiRead(api.profiles.metadataOptions);
+  return <>
+    <div className="profile-field-grid">
+      {METADATA_FIELDS.map(field => {
+        const { key, label, type } = field;
+        const value = metadata[key] || '';
+        const initialValue = initialMetadata[key] || '';
+        const options = type === 'select' ? choices?.[field.key] : undefined;
+        return <div key={key}>
+          <label className="form-label" htmlFor={`profile-${key}`}>{label}</label>
+          {type === 'select' ? <select id={`profile-${key}`} className="input" disabled={disabled || !options}
+            value={value} onChange={event => onChange(key, event.target.value)}>
+            <option value="">Not set</option>
+            {initialValue && !options?.includes(initialValue) && <option value={initialValue}>{initialValue} (existing value)</option>}
+            {options?.map(option => <option key={option} value={option}>{option}</option>)}
+          </select> : <input id={`profile-${key}`} className="input" disabled={disabled} type={type || 'text'}
+            maxLength={200} value={value} onChange={event => onChange(key, event.target.value)} />}
+        </div>;
+      })}
+    </div>
+    {loading && <p className="text-muted-sm" role="status">Loading metadata choices…</p>}
+    {error && <p role="alert">Could not load metadata choices. <button type="button" className="btn btn-sm" onClick={() => refresh()}>Retry</button></p>}
+  </>;
 }
 
 export function ProfileMetadata({ profile, disabled, onBusyChange, onReload, editing: controlledEditing, onEditingChange, onSavingChange, formRef }: Props) {
@@ -37,6 +69,7 @@ export function ProfileMetadata({ profile, disabled, onBusyChange, onReload, edi
   const [nicknames, setNicknames] = useState('');
   const [nicknamesChanged, setNicknamesChanged] = useState(false);
   const [metadata, setMetadata] = useState<ProfileMetadataFields>({});
+  const [initialMetadata, setInitialMetadata] = useState<ProfileMetadataFields>({});
   const [metadataChanged, setMetadataChanged] = useState<(keyof ProfileMetadataFields)[]>([]);
   const update = useApiMutation({
     mutationFn: (body: ProfileUpdateInput) => api.profiles.update(profile.id, body),
@@ -56,7 +89,7 @@ export function ProfileMetadata({ profile, disabled, onBusyChange, onReload, edi
     if (editing && !previousEditing.current) {
       setName(profile.display_name);
       setNicknames((profile.nicknames || []).join(', ')); setNicknamesChanged(false);
-      setMetadata({ ...profile.metadata }); setMetadataChanged([]);
+      setMetadata({ ...profile.metadata }); setInitialMetadata({ ...profile.metadata }); setMetadataChanged([]);
       setTags(profile.tags.join(', ')); setStarred(profile.starred); setRevision(profile.revision);
       setConflicted(false); setNotice(null);
     }
@@ -80,7 +113,9 @@ export function ProfileMetadata({ profile, disabled, onBusyChange, onReload, edi
     }
     update.mutate({ expected_revision: conflicted ? profile.revision : revision, display_name: name.trim(), tags: parsed, starred,
       ...(nicknamesChanged ? { nicknames: aliases } : {}),
-      ...(metadataChanged.length ? { metadata: Object.fromEntries(metadataChanged.map(key => [key, (metadata[key] || '').trim()])) } : {}),
+      ...(metadataChanged.length ? { metadata: Object.fromEntries(metadataChanged.map(key => [
+        key, key === 'gender' || key === 'marital_status' ? metadata[key] || '' : (metadata[key] || '').trim(),
+      ])) } : {}),
     });
   };
   const changeMetadata = (key: keyof ProfileMetadataFields, value: string) => {
@@ -95,12 +130,7 @@ export function ProfileMetadata({ profile, disabled, onBusyChange, onReload, edi
       <label className="form-label" htmlFor="profile-nicknames">Nicknames</label>
       <input id="profile-nicknames" className="input" disabled={update.loading} style={{ marginBottom: 12 }} value={nicknames} maxLength={2200} placeholder="Comma-separated nicknames"
         onChange={event => { setNicknames(event.target.value); setNicknamesChanged(true); }} />
-      <div className="profile-field-grid">
-        {METADATA_FIELDS.map(({ key, label, type }) => <div key={key}>
-          <label className="form-label" htmlFor={`profile-${key}`}>{label}</label>
-          <input id={`profile-${key}`} className="input" disabled={update.loading} type={type || 'text'} maxLength={200} value={metadata[key] || ''} onChange={event => changeMetadata(key, event.target.value)} />
-        </div>)}
-      </div>
+      <MetadataInputs metadata={metadata} initialMetadata={initialMetadata} disabled={update.loading} onChange={changeMetadata} />
       <label className="form-label" htmlFor="profile-other">Other</label>
       <textarea id="profile-other" className="input" disabled={update.loading} rows={3} maxLength={4000} value={metadata.other || ''} onChange={event => changeMetadata('other', event.target.value)} />
       <p className="text-muted-sm">All fields are optional. Your changes take priority over future persona updates. Supervisor text does not create a linked relationship.</p>

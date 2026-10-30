@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router';
+import ReactMarkdown from 'react-markdown';
 import { DragDropContext, Draggable, Droppable, type DropResult } from '@hello-pangea/dnd';
 import { api } from '../api';
 import type { ActionItemFilters, ActionItemMove, ActionItemRow, ActionItemSort } from '../api';
@@ -9,13 +10,25 @@ import { usePagination } from '../hooks/usePagination';
 import { usePolling } from '../hooks/usePolling';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useNotification } from '../context/useNotification';
+import { useApiRead } from '../hooks/useApiRead';
 import { actionItemTags } from '../utils/actionItems';
 
 const TABS = [['open', 'Open'], ['completed', 'Completed'], ['all', 'All']] as const;
 type Status = NonNullable<ActionItemFilters['status']>;
 interface DragSnapshot { items: ActionItemRow[]; view: string }
 
+function ActionItemDescription({ item }: { item: ActionItemRow }) {
+  const fetchItem = useCallback(() => api.actionItems.get(item.id), [item.id]);
+  const read = useApiRead(fetchItem);
+  return <div id={`action-description-${item.id}`} className="evidence-detail markdown-content" role="region" aria-labelledby={`action-title-${item.id}`}>
+    {read.loading && <p role="status">Loading description…</p>}
+    {read.error && <p role="alert">Could not load this description. <button type="button" className="btn btn-sm" onClick={() => read.refresh()}>Retry</button></p>}
+    {read.data && <ReactMarkdown>{read.data.description || 'No description added.'}</ReactMarkdown>}
+  </div>;
+}
+
 export function ActionItemsIndexPage() {
+  const navigate = useNavigate();
   const [status, setStatus] = useState<Status>('open');
   const [sort, setSort] = useState<ActionItemSort>('manual');
   const [queryInput, setQueryInput] = useState('');
@@ -40,6 +53,9 @@ export function ActionItemsIndexPage() {
   useEffect(() => { latestRefresh.current = refresh; }, [refresh]);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const view = JSON.stringify([status, sort, queryInput, projectInput, tagsInput, limit, offset]);
+  const [expanded, setExpanded] = useState<{ id: number; view: string } | null>(null);
+  const expandedId = expanded?.view === view ? expanded.id : null;
+  useEffect(() => { if (expanded && expanded.view !== view) setExpanded(null); }, [expanded, view]);
   const current = useRef({ view, items });
   useEffect(() => { current.current = { view, items }; });
   const busy = savingOrder || pendingId !== null;
@@ -76,6 +92,10 @@ export function ActionItemsIndexPage() {
     }
   }
 
+  function editItem(item: ActionItemRow) {
+    if (!writing.current && !drag.current) navigate(`/action-items/${item.id}?edit=1`);
+  }
+
   function startDrag() {
     if (!canDragRef.current || writing.current) return;
     const captured = { view: current.current.view, items: [...current.current.items] };
@@ -89,7 +109,7 @@ export function ActionItemsIndexPage() {
     if (!captured) return;
     const sameRows = captured.items.length === current.current.items.length
       && captured.items.every((item, index) => item.id === current.current.items[index].id
-        && item.revision === current.current.items[index].revision);
+        && item.revision === current.current.items[index].revision && item.priority === current.current.items[index].priority);
     if (!canDragRef.current || captured.view !== current.current.view || !sameRows
       || !result.destination || result.source.index === result.destination.index) {
       setSnapshot(null);
@@ -109,10 +129,11 @@ export function ActionItemsIndexPage() {
     const anchor: ActionItemMove = next
       ? { expected_revision: moved.revision, before_id: next.id }
       : { expected_revision: moved.revision, after_id: reordered[index - 1].id };
+    const optimistic = reordered.map((item, position) => ({ ...item, priority: captured.items[position].priority }));
     writing.current = true;
     setSavingOrder(true);
-    setSnapshot({ ...captured, items: reordered });
-    setItems(reordered);
+    setSnapshot({ ...captured, items: optimistic });
+    setItems(optimistic);
     try {
       await api.actionItems.move(moved.id, anchor);
     } catch (failure) {
@@ -155,26 +176,37 @@ export function ActionItemsIndexPage() {
     {!snapshot && loading && <p className="loading">Loading action items…</p>}
     {!snapshot && error && <div className="card" role="alert">Could not load action items. <button className="btn" onClick={() => refresh()}>Retry</button></div>}
     {(snapshot || (!loading && !error)) && <>
-      <DragDropContext onDragStart={startDrag} onDragEnd={endDrag}>
-        <div className="table-container" style={{ overflowX: 'auto' }}>
+      <DragDropContext onBeforeCapture={() => setExpanded(null)} onDragStart={startDrag} onDragEnd={endDrag}>
+        <div className="table-container action-items-container" style={{ overflowX: 'auto' }}>
           <table className="table action-items-table">
-            <thead><tr><th aria-label="Reorder" /><th>Complete</th><th>Title</th><th>Project / tags</th><th>Updated</th></tr></thead>
+            <thead><tr><th>Priority</th><th>Title</th><th>Project / tags</th><th>Updated</th><th>Actions</th></tr></thead>
             <Droppable droppableId="action-items" isDropDisabled={!canDrag}>
               {provided => <tbody ref={provided.innerRef} {...provided.droppableProps}>
                 {displayed.map((item, index) => <Draggable key={item.id} draggableId={String(item.id)} index={index} isDragDisabled={!canDrag} disableInteractiveElementBlocking>
-                  {(row, state) => <tr ref={row.innerRef} {...row.draggableProps} aria-busy={pendingId === item.id}
+                  {(row, state) => <Fragment><tr ref={row.innerRef} {...row.draggableProps} aria-busy={pendingId === item.id}
                     style={{ ...row.draggableProps.style, background: state.isDragging ? 'var(--surface-hover)' : undefined }}>
-                    <td>{canDrag && <button type="button" className="btn btn-sm action-item-drag" {...row.dragHandleProps}
-                      aria-label={`Reorder ${item.title}`} title="Drag to reorder; press Space to use the keyboard">⠿</button>}</td>
-                    <td><input className="form-checkbox" type="checkbox" checked={item.status === 'completed'}
-                      aria-label={`${item.status === 'completed' ? 'Reopen' : 'Complete'} ${item.title}`}
-                      disabled={busy || Boolean(snapshot)} onChange={() => changeStatus(item)} />
-                      {pendingId === item.id && <span className="text-muted-sm" role="status">Saving…</span>}</td>
-                    <td><Link className="text-link" to={`/action-items/${item.id}`}>{item.title}</Link></td>
+                    <td><div className="flex-row">{canDrag && <button type="button" className="btn btn-sm action-item-drag" {...row.dragHandleProps}
+                      aria-label={`Reorder ${item.title}`} title="Drag to reorder; press Space to use the keyboard">⠿</button>}
+                      <span className="action-item-priority" aria-label={item.priority === null ? 'No open queue priority' : `Priority ${item.priority}`}>{item.priority ?? '—'}</span>
+                    </div></td>
+                    <td><button type="button" id={`action-title-${item.id}`} className="inline-clear action-item-title" aria-label={item.title}
+                      aria-expanded={expandedId === item.id} aria-controls={`action-description-${item.id}`} disabled={busy || Boolean(snapshot)}
+                      onClick={event => { event.stopPropagation(); if (!writing.current && !drag.current) setExpanded(expandedId === item.id ? null : { id: item.id, view }); }}>
+                      <span aria-hidden="true">{expandedId === item.id ? '⌄' : '›'}</span>{item.title}
+                    </button></td>
                     <td>{item.project && <span className="tag tag-project">{item.project}</span>}
                       {item.tags.map(tag => <span className="tag" key={tag}>{tag}</span>)}</td>
                     <td><DateCell date={item.updated_at} /></td>
-                  </tr>}
+                    <td><div className="flex-row">
+                      <button type="button" className="btn btn-sm" aria-label={`${item.status === 'completed' ? 'Reopen' : 'Mark complete'} ${item.title}`}
+                        disabled={busy || Boolean(snapshot)} onClick={event => { event.stopPropagation(); void changeStatus(item); }}>
+                        {item.status === 'completed' ? 'Reopen' : 'Mark complete'}
+                      </button>
+                      <button type="button" className="btn btn-sm" aria-label={`Edit ${item.title}`}
+                        disabled={busy || Boolean(snapshot)} onClick={event => { event.stopPropagation(); editItem(item); }}>Edit</button>
+                      {pendingId === item.id && <span className="text-muted-sm" role="status">Saving…</span>}
+                    </div></td>
+                  </tr>{expandedId === item.id && <tr className="evidence-row-expanded"><td colSpan={5}><ActionItemDescription key={`${item.id}:${item.revision}`} item={item} /></td></tr>}</Fragment>}
                 </Draggable>)}
                 {displayed.length === 0 && <tr><td colSpan={5} className="loading">No {status === 'all' ? '' : `${status} `}action items found.</td></tr>}
                 {provided.placeholder}
