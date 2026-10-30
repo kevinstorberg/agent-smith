@@ -106,7 +106,7 @@ export type ActionItemStatus = 'open' | 'completed';
 export type ActionItemSort = 'manual' | 'newest' | 'updated' | 'title' | 'completed';
 export interface ActionItemRow {
   id: number; title: string; project: string | null; tags: string[]; status: ActionItemStatus;
-  completed_at: string | null; revision: number; created_at: string; updated_at: string;
+  completed_at: string | null; revision: number; created_at: string; updated_at: string; priority: number | null;
 }
 export interface ActionItem extends ActionItemRow { description: string }
 export interface ActionItemFields {

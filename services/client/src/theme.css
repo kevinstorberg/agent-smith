@@ -1167,8 +1167,11 @@ pre {
 .profile-filters { display: grid; grid-template-columns: minmax(180px, 1.6fr) minmax(150px, 1fr) minmax(210px, 1fr) auto; align-items: end; gap: 12px; margin: 20px 0 16px; }
 .profile-filters > * { min-width: 0; }
 .action-items-table { min-width: 620px; }
-.action-items-table td:nth-child(3) { min-width: 180px; }
-.action-items-table td:nth-child(4) .tag { margin: 2px 4px 2px 0; }
+.action-items-container { container-type: inline-size; }
+.action-items-table td:nth-child(2) { min-width: 180px; }
+.action-items-table td:nth-child(3) .tag { margin: 2px 4px 2px 0; }
+.action-item-priority { font-variant-numeric: tabular-nums; }
+.action-item-title { display: inline-flex; align-items: center; gap: 8px; text-align: left; }
 .action-item-drag { cursor: grab; touch-action: none; }
 .profile-filters .input { min-height: 40px; }
 .profile-search-input { display: flex; gap: 8px; }

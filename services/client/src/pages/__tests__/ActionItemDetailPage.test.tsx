@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Route, Routes } from 'react-router';
+import { Route, Routes, useLocation } from 'react-router';
 import { renderWithProviders } from '../../test-utils';
 import { POLL_INTERVAL_MS } from '../../constants';
 import { ActionItemDetailPage } from '../ActionItemDetailPage';
@@ -25,6 +25,11 @@ function renderPage(id: number | 'new' = 1) {
   return renderWithProviders(<Routes><Route path="/action-items/:id" element={<ActionItemDetailPage />} /></Routes>, { initialEntries: [`/action-items/${id}`] });
 }
 
+function RouteLocation() {
+  const location = useLocation();
+  return <output aria-label="Current route">{location.pathname}{location.search}</output>;
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
   routing.real = false;
@@ -36,6 +41,37 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('ActionItemDetailPage', () => {
+  it('opens the existing editor once from its current full record and consumes only the edit intent', async () => {
+    routing.real = true;
+    vi.mocked(api.actionItems.get).mockResolvedValue(actionItem(1, { revision: 8, title: 'Latest title', description: 'Full saved description' }));
+    renderWithProviders(<><RouteLocation /><Routes><Route path="/action-items/:id" element={<ActionItemDetailPage />} /></Routes></>,
+      { initialEntries: ['/action-items/1?edit=1&context=keep'] });
+    expect(await screen.findByLabelText('Title')).toHaveValue('Latest title');
+    expect(screen.getByLabelText('Description')).toHaveValue('Full saved description');
+    await waitFor(() => expect(screen.getByLabelText('Current route')).toHaveTextContent('/action-items/1?context=keep'));
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Edited title' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.actionItems.update).toHaveBeenCalledWith(1, expect.objectContaining({ title: 'Edited title', expected_revision: 8 })));
+    await screen.findByRole('button', { name: 'Edit' });
+    expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
+  });
+
+  it('retains direct edit through a failed initial read and Cancel returns to view without reopening', async () => {
+    routing.real = true;
+    vi.mocked(api.actionItems.get).mockRejectedValueOnce(new Error('Unavailable'));
+    renderWithProviders(<><RouteLocation /><Routes><Route path="/action-items/:id" element={<ActionItemDetailPage />} /></Routes></>,
+      { initialEntries: ['/action-items/1?edit=1'] });
+    await screen.findByText('Could not load this action item.');
+    expect(screen.getByLabelText('Current route')).toHaveTextContent('?edit=1');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByLabelText('Title')).toHaveValue('Task 1');
+    expect(screen.getByLabelText('Current route')).toHaveTextContent('/action-items/1');
+    expect(screen.getByLabelText('Current route')).not.toHaveTextContent('edit=1');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(await screen.findByRole('button', { name: 'Edit' })).toBeEnabled();
+    expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
+  });
+
   it('opens the saved resource in view mode after a real new-to-detail route transition', async () => {
     routing.real = true;
     vi.mocked(api.actionItems.create).mockResolvedValue(actionItem(2, { title: 'Created task' }));
