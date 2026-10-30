@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 import ReactMarkdown from 'react-markdown';
 import { api, ApiError } from '../api';
 import type { ActionItem, ActionItemCreate, ActionItemFields } from '../api';
@@ -23,12 +23,13 @@ export function ActionItemDetailPage() {
 function ActionItemDetail({ id }: { id?: string }) {
   const isNew = !id || id === 'new';
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { notify } = useNotification();
   const fetchItem = useCallback(() => isNew ? Promise.resolve(null) : api.actionItems.get(Number(id)), [id, isNew]);
   const read = useApiRead(fetchItem);
   const item = read.data;
   const form = useDetailPageEdit<Draft>({ isNew, onCancel: () => navigate('/action-items') });
-  const { editing, editValues, setEditValue } = form;
+  const { editing, editValues, setEditValue, startEditing: beginEditing } = form;
   const [conflictAfter, setConflictAfter] = useState<ActionItem | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [uncertainCreate, setUncertainCreate] = useState(false);
@@ -65,11 +66,18 @@ function ActionItemDetail({ id }: { id?: string }) {
   const rereadAccepted = conflictAfter === null || (item !== conflictAfter && !read.error);
   usePolling(() => read.refresh({ showLoading: false }), { enabled: !isNew && !editing && !saving && rereadAccepted });
 
-  function startEditing() {
+  const startEditing = useCallback(() => {
     if (!item || saving || read.error) return;
     setNotice(null); setConflictAfter(null);
-    form.startEditing({ title: item.title, description: item.description, project: item.project || '', tags: item.tags.join(', '), revision: item.revision });
-  }
+    beginEditing({ title: item.title, description: item.description, project: item.project || '', tags: item.tags.join(', '), revision: item.revision });
+  }, [item, saving, read.error, beginEditing]);
+
+  const directEdit = searchParams.get('edit') === '1';
+  useEffect(() => {
+    if (!directEdit || isNew || !item || saving || read.error) return;
+    if (!editing) startEditing();
+    setSearchParams(current => { const next = new URLSearchParams(current); next.delete('edit'); return next; }, { replace: true });
+  }, [directEdit, isNew, item, saving, read.error, editing, startEditing, setSearchParams]);
 
   function save() {
     if (saving || !rereadAccepted) return;

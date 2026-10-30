@@ -31,7 +31,7 @@ def test_action_items_lifecycle_and_explicit_clears(client):
     first = response.json()
     assert (first["title"], first["project"], first["tags"]) == ("Follow up", "Work", ["product", "security"])
     assert first["status"] == "open" and first["completed_at"] is None and first["revision"] == 1
-    assert set(first) == {"id", "title", "description", "project", "tags", "status", "completed_at", "revision", "created_at", "updated_at"}
+    assert set(first) == {"id", "title", "description", "project", "tags", "status", "completed_at", "revision", "created_at", "updated_at", "priority"}
     changed = client.patch(f"/api/action-items/{first['id']}", json={"expected_revision": 1, "project": None, "description": None, "tags": []}).json()
     assert changed["title"] == "Follow up" and changed["project"] is None and changed["description"] == "" and changed["tags"] == []
     assert changed["revision"] == 2
@@ -65,7 +65,7 @@ def test_action_items_creation_replay_preserves_later_edits_and_tombstones():
 
 @pytest.mark.parametrize("payload", [
     {}, {"title": " \n "}, {"title": "x" * 201}, {"title": 7}, {"title": "ok", "status": "pending"},
-    {"title": "ok", "request_id": "bad"}, {"title": "ok", "revision": 99}, {"title": "ok", "tags": [""]},
+    {"title": "ok", "request_id": "bad"}, {"title": "ok", "revision": 99}, {"title": "ok", "priority": 3}, {"title": "ok", "tags": [""]},
     {"title": "ok", "tags": ["x" * 101]}, {"title": "ok", "tags": ["tag"] * 21},
     {"title": "ok", "project": "x" * 201}, {"title": "ok", "description": "x" * 100001},
 ])
@@ -77,7 +77,7 @@ def test_action_items_create_validation_is_shared_and_atomic(client, payload):
 
 
 @pytest.mark.parametrize("payload", [
-    {"title": None}, {"status": None}, {"status": "pending"}, {"sort_key": 3}, {"id": 3},
+    {"title": None}, {"status": None}, {"status": "pending"}, {"sort_key": 3}, {"priority": 3}, {"id": 3},
     {"expected_revision": True}, {"expected_revision": "1"}, {"expected_revision": 0},
 ])
 def test_action_items_patch_rejects_invalid_inputs_without_mutation(client, payload):
@@ -97,6 +97,28 @@ def test_action_items_search_filters_before_count_and_pagination():
     assert [row["id"] for row in db.list_items({"q": "%_"})["items"]] == [literal["id"]]
     with pytest.raises(ValueError, match="manual"):
         db.list_items({"status": "all", "sort": "manual"})
+
+
+def test_action_items_public_priority_tracks_the_global_open_queue(client):
+    created = [db.create({"title": f"Task {25 - index:02}", "project": "selected" if index in (2, 12, 23) else "other"})
+               for index in range(25)]
+    assert [item["priority"] for item in created] == list(range(1, 26))
+    page = client.get("/api/action-items", params={"limit": 10, "offset": 10}).json()
+    assert [item["priority"] for item in page["items"]] == list(range(11, 21))
+    filtered = client.get("/api/action-items", params={"project": "selected", "sort": "title"}).json()
+    assert [item["priority"] for item in filtered["items"]] == [24, 13, 3]
+    assert client.get("/api/action-items", params={"project": "selected", "sort": "title", "limit": 1, "offset": 1}).json()["items"][0]["priority"] == 13
+    moved = db.move(created[0]["id"], {"expected_revision": 1, "after_id": created[9]["id"]})
+    assert moved["priority"] == 10
+    assert db.get(created[1]["id"])["priority"] == 1
+    assert db.get(created[1]["id"])["revision"] == 1
+    completed = client.patch(f"/api/action-items/{created[1]['id']}", json={"expected_revision": 1, "status": "completed"}).json()
+    assert completed["priority"] is None
+    assert db.get(moved["id"])["priority"] == 9
+    assert client.get("/api/action-items", params={"status": "completed"}).json()["items"][0]["priority"] is None
+    reopened = db.update(completed["id"], {"expected_revision": completed["revision"], "status": "open"})
+    assert reopened["priority"] == 25
+    assert db.create({"title": "Already complete", "status": "completed"})["priority"] is None
 
 
 @pytest.mark.parametrize("query", [{"limit": 0}, {"limit": 101}, {"offset": -1}, {"q": " "}, {"q": "x" * 1001}, {"status": "bad"}, {"sort": "DROP TABLE action_items"}, {"status": "completed", "sort": "manual"}, {"sort_key": 2}])
