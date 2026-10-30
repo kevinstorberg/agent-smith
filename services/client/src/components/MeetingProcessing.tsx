@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api';
-import type { MeetingGeneration, MeetingMemories, MeetingProfiles, MeetingTranscript } from '../api';
+import type { MeetingGeneration, MeetingProcessingState } from '../api';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { ManualMeetingAnalysis } from './ManualMeetingAnalysis';
 
-const LABELS: Record<string, string> = { not_imported: 'Not queued', pending: 'Queued', running: 'Running', capturing: 'Running', ready: 'Complete', done: 'Complete', blocked: 'Waiting for transcript', failed: 'Needs attention', unavailable: 'Unavailable', unsupported: 'Unsupported', deleted: 'Deleted' };
+const LABELS: Record<string, string> = { not_imported: 'Not queued', pending: 'Queued', running: 'Running', capturing: 'Running', ready: 'Complete', done: 'Complete', blocked: 'Waiting for transcript', failed: 'Needs attention', unavailable: 'Unavailable', unsupported: 'Unsupported', deleted: 'Deleted', legacy: 'Not reviewed' };
 
-function Progress({ result, output }: { result: MeetingGeneration; output: 'memories' | 'profiles' }) {
+function Progress({ result, output }: { result: Pick<MeetingGeneration, 'status' | 'progress'>; output: 'memories' | 'profiles' }) {
   const progress = result.progress;
   if (!progress) return null;
   return <div className="processing-progress">
@@ -21,8 +21,9 @@ function Progress({ result, output }: { result: MeetingGeneration; output: 'memo
   </div>;
 }
 
-export function MeetingProcessing({ meetingId, transcript, memories, personas, onChanged, disabled = false }: {
-  meetingId: string; transcript: MeetingTranscript | null; memories: MeetingMemories | null; personas: MeetingProfiles | null; onChanged: () => void; disabled?: boolean;
+export function MeetingProcessing({ meetingId, transcript, memories, personas, speakers, onChanged, disabled = false }: {
+  meetingId: string; transcript: MeetingProcessingState['transcript'] | null; memories: MeetingGeneration | null; personas: MeetingGeneration | null;
+  speakers?: MeetingProcessingState['speakers'] | null; onChanged: () => void; disabled?: boolean;
 }) {
   const [notice, setNotice] = useState<string | null>(null);
   const process = useApiMutation({ mutationFn: () => api.meetings.process(meetingId),
@@ -34,26 +35,36 @@ export function MeetingProcessing({ meetingId, transcript, memories, personas, o
   });
   const loaded = Boolean(transcript && memories && personas);
   const done = transcript?.status === 'ready' && memories?.status === 'done' && personas?.status === 'done';
-  const running = transcript?.status === 'capturing' || memories?.status === 'running' || personas?.status === 'running';
-  const resumable = memories?.progress?.processed_units || personas?.progress?.processed_units || transcript?.status === 'pending';
-  return <section className="card" aria-label="Meeting processing">
-    <div className="page-header profiles-header"><h3 className="section-title">Processing</h3>
-      <div className="flex-wrap"><button className="btn" disabled={disabled || !loaded || done || running || process.loading || retry.loading || transcript?.status === 'deleted'} onClick={() => process.mutate()}>
+  const running = transcript?.status === 'capturing' || speakers?.status === 'running' || memories?.status === 'running' || personas?.status === 'running';
+  const resumable = memories?.progress?.processed_units || personas?.progress?.processed_units || transcript?.status === 'pending' || memories?.status === 'pending' || personas?.status === 'pending';
+  return <section className="meeting-processing" aria-label="Meeting processing">
+    <div className="meeting-processing-summary">
+      <div className="flex-wrap meeting-stage-badges">{[['Transcript', '#meeting-transcript', transcript], ['Speakers', '#meeting-participants', speakers], ['Memories', '#meeting-memories', memories], ['Profiles', '#meeting-profiles', personas]].map(([label, href, result]) => {
+        const stage = result as { status: string } | null | undefined;
+        return <a className={`tag text-link${stage?.status === 'failed' ? ' tag-danger' : ''}`} key={label as string} href={href as string}>{label as string}: {stage ? LABELS[stage.status] || stage.status : 'Loading...'}</a>;
+      })}</div>
+      <div className="flex-wrap">{done && speakers?.status === 'failed' ? <a className="btn" href="#meeting-participants">Review speakers</a> : <button className="btn" disabled={disabled || !loaded || done || running || process.loading || retry.loading || transcript?.status === 'deleted'} onClick={() => process.mutate()}>
         {process.loading ? 'Queuing...' : done ? 'Processing complete' : running ? 'Processing...' : resumable ? 'Resume unfinished' : 'Process meeting'}
-      </button>
+      </button>}
       <ManualMeetingAnalysis meetingId={meetingId} disabled={disabled || !loaded || running || process.loading || retry.loading || transcript?.status !== 'ready'} onChanged={onChanged} /></div>
     </div>
-    <div className="processing-stages">
+    <details className="meeting-processing-details"><summary>Processing details</summary><div className="processing-stages">
       <div><h4><a className="text-link" href="#meeting-transcript">Transcript</a></h4><p>{transcript ? LABELS[transcript.status] : 'Loading...'}</p></div>
-      {([['Memories', 'memories', memories], ['Personas', 'profiles', personas]] as const).map(([label, stage, result]) => <div key={stage}>
+      <div><h4><a className="text-link" href="#meeting-participants">Speaker identification</a></h4><p>{speakers ? LABELS[speakers.status] : 'Loading...'}</p>
+        {speakers && <p className="text-muted-sm">{speakers.progress.processed_units} of {speakers.progress.total_units ?? '?'} statements reviewed · {speakers.progress.saved_count} identified</p>}
+        {speakers?.error_type && <><p role="alert">Speaker identification did not produce a valid saved result. Review transcript assignments or request identification again. Uncertain statements remain unassigned.</p><details><summary>Technical details</summary>{speakers.error_type}</details></>}
+        {speakers?.progress.next_attempt_at && speakers.status !== 'done' && <p className="text-muted-sm">Next eligible attempt: {new Date(speakers.progress.next_attempt_at).toLocaleString()}</p>}
+        <a className="text-link" href="#meeting-participants">Manage speaker assignments</a>
+      </div>
+      {([['Memories', 'memories', memories], ['Profiles', 'profiles', personas]] as const).map(([label, stage, result]) => <div key={stage}>
         <h4><a className="text-link" href={stage === 'memories' ? '#meeting-memories' : '#meeting-profiles'}>{label}</a></h4>
         <p>{result ? LABELS[result.status] : 'Loading...'}</p>
         {result && <Progress result={result} output={stage} />}
-        {result?.status === 'failed' && <button className="btn btn-sm" disabled={retry.loading || process.loading} onClick={() => retry.mutate(stage)}>Retry {label.toLowerCase()}</button>}
+        {result?.status === 'failed' && <button className="btn btn-sm" disabled={disabled || !loaded || retry.loading || process.loading || speakers?.status === 'running' || transcript?.status === 'capturing'} onClick={() => retry.mutate(stage)}>Retry {label.toLowerCase()}</button>}
       </div>)}
     </div>
-    <p className="text-muted-sm">Memories and personas run independently after transcript capture. Completed outputs are kept.</p>
-    <p className="text-muted-sm">Persona enrichment needs a separate persona job. <Link className="text-link" to="/jobs/new?graph=persona">Create persona job</Link> or <Link className="text-link" to="/jobs">manage existing jobs</Link>. It reads saved transcripts and can continue even if memory generation fails.</p>
+    <p className="text-muted-sm">Memories and profiles run independently after transcript capture. Completed outputs are kept.</p>
+    <p className="text-muted-sm">Profiles use your separate persona job. <Link className="text-link" to="/jobs/new?graph=persona">Create persona job</Link> or <Link className="text-link" to="/jobs">manage existing jobs</Link>.</p></details>
     {notice && <p role="status" style={{ marginTop: 12 }}>{notice}</p>}
   </section>;
 }

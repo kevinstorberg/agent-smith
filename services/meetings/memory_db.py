@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from services.meetings import stage_db
+from services.meetings import stage_db, stage_state
 from services.meetings.db import _cursor, _serialize
 
 
@@ -36,18 +36,9 @@ def get_memories(meeting_id: str) -> dict | None:
         row = cur.fetchone()
     if row is None:
         return None
-    status, reason, items = "not_imported", None, []
-    if row["meeting_id"] is not None:
-        status = row["memory_status"]
-        if status == "done":
-            items = row["memory_artifact"].get("items", [])
-            reason = row["memory_artifact"].get("reason")
-        elif row["transcript_status"] != "ready":
-            status, reason = "blocked", "transcript_" + row["transcript_status"]
-        elif row["running"]:
-            status = "running"
-    return _serialize({"status": status, "items": items, "reason": reason, "error_type": row["memory_error"],
-                       "updated_at": row["memory_updated_at"], "progress": stage_db.progress(dict(row), "memory", total_units=row["total_units"])})
+    state = stage_state.generation(dict(row), "memory")
+    items = row["memory_artifact"].get("items", []) if state["status"] == "done" else []
+    return _serialize({**state, "items": items, "updated_at": row["memory_updated_at"]})
 
 
 def retry_memories(meeting_id: str) -> None:

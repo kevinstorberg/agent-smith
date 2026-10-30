@@ -13,23 +13,24 @@ function blockedMessage(reason: string | null): string {
   return 'Personas need a complete saved transcript. Memory generation runs independently.';
 }
 
-export function MeetingProfiles({ meetingId, refreshVersion, onState }: { meetingId: string; refreshVersion?: number; onState?: (state: Personas) => void }) {
+export function MeetingProfiles({ meetingId, refreshVersion, onState, active = true, onChanged }: { meetingId: string; active?: boolean; onChanged?: () => void; refreshVersion?: number; onState?: (state: Personas) => void }) {
   const read = useCallback(() => api.meetings.profiles(meetingId), [meetingId]);
-  const { data, loading, error, refresh } = useApiRead(read);
+  const { data, loading, error, refresh } = useApiRead(read, { enabled: active });
   useRefreshSignal(refreshVersion, refresh);
   useEffect(() => { if (data) onState?.(data); }, [data, onState]);
   const retry = useApiMutation({
     mutationFn: () => api.meetings.retryProfiles(meetingId),
-    onSuccess: () => refresh(),
+    onSuccess: () => { refresh(); onChanged?.(); },
     onError: () => undefined,
   });
   usePolling(() => refresh({ showLoading: false }), {
-    enabled: !retry.loading && (data?.status === 'pending' || data?.status === 'running' || data?.reason === 'transcript_pending' || data?.reason === 'memories_pending'),
+    enabled: active && !retry.loading && (data?.status === 'pending' || data?.status === 'running' || data?.reason === 'transcript_pending' || data?.reason === 'memories_pending'),
   });
 
+  if (!active) return null;
   return (
     <section id="meeting-profiles" className="card" aria-label="Meeting participant profiles">
-      <h3 className="section-title">Personas</h3>
+      <h3 className="section-title">Participant profiles</h3>
       {!data && loading && <p className="text-muted-sm">Loading participant profiles...</p>}
       {error && <div role="alert"><p>Could not load participant profiles. Try again.</p><button className="btn" onClick={() => refresh()} disabled={loading}>Retry</button></div>}
       {data && <MeetingGenerationState result={data} output="profiles" blockedMessage={blockedMessage(data.reason)}

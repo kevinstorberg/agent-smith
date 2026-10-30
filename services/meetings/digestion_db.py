@@ -252,11 +252,9 @@ def get_transcript(meeting_id: str, *, limit: int = 100, offset: int = 0) -> dic
             row["items"] = [{**segment, "effective_speaker": speakers.get(segment["id"]), "speaker_assignment": manual.get(segment["id"])} for segment in row["items"]]
     if row is None:
         return None
-    if row["transcript_status"] is None:
-        return {"status": "not_imported", "items": [], "total": 0, "limit": limit, "offset": offset, "error_type": None, "captured_at": None}
-    status = "capturing" if row["running"] and row["transcript_status"] == "pending" else row["transcript_status"]
-    return _serialize({"status": status, "items": row["items"], "total": row["total"], "limit": limit, "offset": offset,
-                       "error_type": row["error_type"], "captured_at": row["captured_at"]})
+    from services.meetings import stage_state
+
+    return _serialize({**stage_state.transcript(dict(row)), "items": row["items"], "limit": limit, "offset": offset})
 
 
 def delete_transcript(meeting_id: str) -> None:
