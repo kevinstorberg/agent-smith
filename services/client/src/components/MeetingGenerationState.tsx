@@ -1,4 +1,5 @@
 import type { MeetingGeneration } from '../api';
+import { MeetingGenerationProgress } from './MeetingGenerationProgress';
 
 interface Props {
   result: MeetingGeneration;
@@ -25,6 +26,7 @@ export function MeetingGenerationState({ result, output, blockedMessage, retryin
           {retryFailed && <p role="alert">Could not queue another attempt. Try again.</p>}
         </div>
       )}
+      {result.status !== 'done' && <MeetingGenerationProgress result={result} output={output} />}
     </>
   );
 }

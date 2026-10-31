@@ -13,6 +13,19 @@ from services.meetings.stage_state import progress as progress, stage_name as _s
 TOTAL_UNITS_SQL = f"(SELECT sum(greatest(1, (char_length(segment->>'text') + {WINDOW_CHARS - 1}) / {WINDOW_CHARS})) FROM jsonb_array_elements(d.transcript->'segments') segment)"
 
 
+def progress_sql(stage: str) -> str:
+    stage = _stage(stage)
+    artifact = f"d.{stage}_artifact"
+    def count(name: str) -> str:
+        return f"coalesce(jsonb_array_length({artifact}->'{name}'),0)"
+    staged = count("draft_assignments") if stage == "speaker" else count("items") + (" + " + count("metadata_updates") if stage == "profile" else "")
+    saved = f"(SELECT count(*) FROM jsonb_array_elements({artifact}->'assignments') entry WHERE entry->>'confidence'='high')" if stage == "speaker" else count("published_ids" if stage == "memory" else "profile_ids")
+    fallback = "NULL" if stage == "speaker" else TOTAL_UNITS_SQL
+    return f"""jsonb_build_object('processed_units',coalesce(({artifact}->>'offset')::integer,0),
+        'total_units',CASE WHEN {artifact} ? 'total_units' THEN ({artifact}->>'total_units')::integer ELSE {fallback} END,
+        'staged_count',{staged},'saved_count',{saved},'attempts',coalesce(d.{stage}_attempts,0)) AS {stage}_progress"""
+
+
 def pending(cur, meeting_id: str, owner: str, transcript_hash: str, stage: str) -> dict:
     from services.meetings import manual_stage
 

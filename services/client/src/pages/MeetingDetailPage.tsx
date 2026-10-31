@@ -33,7 +33,7 @@ function MeetingDetail({ id }: { id?: string }) {
   const target = transcriptTarget(location.hash);
   const [processingVersion, setProcessingVersion] = useState(0);
   const [labelsBusy, setLabelsBusy] = useState(false);
-  const [statement, setStatement] = useState<{ meetingId: string; id: string; text: string } | null>(null);
+  const [statement, setStatement] = useState<{ meetingId: string; id: string; text: string; transcriptHash: string | null } | null>(null);
   const [participantsBusy, setParticipantsBusy] = useState(false);
   const processingChanged = useCallback(() => setProcessingVersion(previous => previous + 1), []);
   const read = useCallback(() => id ? api.meetings.get(id) : Promise.reject(new Error('Meeting not found')), [id]);
@@ -101,7 +101,7 @@ function MeetingDetail({ id }: { id?: string }) {
       </div>
       <div hidden={view !== 'transcript'} role="region" aria-labelledby="meeting-detail-tab-transcript">
         <MeetingParticipants meetingId={meeting.id} onChanged={processingChanged} active={transcriptActive} statement={statement} onStatementClosed={() => setStatement(null)} onBusyChange={setParticipantsBusy} />
-        <MeetingTranscript meetingId={meeting.id} refreshVersion={processingVersion} active={transcriptActive} targetSegment={target} assignmentDisabled={participantsBusy} onChanged={processingChanged} onShowBeginning={() => navigate(tabLocation('transcript', '#meeting-transcript'))} onAssign={segment => { setStatement({ meetingId: meeting.id, id: segment.id, text: segment.text }); navigate(tabLocation('transcript', '#meeting-participants')); }} />
+        <MeetingTranscript meetingId={meeting.id} refreshVersion={processingVersion} active={transcriptActive} targetSegment={target} assignmentDisabled={participantsBusy} onChanged={processingChanged} onShowBeginning={() => navigate(tabLocation('transcript', '#meeting-transcript'))} onAssign={(segment, transcriptHash) => { setStatement({ meetingId: meeting.id, id: segment.id, text: segment.text, transcriptHash }); navigate(tabLocation('transcript', '#meeting-participants')); }} />
       </div>
       <div hidden={view !== 'memories'} role="region" aria-labelledby="meeting-detail-tab-memories"><MeetingMemories meetingId={meeting.id} refreshVersion={processingVersion} active={visible && view === 'memories'} onChanged={processingChanged} /></div>
       <div hidden={view !== 'profiles'} role="region" aria-labelledby="meeting-detail-tab-profiles"><MeetingProfiles meetingId={meeting.id} refreshVersion={processingVersion} active={visible && view === 'profiles'} onChanged={processingChanged} /></div>

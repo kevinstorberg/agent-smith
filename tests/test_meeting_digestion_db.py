@@ -55,7 +55,7 @@ def test_digestion_enrolls_once_on_new_insert_and_survives_lost_return_value(con
     assert claimed["claim_owner"] == "another-process"
 
 
-def test_legacy_summary_without_digestion_is_not_backfilled_by_replay(config, summary, saved):
+def test_legacy_summary_without_digestion_is_not_backfilled_by_replay(config, summary, saved, client):
     with get_connection() as connection, connection.cursor() as cursor:
         cursor.execute("DELETE FROM meeting_digestions WHERE meeting_id = %s", (saved,))
     db.save_progress(config, "ingest", {}, summary=summary)
@@ -63,6 +63,7 @@ def test_legacy_summary_without_digestion_is_not_backfilled_by_replay(config, su
     assert digestion_db.get_record(saved) is None
     assert digestion_db.claim_transcript(identities(config), "reader") is None
     assert digestion_db.get_transcript(saved)["status"] == "not_imported"
+    assert client.get(f"/api/meetings/{saved}/transcript").json()["transcript_hash"] is None
 
 
 @pytest.mark.parametrize("failure_at", ["enrollment", "checkpoint"])
@@ -178,6 +179,8 @@ def test_complete_transcript_has_stable_hash_and_paginated_http_reader(config, s
     page = client.get(f"/api/meetings/{saved}/transcript", params={"offset": 1, "limit": 1})
     assert page.status_code == 200
     assert page.json()["status"] == "ready" and page.json()["total"] == 3
+    assert page.json()["transcript_hash"] == expected_hash
+    assert client.get(f"/api/meetings/{saved}/transcript", params={"limit": 1}).json()["transcript_hash"] == expected_hash
     assert [{key: item[key] for key in full["segments"][1]} for item in page.json()["items"]] == full["segments"][1:2]
     assert page.json()["items"][0]["effective_speaker"]["profile_id"] is None
     assert page.json()["offset"] == page.json()["limit"] == 1
@@ -188,6 +191,45 @@ def test_complete_transcript_has_stable_hash_and_paginated_http_reader(config, s
     reordered = {"segments": [dict(reversed(list(item.items()))) for item in full["segments"]]}
     digestion_db.save_capture(second, "capture-peer", digestion_db.get_context(second), reordered, complete=True)
     assert digestion_db.get_record(second)["transcript_hash"] == expected_hash
+
+
+def test_transcript_page_keeps_its_own_hash_when_source_changes_during_identity_resolution(config, summary, saved, client, monkeypatch):
+    from psycopg2.extras import Json
+
+    from services.meetings import participants_db
+
+    full = transcript(summary)
+    digestion_db.claim_transcript(identities(config), "capture")
+    digestion_db.save_capture(saved, "capture", digestion_db.get_context(saved), full, complete=True)
+    digestion_db.release(saved, "capture")
+    original_hash = digestion_db.get_record(saved)["transcript_hash"]
+    replacement = [{**segment, "text": "Replacement " + segment["text"]} for segment in full["segments"]]
+    replacement_hash = hashlib.sha256(json.dumps(replacement, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+    resolve = participants_db.effective_speakers
+
+    def replace_after_page_read(cur, snapshot, segments):
+        with get_connection() as conn, conn.cursor() as writer:
+            writer.execute("UPDATE meeting_digestions SET transcript=%s,transcript_hash=%s WHERE meeting_id=%s",
+                           (Json({"segments": replacement}), replacement_hash, saved))
+        return resolve(cur, snapshot, segments)
+
+    monkeypatch.setattr(participants_db, "effective_speakers", replace_after_page_read)
+    first = client.get(f"/api/meetings/{saved}/transcript", params={"limit": 1, "offset": 1}).json()
+    assert first["transcript_hash"] == original_hash
+    assert first["items"][0]["id"] == full["segments"][1]["id"]
+    assert first["items"][0]["text"] == full["segments"][1]["text"]
+    assert digestion_db.get_record(saved)["transcript_hash"] == replacement_hash
+    monkeypatch.setattr(participants_db, "effective_speakers", resolve)
+    second = client.get(f"/api/meetings/{saved}/transcript", params={"limit": 1, "offset": 1}).json()
+    assert second["transcript_hash"] == replacement_hash != original_hash
+    assert second["items"][0]["id"] == first["items"][0]["id"]
+    assert second["items"][0]["text"] == replacement[1]["text"]
+    stale_assignment = client.put(f"/api/meetings/{saved}/participants", json={
+        "expected_revision": 0, "expected_transcript_hash": first["transcript_hash"],
+        "participants": [{"name": "Synthetic speaker", "segment_id": first["items"][0]["id"]}],
+    })
+    assert stale_assignment.status_code == 409
+    assert client.get(f"/api/meetings/{saved}/participants").json()["items"] == []
 
 
 def test_transcript_deletion_tombstone_blocks_retry_replay_and_stale_capture(config, summary, saved, client):
@@ -208,6 +250,7 @@ def test_transcript_deletion_tombstone_blocks_retry_replay_and_stale_capture(con
     assert digestion_db.claim_transcript(identities(config), "retry") is None
     result = client.get(f"/api/meetings/{saved}/transcript").json()
     assert result["status"] == "deleted" and result["items"] == [] and result["total"] == 0
+    assert result["transcript_hash"] is None
 
 
 def test_provider_deletion_prevents_capture_commit_claim_and_http_read(config, summary, saved, client):

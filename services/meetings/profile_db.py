@@ -805,13 +805,45 @@ def link_alias(profile_id: str, email: str, expected_revision: int, *, include_e
         return _detail(cur, updated, include_evidence=include_evidence)
 
 
+def _associated_profiles(cur, row: dict) -> list[dict]:
+    from services.meetings import participant_view
+    from services.meetings.participants import current_manual, meeting_participants
+    from services.meetings.speaker_db import committed
+
+    segments = row["segments"]
+    manual = current_manual(row["manual_participants"], segments)
+    roster = participant_view.people(cur, row["metadata"].get("attendees", []), manual)
+    ids = {person["profile_id"] for person in roster["people"] if person["profile_id"]}
+    snapshot = {"id": str(row["id"]), "metadata": row["metadata"], "manual_participants": manual,
+                "statement_attributions": committed(row)}
+    ids.update(person["id"] for person in meeting_participants(snapshot, segments))
+    if row["profile_status"] == "done":
+        ids.update(row["profile_artifact"].get("profile_ids", []))
+    known = canonical_rows(cur, list(ids), metadata_only=True)
+    items = {str(person["id"]): {key: person[key] for key in ("id", "display_name", "email", "revision")}
+             for person in known.values() if person and not person["deleted"]}
+    return sorted(items.values(), key=lambda person: (person["display_name"].casefold(), str(person["id"])))
+
+
 def meeting_profiles(meeting_id: str) -> dict | None:
     UUID(meeting_id)
     with _cursor() as cur:
         cur.execute(
-            f"""SELECT d.meeting_id, d.transcript_status, d.profile_status, d.profile_artifact,
+            f"""SELECT m.id, m.metadata, m.manual_participants,
+               d.meeting_id, d.transcript_status, d.transcript_hash, d.profile_status,
+               jsonb_build_object('committed_transcript_hash',d.speaker_artifact->'committed_transcript_hash',
+                   'assignments',(SELECT coalesce(jsonb_agg(entry-'evidence'-'rationale'),'[]'::jsonb)
+                       FROM jsonb_array_elements(d.speaker_artifact->'assignments') entry)) AS speaker_artifact,
+               CASE WHEN d.transcript_status='ready' THEN
+                   (SELECT coalesce(jsonb_agg(jsonb_build_object('id',segment->'id','speaker',segment->'speaker')),'[]'::jsonb)
+                       FROM jsonb_array_elements(d.transcript->'segments') segment)
+                   ELSE '[]'::jsonb END AS segments,
+               d.profile_artifact->>'reason' AS profile_reason,
+               CASE WHEN d.profile_status='done' THEN
+                   jsonb_build_object('profile_ids',coalesce(d.profile_artifact->'profile_ids','[]'::jsonb))
+                   ELSE '{{}}'::jsonb END AS profile_artifact,
                d.profile_error, d.profile_attempts, d.profile_next_attempt_at,
-               {stage_db.TOTAL_UNITS_SQL} AS total_units,
+               {stage_db.progress_sql('profile')},
                d.profile_claim_until > clock_timestamp() AS running FROM meeting_summaries m
                LEFT JOIN meeting_digestions d ON d.meeting_id = m.id WHERE m.id = %s AND m.available""", (meeting_id,),
         )
@@ -819,16 +851,7 @@ def meeting_profiles(meeting_id: str) -> dict | None:
         if row is None:
             return None
         state = stage_state.generation(dict(row), "profile")
-        items = []
-        ids = row["profile_artifact"].get("profile_ids", []) if state["status"] == "done" else []
-        if ids:
-            cur.execute(
-                f"""SELECT DISTINCT canonical.id, canonical.display_name, canonical.email, canonical.revision
-                    {_CANONICAL_JOIN} WHERE requested.id IN %s AND NOT canonical.deleted
-                    ORDER BY canonical.display_name, canonical.id""", (tuple(ids),),
-            )
-            items = [dict(item) for item in cur.fetchall()]
-        return _serialize({**state, "items": items})
+        return _serialize({**state, "items": _associated_profiles(cur, dict(row))})
 
 
 def retry_profiles(meeting_id: str) -> None:

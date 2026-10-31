@@ -25,11 +25,11 @@ function transcriptTime(value: string): string {
 }
 
 export function MeetingTranscript({ meetingId, refreshVersion, onState, onAssign, assignmentDisabled = false, active = true, targetSegment = null, onChanged, onShowBeginning }: {
-  meetingId: string; refreshVersion?: number; onState?: (state: Transcript) => void; onAssign?: (statement: TranscriptSegment) => void;
+  meetingId: string; refreshVersion?: number; onState?: (state: Transcript) => void; onAssign?: (statement: TranscriptSegment, transcriptHash: string | null) => void;
   assignmentDisabled?: boolean; active?: boolean; targetSegment?: number | null; onChanged?: () => void; onShowBeginning?: () => void;
 }) {
   const [transcript, setTranscript] = useState<Transcript | null>(null);
-  const [segments, setSegments] = useState<TranscriptSegment[]>([]);
+  const [segments, setSegments] = useState<(TranscriptSegment & { transcriptHash: string | null })[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [failedOffset, setFailedOffset] = useState(0);
@@ -49,14 +49,14 @@ export function MeetingTranscript({ meetingId, refreshVersion, onState, onAssign
     const currentRequest = ++requestId.current;
     setLoading(true); setError(null);
     try {
-      const collected: TranscriptSegment[] = [];
+      const collected: (TranscriptSegment & { transcriptHash: string | null })[] = [];
       const wanted = preserveLoaded ? loadedCount.current || 100 : 100;
       let result: Transcript;
       let pageOffset = offset;
       do {
         result = await api.meetings.transcript(meetingId, { limit: 100, offset: pageOffset });
         if (currentRequest !== requestId.current || !mounted.current || !activeRef.current) return;
-        collected.push(...result.items);
+        collected.push(...result.items.map(segment => ({ ...segment, transcriptHash: result.transcript_hash || null })));
         pageOffset += result.items.length;
       } while (preserveLoaded && result.items.length > 0 && collected.length < wanted && pageOffset < result.total);
       setTranscript(result);
@@ -160,7 +160,7 @@ export function MeetingTranscript({ meetingId, refreshVersion, onState, onAssign
                   : segment.effective_speaker?.display_name || speakerName(segment.speaker)}</strong>
                 {segment.effective_speaker?.source === 'manual_assignment' && <span className="tag tag-sm">Assigned by you</span>}
                 {segment.effective_speaker?.source === 'automatic_statement' && <span className="tag tag-sm">Identified from context</span>}
-                {onAssign && <button className="btn btn-sm" disabled={assignmentDisabled} onClick={() => onAssign(segment)}>Assign this statement</button>}
+                {onAssign && <button className="btn btn-sm" disabled={assignmentDisabled} onClick={() => onAssign(segment, segment.transcriptHash)}>Assign this statement</button>}
                 {segment.start_time && (
                   <span className="text-muted-sm">
                     <time dateTime={segment.start_time}>{transcriptTime(segment.start_time)}</time>

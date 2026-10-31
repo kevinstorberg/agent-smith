@@ -1218,8 +1218,8 @@ pre {
 .relationship-label { margin-bottom: 10px; }
 .relationship-evidence { align-items: center; margin-top: 12px; font-size: 13px; }
 .relationship-actions { align-items: center; margin-top: 12px; }
-.relationship-assignment-dialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); overflow: auto; }
-.relationship-assignment-dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
+.relationship-assignment-dialog, .meeting-participant-dialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); overflow: auto; }
+.relationship-assignment-dialog::backdrop, .meeting-participant-dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
 .manual-analysis-dialog { width: min(920px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); overflow: auto; }
 .manual-analysis-dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
 .manual-analysis-dialog .page-header { gap: 16px; }
@@ -1403,6 +1403,21 @@ pre {
 .participant-person h4 { margin: 0; }
 .participant-person > p { margin: 8px 0; overflow-wrap: anywhere; }
 .participant-person > details { margin-top: 10px; }
+.meeting-participants .participant-person { padding: 12px; border: 1px solid var(--border); }
+.meeting-participants .participant-assignments { margin-top: 0; }
+.meeting-participants .participant-assignments[open] { flex: 1 1 100%; }
+.meeting-participants .participant-assignments > .participant-list { margin-top: 12px; }
+.meeting-participants .participant-review > p { margin: 0; }
+.meeting-detail .btn, .meeting-participant-dialog .btn { text-decoration: none; }
+.meeting-participant-dialog > h3 { margin-bottom: 16px; }
+.meeting-participant-dialog .participant-form { border: 0; padding-top: 0; }
+.meeting-participant-dialog .participant-mode { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
+.meeting-participant-dialog .participant-selection { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.meeting-participant-dialog .participant-statement { margin: 0 0 16px; padding: 12px; border-left: 3px solid var(--border); background: var(--bg); max-height: 160px; overflow: auto; overflow-wrap: anywhere; }
+.meeting-linked-profiles { max-width: 100%; margin: 16px 0; overflow-x: auto; }
+.meeting-linked-profiles .table { table-layout: fixed; }
+.meeting-linked-profiles td { overflow-wrap: anywhere; }
+.meeting-linked-profiles th:last-child, .meeting-linked-profiles td:last-child { width: 110px; text-align: right; }
 @media (max-width: 600px) {
   .meeting-source-details { grid-template-columns: minmax(0, 1fr); gap: 5px; }
   .meeting-source-details dd { margin-bottom: 10px; }

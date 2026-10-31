@@ -51,3 +51,24 @@ it('blocks reanalysis and retries while speaker identification owns the transcri
   expect(screen.getByRole('button', { name: 'Reanalyze completed...' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Retry memories' })).toBeDisabled();
 });
+
+it('shows saved persona progress in the badge and explains its last timeout', () => {
+  renderWithProviders(<MeetingProcessing meetingId="meeting-id" transcript={transcript} memories={{ ...memories, status: 'done' }} personas={{ ...personas,
+    error_type: 'ModelCallTimeoutError', progress: { ...memories.progress!, processed_units: 300, total_units: 679, staged_count: 33, attempts: 2 },
+  }} onChanged={changed} />);
+  expect(screen.getByRole('link', { name: 'Profiles: Progress saved' })).toHaveAttribute('href', '#meeting-profiles');
+  fireEvent.click(screen.getByText('Processing details'));
+  expect(screen.getByRole('progressbar', { name: 'Profile analysis progress' })).toHaveValue(300);
+  expect(screen.getByRole('status')).toHaveTextContent('The last attempt timed out. Saved progress is kept.');
+});
+
+it('offers explicit speaker review for a legacy meeting while preserving completed workflows', () => {
+  renderWithProviders(<MeetingProcessing meetingId="meeting-id" transcript={transcript} memories={{ ...memories, status: 'done' }} personas={{ ...personas, status: 'done' }}
+    speakers={{ status: 'legacy', error_type: null, progress: { ...memories.progress!, processed_units: 0, total_units: null, saved_count: 0, next_attempt_at: '2026-10-29T12:00:00Z' } }} onChanged={changed} />);
+  expect(screen.getByRole('link', { name: 'Review speakers' })).toHaveAttribute('href', '#meeting-participants');
+  fireEvent.click(screen.getByText('Processing details'));
+  expect(screen.getByText(/This meeting has not had speaker identification/)).toBeVisible();
+  expect(screen.queryByText(/0 of \?/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Next eligible attempt/)).not.toBeInTheDocument();
+  expect(api.meetings.process).not.toHaveBeenCalled();
+});

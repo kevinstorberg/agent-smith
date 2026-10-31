@@ -22,6 +22,9 @@ function Probe() {
 function renderPage(suffix = '') { return renderWithProviders(<><Routes><Route path="/meetings/:id" element={<MeetingDetailPage />} /></Routes><Probe /></>, { initialEntries: [`/meetings/${MID}${suffix}`] }); }
 const tab = (label: string) => fireEvent.click(within(screen.getByRole('navigation', { name: 'Meeting views' })).getByRole('link', { name: label }));
 async function settle() { await act(async () => { await Promise.resolve(); await Promise.resolve(); }); }
+const originalShowModal = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal');
+beforeAll(() => Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value(this: HTMLDialogElement) { this.open = true; } }));
+afterAll(() => { if (originalShowModal) Object.defineProperty(HTMLDialogElement.prototype, 'showModal', originalShowModal); else Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal'); });
 const scroll = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
 beforeAll(() => Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() }));
 afterAll(() => { if (scroll) Object.defineProperty(Element.prototype, 'scrollIntoView', scroll); else delete (Element.prototype as any).scrollIntoView; });
@@ -56,7 +59,7 @@ describe('MeetingDetailPage', () => {
     renderPage('?q=kept'); await screen.findByText('Ship the next release.');
     tab('Memories'); expect(await screen.findByText('A reusable product decision.')).toBeVisible();
     expect(api.meetings.transcript).not.toHaveBeenCalled(); expect(api.meetings.profiles).not.toHaveBeenCalled();
-    tab('Profiles'); expect(await screen.findByRole('link', { name: 'Alex' })).toHaveAttribute('href', '/profiles/profile');
+    tab('Profiles'); expect(await screen.findByRole('link', { name: "View Alex's profile" })).toHaveAttribute('href', '/profiles/profile');
     expect(screen.queryByText('A reusable product decision.')).not.toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('q=kept&tab=profiles');
     fireEvent.click(screen.getByRole('button', { name: 'History back' }));
@@ -90,8 +93,10 @@ describe('MeetingDetailPage', () => {
     renderPage('?tab=transcript'); await settle();
     fireEvent.click(screen.getByRole('button', { name: 'Load more transcript' })); await settle();
     fireEvent.click(screen.getByRole('button', { name: 'Add participant' })); await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Name and email' }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'My retained draft' } });
     tab('Memories'); await settle(); expect(screen.queryByText('Line 100')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     tab('Transcript'); await settle();
     expect(screen.getByLabelText('Name')).toHaveValue('My retained draft'); expect(screen.getByText('Line 100')).toBeVisible();
     vi.mocked(api.meetings.get).mockRejectedValue(new Error('Temporary failure'));
@@ -105,6 +110,8 @@ describe('MeetingDetailPage', () => {
     renderPage('#transcript-segment-650');
     const statement = (await screen.findByText('Statement 650')).closest('article')!;
     fireEvent.click(within(statement).getByRole('button', { name: 'Assign this statement' }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: 'Name and email' }));
     await screen.findByLabelText('Name');
     expect(screen.getByTestId('location')).toHaveTextContent('#meeting-participants');
     fireEvent.click(screen.getByRole('button', { name: 'Show beginning' }));
@@ -112,6 +119,33 @@ describe('MeetingDetailPage', () => {
     expect(document.getElementById('transcript-segment-650')).not.toBeInTheDocument();
     expect(api.meetings.transcript).toHaveBeenLastCalledWith(MID, { limit: 100, offset: 0 });
     expect(screen.getByLabelText('Name')).toBeInTheDocument();
+  });
+
+  it.each(['a'.repeat(64), null])('blocks assigning a displayed statement with an old or missing source stamp: %s', async transcriptHash => {
+    vi.mocked(api.meetings.transcript).mockResolvedValue({ status: 'ready', total: 1, offset: 0, limit: 100, error_type: null, captured_at: null,
+      transcript_hash: transcriptHash, items: [{ id: 'segment-0', text: 'Words from an older transcript', speaker: {}, start_time: null, end_time: null }],
+    });
+    vi.mocked(api.meetings.participants).mockResolvedValue({ revision: 3, items: [], people: [], unlinked_attendees: [], provider_participants: [], speakers: [], running: false, enrolled: true, transcript_hash: 'b'.repeat(64) });
+    renderPage('?tab=transcript');
+    await screen.findByText('Words from an older transcript');
+    fireEvent.click(screen.getByRole('button', { name: 'Assign this statement' }));
+    await screen.findByRole('dialog', { name: 'Assign statement' });
+    fireEvent.click(screen.getByRole('button', { name: 'Name and email' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Casey' } });
+    expect(screen.getByRole('button', { name: 'Assign statement' })).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent('Cancel this draft and select a current statement');
+    expect(api.meetings.updateParticipants).not.toHaveBeenCalled();
+    vi.mocked(api.meetings.transcript).mockResolvedValue({ status: 'ready', total: 1, offset: 0, limit: 100, error_type: null, captured_at: null,
+      transcript_hash: 'b'.repeat(64), items: [{ id: 'segment-0', text: 'Words from the current transcript', speaker: {}, start_time: null, end_time: null }],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Reload transcript' }));
+    await screen.findByText('Words from the current transcript');
+    fireEvent.click(screen.getByRole('button', { name: 'Assign this statement' }));
+    await screen.findByRole('dialog', { name: 'Assign statement' });
+    fireEvent.click(screen.getByRole('button', { name: 'Name and email' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Casey' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Assign statement' }));
+    await waitFor(() => expect(api.meetings.updateParticipants).toHaveBeenCalledWith(MID, { expected_revision: 3, expected_transcript_hash: 'b'.repeat(64), participants: [{ name: 'Casey', segment_id: 'segment-0' }] }));
   });
 
   it('reports a missing deep-linked statement without describing an existing transcript as empty', async () => {
@@ -163,7 +197,7 @@ describe('MeetingDetailPage', () => {
     renderPage(); await screen.findByText('Speakers: Needs attention');
     fireEvent.click(screen.getByText('Processing details'));
     expect(screen.getByText(/did not produce a valid saved result/)).toBeVisible();
-    expect(screen.getByText('0 of ? statements reviewed · 0 identified')).toBeVisible();
+    expect(screen.queryByText(/0 of \? statements reviewed/)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Manage speaker assignments' })).toHaveAttribute('href', '#meeting-participants');
     expect(api.meetings.identifyParticipants).not.toHaveBeenCalled();
   });
