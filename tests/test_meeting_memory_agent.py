@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import threading
 import traceback
 from copy import deepcopy
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -13,6 +15,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import Field
 
+from scripts.shared.env import read_env_file
 from services.graphs import agents
 from services.meetings import analysis
 from services.meetings.analysis import MemoryAnalysisError, analyze_memories
@@ -96,6 +99,29 @@ def model(monkeypatch):
         return instance, roles
 
     return install
+
+
+@pytest.fixture
+def shipped_memory_policy(monkeypatch):
+    for name in [name for name in os.environ if "_MODEL_" in name]:
+        monkeypatch.delenv(name)
+    for name, value in read_env_file(Path(__file__).resolve().parents[1] / ".env.default").items():
+        if "_MODEL_" in name:
+            monkeypatch.setenv(name, value)
+
+
+@pytest.fixture
+def scaled_deadlines(monkeypatch):
+    scale, limits = 0.01, []
+    timeout_at = asyncio.timeout_at
+
+    def scaled(deadline):
+        now = asyncio.get_running_loop().time()
+        limits.append(deadline - now)
+        return timeout_at(now + max(0, deadline - now) * scale)
+
+    monkeypatch.setattr(asyncio, "timeout_at", scaled)
+    return scale, limits
 
 
 @pytest.mark.asyncio
@@ -522,6 +548,69 @@ async def test_per_model_timeout_interrupts_a_stalled_model(backend, model, monk
     with pytest.raises(MemoryAnalysisError, match="TimeoutError"):
         await asyncio.wait_for(analyze_memories(SNAPSHOT, SEGMENTS, []), 3)
     assert entered.is_set()
+
+
+@pytest.mark.asyncio
+async def test_shipped_memory_timeout_allows_summary_staging_after_the_old_limit(
+    backend, model, monkeypatch, shipped_memory_policy, scaled_deadlines,
+):
+    scale, limits = scaled_deadlines
+    original = ScriptedModel._agenerate
+
+    async def slow_staging(self, *args, **kwargs):
+        if len(self.seen) == 1:
+            await asyncio.sleep(60 * scale)
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(ScriptedModel, "_agenerate", slow_staging)
+    instance, roles = model([
+        call("search_previous_memories", query="release"), call("stage_memories", items=[ITEM]),
+    ])
+
+    result = await analyze_memories(SNAPSHOT, SEGMENTS, [])
+
+    assert result["items"] == [ITEM]
+    assert roles == [("meeting_memory", "curator")]
+    assert len(instance.seen) == 2 and not instance.replies
+    assert len(backend[0]) == 2 and backend[2] == []
+    assert 149 < limits[0] <= 150
+    assert all(119 < limit <= 120 for limit in limits[1:])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("request_timeout", "caller_budget", "category"), [
+    (None, None, "ModelCallTimeoutError"),
+    (200, None, "AnalysisBudgetExpired"),
+    (None, 30, "AnalysisBudgetExpired"),
+])
+async def test_memory_timeouts_remain_bounded_without_extra_model_calls(
+    backend, model, monkeypatch, shipped_memory_policy, scaled_deadlines,
+    request_timeout, caller_budget, category,
+):
+    entered = []
+
+    async def stalled(self, *args, **kwargs):
+        entered.append(True)
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(ScriptedModel, "_agenerate", stalled)
+    if request_timeout is not None:
+        monkeypatch.setenv("MEETING_MEMORY_MODEL_REQUEST_TIMEOUT", str(request_timeout))
+    model([AIMessage(content="Never returned")])
+    deadline = asyncio.get_running_loop().time() + caller_budget if caller_budget is not None else None
+    error_class = MemoryAnalysisError if category == "ModelCallTimeoutError" else analysis.AnalysisBudgetExpired
+
+    with pytest.raises(error_class) as caught:
+        await analyze_memories(SNAPSHOT, SEGMENTS, [], deadline=deadline)
+
+    if isinstance(caught.value, MemoryAnalysisError):
+        assert caught.value.error_type == category
+    assert entered == [True]
+    assert backend[0] == backend[1] == backend[2] == []
+    _, limits = scaled_deadlines
+    assert len(limits) == 2
+    assert limits[0] == pytest.approx(caller_budget or 150, abs=0.1)
+    assert limits[1] == pytest.approx(min(request_timeout or 120, caller_budget or 150), abs=0.1)
 
 
 @pytest.mark.asyncio
