@@ -548,8 +548,9 @@ The removed participant-inference stage makes no model calls. Legacy
 
 Each graph handles one pending context within a 540-second work budget. Agent stages retain
 their 150-second budget. Model calls use the resolved role's `MODEL_REQUEST_TIMEOUT`, bounded
-by the remaining stage time; the shipped memory/persona defaults remain 45 seconds with no
-SDK retries. A validated staging submission ends the agent without another model call;
+by the remaining stage time. Memory generation inherits its selected model preset's timeout
+(120 seconds for Kimi); Persona retains its 45-second limit. Both use zero SDK retries.
+A validated staging submission ends the agent without another model call;
 rejected or ambiguous submissions can be corrected within the existing call limits.
 Memory/persona jobs require
 600 seconds for execution and cleanup; legacy shorter timeouts receive that minimum at runtime.

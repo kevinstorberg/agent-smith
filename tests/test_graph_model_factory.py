@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from pathlib import Path
 
 import pytest
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -9,6 +10,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_openai import ChatOpenAI
 
+from scripts.shared.env import read_env_file
 from services.graphs import model_factory
 from services.graphs.model_config import GraphModelConfig
 from services.graphs.model_factory import ModelOutputTruncatedError, build_chat_model
@@ -72,6 +74,20 @@ def test_adapter_is_built_from_the_resolved_config(model_env, captured_adapter_k
     assert "stream_usage" not in captured
     assert "extra_body" not in captured
     assert [type(callback).__name__ for callback in captured["callbacks"]] == ["_ModelGuard"]
+
+
+def test_shipped_memory_adapter_uses_preset_timeout_without_inheriting_retries(model_env, captured_adapter_kwargs):
+    for name, value in read_env_file(Path(__file__).resolve().parents[1] / ".env.default").items():
+        if "_MODEL_" in name:
+            model_env.setenv(name, API_KEY if name.endswith("_MODEL_SERVER_API_KEY") else value)
+
+    build_chat_model("meeting_memory", fallback_role="curator")
+
+    captured = captured_adapter_kwargs
+    assert captured["model"] == "us.moonshotai.kimi-k3"
+    assert captured["max_tokens"] == 16384
+    assert captured["streaming"] is True
+    assert (captured["timeout"], captured["max_retries"]) == (120, 0)
 
 
 def test_grader_role_builds_from_its_own_preset(model_env, captured_adapter_kwargs):

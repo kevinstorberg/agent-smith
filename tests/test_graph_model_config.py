@@ -297,7 +297,7 @@ def test_request_timeout_resolver_rejects_invalid_policy(timeout):
         resolve_request_timeout("persona", "curator", env={"PERSONA_MODEL_REQUEST_TIMEOUT": timeout})
 
 
-@pytest.mark.parametrize("role,expected", [("persona", 45), ("meeting_memory", 45), ("meeting_speaker", 30)])
+@pytest.mark.parametrize("role,expected", [("persona", 45), ("meeting_memory", 120), ("meeting_speaker", 30)])
 def test_shipped_analysis_request_timeout_policy_is_shared_with_model_factory(role, expected):
     settings = _shipped_env()
     assert resolve_request_timeout(role, "curator", env=settings) == expected
