@@ -26,6 +26,7 @@ vi.mock('../../api', () => ({
       get: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      setScheduling: vi.fn(),
       remove: vi.fn(),
       runNow: vi.fn(),
       executions: vi.fn(),
@@ -45,6 +46,7 @@ const mockRunNow = api.jobs.runNow as ReturnType<typeof vi.fn>;
 const fakeJob = {
   id: 42,
   name: 'Test Job',
+  schedule_enabled: true,
   description: 'A test job',
   schedule_config: { minutes: 5 },
   input_params: { command: 'echo hi' },

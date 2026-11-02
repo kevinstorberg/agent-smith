@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 import psycopg2
 from fastapi import APIRouter, HTTPException, Path, Query
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from services.config import DEVICE_NAME
 from services.jobs.models.config import (
@@ -16,7 +16,7 @@ from services.jobs.models.config import (
     update_config,
 )
 from services.jobs.models.execution import get_execution, list_executions_for_job
-from services.jobs.models.job import delete_job, get_job, list_graph_jobs, list_jobs, update_job
+from services.jobs.models.job import JobNotFoundError, delete_job, get_job, list_graph_jobs, list_jobs, set_schedule_enabled, update_job
 from services.jobs.scoping import job_targets
 from services.jobs.schedule import parse_interval
 from services.jobs.scheduler import execute_job
@@ -31,10 +31,12 @@ from services.api.routers.base import (
 router = APIRouter()
 
 
+def _with_configs(job: dict) -> dict:
+    return {**job, "configs": list_configs(job["id"])}
+
+
 def _job_detail(job_id: int) -> dict:
-    job = require_found(get_job(job_id), "Job", job_id)
-    job["configs"] = list_configs(job_id)
-    return job
+    return _with_configs(require_found(get_job(job_id), "Job", job_id))
 
 
 @router.get("")
@@ -133,6 +135,20 @@ def delete(job_id: int):
     require_found(get_job(job_id), "Job", job_id)
     delete_job(job_id)
     return delete_response(job_id)
+
+
+class JobSchedulingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schedule_enabled: bool = Field(strict=True)
+
+
+@router.patch("/{job_id}/scheduling")
+def set_scheduling(job_id: Annotated[int, Path(gt=0)], body: JobSchedulingRequest):
+    try:
+        job = set_schedule_enabled(job_id, body.schedule_enabled)
+    except JobNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found") from None
+    return _with_configs(job)
 
 
 @router.post("/{job_id}/run-now")

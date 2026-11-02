@@ -1,8 +1,15 @@
 """Background job model."""
 from __future__ import annotations
 
+from psycopg2.extras import RealDictCursor
+
 from services.api.models.base import BaseModel
+from services.db import get_connection
 from services.jobs.schedule import parse_interval
+
+
+class JobNotFoundError(LookupError):
+    pass
 
 
 class BackgroundJobModel(BaseModel):
@@ -81,6 +88,24 @@ class BackgroundJobModel(BaseModel):
         clean["version"] = current["version"] + 1
         cls.dynamic_update(job_id, clean)
 
+    @classmethod
+    def set_schedule_enabled(cls, job_id: int, schedule_enabled: bool) -> dict:
+        if type(job_id) is not int or job_id <= 0:
+            raise ValueError("Job id must be a positive integer")
+        if type(schedule_enabled) is not bool:
+            raise ValueError("schedule_enabled must be a boolean")
+        with get_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(f"""UPDATE {cls.table}
+                SET schedule_enabled=%s,
+                    version=version+CASE WHEN schedule_enabled IS DISTINCT FROM %s THEN 1 ELSE 0 END,
+                    updated_at=CASE WHEN schedule_enabled IS DISTINCT FROM %s THEN clock_timestamp() ELSE updated_at END
+                WHERE id=%s AND state='active' RETURNING *""",
+                        (schedule_enabled, schedule_enabled, schedule_enabled, job_id))
+            row = cur.fetchone()
+            if row is None:
+                raise JobNotFoundError(f"Active job not found: {job_id}")
+            return cls.serialize_timestamps(dict(row))
+
 
 # Convenience exports
 list_jobs = BackgroundJobModel.list
@@ -89,4 +114,5 @@ get_job_by_name = BackgroundJobModel.get_by_name
 list_graph_jobs = BackgroundJobModel.list_for_graph
 create_job = BackgroundJobModel.create
 update_job = BackgroundJobModel.update
+set_schedule_enabled = BackgroundJobModel.set_schedule_enabled
 delete_job = BackgroundJobModel.destroy

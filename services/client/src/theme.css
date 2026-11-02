@@ -1423,3 +1423,12 @@ pre {
   .meeting-source-details dd { margin-bottom: 10px; }
   .meeting-processing-summary > .flex-wrap { width: 100%; }
 }
+
+.jobs-table { max-width: 100%; overflow-x: auto; }
+.jobs-table .table { min-width: 620px; }
+.jobs-table td:last-child, .jobs-table th:last-child { width: 180px; text-align: right; }
+.job-schedule-action { display: inline-grid; gap: 6px; justify-items: end; }
+.job-run-controls, .job-run-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.job-run-controls { margin-bottom: 16px; }
+.job-run-actions { margin-left: auto; }
+.job-paused-notice { margin: -4px 0 16px; }
