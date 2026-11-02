@@ -1264,6 +1264,7 @@ pre {
 .evidence-preview { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .evidence-row-expanded { background: var(--accent); }
 .evidence-detail { display: grid; gap: 12px; max-width: calc(100cqi - 32px); padding: 8px 0; overflow-wrap: anywhere; }
+.action-items-table .evidence-detail.markdown-content > :last-child { margin-block-end: 0; }
 .evidence-table .evidence-detail-cell { background: var(--surface); }
 .evidence-detail details > p,
 .evidence-detail blockquote { margin-top: 8px; }
