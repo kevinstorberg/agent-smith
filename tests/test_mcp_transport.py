@@ -74,7 +74,18 @@ async def test_every_mcp_endpoint_serves_a_session_id_from_before_a_restart(capl
                 )
 
                 assert response.status_code == 200, f"{path} answered {response.status_code}: {response.text}"
-                assert _json_rpc_payload(response)["result"]["tools"], f"{path} listed no tools"
+                tools = _json_rpc_payload(response)["result"]["tools"]
+                assert tools, f"{path} listed no tools"
+                if path == "/mcp/profiles":
+                    assert {tool["name"] for tool in tools} == {"profile_list", "profile_get"} | {
+                        f"profile_topic_{suffix}" for suffix in ("list", "get", "create", "update", "delete", "move")}
+                    assert all(tool["inputSchema"]["additionalProperties"] is False for tool in tools)
+                    response = await client.post(f"{path}/", headers=MCP_HEADERS, json={
+                        "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+                            "name": "profile_topic_list", "arguments": {
+                                "profile_id": "11111111-1111-4111-8111-111111111111", "project": "forbidden"}}})
+                    assert response.status_code == 200
+                    assert _json_rpc_payload(response)["result"]["isError"] is True
 
                 response = await client.get(f"{path}/", headers={"Accept": "application/json"})
                 assert response.status_code == 406

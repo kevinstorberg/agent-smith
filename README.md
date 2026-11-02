@@ -118,6 +118,38 @@ dashboard. Startup registers the MCP connection without replacing customized set
 Use the existing **Sync** action and reconnect agent clients to discover the tools.
 No new API key or scheduled job is required.
 
+## Profile discussion topics
+
+Open a profile's **Discussion topics** tab to prepare an agenda for that person. Add a
+title, Markdown notes and optional tags; prioritize open topics with the drag handle,
+then complete or reopen them. Open, Completed and All views keep the running agenda and
+its history together. Search and tag filters apply before pagination. Reordering is
+available in the unfiltered Open/manual view and preserves topics on other pages.
+
+Each person has a separate priority queue. Discussion topics use the same item lifecycle
+as Action Items, while the global task list remains its own queue. Topic edits use item
+revisions and do not start persona analysis. Profile merges append the source's open
+topics after the destination's topics and retain completed history, IDs and creation
+receipts. Old profile aliases resolve to the surviving owner; deleted profiles' topics
+are unavailable.
+
+Agents use `/mcp/profiles/`: `profile_list` and `profile_get` find the intended person,
+then `profile_topic_list`, `profile_topic_get`, `profile_topic_create`,
+`profile_topic_update`, `profile_topic_delete` and `profile_topic_move` manage the agenda.
+Every topic operation requires `profile_id`. List/get responses return the canonical
+owner. Reads return current revisions; writes require `expected_revision`, and status
+changes explicitly select `open` or `completed`. Creation accepts a UUID `request_id`:
+retry the same UUID and original input after an uncertain response. Deleted UUIDs remain
+reserved. Moves require exactly one open neighbor in the same person's queue.
+
+Apply migration `d4a7e2c9f6b1` using the normal reviewed database upgrade command, then
+restart every app instance with the updated code before creating discussion topics.
+Older app versions use unscoped task queries and cannot safely share profile-owned rows.
+Use **Sync** and reconnect agents to discover the new Profiles
+MCP connection. No new API key or scheduled job is needed. The migration preserves
+existing task IDs, priorities, revisions and request payloads. Downgrade refuses while
+profile-owned rows exist, preventing accidental loss of topic ownership.
+
 ## Memory
 
 Vector memory with time-weighted retrieval, served as MCP tools on the dashboard endpoint.

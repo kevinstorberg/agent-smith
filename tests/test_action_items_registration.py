@@ -23,13 +23,12 @@ def isolated_action_items_tool(monkeypatch):
     clean_harness_rows("action-items")
 
 
-@pytest.mark.parametrize("agent", ["claude", "codex"])
-def test_action_items_seed_discovery_sync_and_custom_settings_survive(agent, tmp_path, monkeypatch):
+def assert_seed_discovery_sync_preserves_custom_settings(service_name, agent, tmp_path, monkeypatch):
     seed.seed_mcp_servers()
-    tool = get_tool("action-items")
-    assert collect_tools_from_db(agent)["action-items"]["url"] == f"{MCP_BASE}/mcp/action-items/"
+    tool = get_tool(service_name)
+    assert collect_tools_from_db(agent)[service_name]["url"] == f"{MCP_BASE}/mcp/{service_name}/"
     original_collect = collect_tools_from_db
-    monkeypatch.setattr("services.api.models.tool.collect_tools_from_db", lambda selected: {"action-items": original_collect(selected)["action-items"]})
+    monkeypatch.setattr("services.api.models.tool.collect_tools_from_db", lambda selected: {service_name: original_collect(selected)[service_name]})
     destination = tmp_path / ("client.toml" if agent == "codex" else "client.json")
     destination.write_text('unrelated = "keep"\n' if agent == "codex" else '{"unrelated":"keep"}', encoding="utf-8")
     monkeypatch.setitem(AGENT_TARGETS[agent], "mcp_file", str(destination))
@@ -37,13 +36,19 @@ def test_action_items_seed_discovery_sync_and_custom_settings_survive(agent, tmp
     assert mcp_utils.sync_mcp(agent, dry_run=False) == []
     configured = tomllib.loads(destination.read_text()) if agent == "codex" else json.loads(destination.read_text())
     assert configured["unrelated"] == "keep"
-    assert configured[AGENT_TARGETS[agent]["mcp_key"]]["action-items"]["url"] == f"{MCP_BASE}/mcp/action-items/"
+    url_key = "httpUrl" if agent == "gemini" else "url"
+    assert configured[AGENT_TARGETS[agent]["mcp_key"]][service_name][url_key] == f"{MCP_BASE}/mcp/{service_name}/"
     update_content("tool", tool["id"], {"body": "My notes", "metadata": {"url": "http://localhost:9999/custom/", "description": "Customized"}})
     with get_connection() as connection, connection.cursor() as cursor:
         cursor.execute("UPDATE harness_configs SET enabled=false WHERE item_type='tool' AND item_id=%s", (tool["id"],))
     customized = get_item_by_id("tool", tool["id"])
     seed.seed_mcp_servers()
     assert get_item_by_id("tool", tool["id"]) == customized
+
+
+@pytest.mark.parametrize("agent", ["claude", "codex"])
+def test_action_items_seed_discovery_sync_and_custom_settings_survive(agent, tmp_path, monkeypatch):
+    assert_seed_discovery_sync_preserves_custom_settings("action-items", agent, tmp_path, monkeypatch)
 
 
 def test_action_items_seed_is_idempotent_and_tasks_never_become_harness_items():

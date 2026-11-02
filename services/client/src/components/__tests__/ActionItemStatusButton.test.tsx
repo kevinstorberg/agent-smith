@@ -6,6 +6,12 @@ import { ActionItemStatusButton } from '../ActionItemStatusButton';
 afterEach(() => vi.restoreAllMocks());
 
 describe('ActionItemStatusButton', () => {
+  it('uses the supplied resource noun for completion confirmation', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderWithProviders(<ActionItemStatusButton noun="discussion topic" item={{ title: 'Budget', status: 'open' }} onChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Complete Budget' }));
+    expect(confirm).toHaveBeenCalledWith('Complete discussion topic “Budget”?');
+  });
   it('requires confirmation before completing and uses the existing green style', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
     const change = vi.fn();

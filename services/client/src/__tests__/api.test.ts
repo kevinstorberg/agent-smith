@@ -17,6 +17,29 @@ beforeEach(() => {
 });
 
 describe('action items', () => {
+  it('scopes every discussion-topic endpoint to its encoded profile and preserves UUID/revision/anchor bodies', async () => {
+    globalThis.fetch = mockFetch({});
+    const profileId = 'profile/id';
+    const create = { title: 'Discuss priorities', description: '## Notes', tags: ['planning'], request_id: '9d773b2b-9ab3-4a56-925e-ac41634522fa' };
+    await api.profiles.topics.list(profileId, { q: 'budget', tags: ['planning', 'follow-up'], status: 'all', sort: 'updated', limit: 20, offset: 40 });
+    await api.profiles.topics.get(profileId, 7);
+    await api.profiles.topics.create(profileId, create);
+    await api.profiles.topics.update(profileId, 7, { expected_revision: 3, description: '', tags: [], status: 'completed' });
+    await api.profiles.topics.move(profileId, 7, { expected_revision: 4, before_id: 8 });
+    await api.profiles.topics.remove(profileId, 7, 5);
+    const calls = vi.mocked(globalThis.fetch).mock.calls;
+    const collection = '/api/profiles/profile%2Fid/discussion-topics';
+    const query = new URL(String(calls[0][0])).searchParams;
+    expect(Object.fromEntries(query)).toMatchObject({ q: 'budget', status: 'all', sort: 'updated', limit: '20', offset: '40' });
+    expect(query.getAll('tags')).toEqual(['planning', 'follow-up']);
+    expect(query.has('project')).toBe(false);
+    expect(calls.slice(1).map(call => new URL(String(call[0]), 'http://localhost').pathname)).toEqual([`${collection}/7`, collection, `${collection}/7`, `${collection}/7/move`, `${collection}/7`]);
+    expect(JSON.parse(String(calls[2][1]?.body))).toEqual(create);
+    expect(JSON.parse(String(calls[3][1]?.body))).toEqual({ expected_revision: 3, description: '', tags: [], status: 'completed' });
+    expect(JSON.parse(String(calls[4][1]?.body))).toEqual({ expected_revision: 4, before_id: 8 });
+    expect(JSON.parse(String(calls[5][1]?.body))).toEqual({ expected_revision: 5 });
+  });
+
   it('sends paging, combined filters and a bounded deadline to the real fetch boundary', async () => {
     globalThis.fetch = mockFetch({ items: [], total: 0 });
     const timeout = vi.spyOn(AbortSignal, 'timeout');

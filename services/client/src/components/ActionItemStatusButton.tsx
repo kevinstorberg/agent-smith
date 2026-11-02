@@ -1,10 +1,11 @@
 import type { ActionItemRow } from '../api';
 
-export function ActionItemStatusButton({ item, disabled, small = false, onChange }: {
+export function ActionItemStatusButton({ item, disabled, small = false, onChange, noun = 'action item' }: {
   item: Pick<ActionItemRow, 'title' | 'status'>;
   disabled?: boolean;
   small?: boolean;
   onChange: () => void;
+  noun?: string;
 }) {
   const completing = item.status === 'open';
   const label = completing ? 'Complete' : 'Reopen';
@@ -13,6 +14,6 @@ export function ActionItemStatusButton({ item, disabled, small = false, onChange
     onKeyDown={event => event.stopPropagation()}
     onClick={event => {
       event.stopPropagation();
-      if (!completing || confirm(`Complete action item “${item.title}”?`)) onChange();
+      if (!completing || confirm(`Complete ${noun} “${item.title}”?`)) onChange();
     }}>{label}</button>;
 }

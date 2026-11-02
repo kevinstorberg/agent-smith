@@ -13,10 +13,11 @@ import { ProfileAssessment } from '../components/ProfileAssessment';
 import { ProfileEvidence } from '../components/ProfileEvidence';
 import { ProfileHistory } from '../components/ProfileHistory';
 import { ProfileRelationships } from '../components/ProfileRelationships';
+import { ProfileDiscussionTopics } from '../components/ProfileDiscussionTopics';
 import { DetailPageHeader } from '../components/DetailPageHeader';
 
 const ASSESSMENT_SECTIONS: ProfileSectionKey[] = ['drivers', 'strengths', 'development_areas', 'working_style'];
-const VIEWS = [['overview', 'Overview'], ['assessment', 'Assessment'], ['relationships', 'Relationships'], ['evidence', 'Evidence']] as const;
+const VIEWS = [['overview', 'Overview'], ['assessment', 'Assessment'], ['relationships', 'Relationships'], ['evidence', 'Evidence'], ['topics', 'Discussion topics']] as const;
 type View = typeof VIEWS[number][0];
 
 export function ProfileDetailPage() {
@@ -24,7 +25,7 @@ export function ProfileDetailPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const selected = searchParams.get('tab');
-  const view: View = selected === 'assessment' || selected === 'relationships' || selected === 'evidence' ? selected : 'overview';
+  const view: View = selected === 'assessment' || selected === 'relationships' || selected === 'evidence' || selected === 'topics' ? selected : 'overview';
   const tabSearch = (value: View) => {
     const next = new URLSearchParams(searchParams);
     next.set('tab', value);
@@ -35,6 +36,8 @@ export function ProfileDetailPage() {
   });
   const [evidenceVisited, setEvidenceVisited] = useState(view === 'evidence');
   useEffect(() => { if (view === 'evidence') setEvidenceVisited(true); }, [view]);
+  const [topicsVisited, setTopicsVisited] = useState(view === 'topics');
+  useEffect(() => { if (view === 'topics') setTopicsVisited(true); }, [view]);
   const read = useCallback(() => id ? api.profiles.get(id) : Promise.reject(new Error('Profile not found')), [id]);
   const { data: profile, loading, error, refresh } = useApiRead(read);
   const [notice, setNotice] = useState<string | null>(null);
@@ -48,7 +51,8 @@ export function ProfileDetailPage() {
   const [relationshipsBusy, setRelationshipsBusy] = useState(false);
   const [assessmentBusy, setAssessmentBusy] = useState(false);
   const [evidenceBusy, setEvidenceBusy] = useState(false);
-  const otherBusy = overviewBusy || notesBusy || relationshipsBusy || assessmentBusy || evidenceBusy;
+  const [topicsBusy, setTopicsBusy] = useState(false);
+  const otherBusy = overviewBusy || notesBusy || relationshipsBusy || assessmentBusy || evidenceBusy || topicsBusy;
   useEffect(() => {
     if (profile && profile.id !== id) navigate(`/profiles/${profile.id}${searchParams.size ? `?${searchParams}` : ''}`, { replace: true });
   }, [profile, id, navigate, searchParams]);
@@ -66,7 +70,7 @@ export function ProfileDetailPage() {
   const remove = () => {
     if (profile && confirm('Delete this participant profile? It will stay deleted and will not be recreated automatically.')) deletion.mutate(profile.revision);
   };
-  const baseDisabled = metadataBusy || identityBusy || assessmentBusy || evidenceBusy || deletion.loading;
+  const baseDisabled = metadataBusy || identityBusy || assessmentBusy || evidenceBusy || topicsBusy || deletion.loading;
 
   return <div className="profile-detail">
     <div className="card profile-summary">
@@ -88,7 +92,7 @@ export function ProfileDetailPage() {
           </>}
         </div>
         {profile && <ProfileAssessment key={`assessment-${profile.id}`} profile={profile}
-          disabled={metadataBusy || identityBusy || overviewBusy || notesBusy || relationshipsBusy || evidenceBusy || deletion.loading}
+          disabled={metadataBusy || identityBusy || overviewBusy || notesBusy || relationshipsBusy || evidenceBusy || topicsBusy || deletion.loading}
           onBusyChange={setAssessmentBusy} onReload={reload} />}
       </div>
     </div>
@@ -123,8 +127,13 @@ export function ProfileDetailPage() {
       </div>
       <div hidden={view !== 'evidence'} role="region" aria-labelledby="profile-tab-evidence">
         {(view === 'evidence' || evidenceVisited) && <ProfileEvidence key={`evidence-${profile.id}`} profile={profile} active={view === 'evidence'}
-          disabled={metadataBusy || identityBusy || overviewBusy || notesBusy || relationshipsBusy || assessmentBusy || deletion.loading}
+          disabled={metadataBusy || identityBusy || overviewBusy || notesBusy || relationshipsBusy || assessmentBusy || topicsBusy || deletion.loading}
           onBusyChange={setEvidenceBusy} onReload={reload} />}
+      </div>
+      <div hidden={view !== 'topics'} role="region" aria-labelledby="profile-tab-topics">
+        {(view === 'topics' || topicsVisited) && <ProfileDiscussionTopics key={`topics-${profile.id}`} profileId={profile.id} active={view === 'topics'}
+          disabled={metadataBusy || identityBusy || overviewBusy || notesBusy || relationshipsBusy || assessmentBusy || evidenceBusy || deletion.loading || Boolean(error)}
+          onBusyChange={setTopicsBusy} onReload={reload} />}
       </div>
     </>}
   </div>;
