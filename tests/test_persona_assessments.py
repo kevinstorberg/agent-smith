@@ -362,12 +362,12 @@ async def test_persona_assessment_real_react_saved_claims_and_memory_research(ob
         call("get_observations", offset=0, limit=20),
         call("search_previous_memories", query="reliability"),
         call("stage_assessment", sections=candidates, relationships=assessment_db.relationship_insufficient(snapshot["profile"]), reason="Saved evidence"),
-        AIMessage(content="Final prose is not saved"),
     ])
     result = await assessment.synthesize(snapshot["profile"], snapshot["claims"])
     assert result == {"sections": candidates, "relationships": assessment_db.relationship_insufficient(snapshot["profile"]), "reason": "Saved evidence"}
     assert roles == [("persona", "curator")]
     assert instance.tool_names == ["search_previous_memories", "get_memory", "get_observations", "stage_assessment"]
+    assert len(instance.seen) == 3
     data = next(message.content for message in instance.seen[0] if isinstance(message, HumanMessage))
     assert "effective_content" in data and "observations" in data
     assert "transcript_window" not in data and backend[2] == []
@@ -375,8 +375,21 @@ async def test_persona_assessment_real_react_saved_claims_and_memory_research(ob
 
 
 @pytest.mark.asyncio
+async def test_persona_assessment_valid_stage_finishes_without_a_final_model_turn(observed, model):
+    snapshot = assessment_db.claim("one-turn", observed["id"])
+    candidates = output(snapshot)
+    relationships = assessment_db.relationship_insufficient(snapshot["profile"])
+    instance, _ = model([call("stage_assessment", sections=candidates, relationships=relationships, reason="Saved evidence")])
+    result = await assessment.synthesize(snapshot["profile"], snapshot["claims"])
+    assert result == {"sections": candidates, "relationships": relationships, "reason": "Saved evidence"}
+    assert len(instance.seen) == 1
+    assessment_db.release_owner("one-turn")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("invalid", ["one_claim", "unknown_claim", "invalid_schema"])
-async def test_persona_assessment_invalid_stage_clears_accepted_result(observed, model, invalid):
+@pytest.mark.parametrize("repair", [False, True])
+async def test_persona_assessment_ambiguous_stage_batch_requires_repair(observed, model, invalid, repair):
     snapshot = assessment_db.claim("invalid", observed["id"])
     valid = output(snapshot)
     broken = copy.deepcopy(valid)
@@ -386,9 +399,17 @@ async def test_persona_assessment_invalid_stage_clears_accepted_result(observed,
         broken["drivers"]["claim_ids"] = [str(uuid4()), str(uuid4())]
     else:
         broken["drivers"]["status"] = "invented"
-    instance, _ = model([call("stage_assessment", sections=valid, relationships=assessment_db.relationship_insufficient(snapshot["profile"])), call("stage_assessment", sections=broken, relationships=assessment_db.relationship_insufficient(snapshot["profile"])), AIMessage(content="Done")])
-    with pytest.raises(assessment.AssessmentError, match="without a valid"):
-        await assessment.synthesize(snapshot["profile"], snapshot["claims"])
+    relationships = assessment_db.relationship_insufficient(snapshot["profile"])
+    accepted = call("stage_assessment", sections=valid, relationships=relationships)
+    rejected = call("stage_assessment", sections=broken, relationships=relationships)
+    instance, _ = model([AIMessage(content="", tool_calls=[*accepted.tool_calls, *rejected.tool_calls]), accepted if repair else AIMessage(content="Done")])
+    if repair:
+        result = await assessment.synthesize(snapshot["profile"], snapshot["claims"])
+        assert result == {"sections": valid, "relationships": relationships, "reason": ""}
+    else:
+        with pytest.raises(assessment.AssessmentError, match="without a valid"):
+            await assessment.synthesize(snapshot["profile"], snapshot["claims"])
+    assert len(instance.seen) == 2
     assert any(isinstance(message, ToolMessage) and ("error" in message.content or "Invalid assessment schema" in message.content)
                for message in instance.seen[-1])
     assessment_db.release_owner("invalid")

@@ -23,11 +23,12 @@ async def analyze(**kwargs):
 @pytest.mark.asyncio
 async def test_real_react_loop_stages_explicit_metadata_only_and_quotes_prior_updates(backend, model):
     instance, roles = model([
-        call("stage_profiles", items=[], metadata_updates=[PATCH]), AIMessage(content="Done"),
+        call("stage_profiles", items=[], metadata_updates=[PATCH]),
     ])
     result = await analyze(previous_metadata=[PATCH])
     assert result == {"items": [], "metadata_updates": [PATCH], "reason": ""}
     assert roles == [("persona", "curator")]
+    assert len(instance.seen) == 1
     prompt = next(message.content for message in instance.seen[0] if isinstance(message, HumanMessage))
     data = json.loads(prompt.split("\n", 1)[1])
     assert data["earlier_metadata_updates"] == [PATCH] and data["earlier_metadata_count"] == 1
@@ -58,10 +59,10 @@ async def test_existing_values_and_human_clears_are_not_replaced_by_metadata_sta
     instance, _ = model([
         call("stage_profiles", items=[], metadata_updates=[PATCH]),
         call("stage_profiles", items=[], reason="Existing or human-protected values remain unchanged."),
-        AIMessage(content="Done"),
     ])
     result = await analyze(profiles=[profile(PARTICIPANTS[0], metadata=metadata, metadata_provenance=provenance)])
     assert result["items"] == [] and "metadata_updates" not in result
+    assert len(instance.seen) == 2
     assert any(isinstance(message, ToolMessage) and "Only fill missing metadata" in message.content for message in instance.seen[1])
 
 
@@ -71,7 +72,7 @@ async def test_fresh_profile_read_protects_human_clear_before_metadata_staging(b
     rows[ALICE].update(metadata={}, metadata_provenance={"company": {"human": True}})
     instance, _ = model([
         call("get_profile", profile_id=ALICE), call("stage_profiles", items=[], metadata_updates=[PATCH]),
-        call("stage_profiles", items=[], reason="Respect the refreshed human clear"), AIMessage(content="Done"),
+        call("stage_profiles", items=[], reason="Respect the refreshed human clear"),
     ])
     assert (await analyze())["items"] == []
     assert any(isinstance(message, ToolMessage) and "Only fill missing metadata" in message.content for message in instance.seen[-1])
@@ -85,7 +86,7 @@ async def test_initial_agent_context_redacts_deleted_profile_fields(backend, mod
                       section_notes={"drivers": "Private tombstoned notes"}, nicknames=["Private tombstoned nickname"],
                       claims=[{"content": "Private tombstoned claim"}])
     instance, _ = model([
-        call("stage_profiles", items=[], reason="Deleted identities remain deleted"), AIMessage(content="Done"),
+        call("stage_profiles", items=[], reason="Deleted identities remain deleted"),
     ])
     await analyze(profiles=[deleted])
     prompt = next(message.content for message in instance.seen[0] if isinstance(message, HumanMessage))

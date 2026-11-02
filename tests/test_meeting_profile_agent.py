@@ -79,7 +79,7 @@ async def test_profile_react_uses_shared_research_fresh_profiles_and_same_run_me
     assert roles == [("persona", "curator")]
     assert instance.tool_names == ["search_previous_memories", "get_memory", "search_transcript", "get_profile", "search_profiles", "list_profile_names", "stage_profiles"]
     assert reads == [[ALICE], [ALICE, BOB]] and writes == [] and backend[2] == []
-    assert len(instance.seen) == 5
+    assert len(instance.seen) == 4
     assert any(isinstance(message, ToolMessage) and "Human correction" in message.content for message in instance.seen[2])
     prompt = next(message.content for message in instance.seen[0] if isinstance(message, HumanMessage))
     data = json.loads(prompt.split("\n", 1)[1])
@@ -190,6 +190,13 @@ async def test_human_overrides_block_reassertion_of_original_claim(backend, cano
     ])
     with pytest.raises(ProfileAnalysisError, match="without a valid staged result"):
         await analyze()
+
+
+@pytest.mark.asyncio
+async def test_valid_profile_claim_staging_finishes_without_a_closing_model_call(backend, canonical, model):
+    instance, _ = model([call("stage_profiles", items=[CLAIM])])
+    assert await analyze() == {"items": [CLAIM], "reason": ""}
+    assert len(instance.seen) == 1
 
 
 @pytest.mark.asyncio

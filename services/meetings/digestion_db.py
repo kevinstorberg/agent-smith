@@ -8,6 +8,7 @@ from psycopg2.extras import Json
 
 from services.meetings.db import ClaimLostError, _cursor, _serialize
 from services.meetings.types import transcript_hash as captured_transcript_hash
+from services.meetings import work_requests
 
 LEASE_SECONDS = 600
 _CLAIM_LOCK = "agent-smith:meeting-digestion"
@@ -26,31 +27,31 @@ def enroll(cur, meeting_id: str) -> None:
 
 
 def claim_transcript(identities: list[tuple[str, str]], owner: str) -> dict | None:
-    return _claim(identities, owner, "d.transcript_status = 'pending' AND d.next_attempt_at <= clock_timestamp()")
+    return _claim(identities, owner, "d.transcript_status = 'pending' AND d.next_attempt_at <= clock_timestamp()", stage="memory")
 
 
 def claim_digestion(identities: list[tuple[str, str]], owner: str) -> dict | None:
-    return _claim(identities, owner, _MEMORY_ELIGIBILITY)
+    return _claim(identities, owner, _MEMORY_ELIGIBILITY, stage="memory")
 
 
 def claim_manual_memory(identities: list[tuple[str, str]], owner: str) -> dict | None:
     eligibility = """d.transcript_status='ready' AND d.memory_status='pending'
         AND d.memory_next_attempt_at<=clock_timestamp() AND d.manual_analysis->'memory'->>'active'='true'"""
-    return _claim(identities, owner, eligibility)
+    return _claim(identities, owner, eligibility, stage="memory")
 
 
 def claim_identification(source: str | None, owner: str, meeting_id: str | None = None) -> dict | None:
     if meeting_id is not None:
         meeting_id = str(UUID(meeting_id))
     eligibility = _SPEAKER_ELIGIBILITY + " AND (%s::uuid IS NULL OR d.meeting_id=%s::uuid)"
-    return _claim(None, owner, eligibility, source=source, extra_params=(meeting_id, meeting_id), snapshot_participants=False)
+    return _claim(None, owner, eligibility, stage=None, source=source, extra_params=(meeting_id, meeting_id), snapshot_participants=False)
 
 
 def has_requested_identification(source: str | None = None, meeting_id: str | None = None) -> bool:
     if meeting_id is not None:
         meeting_id = str(UUID(meeting_id))
     eligibility = _SPEAKER_ELIGIBILITY + " AND (%s::uuid IS NULL OR d.meeting_id=%s::uuid)"
-    return _has_requested(None, eligibility, source=source, extra_params=(meeting_id, meeting_id))
+    return _has_requested(None, eligibility, stage=None, source=source, extra_params=(meeting_id, meeting_id))
 
 
 def _work_scope(identities, source):
@@ -62,33 +63,33 @@ def _work_scope(identities, source):
 
 
 def claim_profile(source: str | None, owner: str) -> dict | None:
-    return _claim(None, owner, _PROFILE_ELIGIBILITY, source=source, profile=True)
+    return _claim(None, owner, _PROFILE_ELIGIBILITY, stage="profile", source=source, profile=True)
 
 
 def has_requested_work(identities: list[tuple[str, str]], *, digest: bool = True) -> bool:
     if not identities:
         return False
     eligibility = _MEMORY_ELIGIBILITY if digest else "d.transcript_status = 'pending' AND d.next_attempt_at <= clock_timestamp()"
-    return _has_requested(identities, eligibility)
+    return _has_requested(identities, eligibility, stage="memory")
 
 
 def has_requested_profile_work(source: str | None = None) -> bool:
-    return _has_requested(None, _PROFILE_ELIGIBILITY, source=source, profile=True)
+    return _has_requested(None, _PROFILE_ELIGIBILITY, stage="profile", source=source, profile=True)
 
 
-def _has_requested(identities, eligibility, *, source=None, profile=False, extra_params=()) -> bool:
+def _has_requested(identities, eligibility, *, stage: str | None, source=None, profile=False, extra_params=()) -> bool:
     scope, params = _work_scope(identities, source)
     lease = "profile_claim_until" if profile else "claim_until"
     with _cursor() as cur:
         cur.execute(
             f"""SELECT EXISTS (SELECT 1 FROM meeting_digestions d JOIN meeting_summaries m ON m.id = d.meeting_id
-                WHERE m.available AND d.requested_at IS NOT NULL AND ({scope}) AND ({eligibility}))
+                WHERE m.available AND ({work_requests.requested_time_sql(stage)}) IS NOT NULL AND ({scope}) AND ({eligibility}))
                 AND NOT EXISTS (SELECT 1 FROM meeting_digestions WHERE {lease} > clock_timestamp()) AS due""", (*params, *extra_params),
         )
         return cur.fetchone()["due"]
 
 
-def _claim(identities, owner: str, eligibility: str, *, source=None, profile=False, extra_params=(), snapshot_participants=True) -> dict | None:
+def _claim(identities, owner: str, eligibility: str, *, stage: str | None, source=None, profile=False, extra_params=(), snapshot_participants=True) -> dict | None:
     if identities is not None and not identities:
         return None
     if not isinstance(owner, str) or not owner.strip() or len(owner) > 100:
@@ -107,7 +108,7 @@ def _claim(identities, owner: str, eligibility: str, *, source=None, profile=Fal
                JOIN meeting_summaries m ON m.id = d.meeting_id
                WHERE ({scope}) AND m.available
                  AND ({eligibility})
-               ORDER BY (d.requested_at IS NULL), d.requested_at, d.created_at, d.meeting_id
+               ORDER BY ({work_requests.requested_time_sql(stage)}) ASC NULLS LAST, d.created_at, d.meeting_id
                LIMIT 1 FOR UPDATE OF d FOR SHARE OF m""",
             (*params, *extra_params),
         )
@@ -188,7 +189,7 @@ def save_capture(meeting_id: str, owner: str, snapshot: dict, transcript: dict, 
         raise ValueError("A complete transcript must contain segments")
     content_hash = captured_transcript_hash(segments) if complete else None
     with _cursor() as cur:
-        _owned(cur, meeting_id, owner)
+        record = _owned(cur, meeting_id, owner)
         cur.execute("SELECT provider_updated_at, revision, available FROM meeting_summaries WHERE id = %s FOR SHARE", (meeting_id,))
         meeting = cur.fetchone()
         if (not meeting or not meeting["available"] or snapshot.get("id") != meeting_id
@@ -202,6 +203,8 @@ def save_capture(meeting_id: str, owner: str, snapshot: dict, transcript: dict, 
                WHERE meeting_id = %s""",
             (Json(snapshot), Json(transcript), content_hash, "ready" if complete else "pending", complete, meeting_id),
         )
+        if complete and record["memory_status"] == "done":
+            work_requests.finish(cur, meeting_id, ("memory",))
 
 
 def reset_capture(meeting_id: str, owner: str) -> None:
@@ -225,6 +228,8 @@ def record_failure(meeting_id: str, owner: str, error_type: str, *, status: str 
                next_attempt_at = clock_timestamp() + %s * interval '1 second', updated_at = clock_timestamp()
                WHERE meeting_id = %s""", (disposition, attempts, error_type, delay, meeting_id),
         )
+        if disposition != "pending":
+            work_requests.finish(cur, meeting_id, ("memory",))
 
 
 def get_transcript(meeting_id: str, *, limit: int = 100, offset: int = 0) -> dict | None:
@@ -271,6 +276,7 @@ def delete_transcript(meeting_id: str) -> None:
                profile_claim_owner = NULL, profile_claim_until = NULL,
                captured_at = NULL, error_type = NULL, updated_at = clock_timestamp()""", (meeting_id,),
         )
+        work_requests.finish(cur, meeting_id, work_requests.STAGES)
 
 
 def retry_transcript(meeting_id: str) -> None:
@@ -285,3 +291,4 @@ def retry_transcript(meeting_id: str) -> None:
         )
         if cur.rowcount != 1:
             raise ValueError("Transcript capture cannot be retried in its current state")
+        work_requests.request(cur, meeting_id, ("memory",), "transcript_retry")

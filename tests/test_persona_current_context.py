@@ -54,9 +54,10 @@ async def test_actual_persona_worker_resume_and_synthesis_reference_current_huma
             await worker.build_profiles()
             return worker.profile_report
 
-    first, _ = model([call("stage_profiles", items=[], reason="No new claims"), AIMessage(content="Done")])
+    first, _ = model([call("stage_profiles", items=[], reason="No new claims")])
     try:
         assert (await run())["outcome"] == "continued"
+        assert len(first.seen) == 1 and digestion_db.get_record(ready)["profile_artifact"]["offset"] == 1
         initial = next(row for row in quoted(first.seen[0])["canonical_profiles"] if row["id"] == person["id"])
         assert initial["metadata"] == {"company": "Current company"}
         assert initial["metadata_provenance"]["supervisor"] == {"human": True}
@@ -69,7 +70,7 @@ async def test_actual_persona_worker_resume_and_synthesis_reference_current_huma
         assert (await run())["error_type"] == "ProfileRevisionConflict"
         with get_connection() as connection, connection.cursor() as cursor:
             cursor.execute("UPDATE meeting_digestions SET profile_next_attempt_at=clock_timestamp() WHERE meeting_id=%s", (ready,))
-        resumed, _ = model([call("stage_profiles", items=[], reason="No new claims"), AIMessage(content="Done")] * 2)
+        resumed, _ = model([call("stage_profiles", items=[], reason="No new claims")] * 2)
         assert (await run())["outcome"] == "done"
         fresh = next(row for row in quoted(resumed.seen[0])["canonical_profiles"] if row["id"] == person["id"])
         assert fresh["metadata"]["company"] == "Updated before resume" and fresh["section_notes"]["drivers"] == "Updated human priority"

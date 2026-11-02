@@ -7,17 +7,17 @@ from collections.abc import Awaitable, Callable
 from typing import Annotated
 from uuid import UUID
 
-from langchain.agents.middleware import AgentMiddleware, ModelCallLimitMiddleware, ToolCallLimitMiddleware
-from langchain_core.messages import HumanMessage
+from langchain.agents.middleware import AgentMiddleware, ModelCallLimitMiddleware, ToolCallLimitMiddleware, hook_config
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
 from services.graphs.agents import create_tool_agent
+from services.graphs.model_config import resolve_request_timeout
 from services.meetings.outputs import Evidence as Evidence, MemoryItem as MemoryItem, MemoryKind as MemoryKind, MemorySubmission as MemorySubmission
 from services.meetings.service import run_db
 
 _KINDS = MemoryKind
-MODEL_TIMEOUT_SECONDS = 45
 MODEL_CALL_LIMIT = 20
 TOOL_CALL_LIMIT = 40
 _SYSTEM_PROMPT = """Extract durable, useful memories from this frozen meeting {source} window.
@@ -99,13 +99,37 @@ class ModelCallTimeoutError(TimeoutError):
     pass
 
 
+class _StagedResult(AgentMiddleware):
+    def __init__(self, context: AnalysisContext, validate_context: Callable[[], Awaitable[None]] | None = None):
+        self.context = context
+        self.validate_context = validate_context
+
+    @hook_config(can_jump_to=["end"])
+    async def abefore_model(self, state, runtime):
+        last_model = next((message for message in reversed(state["messages"]) if isinstance(message, AIMessage)), None)
+        calls = [*last_model.tool_calls, *last_model.invalid_tool_calls] if last_model else []
+        staging_calls = [call for call in calls if call["name"] in self.context.stage_tool_names]
+        if len(staging_calls) > 1:
+            self.context.collector.clear()
+            return {"messages": [HumanMessage(content=(
+                "Staging rejected: submit exactly one staging tool call per model turn. "
+                "Review the tool feedback and submit one corrected result."
+            ))]}
+        if self.context.collector and len(staging_calls) == 1:
+            if self.validate_context is not None:
+                await self.validate_context()
+            return {"jump_to": "end"}
+        return None
+
+
 class _ModelDeadline(AgentMiddleware):
-    def __init__(self, deadline: float, validate_context: Callable[[], Awaitable[None]] | None = None):
+    def __init__(self, deadline: float, request_timeout: float, validate_context: Callable[[], Awaitable[None]] | None = None):
         self.deadline = deadline
+        self.request_timeout = request_timeout
         self.validate_context = validate_context
 
     async def awrap_model_call(self, request, handler):
-        model_limit = asyncio.get_running_loop().time() + MODEL_TIMEOUT_SECONDS
+        model_limit = asyncio.get_running_loop().time() + self.request_timeout
         budget_limited = self.deadline <= model_limit
         attempt = asyncio.timeout_at(min(self.deadline, model_limit))
         try:
@@ -205,6 +229,7 @@ class AnalysisContext:
         self.searched = False
         self.require_memory_search = require_memory_search
         self.collector = {}
+        self.stage_tool_names: set[str] = set()
 
     def quoted_data(self) -> dict:
         snapshot = self.snapshot
@@ -232,6 +257,8 @@ class AnalysisContext:
         return json.dumps({"staged": len(items)})
 
     def configure_stage(self, stage_tool, *, validation_feedback: str | None = None):
+        self.stage_tool_names.add(stage_tool.name)
+
         def rejected_submission(_error) -> str:
             self.collector.clear()
             return validation_feedback or "Staging rejected: use at most 20 typed items, valid fields and nonblank content/evidence within the stated limits."
@@ -330,12 +357,15 @@ async def run_analysis(
                 model_role=model_role, fallback_role="curator", system_prompt=system_prompt + (
                     f"\nResearch within {model_call_limit} model turns and {tool_call_limit} tool calls. "
                     "Quoted source context is supplied; use the available read tools when useful. "
-                    "Batch independent read calls in one model turn.\n"
+                    "Batch independent read calls in one model turn. "
+                    "Submit exactly one staging tool call in a model turn. "
+                    "A valid staged result finishes the analysis.\n"
                 ),
                 tools=tools, middleware=[
+                    _StagedResult(context, validate_context),
                     ModelCallLimitMiddleware(run_limit=model_call_limit, exit_behavior="error"),
                     ToolCallLimitMiddleware(run_limit=tool_call_limit, exit_behavior="error"),
-                    _ModelDeadline(deadline, validate_context),
+                    _ModelDeadline(deadline, resolve_request_timeout(model_role, "curator"), validate_context),
                     *(middleware or []),
                 ],
             )

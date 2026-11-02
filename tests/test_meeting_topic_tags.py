@@ -48,7 +48,7 @@ async def test_real_react_to_publication_preserves_topic_tags_and_action_details
     assert items[0]["content"] in saved[0]["content"]
     assert "Evidence: Granola summary (summary-0)" in saved[0]["content"]
     assert "A raw transcript detail" not in str(instance.seen)
-    assert len(instance.seen) == 3
+    assert len(instance.seen) == 2
     count = len(instance.seen)
     await dispatch("meeting_ingest", {"source": source.name})
     assert len(instance.seen) == count and len(db.list_memories(meeting_only=True)) == 1

@@ -115,9 +115,7 @@ def load_model_config(
         top_p=settings.require("MODEL_TOP_P", _unit_interval_float, "a number in (0, 1]"),
         max_tokens=settings.require("MODEL_MAX_TOKENS", _positive_int, "a positive integer"),
         max_retries=settings.require("MODEL_MAX_RETRIES", _non_negative_int, "an integer >= 0"),
-        request_timeout=settings.require(
-            "MODEL_REQUEST_TIMEOUT", _positive_float, "a positive number of seconds"
-        ),
+        request_timeout=_request_timeout(settings),
         streaming=settings.require("MODEL_STREAMING", _parse_boolean, "true or false"),
         extra_body=_extra_body(settings),
     )
@@ -131,6 +129,20 @@ def resolve_model_id(
 ) -> str:
     """The role's model id, checked without reading credentials."""
     return _model_id(_role_settings(role, fallback_role, env))
+
+
+def resolve_request_timeout(
+    role: str,
+    fallback_role: str | None = None,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> float:
+    """The role's request timeout, checked without reading credentials."""
+    return _request_timeout(_role_settings(role, fallback_role, env))
+
+
+def _request_timeout(settings: _RoleSettings) -> float:
+    return settings.require("MODEL_REQUEST_TIMEOUT", _positive_float, "a positive number of seconds")
 
 
 @dataclass(frozen=True)
