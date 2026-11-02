@@ -110,14 +110,28 @@ describe('ChatPage', () => {
     expect(await screen.findByText('Please compare both options.')).toBeInTheDocument();
   });
 
-  it('copies an invite naming the real agent and room', async () => {
+  it('copies one universal invite for the selected room', async () => {
+    const otherRoom = { ...room, id: 43, topic: 'Compare queues' };
+    vi.mocked(api.chat.list).mockResolvedValue({ items: [room, otherRoom], total: 2 });
+    vi.mocked(api.chat.get).mockImplementation(async id => ({
+      ...detail,
+      room: id === otherRoom.id ? otherRoom : room,
+    }));
     renderWithProviders(<ChatPage />);
 
     await screen.findByText('Extend the existing cache interface.');
-    fireEvent.click(screen.getAllByText('Copy')[1]);
+    expect(screen.getAllByRole('button', { name: 'Copy' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
 
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      expect.stringContaining('Chat Room 42 as codex'),
+    expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith(
+      'Join Agent Smith chat room 42 using the chat MCP tools. Collaborate until the room closes.',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Compare queues/ }));
+    await screen.findByRole('heading', { name: 'Compare queues' });
+    fireEvent.click(screen.getByRole('button', { name: /Copy|Copied/ }));
+    expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith(
+      'Join Agent Smith chat room 43 using the chat MCP tools. Collaborate until the room closes.',
     );
   });
 
@@ -136,6 +150,7 @@ describe('ChatPage', () => {
     await waitFor(() => expect(api.chat.stop).toHaveBeenCalledWith(42));
     expect(await screen.findByText('Agent Access Stopped')).toBeDisabled();
     expect(screen.getByLabelText('Message')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /Copy|Copied/ })).not.toBeInTheDocument();
   });
 
   it('renders configured AI participant messages with their byline', async () => {
@@ -168,7 +183,7 @@ describe('ChatPage', () => {
     expect(
       await screen.findByText(`Mention ${mentionList} to bring an AI into the room.`),
     ).toBeInTheDocument();
-    const invites = screen.getByText('Invite an open session:').parentElement!;
+    const invites = screen.getByText('Invite an agent:').parentElement!;
     for (const name of AI_PARTICIPANTS) {
       expect(invites).not.toHaveTextContent(name);
     }

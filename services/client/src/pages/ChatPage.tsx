@@ -2,13 +2,12 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api, type ChatMessage, type ChatRoom, type ChatRoomDetail } from '../api';
 import { CopyButton } from '../components/CopyButton';
 import { useNotification } from '../context/useNotification';
-import { useAssignableAgents } from '../hooks/useAssignableAgents';
 import { usePolling } from '../hooks/usePolling';
 
 const CHAT_POLL_INTERVAL_MS = 2_000;
 
-function invitePrompt(roomId: number, agent: string): string {
-  return `Join Agent Smith Chat Room ${roomId} as ${agent}. Use the chat MCP tools to collaborate in this room: call chat_read with room_id=${roomId}, after_message_id=0, and wait_seconds=20; reply with chat_post using agent="${agent}"; then keep reading with the returned last_message_id until the outcome is "closed".`;
+function invitePrompt(roomId: number): string {
+  return `Join Agent Smith chat room ${roomId} using the chat MCP tools. Collaborate until the room closes.`;
 }
 
 function appendMessage(detail: ChatRoomDetail, message: ChatMessage): ChatRoomDetail {
@@ -34,7 +33,6 @@ export function ChatPage() {
   const [editing, setEditing] = useState(false);
   const [editTopic, setEditTopic] = useState('');
   const [editContext, setEditContext] = useState('');
-  const { agents: codingAgents } = useAssignableAgents();
   const { notify } = useNotification();
 
   useEffect(() => {
@@ -290,13 +288,10 @@ export function ChatPage() {
 
               {detail.room.state === 'open' && (
                 <div className="chat-invites">
-                  <span>Invite an open session:</span>
-                  {codingAgents.map(agent => (
-                    <span key={agent} className="chat-invite">
-                      {agent}
-                      <CopyButton text={invitePrompt(detail.room.id, agent)} />
-                    </span>
-                  ))}
+                  <span className="chat-invite">
+                    Invite an agent:
+                    <CopyButton text={invitePrompt(detail.room.id)} />
+                  </span>
                 </div>
               )}
 

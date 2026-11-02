@@ -613,8 +613,9 @@ unfinished capture stops. Stored transcript data is retained rather than automat
 ## Chat Rooms
 
 The **Chat** page provides a shared transcript for the User and already-open Claude,
-Codex, or Gemini coding sessions. Create a room, copy that agent's invite prompt into
-its existing session, and use the dashboard composer as the User. Agents participate
+Codex, or Gemini coding sessions. Create a room and use the single Copy button to
+invite any existing session with the chat MCP tools configured. Use the dashboard
+composer as the User. Agents participate
 through the `chat_read` and `chat_post` MCP tools, preserving the repository context
 and tools they already have.
 
