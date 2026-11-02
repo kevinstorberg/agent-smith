@@ -8,12 +8,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from scripts.shared.paths import bootstrap
 bootstrap()
 
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from services.action_items import db
 from services.action_items.contracts import Contract, Create, Delete, Move, Patch, PositiveInt, Query
+from services.mcp_contracts import ContractMCP
 
 
 class ItemInput(Contract):
@@ -32,22 +31,9 @@ class MoveInput(ItemInput, Move):
     pass
 
 
-class ActionItemsMCP(FastMCP):
-    async def call_tool(self, name, arguments):
-        # FastMCP otherwise coerces primitives and drops unknown top-level fields.
-        contract = _INPUTS.get(name)
-        if contract is not None:
-            try:
-                contract.model_validate(arguments)
-            except ValueError as error:
-                raise ToolError(str(error)) from None
-        return await super().call_tool(name, arguments)
-
-    async def list_tools(self):
-        tools = await super().list_tools()
-        for tool in tools:
-            tool.inputSchema = _INPUTS[tool.name].model_json_schema()
-        return tools
+class ActionItemsMCP(ContractMCP):
+    def __init__(self, name: str) -> None:
+        super().__init__(name, _INPUTS)
 
 
 _READ = ToolAnnotations(readOnlyHint=True, destructiveHint=False)
@@ -63,7 +49,7 @@ def action_item_list(q: str | None = None, status: str = "open", project: str | 
     Sort: manual (open only), completed (completed only), newest, updated, title.
     Defaults: open/manual, completed/completed, all/newest. Limit 1-100, offset nonnegative.
     """
-    return db.list_items({"q": q, "status": status, "project": project, "tags": tags or [], "sort": sort, "limit": limit, "offset": offset})
+    return db.list_items({"q": q, "status": status, "project": project, "tags": [] if tags is None else tags, "sort": sort, "limit": limit, "offset": offset})
 
 
 def action_item_get(item_id: PositiveInt) -> dict[str, Any]:
@@ -78,7 +64,7 @@ def action_item_create(title: str, description: str = "", project: str | None = 
     Supply a UUID request_id and reuse it with the original input after uncertain failures.
     Replay returns the current task without resetting edits/completion. Different input or a deleted task conflicts.
     """
-    return db.create({"title": title, "description": description, "project": project, "tags": tags or [], "status": status, "request_id": request_id})
+    return db.create({"title": title, "description": description, "project": project, "tags": [] if tags is None else tags, "status": status, "request_id": request_id})
 
 
 def action_item_update(item_id: PositiveInt, changes: Patch) -> dict[str, Any]:

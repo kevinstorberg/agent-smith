@@ -99,7 +99,12 @@ def test_profiles_canonical_and_legacy_paths_share_handlers_and_publish_one_sche
     assert not any(path.startswith("/api/meetings/profiles") for path in schema["paths"])
     operations = [operation["operationId"] for path, methods in schema["paths"].items()
                   if path.startswith("/api/profiles") for operation in methods.values()]
-    assert len(operations) == len(set(operations)) == 20
+    topic_operations = [operation["operationId"] for path, methods in schema["paths"].items()
+                        if path.startswith("/api/profiles") and "/discussion-topics" in path
+                        for operation in methods.values()]
+    assert len(operations) == len(set(operations))
+    assert len(topic_operations) == 6
+    assert len(operations) - len(topic_operations) == 20
 
     claim_id = profile["claims"][0]["id"]
     corrected = client.post(canonical + "/claims/" + claim_id, json={

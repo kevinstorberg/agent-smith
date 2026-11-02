@@ -757,8 +757,10 @@ def merge_profiles(source_id: str, target_id: str, expected_revision: int, targe
         winner = dict(cur.fetchone())
         revisions.record(cur, target, winner, actor="human", source="merge", source_id=str(source["id"]))
         from services.meetings.relationship_db import merge_profile_links
+        from services.action_items.db import merge_profile_queue
 
         merge_profile_links(cur, str(source["id"]), str(target["id"]))
+        merge_profile_queue(cur, str(source["id"]), str(target["id"]))
         cur.execute(
             """UPDATE participant_profiles SET claims = '[]'::jsonb, merged_into = %s, assessment_dirty = false,
                assessment_claim_owner = NULL, assessment_claim_until = NULL,

@@ -6,6 +6,7 @@ import { ProfileDetailPage } from '../ProfileDetailPage';
 import { metadataOptionsFixture, profileFixture, relationshipCardFixture } from './profileFixture';
 import type { ParticipantProfile } from '../../api';
 import { POLL_INTERVAL_MS } from '../../constants';
+import { actionItem } from './actionItemFixture';
 
 const navigate = vi.fn();
 vi.mock('react-router', async importOriginal => {
@@ -14,7 +15,7 @@ vi.mock('react-router', async importOriginal => {
 });
 vi.mock('../../api', async importOriginal => {
   const actual = await importOriginal<typeof import('../../api')>();
-  return { ...actual, api: { profiles: { get: vi.fn(), claims: vi.fn(), correctClaim: vi.fn(), remove: vi.fn(), update: vi.fn(), list: vi.fn(), merge: vi.fn(), linkEmail: vi.fn(), rebuild: vi.fn(), history: vi.fn(), historyOne: vi.fn(), createRelationshipCard: vi.fn(), updateRelationshipCard: vi.fn(), removeRelationshipCard: vi.fn(), metadataOptions: vi.fn() } } };
+  return { ...actual, api: { profiles: { topics: { list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), move: vi.fn() }, get: vi.fn(), claims: vi.fn(), correctClaim: vi.fn(), remove: vi.fn(), update: vi.fn(), list: vi.fn(), merge: vi.fn(), linkEmail: vi.fn(), rebuild: vi.fn(), history: vi.fn(), historyOne: vi.fn(), createRelationshipCard: vi.fn(), updateRelationshipCard: vi.fn(), removeRelationshipCard: vi.fn(), metadataOptions: vi.fn() } } };
 });
 import { api, ApiError } from '../../api';
 
@@ -39,10 +40,47 @@ beforeEach(() => {
   vi.mocked(api.profiles.list).mockResolvedValue({ items: [], total: 0 });
   vi.mocked(api.profiles.history).mockResolvedValue({ items: [], total: 0 });
   vi.mocked(api.profiles.updateRelationshipCard).mockResolvedValue(compact);
+  vi.mocked(api.profiles.topics.list).mockResolvedValue({ profile_id: compact.id, items: [], total: 0 });
 });
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe('ProfileDetailPage', () => {
+  it('loads discussion topics only after visiting the fifth URL tab and preserves unrelated query fields', async () => {
+    renderPage('overview&kept=yes');
+    await screen.findByText(compact.section_notes!.overview!);
+    expect(api.profiles.topics.list).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'Discussion topics' })).toHaveAttribute('href', `/profiles/${compact.id}?tab=topics&kept=yes`);
+    await open('Discussion topics');
+    expect(await screen.findByRole('button', { name: 'New discussion topic' })).toBeEnabled();
+    expect(api.profiles.topics.list).toHaveBeenCalledWith(compact.id, expect.objectContaining({ status: 'open', sort: 'manual' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('?tab=topics&kept=yes');
+    expect(claims).not.toHaveBeenCalled();
+  });
+
+  it('retains a topic draft across tabs and protects profile deletion until it closes', async () => {
+    const originalModal = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal');
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value(this: HTMLDialogElement) { this.open = true; } });
+    try {
+      vi.mocked(api.profiles.topics.list).mockResolvedValue({ profile_id: compact.id, items: [{ ...actionItem(1), profile_id: compact.id }], total: 1 });
+      renderPage('topics');
+      const create = await screen.findByRole('button', { name: 'New discussion topic' });
+      await waitFor(() => expect(create).toBeEnabled());
+      fireEvent.click(create);
+      fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Retained topic draft' } });
+      await open('Overview');
+      expect(screen.queryByRole('dialog', { hidden: true })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Refresh assessment' })).toBeDisabled();
+      await open('Discussion topics');
+      expect(screen.getByLabelText('Title')).toHaveValue('Retained topic draft');
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(screen.getByRole('button', { name: 'Delete' })).toBeEnabled();
+    } finally {
+      if (originalModal) Object.defineProperty(HTMLDialogElement.prototype, 'showModal', originalModal);
+      else Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal');
+    }
+  });
+
   it('defaults to Overview with every metadata field visible and no evidence request', async () => {
     renderPage();
     expect(await screen.findByText(compact.section_notes!.overview!)).toBeVisible();

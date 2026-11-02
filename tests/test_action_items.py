@@ -134,8 +134,8 @@ def test_action_items_stale_writes_and_rollback(monkeypatch):
             operation(first["id"], {"expected_revision": 1, **payload})
     original = db._read
 
-    def failed_read(cursor, item_id):
-        original(cursor, item_id)
+    def failed_read(cursor, item_id, scope):
+        original(cursor, item_id, scope)
         raise RuntimeError("Injected failure after write")
 
     monkeypatch.setattr(db, "_read", failed_read)

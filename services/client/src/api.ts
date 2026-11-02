@@ -119,6 +119,13 @@ export interface ActionItemFilters extends PaginationParams {
   q?: string; project?: string; tags?: string[]; status?: ActionItemStatus | 'all'; sort?: ActionItemSort;
 }
 
+export interface ProfileDiscussionTopicRow extends ActionItemRow { readonly profile_id: string }
+export interface ProfileDiscussionTopic extends ProfileDiscussionTopicRow { description: string }
+export interface ProfileDiscussionTopicPage extends Paginated<ProfileDiscussionTopicRow> { readonly profile_id: string }
+export type ProfileDiscussionTopicCreate = Omit<ActionItemCreate, 'project'>;
+export type ProfileDiscussionTopicPatch = Omit<ActionItemPatch, 'project'>;
+export type ProfileDiscussionTopicFilters = Omit<ActionItemFilters, 'project'>;
+
 const ACTION_ITEM_TIMEOUT_MS = 30_000;
 
 export interface AssignableAgents {
@@ -765,15 +772,20 @@ function paginationToParams(p?: PaginationParams): Record<string, string> {
   return params;
 }
 
+function itemFilterParams(filters: ProfileDiscussionTopicFilters): Record<string, string | string[]> {
+  return { ...paginationToParams(filters), ...(filters.q ? { q: filters.q } : {}),
+    ...(filters.tags?.length ? { tags: filters.tags } : {}), ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.sort ? { sort: filters.sort } : {}) };
+}
+function topicPath(profileId: string, id?: number): string {
+  return `/profiles/${encodeURIComponent(profileId)}/discussion-topics${id === undefined ? '' : `/${id}`}`;
+}
+
 export const api = {
   actionItems: {
     list: (filters: ActionItemFilters = {}) => {
-      const params: Record<string, string | string[]> = paginationToParams(filters);
-      if (filters.q) params.q = filters.q;
+      const params = itemFilterParams(filters);
       if (filters.project) params.project = filters.project;
-      if (filters.tags?.length) params.tags = filters.tags;
-      if (filters.status) params.status = filters.status;
-      if (filters.sort) params.sort = filters.sort;
       return get<Paginated<ActionItemRow>>('/action-items', params, ACTION_ITEM_TIMEOUT_MS);
     },
     get: (id: number) => get<ActionItem>(`/action-items/${id}`, undefined, ACTION_ITEM_TIMEOUT_MS),
@@ -868,6 +880,14 @@ export const api = {
     resume: (id: string) => post<MeetingAnalysisReceipt>(`/meeting-analysis/requests/${encodeURIComponent(id)}/resume`, { confirmed: true }, 30_000),
   },
   profiles: {
+    topics: {
+      list: (profileId: string, filters: ProfileDiscussionTopicFilters = {}) => get<ProfileDiscussionTopicPage>(topicPath(profileId), itemFilterParams(filters), ACTION_ITEM_TIMEOUT_MS),
+      get: (profileId: string, id: number) => get<ProfileDiscussionTopic>(topicPath(profileId, id), undefined, ACTION_ITEM_TIMEOUT_MS),
+      create: (profileId: string, body: ProfileDiscussionTopicCreate) => post<ProfileDiscussionTopic>(topicPath(profileId), body, ACTION_ITEM_TIMEOUT_MS),
+      update: (profileId: string, id: number, body: ProfileDiscussionTopicPatch) => patch<ProfileDiscussionTopic>(topicPath(profileId, id), body, ACTION_ITEM_TIMEOUT_MS),
+      remove: (profileId: string, id: number, expectedRevision: number) => del<{ deleted: boolean; id: number }>(topicPath(profileId, id), { expected_revision: expectedRevision }, ACTION_ITEM_TIMEOUT_MS),
+      move: (profileId: string, id: number, body: ActionItemMove) => post<ProfileDiscussionTopic>(`${topicPath(profileId, id)}/move`, body, ACTION_ITEM_TIMEOUT_MS),
+    },
     metadataOptions: () => get<ProfileMetadataOptions>('/profiles/metadata-options'),
     create: (body: { display_name: string; email?: string }) => post<ParticipantProfile>('/profiles?include_evidence=false', body),
     list: (params?: PaginationParams & { q?: string; tags?: string[]; starred?: boolean; sort?: string }) => get<Paginated<ProfileSummary>>('/profiles', {

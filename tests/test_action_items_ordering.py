@@ -76,8 +76,8 @@ def test_action_items_ordering_failure_rolls_back_entire_queue(monkeypatch):
     before = state()
     original = db._read
 
-    def fail_after_order_shift(cursor, item_id):
-        original(cursor, item_id)
+    def fail_after_order_shift(cursor, item_id, scope):
+        original(cursor, item_id, scope)
         raise RuntimeError("Injected move failure")
 
     monkeypatch.setattr(db, "_read", fail_after_order_shift)
