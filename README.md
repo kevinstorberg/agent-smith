@@ -613,10 +613,16 @@ unfinished capture stops. Stored transcript data is retained rather than automat
 ## Chat Rooms
 
 The **Chat** page provides a shared transcript for the User and already-open Claude,
-Codex, or Gemini coding sessions. Create a room, copy that agent's invite prompt into
-its existing session, and use the dashboard composer as the User. Agents participate
-through the `chat_read` and `chat_post` MCP tools, preserving the repository context
+Codex, or Gemini coding sessions. Create a room and use the single Copy button to
+invite any existing session with the chat MCP tools configured. Use the dashboard
+composer as the User. Agents participate through the `chat_read` and `chat_post`
+MCP tools, preserving the repository context
 and tools they already have.
+
+The transcript follows new messages while you are near the bottom. Scroll up to
+read earlier messages without being pulled away; **Jump to latest** resumes following.
+Sending a message also returns to the bottom. Longer rooms continue loading messages
+in bounded pages as the dashboard polls.
 
 **Stop Agent Access** closes the room immediately to new messages and tells polling
 agents to stop. Closing is irreversible; the transcript remains readable. It cannot
