@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from psycopg2.extras import Json
 
-from services.meetings import stage_db
+from services.meetings import stage_db, work_requests
 from services.meetings.db import _cursor, _serialize
 from services.meetings.manual_analysis import (AnalysisConflict, SOURCE_FIELDS, covering_job, expected_values, has_active_lease, worker_jobs)
 
@@ -96,8 +96,11 @@ def invalidate_source(cur, meeting_id: str) -> None:
 def finish(cur, row: dict, stage: str, *, status: str, artifact: dict | None = None, error_type: str | None = None) -> None:
     cur.execute("SELECT * FROM meeting_digestions WHERE meeting_id=%s FOR UPDATE", (row["meeting_id"],))
     row = dict(cur.fetchone())
+    controls = work_requests.consume(row["manual_analysis"], (stage,)) if stage in work_requests.STAGES else row["manual_analysis"]
     control = row.get("manual_analysis", {}).get(stage)
     if not control or not control.get("active"):
+        if controls != row["manual_analysis"]:
+            cur.execute("UPDATE meeting_digestions SET manual_analysis=%s WHERE meeting_id=%s", (Json(controls), row["meeting_id"]))
         return
     receipt, saved = _receipt_stage(cur, row, stage, control["request_id"])
     progress_row = dict(row)
@@ -106,7 +109,7 @@ def finish(cur, row: dict, stage: str, *, status: str, artifact: dict | None = N
     saved.update(status=status, error_type=error_type, progress=_serialize(stage_db.progress(progress_row, stage)))
     cur.execute("UPDATE meeting_analysis_requests SET result=%s,updated_at=clock_timestamp() WHERE request_id=%s",
                 (Json(receipt["result"]), control["request_id"]))
-    controls = {**row["manual_analysis"], stage: {"request_id": control["request_id"], "active": False}}
+    controls = {**controls, stage: {"request_id": control["request_id"], "active": False}}
     cur.execute("UPDATE meeting_digestions SET manual_analysis=%s WHERE meeting_id=%s", (Json(controls), row["meeting_id"]))
 
 
@@ -127,7 +130,7 @@ def resume_stage(cur, row: dict, stage: str) -> bool:
     if stage == "memory":
         from services.meetings import memory_db
 
-        memory_db.restart_memory(cur, row, meeting, control=controls[stage])
+        memory_db.restart_memory(cur, row, meeting, control=controls[stage], request_reason="manual_resume")
     saved.update(status="continued", error_type=None)
     cur.execute("UPDATE meeting_analysis_requests SET result=%s,updated_at=clock_timestamp() WHERE request_id=%s",
                 (Json(receipt["result"]), marker["request_id"]))
@@ -137,6 +140,7 @@ def resume_stage(cur, row: dict, stage: str) -> bool:
         {stage}_attempts=CASE WHEN {stage}_status='failed' THEN 0 ELSE {stage}_attempts END,
         {stage}_error=NULL,{stage}_next_attempt_at=clock_timestamp(),{stage}_updated_at=clock_timestamp(),
         requested_at=clock_timestamp(),manual_analysis=%s WHERE meeting_id=%s""", (Json(controls), row["meeting_id"]))
+    work_requests.request(cur, row["meeting_id"], (stage,), "manual_resume")
     return True
 
 

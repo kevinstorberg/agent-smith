@@ -162,16 +162,15 @@ async def test_vocabulary_is_durable_before_first_call_and_reused_on_retry(sourc
 
 
 @pytest.mark.asyncio
-async def test_owned_model_timeout_and_analysis_budget_have_distinct_categories(monkeypatch):
+async def test_owned_model_timeout_and_analysis_budget_have_distinct_categories():
     async def stalled(_request):
         await asyncio.Event().wait()
 
     loop = asyncio.get_running_loop()
-    monkeypatch.setattr(analysis, "MODEL_TIMEOUT_SECONDS", 0.01)
     with pytest.raises(analysis.ModelCallTimeoutError):
-        await analysis._ModelDeadline(loop.time() + 10).awrap_model_call(None, stalled)
+        await analysis._ModelDeadline(loop.time() + 10, 0.01).awrap_model_call(None, stalled)
     with pytest.raises(analysis.AnalysisBudgetExpired):
-        await analysis._ModelDeadline(loop.time()).awrap_model_call(None, stalled)
+        await analysis._ModelDeadline(loop.time(), 0.01).awrap_model_call(None, stalled)
 
 
 @pytest.mark.asyncio

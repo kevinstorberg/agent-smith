@@ -178,12 +178,14 @@ async def identify_statements(snapshot: dict, targets: list[dict], *, context: l
         guard.diagnostics["stage_rejections"] += 1
         return "Speaker staging rejected: check typed fields, exact quotes and target IDs. Empty assignments require a reason."
 
+    analysis.configure_stage(stage_speakers)
     stage_speakers.handle_validation_error = rejected_schema
     try:
         result = await run_analysis(analysis, model_role="meeting_speaker", system_prompt=SYSTEM_PROMPT,
                                     tools=[search_known_profiles, stage_speakers], data=data, label="Speaker",
                                     error_class=SpeakerAnalysisError, deadline=min(deadline, asyncio.get_running_loop().time() + 30),
-                                    model_call_limit=3, tool_call_limit=4, middleware=[guard])
+                                    model_call_limit=3, tool_call_limit=4, middleware=[guard],
+                                    validate_context=guard.validate_source)
     except SpeakerAnalysisError as error:
         if error.error_type == "SpeakerAnalysisError":
             error.error_type = "SpeakerStageRejected" if guard.diagnostics["stage_rejections"] or guard.diagnostics["invalid_tool_calls"] else "SpeakerStageMissing"

@@ -5,7 +5,7 @@ from uuid import UUID
 
 from psycopg2.extras import Json
 
-from services.meetings import profile_db, stage_db
+from services.meetings import profile_db, stage_db, work_requests
 from services.meetings.db import _cursor, _serialize
 from services.meetings.manual_analysis_contracts import AnalysisRequest
 
@@ -178,7 +178,7 @@ def _reopen(cur, request_id: str, entry: dict) -> None:
 
             cur.execute("SELECT * FROM meeting_summaries WHERE id=%s AND available", (entry["meeting_id"],))
             memory_db.restart_memory(cur, row, dict(cur.fetchone()), control={"request_id": request_id, "active": True,
-                "source": state["source"], "target": state["target"]})
+                "source": state["source"], "target": state["target"]}, request_reason="manual_analysis")
             continue
         artifact = {}
         control = {**row["manual_analysis"], stage: {"request_id": request_id, "active": True,
@@ -187,6 +187,7 @@ def _reopen(cur, request_id: str, entry: dict) -> None:
             {stage}_attempts=0,{stage}_error=NULL,{stage}_next_attempt_at=clock_timestamp(),
             {stage}_updated_at=clock_timestamp(),requested_at=clock_timestamp(),manual_analysis=%s WHERE meeting_id=%s""",
                     (Json(artifact), Json(control), entry["meeting_id"]))
+        work_requests.request(cur, entry["meeting_id"], (stage,), "manual_analysis")
 
 
 def get_request(request_id: str) -> dict | None:

@@ -875,3 +875,6 @@ def retry_profiles(meeting_id: str) -> None:
         )
         if cur.rowcount != 1:
             raise ValueError("Meeting profiles cannot be retried in their current state")
+        from services.meetings import work_requests
+
+        work_requests.request(cur, meeting_id, ("profile",), "profile_retry")

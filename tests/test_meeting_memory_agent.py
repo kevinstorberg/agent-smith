@@ -118,7 +118,7 @@ async def test_real_react_loop_reads_fresh_context_and_returns_only_staged_items
     assert instance.tool_names == ["search_previous_memories", "get_memory", "search_summary", "stage_memories"]
     assert searches == [("release date", "test-project", 5), ("release date", None, 5)]
     assert reads == [row["id"]] and writes == []
-    assert len(instance.seen) == 4
+    assert len(instance.seen) == 3
     assert any(isinstance(message, ToolMessage) and message.name == "search_previous_memories" for message in instance.seen[1])
     search_result = next(message for message in instance.seen[1] if isinstance(message, ToolMessage))
     assert len(json.loads(search_result.content)["items"]) == 1
@@ -359,15 +359,74 @@ async def test_zero_memories_with_reason_is_valid_and_empty_backend_search_count
 
 
 @pytest.mark.asyncio
-async def test_malformed_replacement_clears_earlier_submission(backend, model):
-    model([
+async def test_valid_staging_ends_before_a_later_replacement(backend, model):
+    instance, _ = model([
         call("search_previous_memories", query="release"),
         call("stage_memories", items=[ITEM]),
         call("stage_memories", **invalid_submission("unknown_kind")),
         AIMessage(content="Done"),
     ])
-    with pytest.raises(MemoryAnalysisError, match="without a valid staged result"):
-        await analyze_memories(SNAPSHOT, SEGMENTS, [])
+    assert (await analyze_memories(SNAPSHOT, SEGMENTS, []))["items"] == [ITEM]
+    assert len(instance.seen) == 2 and len(instance.replies) == 2
+
+
+@pytest.mark.asyncio
+async def test_valid_stage_on_last_allowed_turn_skips_a_stalled_closing_call(backend, model, monkeypatch):
+    closing_call = asyncio.Event()
+    original = ScriptedModel._agenerate
+
+    async def stalled_closing(self, *args, **kwargs):
+        if not self.replies:
+            closing_call.set()
+            await asyncio.Event().wait()
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(ScriptedModel, "_agenerate", stalled_closing)
+    monkeypatch.setattr(analysis, "MODEL_CALL_LIMIT", 2)
+    instance, _ = model([
+        call("search_previous_memories", query="release"), call("stage_memories", items=[ITEM]),
+    ])
+    result = await asyncio.wait_for(analyze_memories(SNAPSHOT, SEGMENTS, []), 3)
+    assert result["items"] == [ITEM] and len(instance.seen) == 2 and not closing_call.is_set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("replacement", ["valid", "unknown_kind", "invented_quote", "malformed_json"])
+async def test_multiple_staging_calls_in_one_batch_require_one_corrected_submission(backend, model, replacement):
+    batch = call("stage_memories", items=[ITEM])
+    if replacement == "malformed_json":
+        batch.invalid_tool_calls = [{"name": "stage_memories", "args": "{", "id": "malformed-stage", "error": "Invalid JSON"}]
+    else:
+        second = {"items": [ITEM]} if replacement == "valid" else invalid_submission(replacement)
+        batch.tool_calls.extend(call("stage_memories", **second).tool_calls)
+    instance, _ = model([
+        call("search_previous_memories", query="release"),
+        batch,
+        call("stage_memories", items=[], reason="One corrected, unambiguous submission."),
+    ])
+    result = await analyze_memories(SNAPSHOT, SEGMENTS, [])
+    assert result["items"] == [] and result["reason"] == "One corrected, unambiguous submission."
+    assert len(instance.seen) == 3
+    assert any(isinstance(message, HumanMessage) and "exactly one staging tool call" in message.content
+               for message in instance.seen[-1])
+
+
+@pytest.mark.asyncio
+async def test_valid_staging_rechecks_context_before_success(backend, model):
+    checks = 0
+
+    async def validate():
+        nonlocal checks
+        checks += 1
+        if checks == 3:
+            raise analysis.AnalysisInputChanged("Saved summary changed before completion")
+
+    instance, _ = model([
+        call("search_previous_memories", query="release"), call("stage_memories", items=[ITEM]),
+    ])
+    with pytest.raises(analysis.AnalysisInputChanged):
+        await analyze_memories(SNAPSHOT, SEGMENTS, [], validate_context=validate)
+    assert checks == 3 and len(instance.seen) == 2
 
 
 @pytest.mark.asyncio
@@ -398,7 +457,7 @@ async def test_twenty_distinct_evidence_lookups_can_stage_and_tool_budget_resets
         assert result == {"items": items, "reason": "", "context_labels": ["product", "roadmapping"]}
         observations = [message for message in instance.seen[-1] if isinstance(message, ToolMessage)]
         evidence = [json.loads(message.content)["items"] for message in observations if message.name == "search_summary"]
-        assert len(observations) == extra_reads + 22
+        assert len(observations) == extra_reads + 21
         assert {matches[0]["segment_id"] for matches in evidence} == {segment["id"] for segment in segments}
         assert all(len(matches) == 1 for matches in evidence)
     assert len(backend[0]) == 4 and len(backend[1]) == 18 and backend[2] == []
@@ -458,11 +517,35 @@ async def test_per_model_timeout_interrupts_a_stalled_model(backend, model, monk
         await asyncio.Event().wait()
 
     monkeypatch.setattr(ScriptedModel, "_agenerate", stalled)
-    monkeypatch.setattr(analysis, "MODEL_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setenv("MEETING_MEMORY_MODEL_REQUEST_TIMEOUT", "0.01")
     model([AIMessage(content="Never returned")])
     with pytest.raises(MemoryAnalysisError, match="TimeoutError"):
         await asyncio.wait_for(analyze_memories(SNAPSHOT, SEGMENTS, []), 3)
     assert entered.is_set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("request_timeout", [90, 200])
+async def test_configured_request_timeout_reaches_model_deadlines_with_unchanged_total_budget(backend, model, monkeypatch, request_timeout):
+    limits = []
+    timeout_at = asyncio.timeout_at
+
+    def observed(deadline):
+        limits.append((deadline, asyncio.get_running_loop().time()))
+        return timeout_at(deadline)
+
+    monkeypatch.setenv("MEETING_MEMORY_MODEL_REQUEST_TIMEOUT", str(request_timeout))
+    monkeypatch.setattr(asyncio, "timeout_at", observed)
+    instance, _ = model([
+        call("search_previous_memories", query="release"), call("stage_memories", items=[ITEM]),
+    ])
+    assert (await analyze_memories(SNAPSHOT, SEGMENTS, []))["items"] == [ITEM]
+    assert len(instance.seen) == 2 and len(limits) == 3
+    assert 149 < limits[0][0] - limits[0][1] <= 150
+    if request_timeout == 90:
+        assert all(89 < deadline - observed_at <= 90 for deadline, observed_at in limits[1:])
+    else:
+        assert [deadline for deadline, _ in limits[1:]] == [limits[0][0], limits[0][0]]
 
 
 @pytest.mark.asyncio

@@ -80,8 +80,9 @@ def _publication_snapshot(cur, row: dict, meeting: dict) -> dict | None:
     return row.get("snapshot")
 
 
-def restart_memory(cur, row: dict, meeting: dict, *, control: dict | None, capture_pending: bool = False) -> None:
-    from services.meetings import digestion_db, manual_analysis, memory_pass
+def restart_memory(cur, row: dict, meeting: dict, *, control: dict | None, capture_pending: bool = False,
+                   request_reason: str = "memory_retry") -> None:
+    from services.meetings import digestion_db, manual_analysis, memory_pass, work_requests
     from services.graphs.model_config import resolve_model_id
 
     capture_ready = row.get("transcript_status") == "ready"
@@ -109,3 +110,4 @@ def restart_memory(cur, row: dict, meeting: dict, *, control: dict | None, captu
         memory_updated_at=clock_timestamp(),updated_at=clock_timestamp(),requested_at=clock_timestamp(),
         claim_owner=NULL,claim_until=NULL,manual_analysis=%s WHERE meeting_id=%s""",
         (Json(artifact), Json(controls), row["meeting_id"]))
+    work_requests.request(cur, row["meeting_id"], ("memory",), request_reason)

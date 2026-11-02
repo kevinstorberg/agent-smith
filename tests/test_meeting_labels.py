@@ -112,12 +112,13 @@ async def test_new_memory_stage_requires_whole_meeting_subjects(backend, model, 
 
 @pytest.mark.asyncio
 async def test_label_suggestion_only_reads_bounded_saved_summary_and_never_persists(model):
-    instance, roles = model([call("stage_labels", labels=["Security", "Roadmap", "vendor-evaluation"]), AIMessage(content="Done")])
+    instance, roles = model([call("stage_labels", labels=["Security", "Roadmap", "vendor-evaluation"])])
     snapshot = {"title": "Security scoping", "project": "explicit-project", "summary_text": "S" * 32_000 + "AFTER_LIMIT",
                 "transcript": "PRIVATE_TRANSCRIPT_SENTINEL", "labels": ["security"]}
     assert await label_analysis.suggest_labels(snapshot) == {"labels": ["security", "roadmapping", "vendor-evaluation"], "reason": ""}
     assert roles == [("meeting_memory", "curator")]
     assert instance.tool_names == ["stage_labels"]
+    assert len(instance.seen) == 1
     quoted = next(message.content for message in instance.seen[0] if isinstance(message, HumanMessage))
     assert "PRIVATE_TRANSCRIPT_SENTINEL" not in quoted and "AFTER_LIMIT" not in quoted
     data = json.loads(quoted.split("\n", 1)[1])
@@ -167,7 +168,7 @@ def test_suggestion_timeout_is_explicit_and_leaves_saved_labels_unchanged(client
 
 @pytest.mark.asyncio
 async def test_summary_classifier_has_three_turn_limit(model):
-    instance, _ = model([call("stage_labels", labels=["product"]) for _ in range(4)])
+    instance, _ = model([call("stage_labels", labels=[], reason="") for _ in range(4)])
     with pytest.raises(label_analysis.LabelAnalysisError, match="ModelCallLimitExceededError"):
         await label_analysis.suggest_labels({"summary_text": "Product planning", "labels": []})
     assert len(instance.seen) == 3

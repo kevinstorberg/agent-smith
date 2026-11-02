@@ -6,7 +6,7 @@ import pytest
 
 from scripts.shared.env import read_env_file
 from services.chat.participants import CHAT_MODEL_ROLE, ChatParticipant, chat_participants
-from services.graphs.model_config import load_model_config, resolve_model_id
+from services.graphs.model_config import load_model_config, resolve_model_id, resolve_request_timeout
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 API_KEY = "bedrock-test-key-0123456789abcdef"
@@ -275,6 +275,33 @@ def test_extra_body_cannot_override_fields_the_runtime_sends(field, remedy):
 
 def test_model_id_resolves_without_credentials():
     assert resolve_model_id("opinion", env=env(OPINION_MODEL_SERVER_API_KEY=None)) == "us.moonshotai.kimi-k3"
+
+
+@pytest.mark.parametrize("omitted,expected", [
+    ([], 45), (["PERSONA_MODEL_REQUEST_TIMEOUT"], 60),
+    (["PERSONA_MODEL_REQUEST_TIMEOUT", "SMALL_MODEL_REQUEST_TIMEOUT"], 90),
+    (["PERSONA_MODEL_REQUEST_TIMEOUT", "SMALL_MODEL_REQUEST_TIMEOUT", "CURATOR_MODEL_REQUEST_TIMEOUT"], 120),
+])
+def test_request_timeout_resolves_role_preset_parent_and_global_without_credentials(omitted, expected):
+    settings = {"PERSONA_MODEL_PRESET": "SMALL", "SMALL_MODEL_ID": "synthetic-model", "PERSONA_MODEL_REQUEST_TIMEOUT": "45",
+                "SMALL_MODEL_REQUEST_TIMEOUT": "60", "CURATOR_MODEL_REQUEST_TIMEOUT": "90",
+                "GRAPH_MODEL_REQUEST_TIMEOUT": "120"}
+    for name in omitted:
+        del settings[name]
+    assert resolve_request_timeout("persona", "curator", env=settings) == expected
+
+
+@pytest.mark.parametrize("timeout", ["0", "-1", "nan", "inf", "", "not-a-number"])
+def test_request_timeout_resolver_rejects_invalid_policy(timeout):
+    with pytest.raises(ValueError, match="PERSONA_MODEL_REQUEST_TIMEOUT must be a positive number of seconds"):
+        resolve_request_timeout("persona", "curator", env={"PERSONA_MODEL_REQUEST_TIMEOUT": timeout})
+
+
+@pytest.mark.parametrize("role,expected", [("persona", 45), ("meeting_memory", 45), ("meeting_speaker", 30)])
+def test_shipped_analysis_request_timeout_policy_is_shared_with_model_factory(role, expected):
+    settings = _shipped_env()
+    assert resolve_request_timeout(role, "curator", env=settings) == expected
+    assert load_model_config(role, "curator", env=settings).request_timeout == expected
 
 
 def _shipped_env() -> dict[str, str]:

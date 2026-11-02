@@ -27,10 +27,6 @@ class SpeakerRequestGuard(AgentMiddleware):
         # Check every turn, including accumulated lookup results and model/tool history.
         if encoded_size(envelope) > REQUEST_BYTES:
             raise self.error_class("Speaker request and tool history exceed the byte budget", error_type="SpeakerRequestTooLarge")
-        if self.validate_context:
-            current = await self.validate_context(self.revisions)
-            if current:
-                self.revisions.update(current)
         self.diagnostics["model_calls"] += 1
         response = await handler(request)
         for message in response.result:
@@ -38,6 +34,12 @@ class SpeakerRequestGuard(AgentMiddleware):
             reason = message.response_metadata.get("finish_reason")
             self.diagnostics["finish_reason"] = reason if reason in {"stop", "length", "tool_calls", "content_filter"} else "unknown"
         return response
+
+    async def validate_source(self) -> None:
+        if self.validate_context:
+            current = await self.validate_context(self.revisions)
+            if current:
+                self.revisions.update(current)
 
     async def awrap_tool_call(self, request: ToolCallRequest, handler: Callable[[ToolCallRequest], Awaitable[ToolMessage]]) -> ToolMessage:
         self.diagnostics["tool_calls"] += 1

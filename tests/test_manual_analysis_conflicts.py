@@ -3,7 +3,6 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from langchain_core.messages import AIMessage
 
 from services.api.routers.meetings import router
 from services.db import get_connection
@@ -193,7 +192,7 @@ async def test_manual_analysis_conflicts_ordinary_worker_still_raises_after_leas
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("manual", [False, True])
-@pytest.mark.parametrize("edit_turn", [1, 3])
+@pytest.mark.parametrize("edit_turn", [1, 2])
 async def test_manual_analysis_conflicts_model_turn_stops_only_for_frozen_manual_source(
         source, saved, payload, jobs, backend, model, monkeypatch, manual, edit_turn):
     meeting_id = saved()
@@ -207,7 +206,6 @@ async def test_manual_analysis_conflicts_model_turn_stops_only_for_frozen_manual
     instance, _ = model([
         call("search_previous_memories", query="communication"),
         call("stage_memories", items=[], reason="No new durable information"),
-        AIMessage(content="Finished"),
     ])
     original = ScriptedModel._agenerate
     observed = {}
@@ -228,12 +226,12 @@ async def test_manual_analysis_conflicts_model_turn_stops_only_for_frozen_manual
             assert run.record
         await run.generate_memories()
         if manual:
-            assert len(instance.seen) == edit_turn and len(instance.replies) == 3 - edit_turn
+            assert len(instance.seen) == edit_turn and len(instance.replies) == 2 - edit_turn
             assert run.memory_report["outcome"] == "failed"
             assert run.memory_report["error_type"] == "ManualAnalysisInputChanged"
             assert digestion_db.get_record(meeting_id) == observed["row"]
             assert manual_analysis.get_request(request["request_id"]) == observed["receipt"]
         else:
-            assert len(instance.seen) == 3 and run.memory_report["outcome"] == "done"
+            assert len(instance.seen) == 2 and run.memory_report["outcome"] == "done"
             assert digestion_db.get_record(meeting_id)["memory_attempts"] == 0
     assert backend[2] == []

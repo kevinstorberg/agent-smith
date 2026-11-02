@@ -7,7 +7,7 @@ from uuid import UUID
 
 from psycopg2.extras import Json
 
-from services.meetings import digestion_db, profile_db, stage_state, participant_view
+from services.meetings import digestion_db, profile_db, stage_state, participant_view, work_requests
 from services.meetings.db import _cursor, _serialize
 from services.meetings.participants import current_manual, email_participant, meeting_participants, speaker_key
 
@@ -279,6 +279,8 @@ def update_participants(meeting_id: str, expected_revision: int, participants: l
                        profile_updated_at = clock_timestamp(), updated_at = clock_timestamp(),
                        requested_at = coalesce(requested_at, clock_timestamp()) WHERE meeting_id = %s AND profile_status != 'done'""", (meeting_id,),
                 )
+                if cur.rowcount:
+                    work_requests.request(cur, meeting_id, ("profile",), "participant_assignment")
             manual_stage.invalidate_source(cur, meeting_id)
         return _participants(cur, meeting_id)
 
@@ -297,11 +299,11 @@ def request_processing(meeting_id: str) -> dict:
         for stage in ("profile", "memory"):
             if digestion and digestion[stage + "_status"] == "failed":
                 if stage == "memory" and digestion["transcript_status"] != "ready":
-                    memory_db.restart_memory(cur, digestion, meeting, control=None, capture_pending=True)
+                    memory_db.restart_memory(cur, digestion, meeting, control=None, capture_pending=True, request_reason="process_meeting")
                 else:
                     resumed = manual_stage.resume_stage(cur, digestion, stage)
                     if stage == "memory" and not resumed:
-                        memory_db.restart_memory(cur, digestion, meeting, control=None)
+                        memory_db.restart_memory(cur, digestion, meeting, control=None, request_reason="process_meeting")
                 cur.execute("SELECT * FROM meeting_digestions WHERE meeting_id=%s", (meeting_id,))
                 digestion = dict(cur.fetchone())
         cur.execute(
@@ -314,4 +316,10 @@ def request_processing(meeting_id: str) -> dict:
                profile_attempts = 0, profile_error = NULL, profile_next_attempt_at = clock_timestamp(),
                updated_at = clock_timestamp() WHERE meeting_id = %s""", (meeting_id,),
         )
+        cur.execute("SELECT transcript_status,memory_status,profile_status FROM meeting_digestions WHERE meeting_id=%s", (meeting_id,))
+        pending = cur.fetchone()
+        stages = tuple(stage for stage in work_requests.STAGES if pending[stage + "_status"] == "pending"
+                       or stage == "memory" and pending["transcript_status"] == "pending")
+        if stages:
+            work_requests.request(cur, meeting_id, stages, "process_meeting")
         return {"status": "queued"}

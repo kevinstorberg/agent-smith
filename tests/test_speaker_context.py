@@ -122,11 +122,12 @@ async def test_later_actual_model_request_receives_bootstrap_manual_anchor_and_m
     context, anchors = speaker_context.window_context(snapshot, segments, 40, [])
     item = assignment(segments[40], "Lex", profile_id=person)
     item["evidence"] = [{"segment_id": "segment-0", "quote": segments[0]["text"]}]
-    instance = speaker_model([call("stage_speakers", assignments=[item], reason="One target remains ambiguous"), AIMessage(content="Done")])
+    instance = speaker_model([call("stage_speakers", assignments=[item], reason="One target remains ambiguous")])
     result = await speaker_analysis.identify_statements(snapshot, segments[40:], context=context, anchors=anchors,
                                                        deadline=asyncio.get_running_loop().time() + 20)
     data = request_data(instance.seen[0])
     assert result["assignments"][0]["segment_id"] == "segment-40" and len(result["assignments"]) == 1
+    assert len(instance.seen) == 1
     assert data["read_only_identity_anchors"][0]["source"] == "human"
     assert data["meeting"]["owner"] == {"name": "Blair", "email": "blair@example.test"}
     candidate = next(row for row in data["candidates"] if row.get("profile_id") == person)
@@ -166,18 +167,18 @@ async def test_speaker_stage_diagnostics_are_safe_and_do_not_add_calls(case, spe
 
 @pytest.mark.asyncio
 async def test_valid_empty_speaker_stage_is_success_and_has_no_hidden_retry(speaker_model):
-    instance = speaker_model([call("stage_speakers", assignments=[], reason="Shared voices remain ambiguous"), AIMessage(content="Done")])
+    instance = speaker_model([call("stage_speakers", assignments=[], reason="Shared voices remain ambiguous")])
     result = await speaker_analysis.identify_statements({"id": str(uuid4())}, [statement()], context=[], anchors=[], deadline=asyncio.get_running_loop().time() + 20)
     assert result == {"assignments": [], "reason": "Shared voices remain ambiguous"}
-    assert len(instance.seen) == 2
+    assert len(instance.seen) == 1
 
 
 @pytest.mark.asyncio
 async def test_rejected_stage_can_be_repaired_within_three_existing_model_turns(speaker_model):
     instance = speaker_model([call("stage_speakers", assignments=[], reason=""),
-                              call("stage_speakers", assignments=[], reason="Several voices remain uncertain"), AIMessage(content="Done")])
+                              call("stage_speakers", assignments=[], reason="Several voices remain uncertain")])
     result = await speaker_analysis.identify_statements({"id": str(uuid4())}, [statement()], context=[], anchors=[], deadline=asyncio.get_running_loop().time() + 20)
-    assert result["assignments"] == [] and len(instance.seen) == 3
+    assert result["assignments"] == [] and len(instance.seen) == 2
 
 
 @pytest.mark.asyncio

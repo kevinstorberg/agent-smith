@@ -510,7 +510,12 @@ staged observations do not become new published profiles until the analysis fini
 **Process meeting** explicitly enrolls an older saved meeting or retries its missing stages.
 With compatible jobs running, explicit requests resume on the scheduler's next configured
 poll, including across bounded runs, rather than waiting for each 15-minute interval. Retry
-backoff still applies. The processing card shows source sections analyzed, staged candidates,
+backoff still applies. A memory request targets the Meetings workflow; a profile request
+targets the Personas workflow. **Process meeting** requests each unfinished workflow.
+Completed meetings and historical request timestamps do not create new work on upgrade.
+Explicit requests remain queued while their job is paused; unpausing allows valid queued work
+to run. No job is enabled or unpaused by requesting work.
+The processing card shows source sections analyzed, staged candidates,
 saved outputs and next eligible attempt. Publication starts after all memory windows finish;
 saved candidates are not yet published memories. This action does not create a job or restore
 a deliberately deleted transcript. Previously imported meetings are not enrolled automatically in bulk.
@@ -518,8 +523,9 @@ Repeated processing, profile/nickname edits and vocabulary changes do not reopen
 reviews or regenerate completed frozen memories.
 
 On **Meetings**, select the **Vocabulary** tab to define terms and abbreviations. New memory analysis selects a
-bounded matching glossary and saves it before its first model call. Retries reuse that glossary;
-editing vocabulary does not alter transcripts or replay earlier meetings.
+bounded matching glossary and saves it before its first model call. Automatic continuations
+reuse that glossary; an explicit memory Retry selects it again for the new summary pass.
+Editing vocabulary does not alter transcripts or replay earlier meetings.
 
 Use **Correct** or **Reject** on a profile claim to retain a human override with a reason.
 Later analysis reads those overrides. Revision checks prevent a background analysis from
@@ -541,10 +547,18 @@ The removed participant-inference stage makes no model calls. Legacy
 `MEETING_SPEAKER_MODEL_*` settings are unused by the meeting graph.
 
 Each graph handles one pending context within a 540-second work budget. Agent stages retain
-their 150-second budget and model calls their 45-second bound. Memory/persona jobs require
+their 150-second budget. Model calls use the resolved role's `MODEL_REQUEST_TIMEOUT`, bounded
+by the remaining stage time; the shipped memory/persona defaults remain 45 seconds with no
+SDK retries. A validated staging submission ends the agent without another model call;
+rejected or ambiguous submissions can be corrected within the existing call limits.
+Memory/persona jobs require
 600 seconds for execution and cleanup; legacy shorter timeouts receive that minimum at runtime.
 Successful checkpoints resume promptly for explicit requests. Zero-progress timeouts and
 dependency failures use bounded retries/backoff and expose safe, distinct error categories.
+
+Dirty or stale profile assessments retain their existing independent wake-up behavior. Such
+a Personas run can still select pending meeting extraction before assessment; this request-routing
+fix does not change that separate scheduling policy. Paused jobs do not run through either path.
 
 To import immediately, use the graphs MCP tool:
 
