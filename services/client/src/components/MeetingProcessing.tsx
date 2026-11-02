@@ -5,6 +5,7 @@ import type { MeetingGeneration, MeetingProcessingState } from '../api';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { ManualMeetingAnalysis } from './ManualMeetingAnalysis';
 import { MeetingGenerationProgress } from './MeetingGenerationProgress';
+import { MEMORY_RESTART_HELP } from '../utils/memoryRetry';
 
 const LABELS: Record<string, string> = { not_imported: 'Not queued', pending: 'Queued', running: 'Running', capturing: 'Running', ready: 'Complete', done: 'Complete', blocked: 'Waiting for transcript', failed: 'Needs attention', unavailable: 'Unavailable', unsupported: 'Unsupported', deleted: 'Deleted' };
 
@@ -14,12 +15,16 @@ export function MeetingProcessing({ meetingId, transcript, memories, personas, o
 }) {
   const [notice, setNotice] = useState<string | null>(null);
   const process = useApiMutation({ mutationFn: () => api.meetings.process(meetingId),
-    onSuccess: result => { setNotice(result.status === 'done' ? 'Both workflows are complete.' : 'Missing work is queued for your meeting and persona jobs. Saved progress and completed outputs are preserved.'); onChanged(); },
+    onSuccess: result => { setNotice(result.status === 'done' ? 'Both workflows are complete.' : 'Missing work is queued for your meeting and persona jobs. Completed outputs are preserved.'); onChanged(); },
     onError: () => setNotice('Could not queue processing. Try again.'),
   });
-  const retry = useApiMutation({ mutationFn: (stage: 'memories' | 'profiles') => stage === 'memories' ? api.meetings.retryMemories(meetingId) : api.meetings.retryProfiles(meetingId),
-    onSuccess: () => { setNotice('Retry queued. Completed work is preserved.'); onChanged(); }, onError: () => setNotice('Could not queue this retry. Try again.'),
-  });
+  const retry = useApiMutation({ mutationFn: async (stage: 'memories' | 'profiles') => {
+    await (stage === 'memories' ? api.meetings.retryMemories(meetingId) : api.meetings.retryProfiles(meetingId));
+    return stage;
+  }, onSuccess: stage => {
+    setNotice(stage === 'memories' ? `Memory retry queued. ${MEMORY_RESTART_HELP} Published memories are kept.` : 'Retry queued. Completed work is preserved.');
+    onChanged();
+  }, onError: () => setNotice('Could not queue this retry. Try again.') });
   const loaded = Boolean(transcript && memories && personas);
   const done = transcript?.status === 'ready' && memories?.status === 'done' && personas?.status === 'done';
   const running = transcript?.status === 'capturing' || memories?.status === 'running' || personas?.status === 'running';
@@ -32,7 +37,7 @@ export function MeetingProcessing({ meetingId, transcript, memories, personas, o
         return <a className={`tag text-link${stage?.status === 'failed' ? ' tag-danger' : ''}`} key={label as string} href={href as string}>{label as string}: {statusLabel}</a>;
       })}</div>
       <div className="flex-wrap"><button className="btn" disabled={disabled || !loaded || done || running || process.loading || retry.loading || transcript?.status === 'deleted'} onClick={() => process.mutate()}>
-        {process.loading ? 'Queuing...' : done ? 'Processing complete' : running ? 'Processing...' : resumable ? 'Resume unfinished' : 'Process meeting'}
+        {process.loading ? 'Queuing...' : done ? 'Processing complete' : running ? 'Processing...' : resumable ? 'Continue processing' : 'Process meeting'}
       </button>
       <ManualMeetingAnalysis meetingId={meetingId} disabled={disabled || !loaded || running || process.loading || retry.loading || transcript?.status !== 'ready'} onChanged={onChanged} /></div>
     </div>
@@ -42,6 +47,7 @@ export function MeetingProcessing({ meetingId, transcript, memories, personas, o
         <h4><a className="text-link" href={stage === 'memories' ? '#meeting-memories' : '#meeting-profiles'}>{label}</a></h4>
         <p>{result ? LABELS[result.status] : 'Loading...'}</p>
         {result && <MeetingGenerationProgress result={result} output={stage} />}
+        {stage === 'memories' && result?.status === 'failed' && <p className="text-muted-sm">{MEMORY_RESTART_HELP}</p>}
         {result?.status === 'failed' && <button className="btn btn-sm" disabled={disabled || !loaded || retry.loading || process.loading || transcript?.status === 'capturing'} onClick={() => retry.mutate(stage)}>Retry {label.toLowerCase()}</button>}
       </div>)}
     </div>

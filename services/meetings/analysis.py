@@ -149,6 +149,38 @@ def recent_items(items: list[dict], max_chars: int = 32_000) -> list[dict]:
     return list(reversed(selected))
 
 
+def _memory_snapshot(snapshot: dict) -> dict:
+    result = {"memory_source": "summary", "summary_text": snapshot.get("summary_text")}
+    text_fields = {field: snapshot[field] for field in
+                   ("id", "provider", "source_name", "project", "title", "source_url", "provider_updated_at") if field in snapshot}
+    metadata = snapshot.get("metadata")
+    calendar = metadata.get("calendar_event") if isinstance(metadata, dict) else None
+    if isinstance(calendar, dict):
+        text_fields.update({field: calendar[field] for field in ("scheduled_start_time", "scheduled_end_time") if field in calendar})
+    for field, value in text_fields.items():
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"Summary memory context {field} must be a string or null")
+        result[field] = value
+    if "revision" in snapshot:
+        if type(snapshot["revision"]) is not int:
+            raise ValueError("Summary memory context revision must be an integer")
+        result["revision"] = snapshot["revision"]
+    if "vocabulary" in snapshot:
+        vocabulary = snapshot["vocabulary"]
+        if (not isinstance(vocabulary, list) or any(not isinstance(entry, dict)
+                or any(not isinstance(entry.get(field), str) for field in ("term", "definition")) for entry in vocabulary)):
+            raise ValueError("Summary memory vocabulary requires term and definition strings")
+        result["vocabulary"] = [{field: entry[field] for field in ("term", "definition")} for entry in vocabulary]
+    return result
+
+
+def _memory_previous(previous: list[dict]) -> list[dict]:
+    if not isinstance(previous, list) or any(not isinstance(item, dict) for item in previous):
+        raise ValueError("Summary memory analysis requires earlier item objects")
+    return [MemoryItem.model_validate({key: item[key] for key in ("content", "kind", "tags", "evidence") if key in item})
+            .model_dump(exclude={"evidence"}) for item in previous if item.get("source") == "summary"]
+
+
 class AnalysisContext:
     def __init__(self, snapshot: dict, segments: list[dict], previous: list[dict], *,
                  require_memory_search: bool = True, require_transcript: bool = True) -> None:
@@ -333,7 +365,11 @@ async def analyze_memories(
     deadline: float | None = None,
     validate_context: Callable[[], Awaitable[None]] | None = None,
 ) -> dict:
-    context = AnalysisContext(snapshot, segments, previous)
+    if not isinstance(snapshot, dict) or snapshot.get("memory_source") != "summary":
+        raise ValueError("Memory generation requires memory_source='summary'; restart from the saved Granola summary")
+    texts = _window_text(segments, "summary")
+    sections = [{"id": key, "text": text} for key, text in texts.items()]
+    context = AnalysisContext(_memory_snapshot(snapshot), sections, _memory_previous(previous))
 
     @tool(args_schema=MemorySubmission)
     async def stage_memories(items: list[MemoryItem], reason: str = "", context_labels: list[str] | None = None) -> str:

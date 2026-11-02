@@ -124,9 +124,15 @@ def resume_stage(cur, row: dict, stage: str) -> bool:
         raise AnalysisConflict("Configure an eligible normal graph job for the selected connection")
     controls = {**row["manual_analysis"], stage: {"request_id": marker["request_id"], "active": True,
         "source": saved["source"], "target": saved.get("target")}}
+    if stage == "memory":
+        from services.meetings import memory_db
+
+        memory_db.restart_memory(cur, row, meeting, control=controls[stage])
     saved.update(status="continued", error_type=None)
     cur.execute("UPDATE meeting_analysis_requests SET result=%s,updated_at=clock_timestamp() WHERE request_id=%s",
                 (Json(receipt["result"]), marker["request_id"]))
+    if stage == "memory":
+        return True
     cur.execute(f"""UPDATE meeting_digestions SET {stage}_status='pending',
         {stage}_attempts=CASE WHEN {stage}_status='failed' THEN 0 ELSE {stage}_attempts END,
         {stage}_error=NULL,{stage}_next_attempt_at=clock_timestamp(),{stage}_updated_at=clock_timestamp(),

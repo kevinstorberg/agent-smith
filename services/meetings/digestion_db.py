@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import random
 from uuid import UUID
@@ -8,6 +7,7 @@ from uuid import UUID
 from psycopg2.extras import Json
 
 from services.meetings.db import ClaimLostError, _cursor, _serialize
+from services.meetings.types import transcript_hash as captured_transcript_hash
 
 LEASE_SECONDS = 600
 _CLAIM_LOCK = "agent-smith:meeting-digestion"
@@ -186,7 +186,7 @@ def save_capture(meeting_id: str, owner: str, snapshot: dict, transcript: dict, 
         raise ValueError("Transcript exceeds the 20000000-byte storage limit")
     if complete and not segments:
         raise ValueError("A complete transcript must contain segments")
-    content_hash = hashlib.sha256(json.dumps(segments, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest() if complete else None
+    content_hash = captured_transcript_hash(segments) if complete else None
     with _cursor() as cur:
         _owned(cur, meeting_id, owner)
         cur.execute("SELECT provider_updated_at, revision, available FROM meeting_summaries WHERE id = %s FOR SHARE", (meeting_id,))

@@ -7,6 +7,7 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useManualAnalysisRequest } from '../hooks/useManualAnalysisRequest';
 import { Pagination } from './Pagination';
 import { DateCell } from './table';
+import { MEMORY_RESTART_HELP, analysisRetryLabel, hasUnfinishedMemory } from '../utils/memoryRetry';
 
 const STAGES = { profile: 'Profiles', memory: 'Memories' };
 const STATUS = { queued: 'Queued', running: 'Running', continued: 'Progress saved', done: 'Complete', failed: 'Needs attention' };
@@ -23,9 +24,13 @@ function dayBoundary(value: string, end: boolean): string {
   return new Date(year, month - 1, day, end ? 23 : 0, end ? 59 : 0, end ? 59 : 0, end ? 999 : 0).toISOString();
 }
 function analysisError(category: string, stage: 'profile' | 'memory', status: MeetingAnalysisReceipt['status']): string {
-  if (['ManualAnalysisSuperseded', 'ManualAnalysisInputChanged'].includes(category)) return stage === 'profile'
-    ? 'Saved meeting context or the target profile changed. Review speaker assignments and confirm a fresh profile analysis.'
-    : 'Saved meeting context changed. The memory checkpoint is kept. Review the meeting and linked job before resuming.';
+  if (stage === 'memory') {
+    if (['ManualAnalysisSuperseded', 'ManualAnalysisInputChanged'].includes(category)) return 'Saved Granola summary or meeting context changed. Review the meeting and confirm memory analysis again.';
+    const reason = category === 'ManualAnalysisJobUnavailable' ? 'Enable or configure the linked job for this meeting connection.'
+      : category.toLowerCase().includes('timeout') ? 'This attempt reached its time limit.' : 'This memory analysis needs attention.';
+    return `${reason}${status === 'failed' ? '' : ' The next job run uses the saved Granola summary.'}`;
+  }
+  if (['ManualAnalysisSuperseded', 'ManualAnalysisInputChanged'].includes(category)) return 'Saved meeting context or the target profile changed. Review speaker assignments and confirm a fresh profile analysis.';
   if (category === 'ManualAnalysisJobUnavailable') return 'Enable or configure the linked job for this meeting connection. Your request and saved progress are kept.';
   if (category === 'ProfileRevisionConflict') return 'The profile changed while analysis was saving. Resume unfinished analysis to use the current profile. Your edits stay protected.';
   if (category.toLowerCase().includes('timeout')) return `This attempt reached its time limit. Saved progress is kept. ${status === 'failed' ? 'Resume unfinished analysis to continue.' : 'The next job run continues from its checkpoint.'}`;
@@ -34,7 +39,7 @@ function analysisError(category: string, stage: 'profile' | 'memory', status: Me
 
 function AnalysisProgress({ receipt }: { receipt: MeetingAnalysisReceipt }) {
   return <div className="manual-analysis-progress">
-    <p role="status"><strong>{STATUS[receipt.status]}</strong> · {scopeLabel(receipt.scope)} · {receipt.items.length} {receipt.items.length === 1 ? 'meeting' : 'meetings'}</p>
+    <p role="status"><strong>{receipt.status === 'continued' && hasUnfinishedMemory(receipt) ? 'Queued' : STATUS[receipt.status]}</strong> · {scopeLabel(receipt.scope)} · {receipt.items.length} {receipt.items.length === 1 ? 'meeting' : 'meetings'}</p>
     {receipt.items.map(item => <article key={item.meeting_id} className="manual-analysis-meeting">
       <h4><Link className="text-link" to={`/meetings/${item.meeting_id}`} target="_blank" rel="noopener noreferrer">{item.title || 'Untitled meeting'}</Link></h4>
       {(['profile', 'memory'] as const).map(key => {
@@ -42,13 +47,13 @@ function AnalysisProgress({ receipt }: { receipt: MeetingAnalysisReceipt }) {
         if (!stage) return null;
         const progress = stage.progress;
         return <div key={key} className="manual-analysis-stage">
-          <p><strong>{STAGES[key]}</strong> · {STATUS[stage.status]}{stage.waiting_for === 'job' ? ' · Waiting for an eligible job' : ''}</p>
+          <p><strong>{STAGES[key]}</strong> · {key === 'memory' && stage.status === 'continued' ? 'Queued' : STATUS[stage.status]}{stage.waiting_for === 'job' ? ' · Waiting for an eligible job' : ''}</p>
           {progress.total_units !== null && progress.total_units > 0 && <>
             <progress aria-label={`${STAGES[key]} analysis progress`} max={progress.total_units} value={Math.min(progress.processed_units, progress.total_units)} />
-            <p className="text-muted-sm">{progress.processed_units} of {progress.total_units} {key === 'memory' ? 'source' : 'transcript'} sections analyzed</p>
+            <p className="text-muted-sm">{progress.processed_units} of {progress.total_units} {key === 'memory' ? 'summary' : 'transcript'} sections analyzed</p>
           </>}
           <p className="text-muted-sm">{progress.staged_count} candidates saved · {progress.saved_count} {key === 'profile' ? 'profiles updated' : 'memories published'}</p>
-          {stage.status === 'continued' && <p className="text-muted-sm">The next run resumes saved progress.</p>}
+          {stage.status === 'continued' && <p className="text-muted-sm">{key === 'memory' ? 'The next run uses the saved Granola summary.' : 'The next run resumes saved progress.'}</p>}
           {progress.next_attempt_at && stage.status !== 'done' && <div className="manual-analysis-metadata text-muted-sm"><span>Next eligible attempt:</span><DateCell date={progress.next_attempt_at} format="long" /></div>}
           {stage.error_type && <><p role="alert">{analysisError(stage.error_type, key, stage.status)}</p><details className="text-muted-sm"><summary>Technical details</summary><p>{stage.error_type}</p></details></>}
           <Link className="text-link" to={stage.waiting_for === 'job' ? '/jobs' : `/jobs/${stage.job_id}?tab=executions`} target="_blank" rel="noopener noreferrer">{stage.waiting_for === 'job' ? 'Configure analysis jobs' : stage.job_name}</Link>
@@ -124,7 +129,7 @@ function MeetingSelection({ profile, meetingId, notice, onConfirm }: {
     {notice && <p role="alert">{notice}</p>}
     {reviewing ? <section aria-label="Confirm meeting analysis" className="manual-analysis-confirm">
       <h4>Review your selection</h4>
-      <p><strong>{selection.size} {selection.size === 1 ? 'meeting' : 'meetings'}</strong> · {profile ? `Profiles for ${profile.display_name}${scope === 'both' ? ' · Memories from the full meetings' : ''}` : scopeLabel(scope)}</p>
+      <p><strong>{selection.size} {selection.size === 1 ? 'meeting' : 'meetings'}</strong> · {profile ? `Profiles for ${profile.display_name}${scope === 'both' ? ' · Memories from saved Granola summaries' : ''}` : scopeLabel(scope)}</p>
       <ul>{[...selection.values()].map(item => <li key={item.id}>{item.title || 'Untitled meeting'} · {item.source_name}</li>)}</ul>
       <p>This starts one new analysis pass using the selected saved {scope === 'memories' ? 'Granola summaries' : scope === 'both' ? 'transcripts and Granola summaries' : 'transcripts'}. Your configured models incur normal generation costs.</p>
       <p className="text-muted-sm">Your profile edits stay protected. Existing memories are kept; memory analysis adds new information. Scheduled jobs will not repeat this review.</p>
@@ -148,13 +153,13 @@ function MeetingSelection({ profile, meetingId, notice, onConfirm }: {
         {!profile && <option value="memories">Memories</option>}
         <option value="both">Profiles and memories</option>
       </select></div>
-      {profile && scope === 'both' && <p className="text-muted-sm">Profiles update only {profile.display_name}. Memories capture useful information from each full meeting.</p>}
-      <p className="text-muted-sm">Select up to 10 saved meetings. {profile ? 'Attendee matches help find a meeting; profile analysis requires this person to be assigned to transcript statements.' : 'Profile analysis uses identified transcript statements. Resume unfinished work from the meeting instead.'}</p>
+      {profile && scope === 'both' && <p className="text-muted-sm">Profiles update only {profile.display_name}. Memories use each meeting's saved Granola summary.</p>}
+      <p className="text-muted-sm">Select up to 10 saved meetings. {profile ? 'Attendee matches help find a meeting; profile analysis requires this person to be assigned to transcript statements.' : scope === 'memories' ? 'Memory analysis uses the saved Granola summary. Review unfinished memory work from the meeting.' : scope === 'both' ? 'Profiles use identified transcript statements; memories use saved Granola summaries. Review unfinished work from the meeting.' : 'Profile analysis uses identified transcript statements. Resume unfinished work from the meeting instead.'}</p>
       {datesInvalid && <p role="alert">The end date must be on or after the start date.</p>}
       {identityChanged && <p role="alert">This profile was merged or changed identity. Reload its current profile before requesting analysis.</p>}
       {error && <div role="alert"><p>Could not load meetings: {error}</p><button className="btn btn-sm" onClick={() => refresh()}>Retry meeting search</button></div>}
       {loading && <p role="status">Loading meetings...</p>}
-      {!loading && !error && !data?.items.length && <p>No saved meetings match these filters. {profile && related ? 'Try All saved meetings or adjust your search.' : 'Adjust your search or save a meeting transcript first.'}</p>}
+      {!loading && !error && !data?.items.length && <p>No saved meetings match these filters. {profile && related ? 'Try All saved meetings or adjust your search.' : scope === 'profiles' ? 'Adjust your search or save a meeting transcript first.' : 'Adjust your search or save a meeting first.'}</p>}
       <div className="manual-analysis-candidates" aria-label="Saved meeting candidates">
         {data?.items.map(item => {
           const reason = blocked(item);
@@ -163,7 +168,7 @@ function MeetingSelection({ profile, meetingId, notice, onConfirm }: {
             <div className="manual-analysis-metadata text-muted-sm"><span>{item.source_name}</span><span>·</span>{item.meeting_start ? <DateCell date={item.meeting_start} /> : <span>Date unavailable</span>}{item.match_reasons.length > 0 && <span>· {item.match_reasons.map(value => MATCHES[value] || value.replaceAll('_', ' ')).join(', ')}</span>}</div>
             <p className="text-muted-sm">Profiles: {STAGE_STATUS[item.stages.profile.status] || item.stages.profile.status} · Memories: {STAGE_STATUS[item.stages.memory.status] || item.stages.memory.status}</p>
             {reason && <p className="text-muted-sm">{reason}</p>}
-            <Link className="text-link" to={`/meetings/${item.id}${profile && !item.attribution_ready ? '#meeting-participants' : ''}`} target="_blank" rel="noopener noreferrer">{profile && !item.attribution_ready ? 'Assign transcript speakers' : reason && stages.some(stage => item.stages[stage].status !== 'done') ? 'Resume unfinished work' : 'View meeting'}</Link>
+            <Link className="text-link" to={`/meetings/${item.id}${profile && !item.attribution_ready ? '#meeting-participants' : ''}`} target="_blank" rel="noopener noreferrer">{profile && !item.attribution_ready ? 'Assign transcript speakers' : reason && stages.some(stage => item.stages[stage].status !== 'done') ? scope === 'profiles' ? 'Resume unfinished work' : 'Review unfinished work' : 'View meeting'}</Link>
           </article>;
         })}
       </div>
@@ -203,8 +208,9 @@ export function ManualMeetingAnalysis({ profile, meetingId, disabled = false, on
         <p className="text-muted-sm">Your existing jobs run this request in the background. Closing this view will not stop it.</p>
         {expired && <p role="status">Automatic monitoring paused after 30 minutes. The request can still run. Refresh its status when you return.</p>}
         {notice && <p role="alert">{notice}</p>}
+        {receipt.status === 'failed' && hasUnfinishedMemory(receipt) && <p className="text-muted-sm">{MEMORY_RESTART_HELP}</p>}
         <div className="flex-wrap"><button className="btn" disabled={reading || saving} onClick={request.refresh}>{reading ? 'Refreshing...' : 'Refresh status'}</button>
-          {receipt.status === 'failed' && <button className="btn" disabled={saving} onClick={request.resume}>{saving ? 'Queuing...' : 'Resume unfinished analysis'}</button>}
+          {receipt.status === 'failed' && <button className="btn" disabled={saving} onClick={request.resume}>{saving ? 'Queuing...' : analysisRetryLabel(receipt)}</button>}
           {['done', 'failed'].includes(receipt.status) && <button className="btn" disabled={saving} onClick={request.reset}>Review another selection</button>}
         </div>
       </> : frozen ? <>

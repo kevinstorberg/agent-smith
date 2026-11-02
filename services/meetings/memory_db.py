@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from uuid import UUID
+from datetime import datetime, timezone
+
+from psycopg2.extras import Json
 
 from services.meetings import stage_db, stage_state
 from services.meetings.db import _cursor, _serialize
@@ -42,19 +45,67 @@ def get_memories(meeting_id: str) -> dict | None:
 
 
 def retry_memories(meeting_id: str) -> None:
-    from services.meetings import manual_stage
-
     UUID(meeting_id)
     with _cursor() as cur:
         cur.execute("SELECT * FROM meeting_digestions WHERE meeting_id=%s FOR UPDATE", (meeting_id,))
         row = cur.fetchone()
-        if row and manual_stage.resume_stage(cur, dict(row), "memory"):
-            return
-        cur.execute(
-            """UPDATE meeting_digestions SET memory_status = 'pending', memory_attempts = 0,
-               memory_next_attempt_at = clock_timestamp(), memory_error = NULL, memory_updated_at = clock_timestamp(),
-               requested_at = coalesce(requested_at, clock_timestamp())
-               WHERE meeting_id = %s AND memory_status = 'failed' AND transcript_status = 'ready'""", (meeting_id,),
-        )
-        if cur.rowcount != 1:
+        if not row or row["memory_status"] != "failed" or row["transcript_status"] != "ready":
             raise ValueError("Meeting memories cannot be retried in their current state")
+        cur.execute("SELECT * FROM meeting_summaries WHERE id=%s AND available FOR UPDATE", (meeting_id,))
+        meeting = cur.fetchone()
+        if not meeting:
+            raise ValueError("Saved meeting is no longer available")
+        restart_memory(cur, dict(row), dict(meeting), control=None)
+
+
+def _publication_snapshot(cur, row: dict, meeting: dict) -> dict | None:
+    from services.meetings import manual_analysis, manual_stage
+
+    artifact = row.get("memory_artifact") or {}
+    if not any(item["id"] not in artifact.get("published_ids", [])
+               and item["id"] not in artifact.get("publication_envelopes", {}) for item in artifact.get("items", [])):
+        return None
+    if artifact.get("input_source") == "summary":
+        snapshot = artifact.get("input_snapshot")
+        if not isinstance(snapshot, dict):
+            raise ValueError("Original summary publication context is unavailable")
+        return snapshot
+    marker = artifact.get("manual_request_id") or row.get("manual_analysis", {}).get("memory", {}).get("request_id")
+    if marker:
+        _, saved = manual_stage._receipt_stage(cur, row, "memory", marker)
+        live = manual_analysis.expected_values(meeting, row)
+        if any(live[key] != saved["source"][key] for key in manual_analysis.SOURCE_FIELDS):
+            raise ValueError("Original memory publication context changed; uncertain publications cannot be reconstructed")
+        return meeting
+    return row.get("snapshot")
+
+
+def restart_memory(cur, row: dict, meeting: dict, *, control: dict | None, capture_pending: bool = False) -> None:
+    from services.meetings import digestion_db, manual_analysis, memory_pass
+    from services.graphs.model_config import resolve_model_id
+
+    capture_ready = row.get("transcript_status") == "ready"
+    capture_retry = capture_pending and row.get("transcript_status") in {"pending", "failed", "unsupported", "unavailable"}
+    if not (capture_ready or capture_retry) or not meeting.get("available"):
+        raise ValueError("A saved meeting and completed capture are required to restart memories")
+    if manual_analysis.has_active_lease(row):
+        raise manual_analysis.AnalysisConflict("Meeting analysis is already running")
+    snapshot = _serialize({key: meeting[key] for key in digestion_db._SNAPSHOT_FIELDS})
+    created_at = datetime.now(timezone.utc).isoformat()
+    retained = memory_pass.retained_artifact(row, created_at=created_at)
+    publication_row = {**row, "memory_artifact": retained}
+    artifact = memory_pass.restart_artifact(publication_row, snapshot, _publication_snapshot(cur, publication_row, meeting),
+        created_at=created_at)
+    artifact["model"] = resolve_model_id("meeting_memory", "curator")
+    controls = dict(row.get("manual_analysis") or {})
+    if control is None:
+        controls.pop("memory", None)
+    else:
+        controls["memory"] = control
+        artifact["manual_request_id"] = control["request_id"]
+    stage_db.validate_artifact(artifact)
+    cur.execute("""UPDATE meeting_digestions SET memory_status='pending',memory_artifact=%s,
+        memory_attempts=0,memory_error=NULL,memory_next_attempt_at=clock_timestamp(),
+        memory_updated_at=clock_timestamp(),updated_at=clock_timestamp(),requested_at=clock_timestamp(),
+        claim_owner=NULL,claim_until=NULL,manual_analysis=%s WHERE meeting_id=%s""",
+        (Json(artifact), Json(controls), row["meeting_id"]))

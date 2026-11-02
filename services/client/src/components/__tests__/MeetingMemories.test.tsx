@@ -28,7 +28,7 @@ beforeEach(() => {
   mockRetry.mockResolvedValue({ success: true });
 });
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('MeetingMemories', () => {
   it('shows generated memories with exact source evidence and existing navigation', async () => {
@@ -94,6 +94,28 @@ describe('MeetingMemories', () => {
     expect(screen.queryByRole('button', { name: 'Retry generation' })).not.toBeInTheDocument();
   });
 
+  it('describes failed memory Retry as a summary restart without promising to retain unfinished progress', async () => {
+    mockRead.mockResolvedValue({ ...response('failed'), error_type: 'ModelCallTimeoutError', progress: {
+      processed_units: 30, total_units: 100, staged_count: 8, saved_count: 2, attempts: 3, next_attempt_at: null,
+    } });
+    renderWithProviders(<MeetingMemories meetingId="meeting-id" />);
+    expect(await screen.findByText('Restart from the beginning using the saved Granola summary.')).toBeInTheDocument();
+    expect(screen.getByText('30 of 100 summary sections analyzed')).toBeInTheDocument();
+    expect(screen.queryByText(/Saved progress is kept|completed sections will not be repeated|resume/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Published memories are kept.');
+  });
+
+  it('shows automatic summary continuation at its saved progress without starting a retry', async () => {
+    mockRead.mockResolvedValue({ ...response('pending'), progress: {
+      processed_units: 3, total_units: 10, staged_count: 2, saved_count: 0, attempts: 1, next_attempt_at: null,
+    } });
+    renderWithProviders(<MeetingMemories meetingId="meeting-id" />);
+    expect(await screen.findByText('3 of 10 summary sections analyzed')).toBeInTheDocument();
+    expect(screen.getByText('Automatic processing continues from its saved summary progress.')).toBeInTheDocument();
+    expect(screen.queryByText(/Restart from the beginning/)).not.toBeInTheDocument();
+    expect(mockRetry).not.toHaveBeenCalled();
+  });
+
   it('renders a completed zero-memory explanation', async () => {
     mockRead.mockResolvedValue(response('done', 'No new durable facts were found.'));
     renderWithProviders(<MeetingMemories meetingId="meeting-id" />);
@@ -117,10 +139,13 @@ describe('MeetingMemories', () => {
     mockRead.mockResolvedValue(response('failed'));
     renderWithProviders(<MeetingMemories meetingId="meeting-id" />);
     await screen.findByText('Memory generation failed.');
+    expect(screen.getByText('Restart from the beginning using the saved Granola summary.')).toBeInTheDocument();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     mockRead.mockResolvedValue(response('pending'));
     fireEvent.click(screen.getByRole('button', { name: 'Retry generation' }));
     await waitFor(() => expect(mockRetry).toHaveBeenCalledWith('meeting-id'));
+    expect(confirm).not.toHaveBeenCalled();
     await screen.findByText('Memory generation is queued for the next meeting job run.');
 
     mockRead.mockResolvedValue(response('running'));

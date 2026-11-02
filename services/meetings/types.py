@@ -53,6 +53,15 @@ class TranscriptPage:
     next_cursor: str | None = None
 
 
+def _payload_hash(value: Any) -> str:
+    canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def transcript_hash(segments: list[dict]) -> str:
+    return _payload_hash(segments)
+
+
 @dataclass(frozen=True)
 class MeetingSummary:
     external_id: str
@@ -75,8 +84,7 @@ class MeetingSummary:
             "project": project,
             "deleted_at": self.provider_deleted_at.isoformat() if self.provider_deleted_at else None,
         }
-        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-        return hashlib.sha256(canonical.encode()).hexdigest()
+        return _payload_hash(payload)
 
 
 def _canonical_metadata(metadata: dict[str, Any]) -> dict[str, Any]:

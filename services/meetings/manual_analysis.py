@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -174,15 +173,14 @@ def _reopen(cur, request_id: str, entry: dict) -> None:
     for stage, state in entry["stages"].items():
         cur.execute("SELECT * FROM meeting_digestions WHERE meeting_id=%s", (entry["meeting_id"],))
         row = dict(cur.fetchone())
-        artifact = copy.deepcopy(row[stage + "_artifact"])
-        if stage == "profile":
-            artifact = {}
-        else:
-            artifact["offset"] = 0
-            artifact["manual_request_id"] = request_id
-            artifact.update(input_source="summary", prompt_version=4)
-            for key in ("vocabulary", "attribution_snapshot", "attribution_identities", "context_labels_revision", "context_labels", "total_units", "input_snapshot", "input_hash"):
-                artifact.pop(key, None)
+        if stage == "memory":
+            from services.meetings import memory_db
+
+            cur.execute("SELECT * FROM meeting_summaries WHERE id=%s AND available", (entry["meeting_id"],))
+            memory_db.restart_memory(cur, row, dict(cur.fetchone()), control={"request_id": request_id, "active": True,
+                "source": state["source"], "target": state["target"]})
+            continue
+        artifact = {}
         control = {**row["manual_analysis"], stage: {"request_id": request_id, "active": True,
                     "source": state["source"], "target": state["target"]}}
         cur.execute(f"""UPDATE meeting_digestions SET {stage}_status='pending', {stage}_artifact=%s,

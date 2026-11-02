@@ -202,8 +202,8 @@ async def test_manual_analysis_conflicts_model_turn_stops_only_for_frozen_manual
         request = manual_analysis.request_analysis(payload(meeting_id, scope="memories"))
     else:
         with get_connection() as conn, conn.cursor() as cur:
-            cur.execute("""UPDATE meeting_digestions SET memory_status='pending',
-                memory_artifact=jsonb_set(memory_artifact,'{offset}','0'::jsonb) WHERE meeting_id=%s""", (meeting_id,))
+            cur.execute("UPDATE meeting_digestions SET memory_status='failed' WHERE meeting_id=%s", (meeting_id,))
+        memory_db.retry_memories(meeting_id)
     instance, _ = model([
         call("search_previous_memories", query="communication"),
         call("stage_memories", items=[], reason="No new durable information"),
