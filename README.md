@@ -151,6 +151,28 @@ has a different dimension. pgvector retrieval uses exact cosine distance, so no 
 index needs to be trained before cutover. Keep `MEMORY_BACKEND=pinecone` during the data
 migration and change the production backend only after reconciliation passes.
 
+## Planning Docs
+
+Saved **Plans** (`/plans`) are available to agents through the existing `/mcp/plans/`
+connection. Use `search(query="immutable snapshot", project="agent-smith", limit=10)`
+to find relevant plans, then `get(plan_id=<result id>)` to read a complete document.
+
+Search matches every whitespace-separated keyword in the title or Markdown body,
+ignoring case. It is literal keyword search: `%`, `_`, and backslash are ordinary
+characters. Queries allow 1–500 characters after trimming and at most ten keywords.
+The optional `project` filter matches its exact, case-sensitive name; `status` accepts
+`draft` or `final`, with both included when omitted.
+
+Results contain IDs, titles, project/status, timestamps, and matching excerpts of at
+most 600 characters. They are ordered by latest update, then ID, newest first. Use
+`next_offset` to continue when `has_more` is true. Pages allow 1–20 results and offsets
+through 10,000; if `pagination_capped` is true, narrow the query or project. Each page
+reads current saved data, so edits between requests can shift results.
+
+The existing `get(query=...)` and dashboard search retain their title-only behavior.
+Restart the updated dashboard and reconnect agents to refresh tool discovery on the
+existing Plans connection. This change needs no migration, model call, or new service.
+
 ## Background Jobs
 
 Shell commands and LangGraph workflows run on a fixed interval, managed via the dashboard
