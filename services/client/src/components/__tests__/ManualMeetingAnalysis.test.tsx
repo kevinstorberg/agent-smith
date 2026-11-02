@@ -360,7 +360,9 @@ it('ignores an in-flight status read when a Resume mutation supplies a newer rec
   let resolve!: (value: MeetingAnalysisReceipt) => void;
   vi.mocked(api.meetingAnalysis.progress).mockResolvedValueOnce(receipt('failed')).mockImplementationOnce(() => new Promise(done => { resolve = done; }));
   renderReview({ initial: `/profiles/alex?analysis=${RID}` }); await open();
-  fireEvent.click(await screen.findByRole('button', { name: 'Refresh status' }));
+  await screen.findByRole('button', { name: 'Resume unfinished analysis' });
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh status' }));
+  await waitFor(() => expect(api.meetingAnalysis.progress).toHaveBeenCalledTimes(2));
   fireEvent.click(screen.getByRole('button', { name: 'Resume unfinished analysis' }));
   await screen.findByText('Progress saved');
   await act(async () => resolve({ ...receipt('failed'), items: [{ ...receipt().items[0], title: 'Outdated status' }] }));
