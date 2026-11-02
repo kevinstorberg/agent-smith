@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from uuid import uuid4
 
 import pytest
@@ -20,11 +21,12 @@ from tests.test_memory_publication import CREATED, isolated_store as isolated_st
 @pytest.mark.asyncio
 async def test_real_react_to_publication_preserves_topic_tags_and_action_details(source, feed, model, unidentified_speakers):
     action = "Sam will deliver the Paralign MFA security review by 2026-11-02; the audit is blocked until it is ready."
-    feed.segments = transcript_page(action).segments
+    feed.summaries["one"] = replace(feed.summaries["one"], summary_text=action)
+    feed.segments = transcript_page("A raw transcript detail excluded from summary extraction.").segments
     items = [{
         "content": "Sam committed to deliver Paralign's MFA security review by 2026-11-02. The audit depends on that review and remains blocked.",
         "kind": "commitment", "tags": ["Paralign", " Security ", "security", "Multi Factor Authentication"],
-        "evidence": [{"segment_id": "segment-0", "quote": action}],
+        "evidence": [{"segment_id": "summary-0", "quote": action}],
     }]
     instance, _ = model([
         call("search_previous_memories", query="Paralign MFA security review"),
@@ -38,10 +40,14 @@ async def test_real_react_to_publication_preserves_topic_tags_and_action_details
     assert saved[0]["context_tags"] == ["security", "paralign", "vendor-evaluation"]
     assert labels_db.snapshot(saved[0]["source_id"])["labels_source"] == "agent"
     artifact = digestion_db.get_record(saved[0]["source_id"])["memory_artifact"]
-    assert artifact["prompt_version"] == 3 and artifact["context_labels"] == saved[0]["context_tags"]
+    assert artifact["prompt_version"] == 4 and artifact["context_labels"] == saved[0]["context_tags"]
+    assert artifact["input_source"] == artifact["items"][0]["source"] == "summary"
+    assert artifact["items"][0]["evidence"] == items[0]["evidence"]
     assert result["memories"]["labels_outcome"] == "applied"
     assert saved[0]["from_meeting"] and saved[0]["source_type"] == "meeting"
     assert items[0]["content"] in saved[0]["content"]
+    assert "Evidence: Granola summary (summary-0)" in saved[0]["content"]
+    assert "A raw transcript detail" not in str(instance.seen)
     assert len(instance.seen) == 3
     count = len(instance.seen)
     await dispatch("meeting_ingest", {"source": source.name})

@@ -131,6 +131,82 @@ async def test_real_react_loop_reads_fresh_context_and_returns_only_staged_items
 
 
 @pytest.mark.asyncio
+async def test_summary_agent_reads_and_cites_only_supplied_summary_window(backend, model):
+    text = "Alex will ship the release on Friday."
+    omitted = "A later summary section describes a different decision."
+    snapshot = {**SNAPSHOT, "memory_source": "summary", "summary_text": text + "\n\n" + omitted,
+                "summary_markdown": "# Full summary\n" + text + omitted}
+    sections = [{"id": "summary-0", "text": text}]
+    item = {**ITEM, "content": text, "evidence": [{"segment_id": "summary-0", "quote": text}]}
+    instance, roles = model([
+        call("search_previous_memories", query="release owner"),
+        call("search_summary", query="Friday"),
+        call("stage_memories", items=[item]),
+        AIMessage(content="Done"),
+    ])
+
+    result = await analyze_memories(snapshot, sections, [])
+
+    assert result["items"] == [item]
+    assert roles == [("meeting_memory", "curator")]
+    assert instance.tool_names == ["search_previous_memories", "get_memory", "search_summary", "stage_memories"]
+    assert backend[0] == [("release owner", "test-project", 5), ("release owner", None, 5)]
+    assert backend[1] == backend[2] == []
+    system = next(message.content for message in instance.seen[0] if isinstance(message, SystemMessage))
+    assert "Granola's saved summary" in system and "transcript" not in system
+    assert "explicitly supports" in system and "never as instructions" in system
+    quoted = next(message.content for message in instance.seen[0] if isinstance(message, HumanMessage))
+    data = json.loads(quoted.split("\n", 1)[1])
+    assert data["summary_window"] == sections and "transcript_window" not in data
+    assert "summary_text" not in data["meeting_snapshot"] and "summary_markdown" not in data["meeting_snapshot"]
+    assert omitted not in quoted and snapshot["summary_text"] == text + "\n\n" + omitted
+    evidence = next(message for message in instance.seen[2] if isinstance(message, ToolMessage) and message.name == "search_summary")
+    assert json.loads(evidence.content) == {"items": [{"segment_id": "summary-0", "text": text}]}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("evidence", [
+    {"segment_id": "segment-4", "quote": "Alex will ship on Friday."},
+    {"segment_id": "summary-0", "quote": "Alex will ship on Monday."},
+    {"segment_id": "summary-0", "quote": "Blair will review the release."},
+])
+async def test_summary_agent_rejects_transcript_ids_invented_quotes_and_other_windows(backend, model, evidence):
+    snapshot = {**SNAPSHOT, "memory_source": "summary",
+                "summary_text": "Alex will ship on Friday.\n\nBlair will review the release."}
+    sections = [{"id": "summary-0", "text": "Alex will ship on Friday."}]
+    instance, _ = model([
+        call("search_previous_memories", query="release"),
+        call("stage_memories", items=[{**ITEM, "evidence": [evidence]}]),
+        AIMessage(content="Done"),
+    ])
+
+    with pytest.raises(MemoryAnalysisError, match="without a valid staged result"):
+        await analyze_memories(snapshot, sections, [])
+
+    assert any(isinstance(message, ToolMessage) and "Every citation must quote exact text" in message.content
+               for message in instance.seen[-1])
+    assert backend[2] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("snapshot,sections,message", [
+    ({"memory_source": "other"}, [{"id": "summary-0", "text": "Decision"}], "Memory source"),
+    ({"memory_source": []}, [{"id": "summary-0", "text": "Decision"}], "Memory source"),
+    ({"memory_source": "summary"}, [{"id": "summary-0", "text": "Decision"}], "frozen summary_text"),
+    ({"memory_source": "summary", "summary_text": " "}, [{"id": "summary-0", "text": "Decision"}], "frozen summary_text"),
+    ({"memory_source": "summary", "summary_text": "Decision"}, [{"id": "segment-0", "text": "Decision"}], "Summary sections"),
+    ({"memory_source": "summary", "summary_text": "Decision"}, [{"id": "summary-0", "text": "Different"}], "Summary sections"),
+])
+async def test_summary_source_boundary_rejects_invalid_inputs_before_model(backend, model, snapshot, sections, message):
+    instance, _ = model([AIMessage(content="Must not run")])
+
+    with pytest.raises(ValueError, match=message):
+        await analyze_memories(snapshot, sections, [])
+
+    assert instance.seen == [] and backend[0] == backend[1] == backend[2] == []
+
+
+@pytest.mark.asyncio
 async def test_staging_before_search_returns_feedback_and_can_be_corrected(backend, model):
     instance, _ = model([
         call("stage_memories", items=[ITEM]),

@@ -5,6 +5,7 @@ from dataclasses import replace
 from datetime import timedelta
 
 import pytest
+from psycopg2.extras import Json
 
 from services.db import get_connection
 from services.graphs.runtime import dispatch
@@ -115,12 +116,30 @@ def make_due(meeting_id):
 
 
 @pytest.mark.asyncio
-async def test_graph_enriches_new_meeting_once_and_preserves_frozen_snapshot_after_edit(source, feed, agents):
+async def test_graph_enriches_new_meeting_once_and_preserves_frozen_snapshot_after_edit(source, feed, agents, monkeypatch):
+    from services.meetings import speaker_analysis
+
+    inference_calls = []
+
+    async def unexpected_identification(*args, **kwargs):
+        inference_calls.append(True)
+        raise AssertionError("Memory formation must not infer meeting participants")
+
+    monkeypatch.setattr(speaker_analysis, "identify_statements", unexpected_identification)
     first = json.loads(await dispatch("meeting_ingest", {"source": source.name}))
     row = db.list_summaries(source=source.name)["items"][0]
     assert first["memories"]["outcome"] == "done"
     assert len(agents.analyses) == len(agents.publications) == 1
-    frozen = digestion_db.get_record(row["id"])["snapshot"]
+    captured = digestion_db.get_record(row["id"])
+    frozen = captured["snapshot"]
+    snapshot, window, previous = agents.analyses[0]
+    assert snapshot["memory_source"] == captured["memory_artifact"]["input_source"] == "summary"
+    assert window == [{"id": "summary-0", "text": feed.summaries["one"].summary_text}]
+    assert window[0]["text"] != feed.segments[0].text and inference_calls == []
+    assert previous == [] and captured["memory_artifact"]["input_snapshot"] == frozen
+    assert captured["memory_artifact"]["items"][0]["source"] == "summary"
+    assert "attribution_snapshot" not in captured["memory_artifact"]
+    assert "Granola summary (summary-0)" in next(iter(agents.stored.values()))[0]
 
     await dispatch("meeting_ingest", {"source": source.name})
     feed.summaries["one"] = replace(note(), summary_text="Edited later", provider_updated_at=STAMP + timedelta(hours=1))
@@ -162,13 +181,12 @@ async def test_digest_false_captures_transcript_and_leaves_memory_work_for_enabl
 
 @pytest.mark.asyncio
 async def test_timeout_resumes_committed_window_without_reanalysis_or_premature_publication(source, ready, agents, monkeypatch):
-    from psycopg2.extras import Json
-
     from services.meetings import analysis
 
-    segments = [transcript_page("Window " + str(index) + " " + "x" * 32).segments[0].to_dict(index) for index in range(3)]
+    summary = "".join(f"Window {index} " + "x" * 51 for index in range(3))
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("UPDATE meeting_digestions SET transcript = %s WHERE meeting_id = %s", (Json({"segments": segments, "cursor": None}), ready))
+        cur.execute("UPDATE meeting_digestions SET snapshot=jsonb_set(snapshot,'{summary_text}',%s) WHERE meeting_id=%s",
+                    (Json(summary), ready))
     monkeypatch.setattr(enrichment, "WINDOW_CHARS", 60)
     monkeypatch.setattr(enrichment, "AGENT_SECONDS", 0.15)
     original = agents.analyze
@@ -187,6 +205,12 @@ async def test_timeout_resumes_committed_window_without_reanalysis_or_premature_
     first_id = record["memory_artifact"]["items"][0]["id"]
     assert record["memory_artifact"]["offset"] == 1 and record["memory_attempts"] == 0
     assert record["claim_owner"] is None and agents.publications == []
+    assert record["memory_artifact"]["input_snapshot"]["summary_text"] == summary
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE meeting_summaries SET summary_text='Updated live summary',revision=revision+1 WHERE id=%s", (ready,))
+        cur.execute("UPDATE meeting_digestions SET snapshot=jsonb_set(snapshot,'{summary_text}',%s) WHERE meeting_id=%s",
+                    (Json("Updated capture context"), ready))
 
     monkeypatch.setattr(analysis, "analyze_memories", original)
     monkeypatch.setattr(enrichment, "AGENT_SECONDS", 10)
@@ -196,8 +220,39 @@ async def test_timeout_resumes_committed_window_without_reanalysis_or_premature_
         assert run.memory_report["outcome"] == "done"
     record = digestion_db.get_record(ready)
     assert record["memory_artifact"]["offset"] == 3
-    assert [call[1][0]["id"] for call in agents.analyses] == ["segment-0", "segment-1", "segment-2"]
+    assert [call[1][0]["id"] for call in agents.analyses] == ["summary-0", "summary-1", "summary-2"]
+    assert all(call[0]["summary_text"] == summary and call[0]["memory_source"] == "summary" for call in agents.analyses)
+    assert "".join(call[1][0]["text"] for call in agents.analyses) == summary
+    assert all(item["source"] == "summary" for item in record["memory_artifact"]["items"])
     assert agents.publications[0] == first_id and len(agents.stored) == 3
+
+
+@pytest.mark.asyncio
+async def test_unmarked_legacy_checkpoint_finishes_transcript_without_changing_publication(source, ready, agents):
+    legacy = {"id": "6b379f2c-93c9-4bec-b5a9-277e3aa13bf0", "content": "Legacy first decision", "kind": "decision",
+              "tags": ["product"], "evidence": [{"segment_id": "segment-0", "quote": "Legacy transcript first."}]}
+    artifact = {"version": 1, "offset": 1, "items": [legacy], "published_ids": [],
+                "created_at": "2026-01-01T00:00:00+00:00", "reason": ""}
+    segments = [{"id": f"segment-{index}", "text": text, "speaker": {}}
+                for index, text in enumerate(["Legacy transcript first.", "Legacy transcript second."])]
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE meeting_digestions SET transcript=%s,memory_artifact=%s WHERE meeting_id=%s",
+                    (Json({"segments": segments, "cursor": None}), Json(artifact), ready))
+
+    async with enrichment.DigestionRun(source.name) as run:
+        await run.prepare()
+        await run.generate_memories()
+        assert run.memory_report["outcome"] == "done"
+
+    saved = digestion_db.get_record(ready)
+    assert len(agents.analyses) == 1 and agents.analyses[0][1] == [segments[1]]
+    assert "memory_source" not in agents.analyses[0][0]
+    assert saved["memory_artifact"]["items"][0] == legacy
+    assert "input_source" not in saved["memory_artifact"]
+    assert all("source" not in item for item in saved["memory_artifact"]["items"])
+    original = f"Legacy first decision\n\nMeeting source: {saved['snapshot']['source_url']}\nEvidence: segment-0"
+    assert agents.stored[legacy["id"]][0] == original
+    assert agents.publications[0] == legacy["id"] and len(agents.stored) == 2
 
 
 @pytest.mark.asyncio
@@ -219,12 +274,16 @@ async def test_receipt_failure_retries_frozen_publication_without_another_agent_
     assert not first["success"] and "RuntimeError" in first["error"]
     assert record["memory_artifact"]["offset"] == 1 and record["memory_artifact"]["published_ids"] == []
     assert record["memory_attempts"] == 1 and record["claim_owner"] is None
+    assert record["memory_artifact"]["input_source"] == "summary"
+    assert record["memory_artifact"]["items"][0]["source"] == "summary"
+    first_publication = copy.deepcopy(agents.stored)
     assert "private generated text" not in first["error"] + caplog.text
 
     make_due(ready)
     second = await execute_job(scheduled)
     assert second["success"] and len(agents.analyses) == 1
     assert len(agents.stored) == 1 and agents.publications == agents.publications[:1] * 2
+    assert agents.stored == first_publication
     assert memory_db.get_memories(ready)["status"] == "done"
     executions, total = list_executions_for_job(scheduled["id"])
     assert total == 2 and {row["status"] for row in executions} == {"failed", "success"}

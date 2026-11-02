@@ -65,10 +65,10 @@ export function MeetingMemories({ meetingId, refreshVersion, onState, active = t
                 {memory.evidence.map((evidence, index) => (
                   <blockquote key={`${evidence.segment_id}-${index}`}>
                     <p style={{ whiteSpace: 'pre-wrap' }}>{evidence.quote}</p>
-                    <cite className="text-muted-sm">Transcript {evidence.segment_id}</cite>
+                    <cite className="text-muted-sm">{memory.source === 'summary' ? 'Granola summary ·' : 'Transcript'} {evidence.segment_id}</cite>
                   </blockquote>
                 ))}
-                <a href="#meeting-transcript">View transcript</a>
+                <a href={memory.source === 'summary' ? '#meeting-summary' : '#meeting-transcript'}>{memory.source === 'summary' ? 'View summary' : 'View transcript'}</a>
               </details>
             </article>
           ))}

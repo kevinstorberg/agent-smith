@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -13,6 +14,7 @@ from services.meetings.participants import speaker_key
 from services.meetings.types import TranscriptSegment
 from tests.test_meeting_memory_flow import agents as agents, feed as feed, make_due, ready as ready
 from tests.test_meeting_sync import source as source
+from tests.test_meeting_transcript_capture import enroll
 
 
 @pytest.mark.asyncio
@@ -70,7 +72,10 @@ async def test_requested_jobs_run_on_next_tick_and_keep_separate_eligibility(sou
 
 
 @pytest.mark.asyncio
-async def test_requested_old_meeting_drains_across_scheduler_ticks_without_replaying_checkpoints(source, ready, agents, monkeypatch):
+async def test_requested_old_meeting_drains_across_scheduler_ticks_without_replaying_checkpoints(source, ready, feed, agents, monkeypatch):
+    sections = [f"Synthetic decision {index}. " for index in range(3)]
+    feed.summaries["one"] = replace(feed.summaries["one"], summary_text="".join(sections))
+    assert enroll(source, feed.summaries["one"]) == ready
     owner = "synthetic-window-setup"
     assert digestion_db.claim_digestion([(source.provider, source.account_key)], owner)
     digestion_db.save_capture(ready, owner, digestion_db.get_context(ready), {"segments": [
@@ -78,13 +83,14 @@ async def test_requested_old_meeting_drains_across_scheduler_ticks_without_repla
     ]}, complete=True)
     digestion_db.release(ready, owner)
     management_db.request_processing(ready)
+    monkeypatch.setattr(enrichment, "WINDOW_CHARS", len(sections[0]))
     monkeypatch.setattr(enrichment, "WINDOW_SEGMENTS", 1)
     monkeypatch.setattr(enrichment, "AGENT_SECONDS", 0.1)
     blocked = set()
 
     async def bounded_window(snapshot, window, previous, **kwargs):
         segment = window[0]["id"]
-        if segment != "segment-0" and segment not in blocked:
+        if segment != "summary-0" and segment not in blocked:
             blocked.add(segment)
             await asyncio.Event().wait()
         return await agents.analyze(snapshot, window, previous, **kwargs)
@@ -103,7 +109,9 @@ async def test_requested_old_meeting_drains_across_scheduler_ticks_without_repla
         record = digestion_db.get_record(ready)
         assert record["memory_artifact"]["offset"] == offset and record["memory_attempts"] == 0
     assert record["memory_status"] == "done" and len(agents.publications) == 3
-    assert [call[1][0]["id"] for call in agents.analyses] == ["segment-0", "segment-1", "segment-2"]
+    assert [call[1][0]["id"] for call in agents.analyses] == ["summary-0", "summary-1", "summary-2"]
+    assert [call[1][0]["text"] for call in agents.analyses] == sections
+    assert record["memory_artifact"]["input_snapshot"]["summary_text"] == "".join(sections)
     await scheduler._tick()
     assert len(runs) == 3
 

@@ -40,7 +40,8 @@ def test_compact_and_all_public_stage_readers_share_characterization_matrix(clie
     assert data["transcript"]["status"] == ("not_imported" if transcript is None else "capturing" if transcript == "pending" and running else transcript)
     expected_generation = "not_imported" if transcript is None else "done" if status == "done" else "blocked" if transcript != "ready" else "running" if running else status
     assert data["memories"]["status"] == data["profiles"]["status"] == expected_generation
-    assert data["speakers"]["status"] == ("not_imported" if transcript is None else "running" if status == "pending" and running else status)
+    assert data["speakers"]["status"] == ("not_imported" if transcript is None else "disabled")
+    assert data["speakers"]["error_type"] is None and data["speakers"]["progress"]["next_attempt_at"] is None
     full_transcript = digestion_db.get_transcript(meeting_id)
     assert data["transcript"] == {key: full_transcript[key] for key in ("status", "total", "error_type", "captured_at")}
     for name in ("memories", "profiles"):
@@ -54,7 +55,7 @@ def test_compact_and_all_public_stage_readers_share_characterization_matrix(clie
     assert set(data) == {"transcript", "speakers", "memories", "profiles", "edit_lock_reason"}
 
 
-def test_ready_transcript_does_not_hide_a_speaker_failure_before_any_statement_was_reviewed(client, saved):
+def test_retired_inference_has_no_queued_retry_or_error_even_when_historical_state_failed(client, saved):
     meeting_id = saved[1][0]["id"]
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("""UPDATE meeting_digestions SET transcript_status='ready',transcript='{"segments":[]}'::jsonb,
@@ -62,7 +63,7 @@ def test_ready_transcript_does_not_hide_a_speaker_failure_before_any_statement_w
             WHERE meeting_id=%s""", (meeting_id,))
     state = client.get(f"/api/meetings/{meeting_id}/processing").json()
     assert state["transcript"]["status"] == "ready"
-    assert state["speakers"]["status"] == "failed" and state["speakers"]["error_type"] == "SpeakerAnalysisError"
+    assert state["speakers"]["status"] == "disabled" and state["speakers"]["error_type"] is None
     assert state["speakers"]["progress"]["processed_units"] == 0
 
 

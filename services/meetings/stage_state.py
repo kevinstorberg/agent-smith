@@ -46,9 +46,8 @@ def generation(row: dict, stage: str) -> dict:
 
 
 def speakers(row: dict) -> dict:
-    status = row.get("speaker_status") or "not_imported"
-    return {"status": "running" if status == "pending" and row.get("memory_running") else status,
-            "error_type": row.get("speaker_error"), "progress": progress(row, "speaker")}
+    return {"status": "disabled" if row.get("speaker_status") else "not_imported",
+            "error_type": None, "progress": {**progress(row, "speaker"), "next_attempt_at": None}}
 
 
 def edit_lock(row: dict) -> str | None:
@@ -57,6 +56,4 @@ def edit_lock(row: dict) -> str | None:
     if row.get("memory_running"):
         if row.get("transcript_status") == "pending":
             return "capturing_transcript"
-        if row.get("speaker_status") == "pending":
-            return "identifying_participants"
     return None

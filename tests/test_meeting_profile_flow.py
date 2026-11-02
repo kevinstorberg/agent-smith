@@ -148,7 +148,7 @@ async def test_cancellation_between_nodes_keeps_memory_done_and_releases_lease(s
 
 
 @pytest.mark.asyncio
-async def test_profile_windows_resume_without_repeating_memory_stage(source, people, agents, profiler, monkeypatch):
+async def test_profile_windows_resume_without_repeating_summary_memory_stage(source, people, agents, profiler, monkeypatch):
     from services.meetings import profile_analysis
     from services.personas import service as persona_service
 
@@ -168,12 +168,15 @@ async def test_profile_windows_resume_without_repeating_memory_stage(source, peo
     row = digestion_db.get_record(meeting(source))
     assert first["profiles"]["outcome"] == "continued"
     assert row["profile_artifact"]["offset"] == 1 and row["profile_attempts"] == 0
-    assert len(agents.analyses) == 2
+    assert len(agents.analyses) == 1
+    assert agents.analyses[0][0]["memory_source"] == "summary"
+    assert agents.analyses[0][1] == [{"id": "summary-0", "text": people.summaries["one"].summary_text}]
+    assert row["memory_status"] == "done" and row["memory_artifact"]["offset"] == 1
     monkeypatch.setattr(enrichment, "AGENT_SECONDS", 10)
     monkeypatch.setattr(persona_service, "AGENT_SECONDS", 10)
     monkeypatch.setattr(profile_analysis, "analyze_profiles", original)
     await ingest_and_profile({"source": source.name})
-    assert len(agents.analyses) == 2 and len(calls) == 2
+    assert len(agents.analyses) == 1 and len(calls) == 2
     assert [call["window"][0]["id"] for call in calls] == ["segment-0", "segment-1"]
     assert digestion_db.get_record(meeting(source))["profile_status"] == "done"
 
