@@ -1301,6 +1301,8 @@ pre {
 .processing-progress { margin-top: 8px; }
 .management-form textarea,
 .profile-detail textarea { resize: vertical; }
+.memory-page { min-width: 0; overflow-wrap: anywhere; }
+.memory-page .tag { max-width: 100%; }
 .memory-page .search-bar { flex-wrap: wrap; align-items: center; }
 .memory-page .search-bar input:not([type="checkbox"]):not([type="radio"]) { min-width: 0; flex: 1 1 160px; }
 
