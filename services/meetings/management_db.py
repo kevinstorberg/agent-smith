@@ -284,9 +284,9 @@ def update_participants(meeting_id: str, expected_revision: int, participants: l
 
 
 def request_processing(meeting_id: str) -> dict:
-    from services.meetings import manual_stage
+    from services.meetings import manual_stage, memory_db
 
-    with _editable(meeting_id, allow_running=True) as (cur, _, digestion):
+    with _editable(meeting_id, allow_running=True) as (cur, meeting, digestion):
         if digestion and digestion["running"]:
             return {"status": "running"}
         if digestion and digestion["transcript_status"] == "deleted":
@@ -296,7 +296,12 @@ def request_processing(meeting_id: str) -> dict:
         digestion_db.enroll(cur, meeting_id)
         for stage in ("profile", "memory"):
             if digestion and digestion[stage + "_status"] == "failed":
-                manual_stage.resume_stage(cur, digestion, stage)
+                if stage == "memory" and digestion["transcript_status"] != "ready":
+                    memory_db.restart_memory(cur, digestion, meeting, control=None, capture_pending=True)
+                else:
+                    resumed = manual_stage.resume_stage(cur, digestion, stage)
+                    if stage == "memory" and not resumed:
+                        memory_db.restart_memory(cur, digestion, meeting, control=None)
                 cur.execute("SELECT * FROM meeting_digestions WHERE meeting_id=%s", (meeting_id,))
                 digestion = dict(cur.fetchone())
         cur.execute(

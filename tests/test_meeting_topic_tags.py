@@ -8,7 +8,7 @@ from psycopg2.extras import Json
 
 from services.db import get_connection
 from services.graphs.runtime import dispatch
-from services.meetings import analysis, digestion_db, labels_db
+from services.meetings import analysis, digestion_db, enrichment, labels_db, memory_pass
 from services.memory import db, server
 from services.memory.backends import get_backend
 from tests.test_meeting_memory_agent import call, model as model
@@ -90,6 +90,37 @@ async def test_legacy_checkpoint_replays_raw_tags_after_lost_receipt_without_ano
     with pytest.raises(db.MemoryConflictError):
         db.publish(memory_id, content, repo=record["snapshot"].get("project"), tags=["decision"],
                    created_at=CREATED, source_type="meeting", source_id=ready)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("boundary", ["incomplete", "hash_mismatch", "changed_capture", "missing_context"])
+async def test_legacy_checkpoint_without_total_needs_proven_completed_capture_before_publication(source, ready, monkeypatch, boundary):
+    record = digestion_db.get_record(ready)
+    item = {"id": str(uuid4()), "content": "An uncertain old output", "kind": "decision",
+            "evidence": [{"segment_id": "segment-0", "quote": record["transcript"]["segments"][0]["text"]}]}
+    artifact = {"version": 1, "offset": 0 if boundary == "incomplete" else len(record["transcript"]["segments"]),
+                "items": [item], "published_ids": [], "created_at": CREATED, "reason": ""}
+    if boundary == "changed_capture":
+        record["transcript"]["segments"][0]["text"] += " A changed saved capture."
+    if boundary == "missing_context":
+        record["snapshot"].pop("source_url")
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE meeting_digestions SET memory_artifact=%s,transcript=%s,snapshot=%s,transcript_hash=%s WHERE meeting_id=%s",
+            (Json(artifact), Json(record["transcript"]), Json(record["snapshot"]),
+             "mismatched-hash" if boundary == "hash_mismatch" else record["transcript_hash"], ready))
+    assert not memory_pass.publication_complete(digestion_db.get_record(ready), artifact)
+    async def no_analysis(*args, **kwargs):
+        pytest.fail("An unproven legacy checkpoint must never invoke the memory model")
+    def no_publication(*args, **kwargs):
+        pytest.fail("An unproven legacy checkpoint must never publish outputs")
+    monkeypatch.setattr(analysis, "analyze_memories", no_analysis)
+    monkeypatch.setattr(db, "publish", no_publication)
+    async with enrichment.DigestionRun(source.name) as run:
+        await run.prepare()
+        await run.generate_memories()
+        assert run.memory_report["outcome"] == "failed"
+        assert run.memory_report["error_type"] == "SummaryMemoryRetryRequired"
+    assert digestion_db.get_record(ready)["memory_artifact"]["published_ids"] == []
 
 
 @pytest.mark.asyncio

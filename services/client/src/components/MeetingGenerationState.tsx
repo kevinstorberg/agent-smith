@@ -1,5 +1,6 @@
 import type { MeetingGeneration } from '../api';
 import { MeetingGenerationProgress } from './MeetingGenerationProgress';
+import { MEMORY_RESTART_HELP } from '../utils/memoryRetry';
 
 interface Props {
   result: MeetingGeneration;
@@ -22,7 +23,7 @@ export function MeetingGenerationState({ result, output, blockedMessage, retryin
         <div>
           <p className="text-muted-sm">{subject} failed.</p>
           <button className="btn" onClick={onRetry} disabled={retrying}>{retrying ? 'Queuing...' : 'Retry generation'}</button>
-          <p className="text-muted-sm">Queues another attempt for the next {output === 'memories' ? 'meeting' : 'persona'} job run.</p>
+          <p className="text-muted-sm">{output === 'memories' ? MEMORY_RESTART_HELP : 'Queues another attempt for the next persona job run.'}</p>
           {retryFailed && <p role="alert">Could not queue another attempt. Try again.</p>}
         </div>
       )}

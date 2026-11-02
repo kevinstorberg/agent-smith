@@ -15,10 +15,10 @@ beforeEach(() => { vi.clearAllMocks(); vi.mocked(api.meetings.process).mockResol
 it('shows checkpoint progress and queues a resume without claiming staged candidates are published', async () => {
   renderWithProviders(<MeetingProcessing meetingId="meeting-id" transcript={transcript} memories={memories} personas={personas} onChanged={changed} />);
   expect(screen.getByRole('progressbar', { name: 'Memory analysis progress' })).toHaveValue(100);
-  expect(screen.getByText('100 of 300 source sections analyzed')).toBeInTheDocument();
+  expect(screen.getByText('100 of 300 summary sections analyzed')).toBeInTheDocument();
   expect(screen.getByText('8 candidates saved · 0 memories published')).toBeInTheDocument();
-  expect(screen.getByText(/completed sections will not be repeated/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Resume unfinished' }));
+  expect(screen.getByText('Automatic processing continues from its saved summary progress.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Continue processing' }));
   await waitFor(() => expect(api.meetings.process).toHaveBeenCalledWith('meeting-id'));
   expect(changed).toHaveBeenCalledTimes(1);
 });
@@ -29,6 +29,7 @@ it('keeps persona state independent when memories fail and allows a memory-only 
   fireEvent.click(screen.getByRole('button', { name: 'Retry memories' }));
   await waitFor(() => expect(api.meetings.retryMemories).toHaveBeenCalledWith('meeting-id'));
   expect(api.meetings.retryProfiles).not.toHaveBeenCalled();
+  expect(await screen.findByRole('status')).toHaveTextContent('Memory retry queued. Restart from the beginning using the saved Granola summary.');
   expect(screen.getByText(/run independently/)).toBeInTheDocument();
 });
 
@@ -48,7 +49,7 @@ it('respects parent editing and unread status for stage retry buttons', () => {
 
 it('allows processing and memory retries after transcript capture without a speaker stage', async () => {
   renderWithProviders(<MeetingProcessing meetingId="meeting-id" transcript={transcript} memories={{ ...memories, status: 'failed' }} personas={{ ...personas, status: 'done' }} onChanged={changed} />);
-  expect(screen.getByRole('button', { name: 'Resume unfinished' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Continue processing' })).toBeEnabled();
   expect(screen.getByRole('button', { name: 'Reanalyze completed...' })).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: 'Retry memories' }));
   await waitFor(() => expect(api.meetings.retryMemories).toHaveBeenCalledWith('meeting-id'));
@@ -72,4 +73,14 @@ it('shows only current workflows and keeps completed processing complete', () =>
   expect(screen.queryByText('Speaker identification')).not.toBeInTheDocument();
   expect(screen.queryByText(/statements reviewed|Next eligible attempt/)).not.toBeInTheDocument();
   expect(api.meetings.process).not.toHaveBeenCalled();
+});
+
+it('keeps profile-only retry notices about preserved work and never describes a memory restart', async () => {
+  vi.mocked(api.meetings.retryProfiles).mockResolvedValue({ success: true });
+  renderWithProviders(<MeetingProcessing meetingId="meeting-id" transcript={transcript} memories={{ ...memories, status: 'done' }} personas={{ ...personas, status: 'failed' }} onChanged={changed} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Retry profiles' }));
+  await waitFor(() => expect(api.meetings.retryProfiles).toHaveBeenCalledWith('meeting-id'));
+  expect(await screen.findByRole('status')).toHaveTextContent('Retry queued. Completed work is preserved.');
+  expect(api.meetings.retryMemories).not.toHaveBeenCalled();
+  expect(screen.queryByText(/Restart from the beginning/)).not.toBeInTheDocument();
 });

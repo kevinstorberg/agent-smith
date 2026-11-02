@@ -12,7 +12,7 @@ from psycopg2.extras import Json
 from services.api.routers.meetings import router
 from services.db import get_connection
 from services.graphs.runtime import dispatch
-from services.meetings import digestion_db, management_db, speaker_analysis, speaker_db
+from services.meetings import digestion_db, management_db, memory_db, speaker_analysis, speaker_db
 from services.meetings.participants import meeting_participants, speaker_key
 from services.meetings.speaker_analysis import identify_statements as real_identify
 from services.meetings.types import TranscriptSegment
@@ -212,15 +212,18 @@ def test_stale_statement_assignment_can_be_removed_after_transcript_changes(read
 
 
 @pytest.mark.asyncio
-async def test_manual_statement_snapshot_reaches_memory_even_when_auto_mapping_does_not_change(ready, source, agents):
+async def test_manual_statement_snapshot_is_retained_without_becoming_memory_analysis_input(ready, source, agents):
     row = digestion_db.get_record(ready)
     segment_id = row["transcript"]["segments"][0]["id"]
     management_db.update_participants(ready, 0, [{"name": "Manually identified", "segment_id": segment_id}], row["transcript_hash"])
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("UPDATE meeting_digestions SET speaker_status='pending',memory_artifact=%s WHERE meeting_id=%s",
+        cur.execute("UPDATE meeting_digestions SET speaker_status='pending',memory_status='failed',memory_artifact=%s WHERE meeting_id=%s",
                     (Json(legacy_memory_artifact()), ready))
+    memory_db.retry_memories(ready)
     await dispatch("meeting_ingest", {"source": source.name})
-    assert agents.analyses[0][1][0]["effective_speaker"]["display_name"] == "Manually identified"
+    assert agents.analyses[0][0]["memory_source"] == "summary"
+    assert all(section["id"].startswith("summary-") and "effective_speaker" not in section for section in agents.analyses[0][1])
+    assert "Manually identified" not in repr(agents.analyses)
     row = digestion_db.get_record(ready)
     assert row["participant_snapshot"][0]["segment_id"] == segment_id and row["participants_revision"] == 1
 
@@ -367,17 +370,20 @@ async def test_unknown_profile_id_does_not_read_or_expand_identity_catalog(model
 
 
 @pytest.mark.asyncio
-async def test_canonical_memory_identity_is_frozen_across_rename_and_resume(ready, source, agents, monkeypatch):
+async def test_summary_memory_input_is_independent_of_canonical_rename_during_continuation(ready, source, agents, monkeypatch):
     from psycopg2.extras import Json
 
     from services.meetings import analysis, enrichment, profile_db
 
     person = profile_db.create_profile("Original canonical name " + uuid4().hex)
-    segments = [TranscriptSegment(f"Agreement {index}", {"source": "speaker", "attribution": "them"}).to_dict(index) for index in range(2)]
+    segments = digestion_db.get_record(ready)["transcript"]["segments"]
+    summary = "Summary part 0.Summary part 1."
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("UPDATE meeting_digestions SET transcript=%s,memory_artifact=%s WHERE meeting_id=%s",
-            (Json({"segments": segments}), Json(legacy_memory_artifact()), ready))
+        cur.execute("UPDATE meeting_digestions SET memory_status='failed',memory_artifact=%s WHERE meeting_id=%s",
+            (Json(legacy_memory_artifact()), ready))
+        cur.execute("UPDATE meeting_summaries SET summary_text=%s,revision=revision+1 WHERE id=%s", (summary, ready))
     management_db.update_participants(ready, 0, [{"name": "Nickname", "profile_id": person["id"], "speaker_key": speaker_key(segments[0]["speaker"])}])
+    memory_db.retry_memories(ready)
     monkeypatch.setattr(enrichment, "WINDOW_CHARS", 15)
     monkeypatch.setattr(enrichment, "AGENT_SECONDS", 0.15)
 
@@ -393,15 +399,19 @@ async def test_canonical_memory_identity_is_frozen_across_rename_and_resume(read
             await run.generate_memories()
             assert run.memory_report["outcome"] == "continued"
         artifact = digestion_db.get_record(ready)["memory_artifact"]
-        assert artifact["offset"] == 1 and "summary_text" not in artifact["attribution_snapshot"]
+        assert artifact["offset"] == 1 and artifact["input_snapshot"]["summary_text"] == summary
+        assert "attribution_snapshot" not in artifact and "attribution_identities" not in artifact
         profile_db.update_metadata(person["id"], person["revision"], display_name="Renamed canonical person")
         monkeypatch.setattr(analysis, "analyze_memories", agents.analyze)
         async with enrichment.DigestionRun(source.name) as run:
             await run.prepare()
             await run.generate_memories()
             assert run.memory_report["outcome"] == "done"
-        assert [call[1][0]["effective_speaker"]["display_name"] for call in agents.analyses] == [person["display_name"], person["display_name"]]
-        assert all(call[1][0]["effective_speaker"]["profile_id"] == person["id"] for call in agents.analyses)
+        assert [call[1][0]["id"] for call in agents.analyses] == ["summary-0", "summary-1"]
+        assert all(call[0]["memory_source"] == "summary" and call[0]["summary_text"] == summary for call in agents.analyses)
+        assert all("effective_speaker" not in section for call in agents.analyses for section in call[1])
+        assert person["display_name"] not in repr(agents.analyses) and "Renamed canonical person" not in repr(agents.analyses)
+        assert profile_db.get_profile(person["id"])["display_name"] == "Renamed canonical person"
     finally:
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM participant_profiles WHERE id=%s", (person["id"],))

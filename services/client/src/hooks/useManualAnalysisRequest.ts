@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router';
 import { api, ApiError } from '../api';
 import type { MeetingAnalysisInput, MeetingAnalysisReceipt } from '../api';
 import { usePolling } from './usePolling';
+import { hasUnfinishedMemory } from '../utils/memoryRetry';
 
 const MONITOR_MS = 30 * 60 * 1000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -69,6 +70,7 @@ export function useManualAnalysisRequest(onChanged: () => void) {
 
   const mutate = async (id: string, input: MeetingAnalysisInput | null) => {
     if (writing.current !== null) return;
+    const memoryRetry = !input && receipt !== null && hasUnfinishedMemory(receipt);
     const epoch = ++operation.current;
     const viewId = liveId.current;
     const current = () => mounted.current && operation.current === epoch && liveId.current === viewId;
@@ -91,7 +93,7 @@ export function useManualAnalysisRequest(onChanged: () => void) {
           setNotice(`${error.message} Review the updated meeting selection before confirming again.`);
           onChangedRef.current();
         } else setNotice('The request result could not be read. Retry this same request to check whether it was accepted; it will not create another analysis pass.');
-      } else setNotice(`${error instanceof Error ? error.message : 'Could not resume this analysis.'} Saved progress is retained.`);
+      } else setNotice(`${error instanceof Error ? error.message : memoryRetry ? 'Could not retry memory generation.' : 'Could not resume this analysis.'} ${memoryRetry ? 'Published memories are kept.' : 'Saved progress is retained.'}`);
     } finally {
       if (current()) { writing.current = null; setSaving(false); }
     }

@@ -25,12 +25,11 @@ def test_summary_windows_freeze_the_complete_input_and_exclude_transcript(monkey
         enrichment.memory_input(record, artifact)
 
 
-def test_unmarked_checkpoint_keeps_its_transcript_input():
+def test_unmarked_checkpoint_cannot_supply_transcript_input():
     record = {"snapshot": {"summary_text": "Summary."},
               "transcript": {"segments": [{"id": "segment-7", "text": "Original transcript evidence."}]}}
-    snapshot, sections = enrichment.memory_input(record, {"version": 1, "offset": 1})
-    assert snapshot == record["snapshot"]
-    assert sections == record["transcript"]["segments"]
+    with pytest.raises(ValueError, match="Retry memories"):
+        enrichment.memory_input(record, {"version": 1, "offset": 1})
 
 
 def test_whitespace_only_summary_chunks_do_not_require_an_agent_call(monkeypatch):
@@ -45,7 +44,7 @@ def test_whitespace_only_summary_chunks_do_not_require_an_agent_call(monkeypatch
 @pytest.mark.parametrize("source,summary,message", [
     ("summary", "  ", "nonblank saved Granola summary"),
     ("summary", None, "nonblank saved Granola summary"),
-    ("unknown", "Summary", "Unsupported meeting memory input source"),
+    ("unknown", "Summary", "Retry memories"),
 ])
 def test_invalid_memory_source_fails_before_extraction(source, summary, message):
     with pytest.raises(ValueError, match=message):

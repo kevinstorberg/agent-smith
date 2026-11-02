@@ -27,6 +27,15 @@ function receipt(status: MeetingAnalysisReceipt['status'] = 'queued'): MeetingAn
   return { request_id: RID, scope: 'profiles', target_profile_id: PID, created_at: '2026-10-30T12:00:00Z', updated_at: '2026-10-30T12:00:00Z', status,
     items: [{ meeting_id: MID, title: candidate.title, stages: { profile: { status, error_type: null, progress, job_id: 42, job_name: 'Personas' } } }] };
 }
+function memoryReceipt(memoryStatus: MeetingAnalysisReceipt['status'], profileStatus?: MeetingAnalysisReceipt['status']): MeetingAnalysisReceipt {
+  const base = receipt('failed');
+  const profileStage = base.items[0].stages.profile!;
+  return { ...base, scope: profileStatus ? 'both' : 'memories', target_profile_id: null,
+    items: [{ ...base.items[0], stages: {
+      ...(profileStatus ? { profile: { ...profileStage, status: profileStatus, progress: { ...progress, processed_units: 23 } } } : {}),
+      memory: { ...profileStage, status: memoryStatus, job_id: 43, job_name: 'Meetings', progress: { ...progress, processed_units: 30 }, error_type: memoryStatus === 'failed' ? 'ModelCallTimeoutError' : null },
+    } }] };
+}
 const changed = vi.fn();
 function Navigation() {
   const location = useLocation(); const navigate = useNavigate();
@@ -101,9 +110,9 @@ it('caps selection at ten explicit meetings and never expands it to all search r
 it('separates target-only profiles from full-meeting memories when both outputs are selected', async () => {
   renderReview(); await open(); await screen.findByRole('checkbox', { name: 'Select Roadmap discussion' });
   fireEvent.change(screen.getByRole('combobox', { name: 'Analyze' }), { target: { value: 'both' } });
-  expect(screen.getByText('Profiles update only Alex. Memories capture useful information from each full meeting.')).toBeVisible();
+  expect(screen.getByText("Profiles update only Alex. Memories use each meeting's saved Granola summary.")).toBeVisible();
   await selectAndReview();
-  expect(screen.getByRole('region', { name: 'Confirm meeting analysis' })).toHaveTextContent('Profiles for Alex · Memories from the full meetings');
+  expect(screen.getByRole('region', { name: 'Confirm meeting analysis' })).toHaveTextContent('Profiles for Alex · Memories from saved Granola summaries');
 });
 
 it('automatically debounces search, resets paging and offers All saved meetings without authorizing anything', async () => {
@@ -169,6 +178,7 @@ it('preselects the exact meeting on its detail view and allows a memory-only sco
   expect(api.meetingAnalysis.candidates).toHaveBeenCalledWith(expect.objectContaining({ meeting_id: MID, related: false }));
   fireEvent.change(screen.getByRole('combobox', { name: 'Analyze' }), { target: { value: 'memories' } });
   fireEvent.click(screen.getByRole('button', { name: 'Review selection' }));
+  expect(screen.getByRole('region', { name: 'Confirm meeting analysis' })).toHaveTextContent('using the selected saved Granola summaries');
   fireEvent.click(screen.getByRole('button', { name: 'Confirm analysis' }));
   const input = vi.mocked(api.meetingAnalysis.request).mock.calls[0][0];
   expect(input.scope).toBe('memories'); expect(input).not.toHaveProperty('target_profile');
@@ -239,6 +249,62 @@ it('resumes a failed receipt with its existing scope and progress rather than st
   await waitFor(() => expect(api.meetingAnalysis.resume).toHaveBeenCalledWith(RID));
   expect(api.meetingAnalysis.request).not.toHaveBeenCalled();
   expect(await screen.findByText('Progress saved')).toBeVisible();
+});
+
+it.each([
+  { memory: 'failed', profile: undefined, label: 'Retry memory generation', restarts: true },
+  { memory: 'failed', profile: 'failed', label: 'Retry unfinished analysis', restarts: true },
+  { memory: 'failed', profile: 'done', label: 'Retry memory generation', restarts: true },
+  { memory: 'done', profile: 'failed', label: 'Resume unfinished analysis', restarts: false },
+] as const)('uses truthful retry wording for unfinished memory=$memory/profile=$profile', async ({ memory, profile: profileStatus, label, restarts }) => {
+  const value = memoryReceipt(memory, profileStatus);
+  vi.mocked(api.meetingAnalysis.progress).mockResolvedValue(value);
+  const continued = structuredClone(value); continued.status = 'continued';
+  for (const item of continued.items) {
+    if (item.stages.memory?.status !== 'done' && item.stages.memory) {
+      item.stages.memory = { ...item.stages.memory, status: 'continued', error_type: null, progress: { ...progress, processed_units: 0 } };
+    }
+    if (item.stages.profile?.status !== 'done' && item.stages.profile) item.stages.profile.status = 'continued';
+  }
+  vi.mocked(api.meetingAnalysis.resume).mockResolvedValue(continued);
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  renderReview({ meeting: true, initial: `/meetings/${MID}?analysis=${RID}` }); await open();
+  const restartHelp = screen.queryByText('Restart from the beginning using the saved Granola summary.');
+  if (restarts) expect(restartHelp).toBeInTheDocument(); else expect(restartHelp).not.toBeInTheDocument();
+  fireEvent.click(await screen.findByRole('button', { name: label }));
+  await waitFor(() => expect(api.meetingAnalysis.resume).toHaveBeenCalledWith(RID));
+  expect(api.meetingAnalysis.request).not.toHaveBeenCalled();
+  expect(confirm).not.toHaveBeenCalled();
+  if (restarts) expect(await screen.findByText('0 of 100 summary sections analyzed')).toBeInTheDocument();
+  if (profileStatus && profileStatus !== 'done') expect(await screen.findByText('23 of 100 transcript sections analyzed')).toBeInTheDocument();
+});
+
+it('does not promise old memory progress after a failed restart request', async () => {
+  vi.mocked(api.meetingAnalysis.progress).mockResolvedValue(memoryReceipt('failed'));
+  vi.mocked(api.meetingAnalysis.resume).mockRejectedValue(new Error('Restart could not be queued'));
+  renderReview({ meeting: true, initial: `/meetings/${MID}?analysis=${RID}` }); await open();
+  fireEvent.click(await screen.findByRole('button', { name: 'Retry memory generation' }));
+  expect(await screen.findByText('Restart could not be queued Published memories are kept.')).toBeInTheDocument();
+  expect(screen.queryByText(/Saved progress is retained|memory checkpoint is kept/)).not.toBeInTheDocument();
+});
+
+it('labels a mixed receipt retry from unfinished memory work across all meetings', async () => {
+  const value = memoryReceipt('done', 'failed');
+  const other = memoryReceipt('failed', 'done').items[0];
+  value.items.push({ ...other, meeting_id: 'c4b8c4d5-e678-4567-89ab-cdef01234567', title: 'Second meeting' });
+  vi.mocked(api.meetingAnalysis.progress).mockResolvedValue(value);
+  renderReview({ meeting: true, initial: `/meetings/${MID}?analysis=${RID}` }); await open();
+  expect(await screen.findByRole('button', { name: 'Retry unfinished analysis' })).toBeInTheDocument();
+  expect(screen.getByText('Restart from the beginning using the saved Granola summary.')).toBeInTheDocument();
+});
+
+it.each(['ManualAnalysisInputChanged', 'ManualAnalysisSuperseded'])('explains memory %s without promising to reuse changed input', async category => {
+  const value = memoryReceipt('failed'); value.items[0].stages.memory!.error_type = category;
+  vi.mocked(api.meetingAnalysis.progress).mockResolvedValue(value);
+  renderReview({ meeting: true, initial: `/meetings/${MID}?analysis=${RID}` }); await open();
+  expect(await screen.findByRole('alert')).toHaveTextContent('Saved Granola summary or meeting context changed. Review the meeting and confirm memory analysis again.');
+  expect(screen.getByRole('alert')).not.toHaveTextContent(/saved progress|transcript|resume/i);
+  expect(screen.getByText(category)).not.toBeVisible();
 });
 
 it.each([

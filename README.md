@@ -349,11 +349,11 @@ stages results backed by exact summary quotations before publication. Large summ
 processed in complete windows without truncation. Meeting details show the generated content,
 exact evidence quotes, processing status and retry action; the same records are available on
 **Memory**. Previously imported meetings can be queued explicitly with **Process meeting**
-on their detail page. Pending work resumes without
-regenerating completed windows or republishing acknowledged memories.
-Existing transcript-based checkpoints finish with their original evidence; new passes use
-summary evidence. Completed memories are preserved. Transcript capture remains a prerequisite
-in this version and continues to supply the separate persona workflow.
+on their detail page. Automatic continuations retain the frozen summary and completed windows.
+**Retry memories** starts again at the beginning using only the current saved Granola summary.
+Existing memories and publication receipts are preserved. Memory generation has no transcript
+fallback. Transcript capture remains a prerequisite in this version and continues to supply
+the separate persona workflow.
 
 The memory agent prioritizes important information, material decisions, risks, blockers and
 explicit action items. A commitment includes the task, owner, due phrase and dependencies
@@ -409,8 +409,10 @@ Meetings jobs; they do not fetch transcripts, change job configuration, or creat
 The confirmation explains normal model costs. Progress links to the jobs and survives reload
 through the analysis request URL. An uncertain submission retries the same frozen request.
 
-**Resume unfinished** retains its analysis and publication checkpoints. Reanalyzing completed
-work requires a new explicit confirmation; scheduled jobs never reopen it automatically.
+Retrying unfinished memory analysis starts from the beginning using the saved Granola summary,
+while keeping existing memories and publication receipts. Profile-only **Resume unfinished**
+retains its analysis checkpoint. Reanalyzing completed work requires a new explicit confirmation;
+scheduled jobs never reopen it automatically.
 Changes to the saved source or speaker assignments invalidate a queued manual review before
 another agent call. A profile review can be confirmed again against the corrected context.
 If a memory review's source changes while publication is unacknowledged, it remains blocked,

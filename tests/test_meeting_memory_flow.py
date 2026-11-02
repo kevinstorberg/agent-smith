@@ -185,6 +185,7 @@ async def test_timeout_resumes_committed_window_without_reanalysis_or_premature_
 
     summary = "".join(f"Window {index} " + "x" * 51 for index in range(3))
     with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE meeting_summaries SET summary_text=%s WHERE id=%s", (summary, ready))
         cur.execute("UPDATE meeting_digestions SET snapshot=jsonb_set(snapshot,'{summary_text}',%s) WHERE meeting_id=%s",
                     (Json(summary), ready))
     monkeypatch.setattr(enrichment, "WINDOW_CHARS", 60)
@@ -228,10 +229,10 @@ async def test_timeout_resumes_committed_window_without_reanalysis_or_premature_
 
 
 @pytest.mark.asyncio
-async def test_unmarked_legacy_checkpoint_finishes_transcript_without_changing_publication(source, ready, agents):
+async def test_unmarked_partial_checkpoint_requires_summary_retry_and_discards_unattempted_transcript_candidates(source, ready, agents):
     legacy = {"id": "6b379f2c-93c9-4bec-b5a9-277e3aa13bf0", "content": "Legacy first decision", "kind": "decision",
               "tags": ["product"], "evidence": [{"segment_id": "segment-0", "quote": "Legacy transcript first."}]}
-    artifact = {"version": 1, "offset": 1, "items": [legacy], "published_ids": [],
+    artifact = {"version": 1, "offset": 1, "total_units": 2, "items": [legacy], "published_ids": [],
                 "created_at": "2026-01-01T00:00:00+00:00", "reason": ""}
     segments = [{"id": f"segment-{index}", "text": text, "speaker": {}}
                 for index, text in enumerate(["Legacy transcript first.", "Legacy transcript second."])]
@@ -242,17 +243,30 @@ async def test_unmarked_legacy_checkpoint_finishes_transcript_without_changing_p
     async with enrichment.DigestionRun(source.name) as run:
         await run.prepare()
         await run.generate_memories()
+        assert run.memory_report["outcome"] == "failed"
+        assert run.memory_report["error_type"] == "SummaryMemoryRetryRequired"
+    assert agents.analyses == agents.publications == []
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE meeting_digestions SET memory_status='failed' WHERE meeting_id=%s", (ready,))
+        cur.execute("UPDATE meeting_summaries SET summary_text='Current saved summary.',revision=revision+1 WHERE id=%s", (ready,))
+    memory_db.retry_memories(ready)
+    reset = digestion_db.get_record(ready)["memory_artifact"]
+    assert reset["items"] == [] and reset["next_item_index"] == 1
+    async with enrichment.DigestionRun(source.name) as run:
+        await run.prepare()
+        await run.generate_memories()
         assert run.memory_report["outcome"] == "done"
 
     saved = digestion_db.get_record(ready)
-    assert len(agents.analyses) == 1 and agents.analyses[0][1] == [segments[1]]
-    assert "memory_source" not in agents.analyses[0][0]
-    assert saved["memory_artifact"]["items"][0] == legacy
-    assert "input_source" not in saved["memory_artifact"]
-    assert all("source" not in item for item in saved["memory_artifact"]["items"])
-    original = f"Legacy first decision\n\nMeeting source: {saved['snapshot']['source_url']}\nEvidence: segment-0"
-    assert agents.stored[legacy["id"]][0] == original
-    assert agents.publications[0] == legacy["id"] and len(agents.stored) == 2
+    assert len(agents.analyses) == 1 and agents.analyses[0][1] == [{"id": "summary-0", "text": "Current saved summary."}]
+    assert agents.analyses[0][0]["memory_source"] == "summary" and agents.analyses[0][2] == []
+    assert saved["memory_artifact"]["input_source"] == "summary"
+    assert len(saved["memory_artifact"]["items"]) == 1 and saved["memory_artifact"]["items"][0]["source"] == "summary"
+    from uuid import uuid5
+
+    new_id = str(uuid5(enrichment._MEMORY_NAMESPACE, f"{ready}:1"))
+    assert saved["memory_artifact"]["items"][0]["id"] == new_id
+    assert agents.publications == [new_id] and legacy["id"] not in agents.stored
 
 
 @pytest.mark.asyncio

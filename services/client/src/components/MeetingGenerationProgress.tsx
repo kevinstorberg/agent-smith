@@ -6,7 +6,11 @@ interface Props {
   output: 'memories' | 'profiles';
 }
 
-function failureSummary(errorType: string, status: MeetingGeneration['status']): string {
+function failureSummary(errorType: string, status: MeetingGeneration['status'], output: Props['output']): string {
+  if (output === 'memories') {
+    const reason = /timeout|timedout|deadline|budgetexpired/i.test(errorType) ? 'The last attempt timed out.' : 'The last attempt could not finish.';
+    return `${reason} Published memories are kept.`;
+  }
   if (/inputchanged|superseded/i.test(errorType)) return 'Meeting context changed. Review the meeting and confirm a fresh analysis request. Existing saved outputs are kept.';
   if (/revisionconflict/i.test(errorType)) return 'The profile changed during analysis. Unfinished work must use the updated profile. Existing saved outputs are kept.';
   const reason = /timeout|timedout|deadline|budgetexpired/i.test(errorType) ? 'The last attempt timed out.' : 'The last attempt could not finish.';
@@ -21,12 +25,12 @@ export function MeetingGenerationProgress({ result, output }: Props) {
     {progress && <>
       {progress.total_units !== null && progress.total_units > 0 && <>
         <progress aria-label={`${output === 'memories' ? 'Memory' : 'Profile'} analysis progress`} max={progress.total_units} value={Math.min(progress.processed_units, progress.total_units)} />
-        <p className="text-muted-sm">{progress.processed_units} of {progress.total_units} {output === 'memories' ? 'source' : 'transcript'} sections analyzed</p>
+        <p className="text-muted-sm">{progress.processed_units} of {progress.total_units} {output === 'memories' ? 'summary' : 'transcript'} sections analyzed</p>
       </>}
       <p className="text-muted-sm">{progress.staged_count} candidates saved · {progress.saved_count} {output === 'memories' ? 'memories published' : 'profiles updated'}</p>
-      {result.status === 'pending' && progress.processed_units > 0 && <p className="text-muted-sm">Saved progress will resume; completed sections will not be repeated.</p>}
+      {result.status === 'pending' && progress.processed_units > 0 && <p className="text-muted-sm">{output === 'memories' ? 'Automatic processing continues from its saved summary progress.' : 'Saved progress will resume; completed sections will not be repeated.'}</p>}
       {result.status === 'pending' && progress.next_attempt_at && <p className="text-muted-sm">Next eligible attempt: <DateCell date={progress.next_attempt_at} format="long" /></p>}
     </>}
-    {failedAttempt && <p className="text-muted-sm" role="status">{failureSummary(failedAttempt, result.status)}</p>}
+    {failedAttempt && <p className="text-muted-sm" role="status">{failureSummary(failedAttempt, result.status, output)}</p>}
   </div>;
 }

@@ -29,9 +29,12 @@ def scripted(monkeypatch):
 
         async def analyze(self, snapshot, window, previous, *, deadline, validate_context=None):
             self.analyses.append(copy.deepcopy((snapshot, window, previous)))
-            duplicate = {key: value for key, value in previous[-1].items() if key != "id"}
-            duplicate["content"] = "  " + duplicate["content"].upper() + "  "
-            return {"items": [duplicate, {"content": f"New useful fact {len(self.analyses)}", "kind": "fact",
+            duplicates = []
+            if previous:
+                duplicate = {key: value for key, value in previous[-1].items() if key != "id"}
+                duplicate["content"] = "  " + duplicate["content"].upper() + "  "
+                duplicates.append(duplicate)
+            return {"items": [*duplicates, {"content": f"New useful fact {len(self.analyses)}", "kind": "fact",
                 "tags": ["product", "security"], "evidence": [{"segment_id": window[0]["id"], "quote": window[0]["text"]}]}], "reason": ""}
 
         def publish(self, memory_id, content, repo=None, tags=None, *, created_at, source_type=None, source_id=None):
@@ -59,9 +62,13 @@ def scripted(monkeypatch):
     return calls
 
 
-async def memory_pass(source):
+async def memory_pass(source, *, manual=True):
     async with enrichment.DigestionRun(source.name) as run:
-        claimed = await run.prepare_manual()
+        if manual:
+            claimed = await run.prepare_manual()
+        else:
+            await run.prepare()
+            claimed = run.record is not None
         if claimed:
             await run.generate_memories()
         return copy.deepcopy(run.memory_report), run.owner
@@ -91,7 +98,7 @@ async def test_manual_analysis_memory_graph_uses_saved_context_and_preserves_old
     assert [item["id"] for item in artifact["items"]] == original["published_ids"] + [new_id]
     assert artifact["published_ids"] == original["published_ids"] + [new_id]
     assert scripted.publications[0][0] == new_id
-    assert scripted.analyses[0][2] == original["items"]
+    assert scripted.analyses[0][2] == []
     assert artifact["input_source"] == scripted.analyses[0][0]["memory_source"] == "summary"
     assert artifact["input_snapshot"]["summary_text"] == db.get_summary(meeting_id)["summary_text"]
     assert "attribution_snapshot" not in artifact and "attribution_identities" not in artifact
@@ -127,7 +134,8 @@ async def test_manual_analysis_memory_fresh_second_pass_appends_after_prior_ids_
     manual_analysis.request_analysis(second_body)
     pending = digestion_db.get_record(meeting_id)
     assert pending["memory_artifact"]["manual_request_id"] == second_body["request_id"]
-    assert "input_snapshot" not in pending["memory_artifact"] and "input_hash" not in pending["memory_artifact"]
+    assert pending["memory_artifact"]["input_snapshot"]["summary_text"] == "A fresh summary for the second pass"
+    assert pending["memory_artifact"]["input_hash"] != first_row["memory_artifact"]["input_hash"]
     assert manual_analysis.request_analysis(first_body)["status"] == "done"
     assert digestion_db.get_record(meeting_id) == pending
     async with enrichment.DigestionRun(source.name) as run:
@@ -219,7 +227,7 @@ async def test_manual_analysis_memory_source_drift_blocks_paid_work_or_publicati
 
 
 @pytest.mark.asyncio
-async def test_manual_analysis_memory_terminal_failure_and_legacy_retry_keep_checkpoints_and_other_scope(source, target, saved, payload, jobs, scripted, monkeypatch):
+async def test_manual_analysis_memory_terminal_failure_retry_restarts_summary_and_keeps_other_scope(source, target, saved, payload, jobs, scripted, monkeypatch):
     meeting_id = saved(person=target)
     jobs()
     jobs("meeting_ingest")
@@ -241,12 +249,14 @@ async def test_manual_analysis_memory_terminal_failure_and_legacy_retry_keep_che
     assert (await memory_pass(source))[0]["outcome"] == "idle"
     memory_db.retry_memories(meeting_id)
     resumed = digestion_db.get_record(meeting_id)
-    assert resumed["memory_artifact"] == failed["memory_artifact"]
-    assert resumed["manual_analysis"]["memory"]["request_id"] == request["request_id"]
-    assert resumed["manual_analysis"]["memory"]["active"]
+    assert resumed["memory_artifact"]["offset"] == 0
+    assert resumed["memory_artifact"]["input_source"] == "summary"
+    assert resumed["memory_artifact"]["items"] == failed["memory_artifact"]["items"]
+    assert "memory" not in resumed["manual_analysis"]
+    assert "manual_request_id" not in resumed["memory_artifact"]
     assert resumed["manual_analysis"]["profile"] == profile_control
     monkeypatch.setattr(analysis, "analyze_memories", scripted.analyze)
-    assert (await memory_pass(source))[0]["outcome"] == "done"
+    assert (await memory_pass(source, manual=False))[0]["outcome"] == "done"
     assert len(scripted.analyses) == len(scripted.publications) == 1
 
 
@@ -271,7 +281,10 @@ async def test_manual_analysis_memory_cancellation_releases_lease_without_losing
     assert paused["memory_artifact"]["manual_request_id"] == request["request_id"]
     assert scripted.publications == []
     manual_stage.resume_request(request["request_id"])
-    assert digestion_db.get_record(meeting_id)["memory_artifact"] == paused["memory_artifact"]
+    restarted = digestion_db.get_record(meeting_id)["memory_artifact"]
+    assert restarted["offset"] == 0 and restarted["items"] == paused["memory_artifact"]["items"]
+    assert restarted["published_ids"] == paused["memory_artifact"]["published_ids"]
+    assert "vocabulary" not in restarted and "context_labels_revision" not in restarted
     monkeypatch.setattr(analysis, "analyze_memories", scripted.analyze)
     assert (await memory_pass(source))[0]["outcome"] == "done"
     assert len(scripted.analyses) == len(scripted.publications) == 1
