@@ -45,7 +45,7 @@ function AnalysisProgress({ receipt }: { receipt: MeetingAnalysisReceipt }) {
           <p><strong>{STAGES[key]}</strong> · {STATUS[stage.status]}{stage.waiting_for === 'job' ? ' · Waiting for an eligible job' : ''}</p>
           {progress.total_units !== null && progress.total_units > 0 && <>
             <progress aria-label={`${STAGES[key]} analysis progress`} max={progress.total_units} value={Math.min(progress.processed_units, progress.total_units)} />
-            <p className="text-muted-sm">{progress.processed_units} of {progress.total_units} transcript sections analyzed</p>
+            <p className="text-muted-sm">{progress.processed_units} of {progress.total_units} {key === 'memory' ? 'source' : 'transcript'} sections analyzed</p>
           </>}
           <p className="text-muted-sm">{progress.staged_count} candidates saved · {progress.saved_count} {key === 'profile' ? 'profiles updated' : 'memories published'}</p>
           {stage.status === 'continued' && <p className="text-muted-sm">The next run resumes saved progress.</p>}
@@ -126,7 +126,7 @@ function MeetingSelection({ profile, meetingId, notice, onConfirm }: {
       <h4>Review your selection</h4>
       <p><strong>{selection.size} {selection.size === 1 ? 'meeting' : 'meetings'}</strong> · {profile ? `Profiles for ${profile.display_name}${scope === 'both' ? ' · Memories from the full meetings' : ''}` : scopeLabel(scope)}</p>
       <ul>{[...selection.values()].map(item => <li key={item.id}>{item.title || 'Untitled meeting'} · {item.source_name}</li>)}</ul>
-      <p>This starts one new analysis pass using the selected saved transcripts. Your configured models incur normal generation costs.</p>
+      <p>This starts one new analysis pass using the selected saved {scope === 'memories' ? 'Granola summaries' : scope === 'both' ? 'transcripts and Granola summaries' : 'transcripts'}. Your configured models incur normal generation costs.</p>
       <p className="text-muted-sm">Your profile edits stay protected. Existing memories are kept; memory analysis adds new information. Scheduled jobs will not repeat this review.</p>
       <div className="flex-wrap"><button className="btn btn-primary" disabled={!canReview} onClick={submit}>Confirm analysis</button><button className="btn" onClick={() => setReviewing(false)}>Back to selection</button></div>
     </section> : <>

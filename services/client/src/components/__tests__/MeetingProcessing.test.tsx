@@ -15,6 +15,7 @@ beforeEach(() => { vi.clearAllMocks(); vi.mocked(api.meetings.process).mockResol
 it('shows checkpoint progress and queues a resume without claiming staged candidates are published', async () => {
   renderWithProviders(<MeetingProcessing meetingId="meeting-id" transcript={transcript} memories={memories} personas={personas} onChanged={changed} />);
   expect(screen.getByRole('progressbar', { name: 'Memory analysis progress' })).toHaveValue(100);
+  expect(screen.getByText('100 of 300 source sections analyzed')).toBeInTheDocument();
   expect(screen.getByText('8 candidates saved · 0 memories published')).toBeInTheDocument();
   expect(screen.getByText(/completed sections will not be repeated/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Resume unfinished' }));
@@ -45,11 +46,12 @@ it('respects parent editing and unread status for stage retry buttons', () => {
   expect(screen.getByRole('button', { name: 'Retry memories' })).toBeDisabled();
 });
 
-it('blocks reanalysis and retries while speaker identification owns the transcript', () => {
-  renderWithProviders(<MeetingProcessing meetingId="meeting-id" transcript={transcript} speakers={{ status: 'running', error_type: null, progress: memories.progress! }} memories={{ ...memories, status: 'failed' }} personas={{ ...personas, status: 'done' }} onChanged={changed} />);
-  expect(screen.getByRole('button', { name: 'Processing...' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'Reanalyze completed...' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'Retry memories' })).toBeDisabled();
+it('allows processing and memory retries after transcript capture without a speaker stage', async () => {
+  renderWithProviders(<MeetingProcessing meetingId="meeting-id" transcript={transcript} memories={{ ...memories, status: 'failed' }} personas={{ ...personas, status: 'done' }} onChanged={changed} />);
+  expect(screen.getByRole('button', { name: 'Resume unfinished' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Reanalyze completed...' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry memories' }));
+  await waitFor(() => expect(api.meetings.retryMemories).toHaveBeenCalledWith('meeting-id'));
 });
 
 it('shows saved persona progress in the badge and explains its last timeout', () => {
@@ -62,13 +64,12 @@ it('shows saved persona progress in the badge and explains its last timeout', ()
   expect(screen.getByRole('status')).toHaveTextContent('The last attempt timed out. Saved progress is kept.');
 });
 
-it('offers explicit speaker review for a legacy meeting while preserving completed workflows', () => {
-  renderWithProviders(<MeetingProcessing meetingId="meeting-id" transcript={transcript} memories={{ ...memories, status: 'done' }} personas={{ ...personas, status: 'done' }}
-    speakers={{ status: 'legacy', error_type: null, progress: { ...memories.progress!, processed_units: 0, total_units: null, saved_count: 0, next_attempt_at: '2026-10-29T12:00:00Z' } }} onChanged={changed} />);
-  expect(screen.getByRole('link', { name: 'Review speakers' })).toHaveAttribute('href', '#meeting-participants');
+it('shows only current workflows and keeps completed processing complete', () => {
+  renderWithProviders(<MeetingProcessing meetingId="meeting-id" transcript={transcript} memories={{ ...memories, status: 'done' }} personas={{ ...personas, status: 'done' }} onChanged={changed} />);
+  expect(screen.getByRole('button', { name: 'Processing complete' })).toBeDisabled();
+  expect(screen.queryByRole('link', { name: /Speakers:|Review speakers/ })).not.toBeInTheDocument();
   fireEvent.click(screen.getByText('Processing details'));
-  expect(screen.getByText(/This meeting has not had speaker identification/)).toBeVisible();
-  expect(screen.queryByText(/0 of \?/)).not.toBeInTheDocument();
-  expect(screen.queryByText(/Next eligible attempt/)).not.toBeInTheDocument();
+  expect(screen.queryByText('Speaker identification')).not.toBeInTheDocument();
+  expect(screen.queryByText(/statements reviewed|Next eligible attempt/)).not.toBeInTheDocument();
   expect(api.meetings.process).not.toHaveBeenCalled();
 });

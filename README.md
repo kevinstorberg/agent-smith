@@ -188,8 +188,8 @@ environment's `.env.*` file.
 
 The `meeting_ingest` graph imports meeting summaries, selected metadata and complete transcript
 snapshots into PostgreSQL. It uses a configured provider factory; Granola is the first adapter.
-After capture, `identify_participants` uses a small model to resolve individual statements,
-then a tool-calling agent generates reusable memories. The separate `persona` graph
+After capture, a tool-calling agent generates reusable memories from the saved Granola
+summary. Automatic participant inference is disabled. The separate `persona` graph
 reads saved transcripts and develops cumulative Profiles. Each workflow has its own job,
 lease and retry state; failure in one does not block the other. Neither graph creates tickets.
 
@@ -272,7 +272,7 @@ timestamps, revision and source link. Meeting context is shared across devices a
 from the generated memories shown on the Memory page.
 
 Meeting details use **Overview**, **Transcript**, **Memories** and **Profiles** tabs.
-The compact header keeps transcript, speaker, memory and profile status visible in every tab;
+The compact header keeps transcript, memory and profile status visible in every tab;
 expand **Processing details** for progress, failures and retries. Only the active tab loads
 its detailed records. Existing meeting and statement links open the corresponding tab,
 including a single bounded transcript page for a later statement. Participant and label
@@ -290,16 +290,20 @@ unavailable, unsupported and failed captures remain distinct from an empty trans
 summary is never presented as a transcript. Anonymous or uncertain speakers stay unidentified.
 
 Newly imported meetings also produce memories through a tool-calling agent after their complete
-transcript is ready. The agent searches existing memories, reads every transcript window and
-stages evidence-backed results before publication. Meeting details show the generated content,
+transcript is ready. The agent searches existing memories, reads the frozen Granola summary and
+stages results backed by exact summary quotations before publication. Large summaries are
+processed in complete windows without truncation. Meeting details show the generated content,
 exact evidence quotes, processing status and retry action; the same records are available on
 **Memory**. Previously imported meetings can be queued explicitly with **Process meeting**
 on their detail page. Pending work resumes without
 regenerating completed windows or republishing acknowledged memories.
+Existing transcript-based checkpoints finish with their original evidence; new passes use
+summary evidence. Completed memories are preserved. Transcript capture remains a prerequisite
+in this version and continues to supply the separate persona workflow.
 
 The memory agent prioritizes important information, material decisions, risks, blockers and
 explicit action items. A commitment includes the task, owner, due phrase and dependencies
-when supported by the transcript; missing owners or deadlines are never invented.
+when supported by the summary; missing owners or deadlines are never invented.
 
 Meetings have their own purpose and subject labels, such as `product`, `security`, `paralign`,
 `roadmapping`, `growth` and `operations`. New memory extraction proposes these labels in its
@@ -345,7 +349,8 @@ Select up to ten completed meetings and review the exact selection before confir
 Profile reviews update only the selected person. From a meeting, **Reanalyze completed...**
 offers Profiles, Memories, or both; adding memories from a profile also analyzes the whole
 selected meetings. Memory reviews keep existing memories and publication receipts, adding
-new information. These actions use saved transcripts and the existing eligible Personas and
+new information. New memory passes use saved Granola summaries; profile passes use saved
+transcripts. These actions use the existing eligible Personas and
 Meetings jobs; they do not fetch transcripts, change job configuration, or create another job.
 The confirmation explains normal model costs. Progress links to the jobs and survives reload
 through the analysis request URL. An uncertain submission retries the same frozen request.
@@ -420,25 +425,17 @@ assign them to an existing profile. A shared microphone
 without a distinguishable speaker does not create a person; silent attendees are not profiled.
 No names or email aliases are guessed.
 
-The lightweight identity step works statement by statement: a combined `them` audio channel
-can contain several people. It receives known profile names, nicknames and emails and can search
-for relevant profiles to read their company, role, overview and relationship context in bounded
-replies. It combines that context with owner/attendee details, explicit introductions and nearby
-conversation. Profile context helps resolve identity; attribution still requires transcript evidence.
-High-confidence supported
-assignments become a separate overlay; ambiguous statements remain unknown. Raw transcript
-text and provider labels are unchanged. Human statement assignments take priority over channel
-assignments, provider identities and generated identities.
-Each bounded window checkpoints progress, and the completed overlay publishes atomically.
-Terminal identification failure is visible but permits memory/persona processing with known
-manual/provider identities and unknowns. It never silently selects a larger model.
+The meeting graph does not infer participant identities. Manual assignments, explicit provider
+identities and previously committed attribution overlays remain available; anonymous statements
+stay unidentified. Human statement assignments take priority over channel assignments, provider
+identities and historical generated identities. Raw transcript text and provider labels are unchanged.
 
 In a meeting's **Transcript** tab, use **Participants** to add a name and email or choose an existing profile.
 Once a transcript is available, select its speaker to explicitly attribute that speaker's
 words. Participant additions are stored separately from provider metadata and survive syncs.
 Changed speaker assignments retire the affected earlier profile claims
 from the current view while retaining their evidence and correction history. Participant
-changes wait for capture, identification or persona extraction to finish. Transcript pages retain the raw speaker and show
+changes wait for capture or persona extraction to finish. Transcript pages retain the raw speaker and show
 the effective confirmed identity, linking only to existing canonical profiles. Assignments
 can update unfinished persona work; completed reviews and memories remain complete.
 Known profiles and their verified email aliases appear once with their exact statement and
@@ -447,12 +444,8 @@ provider attendance and other assignments are kept. Unlinked names remain distin
 identity is selected. **Audio channels** can contain more than one person.
 Use **Assign this statement** on a transcript row for a specific utterance, rather than assigning
 every voice in an anonymous channel to one person. Participant edits remain available during
-unrelated memory generation; active capture, identity processing or persona extraction shows
-its specific lock reason. **Identify speakers** explicitly queues an older saved transcript
-through the existing meeting job; it preserves completed memories and reopens profile work
-only when that repair changes identities or a prior manual reassignment requires it.
-Older meetings marked **Not reviewed** have not run speaker identification; resuming other
-unfinished work does not implicitly request it. **Add participant** offers an existing profile
+unrelated memory generation; active capture or persona extraction shows its specific lock reason.
+**Add participant** offers an existing profile
 or a name and optional email. Statement assignment uses the same editor for just the selected quote.
 The meeting's **Profiles** tab lists already-linked profiles even while persona analysis is
 queued or interrupted. Its analysis status separately shows saved progress and the last timeout;
@@ -461,7 +454,7 @@ staged observations do not become new published profiles until the analysis fini
 **Process meeting** explicitly enrolls an older saved meeting or retries its missing stages.
 With compatible jobs running, explicit requests resume on the scheduler's next configured
 poll, including across bounded runs, rather than waiting for each 15-minute interval. Retry
-backoff still applies. The processing card shows transcript sections analyzed, staged candidates,
+backoff still applies. The processing card shows source sections analyzed, staged candidates,
 saved outputs and next eligible attempt. Publication starts after all memory windows finish;
 saved candidates are not yet published memories. This action does not create a job or restore
 a deliberately deleted transcript. Previously imported meetings are not enrolled automatically in bulk.
@@ -488,10 +481,8 @@ the saved-meeting context adapter; Slack context is not implemented. Persona's o
 Assessment refreshes use the profile's saved evidence across connections. Use `profile_id`
 to target one saved profile without transcript extraction. Choose either `profile_id` or `source`.
 
-`MEETING_SPEAKER_MODEL_*` independently configures statement attribution, defaulting to the
-`GPT_OSS_20B` preset through the same Bedrock factory. Its default is low reasoning effort,
-4096 output tokens, a 30-second call bound and zero SDK retries. It inherits the curator's
-credential unless explicitly overridden, while retaining its own small model selection.
+The removed participant-inference stage makes no model calls. Legacy
+`MEETING_SPEAKER_MODEL_*` settings are unused by the meeting graph.
 
 Each graph handles one pending context within a 540-second work budget. Agent stages retain
 their 150-second budget and model calls their 45-second bound. Memory/persona jobs require
@@ -506,8 +497,6 @@ run_graph(type="meeting_ingest", inputs={})
 run_graph(type="persona", inputs={})
 # Synthesize one existing profile from its saved evidence only:
 run_graph(type="persona", inputs={"profile_id": "<profile UUID>"})
-# Resume explicitly queued statement attribution for one saved meeting:
-run_graph(type="meeting_ingest", inputs={"meeting_id": "<meeting UUID>"})
 ```
 
 The optional `source` input restricts an explicitly targeted run to one connection, for

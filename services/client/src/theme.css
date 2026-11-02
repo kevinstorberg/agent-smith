@@ -1409,7 +1409,6 @@ pre {
 .meeting-participants .participant-assignments { margin-top: 0; }
 .meeting-participants .participant-assignments[open] { flex: 1 1 100%; }
 .meeting-participants .participant-assignments > .participant-list { margin-top: 12px; }
-.meeting-participants .participant-review > p { margin: 0; }
 .meeting-detail .btn, .meeting-participant-dialog .btn { text-decoration: none; }
 .meeting-participant-dialog > h3 { margin-bottom: 16px; }
 .meeting-participant-dialog .participant-form { border: 0; padding-top: 0; }

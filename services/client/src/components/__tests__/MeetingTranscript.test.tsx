@@ -84,6 +84,8 @@ describe('MeetingTranscript', () => {
     expect(await screen.findByText(ready.items[0].text)).toBeInTheDocument();
     expect(screen.getByText('Alex')).toBeInTheDocument();
     expect(screen.getByText('provider')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Manage speaker assignments' })).toHaveAttribute('href', '#meeting-participants');
+    expect(screen.queryByRole('link', { name: 'Identify speakers' })).not.toBeInTheDocument();
     const segment = document.getElementById('transcript-segment-0');
     expect(segment?.querySelector('time')).toHaveAttribute('datetime', ready.items[0].start_time);
     expect(mockRead).toHaveBeenCalledWith('meeting-id', { limit: 100, offset: 0 });

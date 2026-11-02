@@ -30,11 +30,9 @@ export function MeetingParticipants({ meetingId, onChanged, statement, onStateme
   const { data, loading, error, refresh } = useApiRead(read, { enabled: active });
   const [draft, setDraft] = useState<Draft | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [queuedAfter, setQueuedAfter] = useState<ParticipantsState | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLElement | null>(null);
   const restoreFocus = useRef(false);
-  const identifying = useRef(false);
   const editorOpen = Boolean(draft);
   const mode = draft?.mode;
   const closeEditor = () => { restoreFocus.current = true; setDraft(null); onStatementClosed?.(); };
@@ -69,27 +67,19 @@ export function MeetingParticipants({ meetingId, onChanged, statement, onStateme
       }
     },
   });
-  const identification = useApiMutation({
-    mutationFn: () => api.meetings.identifyParticipants(meetingId),
-    onSuccess: () => { setQueuedAfter(data); setNotice('Speaker identification queued for the next meeting job run.'); refresh({ showLoading: false }); onChanged(); },
-    onError: failure => setNotice(failure instanceof ApiError ? failure.message : 'Could not queue participant identification.'),
-  });
-  const busy = Boolean(draft) || change.loading || identification.loading;
-  useEffect(() => {
-    if (queuedAfter && data !== queuedAfter && data?.attribution && ['pending', 'running', 'done', 'failed'].includes(data.attribution.status)) setQueuedAfter(null);
-  }, [data, queuedAfter]);
+  const busy = Boolean(draft) || change.loading;
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
   useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
   usePolling(() => refresh({ showLoading: false }), { enabled: active && (!draft || Boolean(data?.running)) && !change.loading });
   useEffect(() => {
-    if (!statement || !data || draft || change.loading || identification.loading) return;
+    if (!statement || !data || draft || change.loading) return;
     trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const assignment = data.items.find(person => person.segment_id === statement.id);
     setDraft({ mode: assignment && !assignment.profile_id ? 'manual' : 'profile', name: assignment?.name || '', email: assignment?.email || '', profileId: assignment?.profile_id || '',
       speakerKey: '', segmentId: statement.id, transcriptHash: statement.transcriptHash,
       statementText: statement.text,
       originalSpeakerKey: null, revision: data.revision, conflicted: false });
-  }, [statement, data, draft, change.loading, identification.loading]);
+  }, [statement, data, draft, change.loading]);
 
   const save = () => {
     if (!draft || !data || change.loading || locked || loading || error || (draft.refreshAfter && draft.refreshAfter === data)) return;
@@ -130,23 +120,9 @@ export function MeetingParticipants({ meetingId, onChanged, statement, onStateme
     ...(data?.provider_participants || []).map(participant => ({ source: 'provider' as const, participant })),
     ...(data?.items || []).map(participant => ({ source: 'manual' as const, participant })),
   ] : []);
-  const attribution = data?.attribution;
-  const identificationPending = Boolean(queuedAfter) || attribution?.status === 'pending' || attribution?.status === 'running';
-  const identify = () => {
-    if (!data || data.running || draft || identificationPending || identification.loading || identifying.current || loading || error || attribution?.status === 'not_imported') return;
-    if (!window.confirm('Identify speakers on the next meeting job run? This uses your configured model and may incur charges. Saved memories are kept. Profile analysis will use repaired speaker assignments.')) return;
-    identifying.current = true;
-    identification.mutate().finally(() => { identifying.current = false; });
-  };
-  const reviewSummary = queuedAfter || attribution?.status === 'pending' ? 'Queued for the next meeting job run.'
-    : attribution?.status === 'running' ? attribution.progress.total_units == null ? 'Reviewing transcript statements…' : `Reviewing ${attribution.progress.processed_units} of ${attribution.progress.total_units} statements.`
-    : attribution?.status === 'done' ? `${attribution.progress.saved_count} statements automatically identified${attribution.progress.total_units == null ? '.' : ` · ${Math.max(0, attribution.progress.total_units - attribution.progress.saved_count)} unassigned.`}`
-    : attribution?.status === 'failed' ? 'Speaker identification needs attention. You can assign statements manually or try again.'
-    : attribution?.status === 'not_imported' ? 'Capture the transcript to identify speakers.' : 'Not reviewed.';
   const editorTitle = draft?.segmentId ? 'Assign statement' : draft?.speakerKey ? 'Assign audio channel' : 'Add participant';
   const lockMessage = data?.edit_lock_reason === 'capturing_transcript'
     ? 'Participant changes are available after transcript capture finishes.'
-    : data?.edit_lock_reason === 'identifying_participants' ? 'Participant changes are available after speaker identification finishes.'
     : data?.edit_lock_reason === 'analyzing_personas' ? 'Participant changes are available after the current persona review finishes.'
     : 'Participant changes are available after processing finishes.';
   if (!active) return null;
@@ -154,7 +130,6 @@ export function MeetingParticipants({ meetingId, onChanged, statement, onStateme
     <div className="participants-header">
       <h3 className="section-title">Participants</h3>
       {data && <div className="participant-actions">
-        {attribution && <button className="btn" onClick={identify} disabled={data.running || identification.loading || identificationPending || Boolean(draft) || loading || Boolean(error) || attribution.status === 'not_imported'}>{identification.loading ? 'Queuing...' : 'Identify speakers'}</button>}
         <button className="btn" onClick={() => open()} disabled={change.loading || Boolean(draft) || locked || loading || Boolean(error)}>Add participant</button>
       </div>}
     </div>
@@ -162,10 +137,6 @@ export function MeetingParticipants({ meetingId, onChanged, statement, onStateme
     {error && <div role="alert"><p>Could not load participants.</p><button className="btn" onClick={() => refresh()}>Retry</button></div>}
     {notice && !draft && <p role="status">{notice}</p>}
     {data && <>
-      {attribution && <div className="participant-review">
-        <p className="text-muted-sm">{reviewSummary}</p>
-        {attribution.error_type && <details><summary>Technical details</summary><p className="text-muted-sm">{attribution.error_type}</p></details>}
-      </div>}
       {(Boolean(data.people?.length) || unlinked.length > 0) ? <ul className="participant-list" aria-label="Meeting participants">
         {data.people?.map(person => <li className="participant-row participant-person" key={person.key}>
           <div className="participant-info"><span className="participant-name">{person.display_name}</span>

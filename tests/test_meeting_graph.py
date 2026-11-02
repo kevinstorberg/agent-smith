@@ -11,6 +11,30 @@ from tests.conftest import clean_meeting_rows
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("meeting_id", [None, "", "00000000-0000-0000-0000-000000000001"])
+async def test_removed_targeted_identification_mode_fails_before_work(meeting_id, monkeypatch):
+    from services.graphs.library import meeting_ingest
+    from services.graphs.runtime import validate_inputs
+    from services.meetings import service
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Retired identification requests must not import or generate memories")
+
+    monkeypatch.setattr(service, "sync_sources", forbidden)
+    monkeypatch.setattr(meeting_ingest, "DigestionRun", forbidden)
+    inputs = {"meeting_id": meeting_id}
+    with pytest.raises(ValueError, match="automatic participant identification was removed"):
+        validate_inputs("meeting_ingest", inputs)
+    with pytest.raises(ValueError, match="automatic participant identification was removed"):
+        await dispatch("meeting_ingest", inputs)
+    graph = meeting_ingest.build_graph()
+    assert "identify_participants" not in graph.get_graph().nodes
+    assert "meeting_id" not in meeting_ingest.INPUT_SCHEMA
+    with pytest.raises(ValueError, match="automatic participant identification was removed"):
+        await graph.ainvoke(inputs)
+
+
+@pytest.mark.asyncio
 async def test_meeting_graph_persists_through_factory_and_replays(monkeypatch):
     account = "graph-" + uuid4().hex
     monkeypatch.setenv("MEETING_SOURCES_JSON", json.dumps({"graph-test": {

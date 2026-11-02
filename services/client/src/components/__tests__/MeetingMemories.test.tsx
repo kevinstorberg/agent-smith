@@ -50,6 +50,21 @@ describe('MeetingMemories', () => {
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
   });
 
+  it('distinguishes summary evidence from legacy transcript evidence in the same result', async () => {
+    const summary = { ...done.items[0], id: 'summary-memory', source: 'summary' as const, content: 'A summary-supported decision.',
+      evidence: [{ segment_id: 'summary-0', quote: 'A decision recorded by Granola.' }] };
+    mockRead.mockResolvedValue({ ...done, items: [done.items[0], summary] });
+    renderWithProviders(<MeetingMemories meetingId="meeting-id" />);
+    await screen.findByText(summary.content);
+    for (const evidence of screen.getAllByText('Source evidence')) fireEvent.click(evidence);
+    expect(screen.getByText('Granola summary · summary-0')).toBeVisible();
+    expect(screen.getByText(summary.evidence[0].quote)).toBeVisible();
+    expect(screen.getByRole('link', { name: 'View summary' })).toHaveAttribute('href', '#meeting-summary');
+    expect(screen.getByText('Transcript segment-650')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'View transcript' })).toHaveAttribute('href', '#meeting-transcript');
+    expect(screen.queryByText('Transcript summary-0')).not.toBeInTheDocument();
+  });
+
   it.each([
     ['not_imported', 'Memory generation has not started. Use Process meeting'],
     ['pending', 'Memory generation is queued for the next meeting job run.'],

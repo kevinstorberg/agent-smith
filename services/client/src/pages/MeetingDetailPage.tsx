@@ -83,7 +83,7 @@ function MeetingDetail({ id }: { id?: string }) {
         <div className="meeting-summary-meta text-muted-sm"><DateCell date={meeting.meeting_start || meeting.provider_created_at} format="long" /><span>{meeting.source_name}</span>{meeting.project && <span className="tag tag-project">{meeting.project}</span>}
           {sourceUrl && <a className="text-link" href={sourceUrl} target="_blank" rel="noopener noreferrer">Open original meeting</a>}
         </div>
-        <MeetingProcessing meetingId={meeting.id} transcript={processing?.transcript || null} memories={processing?.memories || null} personas={processing?.profiles || null} speakers={processing?.speakers} onChanged={processingChanged} disabled={participantsBusy || labelsBusy || Boolean(processingRead.error)} />
+        <MeetingProcessing meetingId={meeting.id} transcript={processing?.transcript || null} memories={processing?.memories || null} personas={processing?.profiles || null} onChanged={processingChanged} disabled={participantsBusy || labelsBusy || Boolean(processingRead.error)} />
         {processingRead.error && <div role="alert" className="meeting-status-error"><p>Could not refresh processing status. Your current view and drafts are kept.{processingRead.failures >= 3 ? ' Automatic refresh is paused.' : ''}</p><button className="btn btn-sm" disabled={processingRead.loading} onClick={() => refreshProcessing()}>Refresh status</button></div>}
         {(participantsBusy || labelsBusy) && <p className="text-muted-sm">Finish your {participantsBusy ? 'participant changes in Transcript' : 'label changes in Overview'} before queuing other processing.</p>}
       </>}

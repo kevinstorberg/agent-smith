@@ -8,7 +8,7 @@ import { MeetingParticipants } from '../MeetingParticipants';
 
 vi.mock('../../api', async importOriginal => {
   const actual = await importOriginal<typeof import('../../api')>();
-  return { ...actual, api: { meetings: { participants: vi.fn(), updateParticipants: vi.fn(), process: vi.fn(), identifyParticipants: vi.fn() }, profiles: { list: vi.fn() } } };
+  return { ...actual, api: { meetings: { participants: vi.fn(), updateParticipants: vi.fn(), process: vi.fn() }, profiles: { list: vi.fn() } } };
 });
 import { api, ApiError } from '../../api';
 
@@ -179,52 +179,19 @@ describe('MeetingParticipants', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('keeps an unknown-total legacy receipt readable and identifies only after confirmation', async () => {
-    const result: Participants = { ...empty, attribution: { status: 'legacy', error_type: null,
-      progress: { processed_units: 0, total_units: null, saved_count: 0, staged_count: 0, attempts: 0, next_attempt_at: null } } };
-    read.mockResolvedValue(result);
-    vi.mocked(api.meetings.identifyParticipants).mockResolvedValue({ status: 'queued' });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
-    const identify = await screen.findByRole('button', { name: 'Identify speakers' });
-    expect(screen.getByText('Not reviewed.')).toBeInTheDocument();
-    expect(screen.queryByText(/0 of \?/)).not.toBeInTheDocument();
-    fireEvent.click(identify);
-    expect(api.meetings.identifyParticipants).not.toHaveBeenCalled();
-    confirm.mockReturnValue(true);
-    read.mockResolvedValue({ ...result, attribution: { ...result.attribution!, status: 'pending' } });
-    fireEvent.click(identify);
-    await waitFor(() => expect(api.meetings.identifyParticipants).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Identify speakers' })).toBeDisabled());
-    expect(confirm).toHaveBeenLastCalledWith(expect.stringContaining('next meeting job run'));
-    expect(confirm).toHaveBeenLastCalledWith(expect.stringContaining('Saved memories are kept'));
-    expect(changed).toHaveBeenCalledTimes(1);
-  });
-
-  it.each(['pending', 'running'] as const)('does not reset an already %s identification checkpoint', async status => {
-    read.mockResolvedValue({ ...empty, attribution: { status, error_type: null,
+  it.each(['disabled', 'legacy', 'pending', 'running', 'done', 'failed'] as const)('keeps manual assignment available without identification controls for %s attribution', async status => {
+    read.mockResolvedValue({ ...empty, edit_lock_reason: null, attribution: { status, error_type: 'HistoricalSpeakerError',
       progress: { processed_units: 4, total_units: 12, saved_count: 2, staged_count: 2, attempts: 1, next_attempt_at: null } } });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
-    const identify = await screen.findByRole('button', { name: 'Identify speakers' });
-    expect(identify).toBeDisabled(); fireEvent.click(identify);
-    expect(confirm).not.toHaveBeenCalled(); expect(api.meetings.identifyParticipants).not.toHaveBeenCalled();
-    expect(screen.getByText(status === 'pending' ? 'Queued for the next meeting job run.' : 'Reviewing 4 of 12 statements.')).toBeInTheDocument();
-  });
-
-  it.each(['done', 'failed'] as const)('clears a local queued state when the first refreshed receipt is already %s', async status => {
-    const attribution: NonNullable<Participants['attribution']> = { status: 'legacy', error_type: null,
-      progress: { processed_units: 0, total_units: null, saved_count: 0, staged_count: 0, attempts: 0, next_attempt_at: null } };
-    read.mockResolvedValueOnce({ ...empty, attribution }).mockResolvedValue({ ...empty, attribution: { ...attribution, status, error_type: status === 'failed' ? 'SpeakerAnalysisError' : null } });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    vi.mocked(api.meetings.identifyParticipants).mockResolvedValue({ status: 'queued' });
-    renderWithProviders(<MeetingParticipants meetingId="meeting-id" onChanged={changed} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Identify speakers' }));
-    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Identify speakers' })).toBeEnabled());
-    expect(screen.queryByText('Queued for the next meeting job run.')).not.toBeInTheDocument();
-    expect(screen.queryByText(/0 of \?/)).not.toBeInTheDocument();
-    expect(update).not.toHaveBeenCalled(); expect(api.meetings.identifyParticipants).toHaveBeenCalledTimes(1);
+    const add = await screen.findByRole('button', { name: 'Add participant' });
+    expect(add).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Assign speaker' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Identify speakers' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Queued for the next meeting job run|Reviewing .* statements|automatically identified|Speaker identification/)).not.toBeInTheDocument();
+    expect(screen.queryByText('HistoricalSpeakerError')).not.toBeInTheDocument();
+    fireEvent.click(add);
+    expect(await screen.findByRole('dialog', { name: 'Add participant' })).toBeVisible();
+    expect(update).not.toHaveBeenCalled();
   });
 
   it('removes only the chosen manual person while retaining the others', async () => {

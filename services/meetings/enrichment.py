@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import hashlib
 from datetime import datetime, timezone
 from uuid import UUID, uuid5
 
@@ -29,22 +30,46 @@ def transcript_window(segments: list[dict], offset: int) -> tuple[list[dict], in
 
 def memory_content(snapshot: dict, item: dict) -> str:
     references = ", ".join(evidence["segment_id"] for evidence in item["evidence"])
+    if item.get("source") == "summary":
+        return f"{item['content']}\n\nMeeting source: {snapshot['source_url']}\nEvidence: Granola summary ({references})"
     return f"{item['content']}\n\nMeeting source: {snapshot['source_url']}\nEvidence: {references}"
 
 
+def memory_input(record: dict, artifact: dict) -> tuple[dict, list[dict]]:
+    source = artifact.get("input_source", "transcript")
+    if not isinstance(source, str) or source not in {"summary", "transcript"}:
+        raise ValueError("Unsupported meeting memory input source")
+    if source == "transcript":
+        return record["snapshot"], expanded_segments(record["transcript"]["segments"])
+    if "input_snapshot" not in artifact:
+        artifact["input_snapshot"] = copy.deepcopy(record["snapshot"])
+    snapshot = artifact["input_snapshot"]
+    if not isinstance(snapshot, dict):
+        raise ValueError("Saved memory summary requires a frozen snapshot object")
+    text = snapshot.get("summary_text")
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("Summary memory analysis requires a nonblank saved Granola summary")
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    if artifact.setdefault("input_hash", digest) != digest:
+        raise ValueError("Saved memory summary does not match its frozen input hash")
+    sections = expanded_segments([{"id": "summary", "text": text}])
+    return {**snapshot, "memory_source": "summary"}, [
+        {**section, "id": f"summary-{index}"} for index, section in enumerate(sections)
+        if section["text"].strip()
+    ]
+
+
 class DigestionRun(processing.ProcessingRun):
-    def __init__(self, source: str | None, *, digest: bool = True, meeting_id: str | None = None) -> None:
+    def __init__(self, source: str | None, *, digest: bool = True) -> None:
         super().__init__(digestion_db.release_owner)
         self.configs = configured_sources(source)
         self.digest = digest
         self.source = source
-        self.meeting_id = str(UUID(meeting_id)) if meeting_id is not None else None
         self.transcript_report: dict = {"outcome": "idle"}
         self.memory_report: dict = {"outcome": "idle"}
-        self.speaker_report: dict = {"outcome": "idle"}
 
     async def prepare_manual(self) -> bool:
-        if not self.digest or self.meeting_id is not None:
+        if not self.digest:
             return False
         self.record = await run_db(digestion_db.claim_manual_memory, list(self.configs), self.owner)
         if self.record:
@@ -53,10 +78,7 @@ class DigestionRun(processing.ProcessingRun):
 
     async def prepare(self) -> None:
         claim = digestion_db.claim_digestion if self.digest else digestion_db.claim_transcript
-        if self.digest:
-            self.record = await run_db(digestion_db.claim_identification, self.source, self.owner, self.meeting_id)
-        if self.record is None and self.meeting_id is None:
-            self.record = await run_db(claim, list(self.configs), self.owner)
+        self.record = await run_db(claim, list(self.configs), self.owner)
         if self.record is None:
             return
         meeting_id = self.record["meeting_id"]
@@ -73,21 +95,8 @@ class DigestionRun(processing.ProcessingRun):
         self.record = await run_db(digestion_db.get_record, meeting_id)
 
     def has_memory_work(self) -> bool:
-        return bool(self.meeting_id is None and self.digest and self.record and self.record["transcript_status"] == "ready"
-                    and self.record.get("speaker_status") != "pending" and self.record["memory_status"] == "pending")
-
-    def has_speaker_work(self) -> bool:
-        return bool(self.digest and self.record and self.record["transcript_status"] == "ready" and self.record["speaker_status"] == "pending")
-
-    async def identify_participants(self) -> None:
-        from services.meetings import speaker_db, speaker_runtime
-
-        if self.has_speaker_work():
-            try:
-                await speaker_db_guard(self, speaker_runtime.identify)
-            except (speaker_db.AttributionInputChanged, speaker_db.PersonaAttributionBusy):
-                self.speaker_report.update(outcome="continued")
-            self.record = await run_db(digestion_db.get_record, self.record["meeting_id"])
+        return bool(self.digest and self.record and self.record["transcript_status"] == "ready"
+                    and self.record["memory_status"] == "pending")
 
     async def generate_memories(self) -> None:
         if self.has_memory_work():
@@ -112,19 +121,23 @@ class DigestionRun(processing.ProcessingRun):
         artifact = copy.deepcopy(record["memory_artifact"]) or {
             "version": 1, "offset": 0, "items": [], "published_ids": [],
             "created_at": datetime.now(timezone.utc).isoformat(), "reason": "",
-            "model": resolve_model_id("meeting_memory", "curator"), "prompt_version": 3,
+            "model": resolve_model_id("meeting_memory", "curator"), "prompt_version": 4,
+            "input_source": "summary",
         }
         if control.get("active"):
             artifact["manual_request_id"] = control["request_id"]
+        if artifact["version"] != 1:
+            raise ValueError("Unsupported meeting memory artifact version")
+        snapshot, segments = memory_input(record, artifact)
+        input_source = artifact.get("input_source", "transcript")
         if "vocabulary" not in artifact and artifact.get("offset", 0) == 0:
             from services.meetings.vocabulary_db import relevant
 
-            text = "\n".join([record["snapshot"].get("title") or "", record["snapshot"].get("summary_text") or "",
-                              *(segment["text"] for segment in record["transcript"]["segments"])])
+            context_summary = (snapshot.get("summary_text") or "") if input_source == "transcript" else ""
+            text = "\n".join([snapshot.get("title") or "", context_summary,
+                              *(segment["text"] for segment in segments)])
             artifact["vocabulary"] = await run_db(relevant, text)
-        if artifact["version"] != 1:
-            raise ValueError("Unsupported meeting memory artifact version")
-        if "attribution_snapshot" not in artifact and artifact.get("offset", 0) == 0:
+        if input_source == "transcript" and "attribution_snapshot" not in artifact and artifact.get("offset", 0) == 0:
             from services.meetings.speaker_db import context_snapshot
             from services.meetings.participants import meeting_participants
             from services.meetings.profile_db import resolve_participants
@@ -140,8 +153,7 @@ class DigestionRun(processing.ProcessingRun):
                              "source": person.get("identity_source")}
                 for person in catalog if not person.get("deleted") for segment_id in person["segment_ids"]
             }
-        segments = expanded_segments(record["transcript"]["segments"])
-        if "attribution_identities" in artifact:
+        if input_source == "transcript" and "attribution_identities" in artifact:
             identities = artifact["attribution_identities"]
             segments = [{**segment, "effective_speaker": identities.get(segment["id"])} for segment in segments]
         artifact["total_units"] = len(segments)
@@ -151,7 +163,7 @@ class DigestionRun(processing.ProcessingRun):
             label_state = await run_db(label_snapshot, meeting_id)
             artifact["context_labels_revision"] = label_state["labels_revision"]
         await run_db(memory_db.save_progress, meeting_id, self.owner, record["transcript_hash"], artifact)
-        snapshot = {**record["snapshot"], **({"vocabulary": artifact["vocabulary"]} if artifact.get("vocabulary") else {})}
+        snapshot = {**snapshot, **({"vocabulary": artifact["vocabulary"]} if artifact.get("vocabulary") else {})}
         while artifact["offset"] < len(segments):
             window, end = transcript_window(segments, artifact["offset"])
             if control.get("active"):
@@ -160,6 +172,8 @@ class DigestionRun(processing.ProcessingRun):
                 **({"validate_context": validate_manual_source} if control.get("active") else {}))
             for atom in result["items"]:
                 atom = dict(atom)
+                if input_source == "summary":
+                    atom["source"] = "summary"
                 if control.get("active") and any(_same_memory(atom, previous) for previous in artifact["items"]):
                     continue
                 atom["id"] = str(uuid5(_MEMORY_NAMESPACE, f"{meeting_id}:{len(artifact['items'])}"))
@@ -172,7 +186,7 @@ class DigestionRun(processing.ProcessingRun):
             from services.meetings.labels_db import apply_from_memory
 
             self.memory_report["labels_outcome"] = await run_db(
-                apply_from_memory, meeting_id, self.owner, record["transcript_hash"], record["snapshot"]["revision"],
+                apply_from_memory, meeting_id, self.owner, record["transcript_hash"], snapshot["revision"],
                 artifact["context_labels_revision"], artifact["context_labels"],
             )
         for item in artifact["items"]:
@@ -181,8 +195,8 @@ class DigestionRun(processing.ProcessingRun):
             await run_db(memory_db.assert_publishable, meeting_id, self.owner, record["transcript_hash"])
             # Older checkpoints must replay their exact publication after a lost receipt.
             tags = item["tags"] if "tags" in item else ["meeting-memory", f"meeting:{meeting_id}", item["kind"]]
-            await run_db(publish, item["id"], memory_content(record["snapshot"], item),
-                         repo=record["snapshot"].get("project"), tags=tags,
+            await run_db(publish, item["id"], memory_content(snapshot, item),
+                         repo=snapshot.get("project"), tags=tags,
                          created_at=artifact["created_at"], source_type="meeting", source_id=meeting_id)
             artifact["published_ids"].append(item["id"])
             await run_db(memory_db.save_progress, meeting_id, self.owner, record["transcript_hash"], artifact)
@@ -196,15 +210,3 @@ def _same_memory(left: dict, right: dict) -> bool:
         return (" ".join(item["content"].casefold().split()), item.get("kind"),
                 sorted((entry["segment_id"], entry["quote"]) for entry in item.get("evidence", [])))
     return identity(left) == identity(right)
-
-
-async def speaker_db_guard(run: DigestionRun, work) -> None:
-    from services.meetings import speaker_db
-
-    async def stage(record: dict, *, deadline: float) -> None:
-        try:
-            await work(run, record, deadline=deadline)
-        except (speaker_db.AttributionInputChanged, speaker_db.PersonaAttributionBusy) as error:
-            run.speaker_report.update(outcome="continued", waiting_for="persona_review" if isinstance(error, speaker_db.PersonaAttributionBusy) else "updated_participants")
-
-    await run.run_stage("speaker", run.speaker_report, stage, speaker_db.record_failure, budget=AGENT_SECONDS)

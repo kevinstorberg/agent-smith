@@ -209,16 +209,14 @@ describe('POST requests', () => {
 });
 
 describe('PUT requests', () => {
-  it('stamps statement assignments with the captured transcript and queues explicit identification', async () => {
+  it('stamps manual statement assignments with the captured transcript', async () => {
     globalThis.fetch = mockFetch({ status: 'queued' });
     const body = { expected_revision: 3, expected_transcript_hash: 'captured-hash', participants: [{ name: 'Alex', segment_id: 'segment-2' }] };
     await api.meetings.updateParticipants('meeting-id', body);
-    await api.meetings.identifyParticipants('meeting-id');
     const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
     expect(JSON.parse(calls[0][1].body)).toEqual(body);
     expect(calls[0][1].method).toBe('PUT');
-    expect(calls[1][0]).toBe('/api/meetings/meeting-id/identify-participants');
-    expect(calls[1][1].method).toBe('POST');
+    expect(calls).toHaveLength(1);
   });
   it('sends PUT method', async () => {
     globalThis.fetch = mockFetch({ id: 1 });
