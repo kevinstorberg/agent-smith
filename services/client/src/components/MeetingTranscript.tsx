@@ -148,7 +148,7 @@ export function MeetingTranscript({ meetingId, refreshVersion, onState, onAssign
       )}
       {transcript?.status === 'ready' && (
         <>
-          <p style={{ marginBottom: 12 }}><a className="text-link" href="#meeting-participants">Identify speakers</a></p>
+          <p style={{ marginBottom: 12 }}><a className="text-link" href="#meeting-participants">Manage speaker assignments</a></p>
           {windowStart > 0 && <div className="flex-wrap">{segments.length > 0 && <p className="text-muted-sm">Showing statements {windowStart + 1}–{windowStart + segments.length} of {transcript.total}</p>}<button className="btn btn-sm" onClick={() => { baseOffset.current = 0; loadedCount.current = 0; onShowBeginning?.(); if (!onShowBeginning || targetSegment === null) load(0); }}>Show beginning</button></div>}
           {targetSegment !== null && !loading && !error && !segments.some(segment => segment.id === `segment-${targetSegment}`) && <p role="status">This statement is not available in the saved transcript.</p>}
           {transcript.total === 0 && <p className="text-muted-sm">The saved transcript is empty.</p>}

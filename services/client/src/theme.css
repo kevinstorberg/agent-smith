@@ -1301,6 +1301,8 @@ pre {
 .processing-progress { margin-top: 8px; }
 .management-form textarea,
 .profile-detail textarea { resize: vertical; }
+.memory-page { min-width: 0; overflow-wrap: anywhere; }
+.memory-page .tag { max-width: 100%; }
 .memory-page .search-bar { flex-wrap: wrap; align-items: center; }
 .memory-page .search-bar input:not([type="checkbox"]):not([type="radio"]) { min-width: 0; flex: 1 1 160px; }
 
@@ -1407,7 +1409,6 @@ pre {
 .meeting-participants .participant-assignments { margin-top: 0; }
 .meeting-participants .participant-assignments[open] { flex: 1 1 100%; }
 .meeting-participants .participant-assignments > .participant-list { margin-top: 12px; }
-.meeting-participants .participant-review > p { margin: 0; }
 .meeting-detail .btn, .meeting-participant-dialog .btn { text-decoration: none; }
 .meeting-participant-dialog > h3 { margin-bottom: 16px; }
 .meeting-participant-dialog .participant-form { border: 0; padding-top: 0; }

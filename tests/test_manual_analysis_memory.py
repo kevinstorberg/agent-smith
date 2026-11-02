@@ -92,7 +92,13 @@ async def test_manual_analysis_memory_graph_uses_saved_context_and_preserves_old
     assert artifact["published_ids"] == original["published_ids"] + [new_id]
     assert scripted.publications[0][0] == new_id
     assert scripted.analyses[0][2] == original["items"]
-    assert artifact["attribution_snapshot"] != original["attribution_snapshot"]
+    assert artifact["input_source"] == scripted.analyses[0][0]["memory_source"] == "summary"
+    assert artifact["input_snapshot"]["summary_text"] == db.get_summary(meeting_id)["summary_text"]
+    assert "attribution_snapshot" not in artifact and "attribution_identities" not in artifact
+    assert scripted.analyses[0][1] == [{"id": "summary-0", "text": artifact["input_snapshot"]["summary_text"]}]
+    assert artifact["items"][-1]["source"] == "summary"
+    assert "source" not in artifact["items"][0]
+    assert "Granola summary (summary-0)" in scripted.publications[0][1][0]
     assert "old" not in [entry["term"] for entry in artifact["vocabulary"]]
     assert {key: value for key, value in after.items() if key.startswith("profile_")} == profile_before
     assert digestion_db.get_record(other_id) == other
@@ -114,10 +120,14 @@ async def test_manual_analysis_memory_fresh_second_pass_appends_after_prior_ids_
     first, old_owner = await memory_pass(source)
     assert first["outcome"] == "done"
     first_row = digestion_db.get_record(meeting_id)
+    frozen_first = copy.deepcopy(first_row["memory_artifact"]["input_snapshot"])
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE meeting_summaries SET summary_text='A fresh summary for the second pass',revision=revision+1 WHERE id=%s", (meeting_id,))
     second_body = payload(meeting_id, scope="memories")
     manual_analysis.request_analysis(second_body)
     pending = digestion_db.get_record(meeting_id)
     assert pending["memory_artifact"]["manual_request_id"] == second_body["request_id"]
+    assert "input_snapshot" not in pending["memory_artifact"] and "input_hash" not in pending["memory_artifact"]
     assert manual_analysis.request_analysis(first_body)["status"] == "done"
     assert digestion_db.get_record(meeting_id) == pending
     async with enrichment.DigestionRun(source.name) as run:
@@ -131,6 +141,9 @@ async def test_manual_analysis_memory_fresh_second_pass_appends_after_prior_ids_
     assert second["published_ids"][:2] == first_row["memory_artifact"]["published_ids"]
     assert second["items"][-1]["id"] == str(uuid5(enrichment._MEMORY_NAMESPACE, f"{meeting_id}:2"))
     assert second["created_at"] == first_row["memory_artifact"]["created_at"]
+    assert second["input_snapshot"]["summary_text"] == "A fresh summary for the second pass"
+    assert first_row["memory_artifact"]["input_snapshot"] == frozen_first
+    assert scripted.analyses[1][1] == [{"id": "summary-0", "text": "A fresh summary for the second pass"}]
     assert len(scripted.analyses) == len(scripted.publications) == 2
     assert manual_analysis.get_request(second_body["request_id"])["status"] == "done"
     assert (await memory_pass(source))[0]["outcome"] == "idle"

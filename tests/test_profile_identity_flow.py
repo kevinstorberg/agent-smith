@@ -240,5 +240,7 @@ async def test_manual_attribution_reaches_profile_agent_without_changing_frozen_
     assert call["participants"][0]["id"] == target["id"]
     assert call["snapshot"]["manual_participants"] == mapping and call["snapshot"]["participants_revision"] == 1
     assert record["snapshot"] == snapshot and record["profile_artifact"]["participants_revision"] == 1
-    assert agents.analyses[-1][0] == snapshot and len(agents.analyses) == memory_calls + 1
+    assert agents.analyses[-1][0] == {**snapshot, "memory_source": "summary"}
+    assert agents.analyses[-1][1] == [{"id": "summary-0", "text": snapshot["summary_text"]}]
+    assert len(agents.analyses) == memory_calls + 1
     assert profile_db.get_profile(target["id"])["claims"][-1]["evidence"][0]["quote"] == "I prioritize verified ownership."

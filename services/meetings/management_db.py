@@ -41,7 +41,6 @@ def _editable(meeting_id: str, *, allow_running: bool = False):
 
 _LOCK_MESSAGES = {
     "capturing_transcript": "Participant changes are available after transcript capture finishes.",
-    "identifying_participants": "Participant changes are available after speaker identification finishes.",
     "analyzing_personas": "Participant changes are available after the current persona review finishes.",
 }
 

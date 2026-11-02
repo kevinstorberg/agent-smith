@@ -21,7 +21,7 @@ export function MeetingGenerationProgress({ result, output }: Props) {
     {progress && <>
       {progress.total_units !== null && progress.total_units > 0 && <>
         <progress aria-label={`${output === 'memories' ? 'Memory' : 'Profile'} analysis progress`} max={progress.total_units} value={Math.min(progress.processed_units, progress.total_units)} />
-        <p className="text-muted-sm">{progress.processed_units} of {progress.total_units} transcript sections analyzed</p>
+        <p className="text-muted-sm">{progress.processed_units} of {progress.total_units} {output === 'memories' ? 'source' : 'transcript'} sections analyzed</p>
       </>}
       <p className="text-muted-sm">{progress.staged_count} candidates saved · {progress.saved_count} {output === 'memories' ? 'memories published' : 'profiles updated'}</p>
       {result.status === 'pending' && progress.processed_units > 0 && <p className="text-muted-sm">Saved progress will resume; completed sections will not be repeated.</p>}

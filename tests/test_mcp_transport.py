@@ -86,6 +86,8 @@ async def test_every_mcp_endpoint_serves_a_session_id_from_before_a_restart(capl
                                 "profile_id": "11111111-1111-4111-8111-111111111111", "project": "forbidden"}}})
                     assert response.status_code == 200
                     assert _json_rpc_payload(response)["result"]["isError"] is True
+                if path == "/mcp/plans":
+                    await _assert_planning_document_search(client, path, tools)
 
                 response = await client.get(f"{path}/", headers={"Accept": "application/json"})
                 assert response.status_code == 406
@@ -107,6 +109,36 @@ async def test_every_mcp_endpoint_serves_a_session_id_from_before_a_restart(capl
     assert not any(message.startswith("Terminating session:") for message in messages)
     assert "transport warning remains visible" in messages
     assert "transport error remains visible" in messages
+
+
+async def _assert_planning_document_search(client: httpx.AsyncClient, path: str, tools: list[dict]) -> None:
+    from uuid import uuid4
+
+    from services.api.models.plan import create_plan, delete_plan
+
+    tool = next(tool for tool in tools if tool["name"] == "search")
+    assert tool["annotations"]["readOnlyHint"] is True
+    marker = "transportproof" + uuid4().hex
+    body = "Saved planning context " + marker
+    plan_id = create_plan("HTTP search fixture", body, project="transport-proof")
+    try:
+        response = await client.post(f"{path}/", headers=MCP_HEADERS, json={
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": {"name": "search", "arguments": {"query": marker, "project": "transport-proof"}},
+        })
+        assert response.status_code == 200
+        result = _json_rpc_payload(response)["result"]["structuredContent"]
+        assert [item["id"] for item in result["items"]] == [plan_id]
+        assert "body" not in result["items"][0] and marker in result["items"][0]["excerpt"]
+        response = await client.post(f"{path}/", headers=MCP_HEADERS, json={
+            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": {"name": "get", "arguments": {"plan_id": result["items"][0]["id"]}},
+        })
+        assert response.status_code == 200
+        full = json.loads(_json_rpc_payload(response)["result"]["content"][0]["text"])
+        assert full["id"] == plan_id and full["body"] == body
+    finally:
+        delete_plan(plan_id)
 
 
 @pytest.mark.asyncio

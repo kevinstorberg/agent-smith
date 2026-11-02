@@ -152,9 +152,7 @@ def update_participants(summary_id: UUID, body: MeetingParticipantsRequest):
 
 @router.post("/{summary_id}/identify-participants")
 def identify_participants(summary_id: UUID):
-    from services.meetings.speaker_db import request_identification
-
-    return _meeting_change(request_identification, str(summary_id))
+    raise HTTPException(status_code=410, detail="Automatic participant identification has been removed. Assign transcript statements manually.")
 
 
 @router.post("/{summary_id}/process")

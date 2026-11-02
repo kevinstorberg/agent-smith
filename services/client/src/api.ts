@@ -266,6 +266,7 @@ export interface MeetingTranscript extends Paginated<TranscriptSegment> {
 export interface MeetingMemory {
   id: string;
   content: string;
+  source?: 'summary' | 'transcript';
   tags?: string[];
   kind: 'fact' | 'decision' | 'commitment' | 'constraint' | 'preference' | 'lesson' | 'question';
   evidence: { segment_id: string; quote: string }[];
@@ -366,10 +367,10 @@ export interface MeetingParticipants {
   enrolled: boolean;
   stale_speaker_keys?: string[];
   stale_segment_ids?: string[];
-  edit_lock_reason?: 'capturing_transcript' | 'identifying_participants' | 'analyzing_personas' | null;
+  edit_lock_reason?: 'capturing_transcript' | 'analyzing_personas' | null;
   transcript_hash?: string | null;
   attribution?: {
-    status: 'pending' | 'done' | 'failed' | 'legacy' | 'not_imported' | 'running';
+    status: 'pending' | 'done' | 'failed' | 'legacy' | 'not_imported' | 'running' | 'disabled';
     error_type: string | null;
     progress: { processed_units: number; total_units: number | null; staged_count: number; saved_count: number; attempts: number; next_attempt_at: string | null };
   };
@@ -853,7 +854,6 @@ export const api = {
     participants: (id: string) => get<MeetingParticipants>(`/meetings/${encodeURIComponent(id)}/participants`),
     updateParticipants: (id: string, body: { expected_revision: number; participants: MeetingParticipantInput[]; expected_transcript_hash?: string | null }) =>
       put<MeetingParticipants>(`/meetings/${encodeURIComponent(id)}/participants`, body),
-    identifyParticipants: (id: string) => post<{ status: 'queued' | 'running' | 'done' }>(`/meetings/${encodeURIComponent(id)}/identify-participants`, {}),
     process: (id: string) => post<{ status: 'queued' | 'running' | 'done' }>(`/meetings/${encodeURIComponent(id)}/process`, {}),
     vocabulary: {
       list: (params?: PaginationParams & { q?: string }) => get<Paginated<MeetingVocabulary>>('/meetings/vocabulary', { ...paginationToParams(params), ...(params?.q ? { q: params.q } : {}) }),

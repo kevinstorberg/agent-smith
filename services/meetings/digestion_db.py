@@ -13,8 +13,8 @@ LEASE_SECONDS = 600
 _CLAIM_LOCK = "agent-smith:meeting-digestion"
 _PROFILE_LOCK = "agent-smith:persona"
 _SPEAKER_ELIGIBILITY = "d.transcript_status = 'ready' AND d.speaker_status = 'pending' AND d.speaker_next_attempt_at <= clock_timestamp()"
-_MEMORY_ELIGIBILITY = f"(d.transcript_status = 'pending' AND d.next_attempt_at <= clock_timestamp()) OR ({_SPEAKER_ELIGIBILITY}) OR (d.transcript_status = 'ready' AND d.speaker_status != 'pending' AND d.memory_status = 'pending' AND d.memory_next_attempt_at <= clock_timestamp())"
-_PROFILE_ELIGIBILITY = "d.transcript_status = 'ready' AND d.speaker_status != 'pending' AND d.profile_status = 'pending' AND d.profile_next_attempt_at <= clock_timestamp()"
+_MEMORY_ELIGIBILITY = "(d.transcript_status = 'pending' AND d.next_attempt_at <= clock_timestamp()) OR (d.transcript_status = 'ready' AND d.memory_status = 'pending' AND d.memory_next_attempt_at <= clock_timestamp())"
+_PROFILE_ELIGIBILITY = "d.transcript_status = 'ready' AND d.profile_status = 'pending' AND d.profile_next_attempt_at <= clock_timestamp()"
 _SNAPSHOT_FIELDS = (
     "id", "provider", "account_key", "external_id", "source_name", "project", "title",
     "summary_text", "source_url", "metadata", "provider_updated_at", "revision",
@@ -34,7 +34,7 @@ def claim_digestion(identities: list[tuple[str, str]], owner: str) -> dict | Non
 
 
 def claim_manual_memory(identities: list[tuple[str, str]], owner: str) -> dict | None:
-    eligibility = """d.transcript_status='ready' AND d.speaker_status!='pending' AND d.memory_status='pending'
+    eligibility = """d.transcript_status='ready' AND d.memory_status='pending'
         AND d.memory_next_attempt_at<=clock_timestamp() AND d.manual_analysis->'memory'->>'active'='true'"""
     return _claim(identities, owner, eligibility)
 

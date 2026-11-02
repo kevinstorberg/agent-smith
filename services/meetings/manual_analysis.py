@@ -74,8 +74,6 @@ def target_has_segments(cur, meeting: dict, row: dict, target_id: str) -> bool:
 def blocked_reason(row: dict | None, stage: str, *, target_ready: bool = True) -> str | None:
     if not row or row.get("transcript_status") != "ready":
         return "A saved transcript is required. This action does not fetch or restore transcripts."
-    if row.get("speaker_status") == "pending":
-        return "Finish identifying transcript speakers before requesting analysis."
     if has_active_lease(row):
         return "Meeting analysis is already running."
     recover_changed_source = (row.get(stage + "_status") == "failed"
@@ -182,7 +180,8 @@ def _reopen(cur, request_id: str, entry: dict) -> None:
         else:
             artifact["offset"] = 0
             artifact["manual_request_id"] = request_id
-            for key in ("vocabulary", "attribution_snapshot", "attribution_identities", "context_labels_revision", "context_labels", "total_units"):
+            artifact.update(input_source="summary", prompt_version=4)
+            for key in ("vocabulary", "attribution_snapshot", "attribution_identities", "context_labels_revision", "context_labels", "total_units", "input_snapshot", "input_hash"):
                 artifact.pop(key, None)
         control = {**row["manual_analysis"], stage: {"request_id": request_id, "active": True,
                     "source": state["source"], "target": state["target"]}}

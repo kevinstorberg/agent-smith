@@ -236,7 +236,7 @@ def test_manual_analysis_unfinished_stages_keep_their_checkpoints_for_resume(sou
     assert digestion_db.get_record(meeting_id) == before
 
 
-@pytest.mark.parametrize("boundary", ["claim_until", "profile_claim_until", "speaker_status", "transcript_status", "memory_publication"])
+@pytest.mark.parametrize("boundary", ["claim_until", "profile_claim_until", "transcript_status", "memory_publication"])
 def test_manual_analysis_refuses_active_or_unready_work_without_resetting_progress(source, saved, payload, jobs, boundary):
     meeting_id = saved()
     jobs()
@@ -244,8 +244,6 @@ def test_manual_analysis_refuses_active_or_unready_work_without_resetting_progre
     with get_connection() as conn, conn.cursor() as cur:
         if boundary.endswith("until"):
             cur.execute(f"UPDATE meeting_digestions SET {boundary}=%s WHERE meeting_id=%s", (datetime.now(timezone.utc) + timedelta(minutes=5), meeting_id))
-        elif boundary == "speaker_status":
-            cur.execute("UPDATE meeting_digestions SET speaker_status='pending' WHERE meeting_id=%s", (meeting_id,))
         elif boundary == "transcript_status":
             cur.execute("UPDATE meeting_digestions SET transcript_status='deleted' WHERE meeting_id=%s", (meeting_id,))
         else:
@@ -254,6 +252,25 @@ def test_manual_analysis_refuses_active_or_unready_work_without_resetting_progre
     with pytest.raises(analysis.AnalysisConflict):
         analysis.request_analysis(payload(meeting_id, scope="memories" if boundary == "memory_publication" else "profiles"))
     assert digestion_db.get_record(meeting_id) == before
+
+
+@pytest.mark.parametrize("scope", ["profiles", "memories", "both"])
+def test_manual_analysis_pending_retired_identification_does_not_block_new_requests(source, saved, payload, jobs, scope):
+    meeting_id = saved()
+    jobs()
+    jobs("meeting_ingest")
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE meeting_digestions SET speaker_status='pending' WHERE meeting_id=%s", (meeting_id,))
+    before = digestion_db.get_record(meeting_id)
+
+    receipt = analysis.request_analysis(payload(meeting_id, scope=scope))
+
+    assert receipt["status"] == "queued"
+    assert set(receipt["items"][0]["stages"]) == set(analysis.STAGES[scope])
+    after = digestion_db.get_record(meeting_id)
+    assert after["speaker_status"] == "pending" and after["speaker_artifact"] == before["speaker_artifact"]
+    assert after["memory_artifact"]["items"] == before["memory_artifact"]["items"]
+    assert after["memory_artifact"]["published_ids"] == before["memory_artifact"]["published_ids"]
 
 
 def test_manual_analysis_target_requires_current_identity_revision_and_real_statement_mapping(source, saved, payload, jobs, target):

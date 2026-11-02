@@ -8,7 +8,7 @@ import { meetingFixture } from './meetingFixture';
 import type { MeetingProcessingState } from '../../api';
 
 vi.mock('../../api', async original => ({ ...await original<typeof import('../../api')>(), api: {
-  meetings: { get: vi.fn(), processing: vi.fn(), transcript: vi.fn(), deleteTranscript: vi.fn(), retryTranscript: vi.fn(), memories: vi.fn(), retryMemories: vi.fn(), profiles: vi.fn(), retryProfiles: vi.fn(), participants: vi.fn(), updateParticipants: vi.fn(), identifyParticipants: vi.fn(), process: vi.fn(), updateLabels: vi.fn(), suggestLabels: vi.fn() },
+  meetings: { get: vi.fn(), processing: vi.fn(), transcript: vi.fn(), deleteTranscript: vi.fn(), retryTranscript: vi.fn(), memories: vi.fn(), retryMemories: vi.fn(), profiles: vi.fn(), retryProfiles: vi.fn(), participants: vi.fn(), updateParticipants: vi.fn(), process: vi.fn(), updateLabels: vi.fn(), suggestLabels: vi.fn() },
   profiles: { list: vi.fn() }, meetingAnalysis: { candidates: vi.fn(), request: vi.fn(), progress: vi.fn(), resume: vi.fn() },
 } }));
 import { api } from '../../api';
@@ -192,14 +192,15 @@ describe('MeetingDetailPage', () => {
     expect(api.meetings.transcript).not.toHaveBeenCalled(); expect(api.meetings.memories).not.toHaveBeenCalled(); expect(api.meetings.profiles).not.toHaveBeenCalled();
   });
 
-  it('makes a ready-transcript speaker failure visible without falsely calling unknown speakers a failure', async () => {
-    vi.mocked(api.meetings.processing).mockResolvedValue({ ...processing, transcript: { ...processing.transcript, status: 'ready' }, speakers: { status: 'failed', error_type: 'SpeakerAnalysisError', progress } });
-    renderPage(); await screen.findByText('Speakers: Needs attention');
+  it('ignores retired speaker status and keeps manual assignments available', async () => {
+    vi.mocked(api.meetings.processing).mockResolvedValue({ ...processing, transcript: { ...processing.transcript, status: 'ready' }, speakers: { status: 'disabled', error_type: null, progress } });
+    renderPage(); await screen.findByRole('link', { name: 'Transcript: Complete' });
     fireEvent.click(screen.getByText('Processing details'));
-    expect(screen.getByText(/did not produce a valid saved result/)).toBeVisible();
-    expect(screen.queryByText(/0 of \? statements reviewed/)).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Manage speaker assignments' })).toHaveAttribute('href', '#meeting-participants');
-    expect(api.meetings.identifyParticipants).not.toHaveBeenCalled();
+    expect(screen.queryByText('Speaker identification')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Speakers:/ })).not.toBeInTheDocument();
+    tab('Transcript');
+    expect(await screen.findByRole('button', { name: 'Add participant' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Identify speakers' })).not.toBeInTheDocument();
   });
 
   it('pauses compact polling after three failures and recovers only on explicit refresh', async () => {
