@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api, type ChatRoom, type ChatRoomDetail } from '../../api';
+import { api, type ChatMessage, type ChatRoom, type ChatRoomDetail } from '../../api';
 import { renderWithProviders } from '../../test-utils';
 import { ChatPage } from '../ChatPage';
 
@@ -45,6 +45,10 @@ const detail: ChatRoomDetail = {
   last_message_id: 7,
   has_more: false,
 };
+
+function message(id: number, roomId = room.id): ChatMessage {
+  return { ...detail.messages[0], id, room_id: roomId, body: `Message ${id}` };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -220,18 +224,117 @@ describe('ChatPage', () => {
   });
 
   it('polls without issuing overlapping state machinery', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    renderWithProviders(<ChatPage />);
-    await waitFor(() => expect(api.chat.get).toHaveBeenCalled());
+    vi.useFakeTimers();
+    await act(async () => { renderWithProviders(<ChatPage />); });
     vi.mocked(api.chat.list).mockClear();
     vi.mocked(api.chat.get).mockClear();
 
     await act(async () => {
-      vi.advanceTimersByTime(2_000);
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(2_000);
     });
 
     expect(api.chat.list).toHaveBeenCalledTimes(1);
     expect(api.chat.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('continues beyond the first page without skipping replies after a local send', async () => {
+    vi.useFakeTimers();
+    const firstPage = Array.from({ length: 100 }, (_, index) => message(index + 1));
+    vi.mocked(api.chat.get)
+      .mockResolvedValueOnce({ ...detail, messages: firstPage, last_message_id: 100, has_more: true })
+      .mockResolvedValueOnce({ ...detail, messages: [message(101), message(102)], last_message_id: 102 });
+    vi.mocked(api.chat.postMessage).mockResolvedValue(message(102));
+    await act(async () => { renderWithProviders(<ChatPage />); });
+    expect(screen.getByText('Loading more messages...')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'A local send' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    expect(screen.getByText('Message 102')).toBeInTheDocument();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+
+    expect(api.chat.get).toHaveBeenNthCalledWith(1, 42, 0);
+    expect(api.chat.get).toHaveBeenNthCalledWith(2, 42, 100);
+    const messages = screen.getByRole('region', { name: 'Chat messages' }).querySelectorAll('.chat-message-body');
+    expect(messages).toHaveLength(102);
+    expect([...messages].slice(-3).map(element => element.textContent)).toEqual(['Message 100', 'Message 101', 'Message 102']);
+    expect(screen.queryByText('Loading more messages...')).not.toBeInTheDocument();
+  });
+
+  it('ignores a delayed read after switching rooms', async () => {
+    const otherRoom = { ...room, id: 43, topic: 'Another room' };
+    let resolve!: (value: ChatRoomDetail) => void;
+    vi.mocked(api.chat.list).mockResolvedValue({ items: [room, otherRoom], total: 2 });
+    vi.mocked(api.chat.get).mockImplementation(id => id === 42
+      ? new Promise(done => { resolve = done; })
+      : Promise.resolve({ ...detail, room: otherRoom, messages: [message(20, 43)], last_message_id: 20 }));
+    renderWithProviders(<ChatPage />);
+    await waitFor(() => expect(api.chat.get).toHaveBeenCalledWith(42, 0));
+    fireEvent.click(screen.getByRole('button', { name: /Another room/ }));
+    await screen.findByText('Message 20');
+
+    await act(async () => { resolve(detail); });
+
+    expect(screen.getByRole('heading', { name: 'Another room' })).toBeInTheDocument();
+    expect(screen.getByText('Message 20')).toBeInTheDocument();
+    expect(screen.queryByText(detail.messages[0].body)).not.toBeInTheDocument();
+  });
+
+  it('ignores a delayed send after switching rooms and keeps the current draft', async () => {
+    const otherRoom = { ...room, id: 43, topic: 'Another room' };
+    let resolve!: (value: ChatMessage) => void;
+    vi.mocked(api.chat.list).mockResolvedValue({ items: [room, otherRoom], total: 2 });
+    vi.mocked(api.chat.get).mockImplementation(async id => id === 42 ? detail
+      : { ...detail, room: otherRoom, messages: [message(20, 43)], last_message_id: 20 });
+    vi.mocked(api.chat.postMessage).mockReturnValueOnce(new Promise(done => { resolve = done; }));
+    renderWithProviders(<ChatPage />);
+    await screen.findByText(detail.messages[0].body);
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'For the old room' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    fireEvent.click(screen.getByRole('button', { name: /Another room/ }));
+    await screen.findByText('Message 20');
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Current draft' } });
+
+    await act(async () => { resolve(message(21)); });
+
+    expect(screen.getByRole('heading', { name: 'Another room' })).toBeInTheDocument();
+    expect(screen.queryByText('Message 21')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Message')).toHaveValue('Current draft');
+  });
+
+  it.each(['failed request', 'invalid cursor'] as const)('keeps the last read cursor after a %s', async failure => {
+    vi.useFakeTimers();
+    const read = vi.mocked(api.chat.get).mockResolvedValueOnce(detail);
+    if (failure === 'failed request') read.mockRejectedValueOnce(new Error('Read failed'));
+    else read.mockResolvedValueOnce({ ...detail, has_more: true });
+    read.mockResolvedValueOnce({ ...detail, messages: [message(8)], last_message_id: 8 });
+    await act(async () => { renderWithProviders(<ChatPage />); });
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
+
+    expect(api.chat.get).toHaveBeenNthCalledWith(2, 42, 7);
+    expect(api.chat.get).toHaveBeenNthCalledWith(3, 42, 7);
+    expect(screen.getByText('Message 8')).toBeInTheDocument();
+    expect(screen.getByText(detail.messages[0].body)).toBeInTheDocument();
+  });
+
+  it('keeps reading position and the draft after a failed send', async () => {
+    vi.mocked(api.chat.postMessage).mockRejectedValueOnce(new Error('Send failed'));
+    renderWithProviders(<ChatPage />);
+    await screen.findByText(detail.messages[0].body);
+    const pane = screen.getByRole('region', { name: 'Chat messages' });
+    Object.defineProperties(pane, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 300 },
+    });
+    pane.scrollTop = 100;
+    fireEvent.scroll(pane);
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Keep this draft' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+
+    expect(api.chat.postMessage).toHaveBeenCalledWith(42, 'Keep this draft');
+    expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
+    expect(pane.scrollTop).toBe(100);
+    expect(screen.getByRole('button', { name: 'Jump to latest' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Message')).toHaveValue('Keep this draft');
   });
 });

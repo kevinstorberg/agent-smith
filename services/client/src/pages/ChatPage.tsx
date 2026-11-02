@@ -1,21 +1,30 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, type ChatMessage, type ChatRoom, type ChatRoomDetail } from '../api';
+import { ChatTranscript } from '../components/ChatTranscript';
 import { CopyButton } from '../components/CopyButton';
 import { useNotification } from '../context/useNotification';
 import { usePolling } from '../hooks/usePolling';
 
 const CHAT_POLL_INTERVAL_MS = 2_000;
 
+interface RoomSession {
+  roomId: number;
+  cursor: number;
+  inFlight: boolean;
+}
+
 function invitePrompt(roomId: number): string {
   return `Join Agent Smith chat room ${roomId} using the chat MCP tools. Collaborate until the room closes.`;
 }
 
-function appendMessage(detail: ChatRoomDetail, message: ChatMessage): ChatRoomDetail {
-  if (detail.messages.some(existing => existing.id === message.id)) return detail;
+function mergeMessages(detail: ChatRoomDetail, incoming: ChatMessage[]): ChatRoomDetail {
+  const byId = new Map(detail.messages.map(message => [message.id, message]));
+  for (const message of incoming) byId.set(message.id, message);
+  const messages = [...byId.values()].sort((left, right) => left.id - right.id);
   return {
     ...detail,
-    messages: [...detail.messages, message],
-    last_message_id: message.id,
+    messages,
+    last_message_id: messages.at(-1)?.id ?? detail.last_message_id,
   };
 }
 
@@ -33,6 +42,8 @@ export function ChatPage() {
   const [editing, setEditing] = useState(false);
   const [editTopic, setEditTopic] = useState('');
   const [editContext, setEditContext] = useState('');
+  const [lastSent, setLastSent] = useState<{ roomId: number; messageId: number } | null>(null);
+  const roomSession = useRef<RoomSession | null>(null);
   const { notify } = useNotification();
 
   useEffect(() => {
@@ -54,12 +65,25 @@ export function ChatPage() {
   }, [notify]);
 
   const loadSelectedRoom = useCallback(async (showError = true) => {
-    if (selectedRoomId === null) return;
+    const session = roomSession.current;
+    if (!session || session.roomId !== selectedRoomId || session.inFlight) return;
+    session.inFlight = true;
     try {
-      const result = await api.chat.get(selectedRoomId);
-      setDetail(result);
+      const result = await api.chat.get(session.roomId, session.cursor);
+      if (roomSession.current !== session) return;
+      if (result.room.id !== session.roomId || !Number.isSafeInteger(result.last_message_id)
+          || result.last_message_id < session.cursor
+          || (result.has_more && result.last_message_id === session.cursor)) {
+        throw new Error('Chat returned an invalid message cursor. Refresh the room to try again.');
+      }
+      session.cursor = result.last_message_id;
+      setDetail(current => mergeMessages(result, current?.room.id === session.roomId ? current.messages : []));
     } catch (error) {
-      if (showError) notify(error instanceof Error ? error.message : String(error), 'error');
+      if (roomSession.current === session && showError) {
+        notify(error instanceof Error ? error.message : String(error), 'error');
+      }
+    } finally {
+      session.inFlight = false;
     }
   }, [notify, selectedRoomId]);
 
@@ -68,10 +92,15 @@ export function ChatPage() {
   }, [loadRooms]);
 
   useEffect(() => {
+    const session = selectedRoomId === null ? null : { roomId: selectedRoomId, cursor: 0, inFlight: false };
+    roomSession.current = session;
     setDetail(null);
     setEditing(false);
     loadSelectedRoom();
-  }, [loadSelectedRoom]);
+    return () => {
+      if (roomSession.current === session) roomSession.current = null;
+    };
+  }, [loadSelectedRoom, selectedRoomId]);
 
   usePolling(async () => {
     await Promise.all([loadRooms(false), loadSelectedRoom(false)]);
@@ -99,14 +128,18 @@ export function ChatPage() {
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
     if (!detail || detail.room.state === 'closed' || !draft.trim()) return;
+    const session = roomSession.current;
+    const roomId = detail.room.id;
     setSaving(true);
     try {
-      const message = await api.chat.postMessage(detail.room.id, draft);
-      setDetail(current => current ? appendMessage(current, message) : current);
+      const message = await api.chat.postMessage(roomId, draft);
+      if (roomSession.current !== session) return;
+      setDetail(current => current?.room.id === roomId ? mergeMessages(current, [message]) : current);
+      setLastSent({ roomId, messageId: message.id });
       setDraft('');
       await loadRooms(false);
     } catch (error) {
-      notify(error instanceof Error ? error.message : String(error), 'error');
+      if (roomSession.current === session) notify(error instanceof Error ? error.message : String(error), 'error');
     } finally {
       setSaving(false);
     }
@@ -172,7 +205,7 @@ export function ChatPage() {
   if (loading) return <div className="loading">Loading...</div>;
 
   return (
-    <div>
+    <div className="chat-page">
       <div className="page-header">
         <div>
           <h2 className="page-title">Chat Rooms</h2>
@@ -295,25 +328,12 @@ export function ChatPage() {
                 </div>
               )}
 
-              <div className="chat-transcript">
-                {detail.messages.map(message => (
-                  <article key={message.id} className={`chat-message chat-message-${message.author}`}>
-                    <div className="chat-message-meta">
-                      <strong>{message.author}</strong>
-                      <time dateTime={message.created_at}>
-                        {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </time>
-                    </div>
-                    <div className="chat-message-body">{message.body}</div>
-                  </article>
-                ))}
-                {detail.messages.length === 0 && (
-                  <div className="chat-empty">No messages yet. Invite an agent or send the first message.</div>
-                )}
-                {detail.has_more && (
-                  <div className="chat-empty">Showing the first 100 messages.</div>
-                )}
-              </div>
+              <ChatTranscript
+                key={detail.room.id}
+                messages={detail.messages}
+                hasMore={detail.has_more}
+                sentMessageId={lastSent?.roomId === detail.room.id ? lastSent.messageId : null}
+              />
 
               {detail.room.state === 'open' && aiParticipants.length > 0 && (
                 <div className="chat-empty">
