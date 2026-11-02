@@ -7,7 +7,7 @@ import type { GraphJob, JobRunResult } from '../../api';
 vi.mock('../../api', () => ({ api: { jobs: { forGraph: vi.fn(), runNow: vi.fn() } } }));
 import { api } from '../../api';
 
-const job: GraphJob = { id: 42, name: 'Persona review', description: null, schedule_config: { minutes: 15 },
+const job: GraphJob = { id: 42, name: 'Persona review', schedule_enabled: true, description: null, schedule_config: { minutes: 15 },
   input_params: { graph_type: 'persona', graph_inputs: {}, timeout: 600 }, version: 1,
   created_at: '', updated_at: '', runs_on_device: true, configs: [] };
 const result = (outcome: string): JobRunResult => ({ execution_id: 77, success: true, error: '',

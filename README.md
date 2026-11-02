@@ -168,6 +168,19 @@ and records every run in `job_executions` (status, timing, output/error, exit co
 immediate run with **Run Now** (or the `job_run_now` MCP tool), which ignores the schedule
 and scoping.
 
+Use **Pause automatic runs** on an individual job in the Jobs list or detail view to
+pause only that job across devices. Its interval, device configurations, execution history,
+and other jobs are preserved. **Run Now** still works and does not resume scheduling;
+an execution already in progress finishes normally. **Resume automatic runs** restores
+normal scheduling, including eligible work queued while paused.
+
+The pause is stored separately as `background_jobs.schedule_enabled`. Paused jobs do not
+wake automatically for meeting/persona requests either; those requests can still be
+processed with **Run Now**. Apply the additive migration with
+`./db.sh production --confirm-database <production-database-name>` and restart every
+scheduler instance with the updated code before relying on the pause control. Existing
+jobs default to automatic runs enabled.
+
 Tune `JOB_POLL_INTERVAL`, `JOB_DEFAULT_TIMEOUT`, and `JOB_MAX_OUTPUT_BYTES` in your
 environment's `.env.*` file.
 

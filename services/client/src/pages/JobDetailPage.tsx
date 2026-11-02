@@ -15,6 +15,7 @@ import { MAX_TITLE_LENGTH } from '../constants';
 import { validators } from '../utils/validation';
 import { formatSchedule } from '../utils/schedule';
 import { useApiRead } from '../hooks/useApiRead';
+import { JobScheduleButton } from '../components/JobScheduleButton';
 
 const INTERVAL_UNITS = ['seconds', 'minutes', 'hours', 'days'];
 
@@ -65,6 +66,10 @@ function statusColor(status: string): string {
 
 export function JobDetailPage() {
   const { id } = useParams<{ id: string }>();
+  return <JobDetail key={id || 'new'} id={id} />;
+}
+
+function JobDetail({ id }: { id?: string }) {
   const navigate = useNavigate();
   const { notify } = useNotification();
   const isNew = id === 'new' || !id;
@@ -74,6 +79,10 @@ export function JobDetailPage() {
 
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(!isNew);
+  const [readError, setReadError] = useState(false);
+  const mounted = useRef(false);
+  const readVersion = useRef(0);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; readVersion.current += 1; }; }, []);
   const tab = searchParams.get('tab') === 'executions' ? 'executions' : 'details';
   const setTab = (value: 'details' | 'executions') => setSearchParams(previous => {
     const next = new URLSearchParams(previous); next.set('tab', value); return next;
@@ -100,13 +109,24 @@ export function JobDetailPage() {
 
   const loadJob = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
     if (isNew) return;
+    const version = ++readVersion.current;
     if (showLoading) setLoading(true);
     try {
-      setJob(await api.jobs.get(Number(id)));
+      const result = await api.jobs.get(Number(id));
+      if (mounted.current && version === readVersion.current) { setJob(result); setReadError(false); }
+    } catch {
+      if (mounted.current && version === readVersion.current) setReadError(true);
     } finally {
-      if (showLoading) setLoading(false);
+      if (mounted.current && version === readVersion.current && showLoading) setLoading(false);
     }
   }, [id, isNew]);
+  const schedulingChanged = (updated: Job) => {
+    if (!mounted.current || updated.id !== Number(id)) return;
+    readVersion.current += 1;
+    setJob(current => current?.id === updated.id ? { ...current, schedule_enabled: updated.schedule_enabled,
+      version: updated.version, updated_at: updated.updated_at } : current);
+    loadJob({ showLoading: false });
+  };
 
   useEffect(() => { loadJob(); }, [loadJob]);
 
@@ -125,6 +145,7 @@ export function JobDetailPage() {
   const runNowMutation = useApiMutation({
     mutationFn: () => api.jobs.runNow(Number(id)),
     onSuccess: (result) => {
+      if (!mounted.current) return;
       notify(result.success ? 'Job ran successfully' : 'Job ran but reported failure', result.success ? 'success' : 'error');
       setExecRefresh(n => n + 1);
       setSearchParams(previous => {
@@ -244,7 +265,7 @@ export function JobDetailPage() {
   };
 
   if (loading) return <div className="loading">Loading...</div>;
-  if (!isNew && !job) return <div className="loading">Job not found</div>;
+  if (!isNew && !job) return <div className="loading">{readError ? 'Could not load job.' : 'Job not found'}{readError && <button className="btn" onClick={() => loadJob()}>Retry</button>}</div>;
 
   const sched = scheduleParts(editValues.schedule_config);
   const command = String((editValues.input_params as Record<string, unknown> | undefined)?.command ?? '');
@@ -263,6 +284,7 @@ export function JobDetailPage() {
         deleteConfirmMessage={job ? `Delete job "${job.name}"?` : undefined}
         showActions={!isNew || editing}
       />
+      {readError && <p role="alert">Could not refresh this job. Saved information is kept. <button className="btn btn-sm" onClick={() => loadJob({ showLoading: false })}>Retry</button></p>}
 
       {editing ? (
         <>
@@ -389,17 +411,19 @@ export function JobDetailPage() {
       ) : job ? (
         <>
           <h2 className="page-title" style={{ marginBottom: 8 }}>{job.name}</h2>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 }}>
+          <div className="job-run-controls">
             <span className="tag">{formatSchedule(job.schedule_config)}</span>
+            {!job.schedule_enabled && <span className="tag tag-warning">Paused</span>}
+            <div className="job-run-actions"><JobScheduleButton job={job} onChanged={schedulingChanged} disabled={saving || updateMutation.loading || deleteMutation.loading} />
             <button
               className="btn btn-primary"
-              onClick={() => runNowMutation.mutateAsync()}
+              onClick={() => runNowMutation.mutate()}
               disabled={runNowMutation.loading}
-              style={{ marginLeft: 'auto' }}
             >
               {runNowMutation.loading ? 'Running...' : 'Run Now'}
-            </button>
+            </button></div>
           </div>
+          {!job.schedule_enabled && <p className="text-muted-sm job-paused-notice">Automatic runs are paused. Run Now is still available; any active run will finish.</p>}
 
           <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
             <button className={`btn${tab === 'details' ? ' btn-primary' : ''}`} onClick={() => setTab('details')}>Details</button>

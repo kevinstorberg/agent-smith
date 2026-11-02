@@ -119,7 +119,7 @@ def _record_cancelled(exec_id: int, start: float, output: str = "") -> None:
     complete_execution(exec_id, status="interrupted", result=result)
 
 
-async def execute_job(job: dict) -> dict:
+async def execute_job(job: dict, *, automatic: bool = False) -> dict:
     """Run a job once, recording a ``job_executions`` row.
 
     A job is either a shell command or an in-process graph run (see module
@@ -132,7 +132,10 @@ async def execute_job(job: dict) -> dict:
     params = job.get("input_params") or {}
     command = params.get("command")
     graph_type = params.get("graph_type")
-    exec_id = await asyncio.to_thread(create_execution, job_id=job_id, status="running")
+    exec_id = await asyncio.to_thread(create_execution, job_id=job_id, status="running", automatic=automatic)
+    if exec_id is None:
+        log.info("job %s automatic start skipped", job_id)
+        return {"success": True, "skipped": True}
 
     # Defense in depth for rows created before validate_input_params existed.
     if bool(command) == bool(graph_type):
@@ -278,7 +281,7 @@ class JobScheduler:
     def _eligible_jobs(self) -> list[dict]:
         # Only jobs whose job_configs scope them to this device are eligible.
         jobs, _ = list_jobs(limit=1000, offset=0)
-        return [j for j in jobs if job_runs_on_device(j["id"], self.device_name)]
+        return [j for j in jobs if j["schedule_enabled"] and job_runs_on_device(j["id"], self.device_name)]
 
     async def _seed_schedule(self) -> None:
         # Resume from each job's last run: seeding every job at now + interval let routine
@@ -303,7 +306,7 @@ class JobScheduler:
             log.warning("job %s still running; skipping this interval", job_id)
             return
         self._running.add(job_id)
-        task = asyncio.create_task(execute_job(job), name=f"job-{job_id}")
+        task = asyncio.create_task(execute_job(job, automatic=True), name=f"job-{job_id}")
         self._inflight.add(task)
 
         def _done(t: asyncio.Task) -> None:

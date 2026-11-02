@@ -591,6 +591,7 @@ export interface JobConfig {
 export interface Job {
   id: number;
   name: string;
+  schedule_enabled: boolean;
   description: string | null;
   schedule_config: Record<string, number>;
   input_params: Record<string, unknown>;
@@ -974,6 +975,8 @@ export const api = {
       post<Job>('/jobs', body),
     update: (id: number, body: { name?: string; schedule_config?: Record<string, number>; input_params?: Record<string, unknown>; description?: string | null }) =>
       put<Job>(`/jobs/${id}`, body),
+    setScheduling: (id: number, body: { schedule_enabled: boolean }) =>
+      patch<Job>(`/jobs/${id}/scheduling`, body),
     remove: (id: number) => del(`/jobs/${id}`),
     runNow: (id: number) => post<JobRunResult>(`/jobs/${id}/run-now`, {}),
     executions: (id: number, pagination?: PaginationParams) =>

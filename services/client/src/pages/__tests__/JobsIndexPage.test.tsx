@@ -20,7 +20,7 @@ vi.mock('../../hooks/usePagination', () => ({
 }));
 
 vi.mock('../../api', () => ({
-  api: { jobs: { list: vi.fn() } },
+  api: { jobs: { list: vi.fn(), setScheduling: vi.fn() } },
 }));
 
 import { usePagination } from '../../hooks/usePagination';
@@ -28,8 +28,8 @@ import { usePagination } from '../../hooks/usePagination';
 const mockUsePagination = usePagination as ReturnType<typeof vi.fn>;
 
 const fakeJobs = [
-  { id: 1, name: 'Backup', schedule_config: { hours: 24 }, input_params: {}, description: null, version: 1, created_at: '2026-01-15T10:00:00Z', updated_at: '2026-01-15T10:00:00Z' },
-  { id: 2, name: 'Sync', schedule_config: { minutes: 5 }, input_params: { command: 'sync' }, description: null, version: 1, created_at: '2026-02-20T14:30:00Z', updated_at: '2026-02-20T14:30:00Z' },
+  { id: 1, name: 'Backup', schedule_enabled: true, schedule_config: { hours: 24 }, input_params: {}, description: null, version: 1, created_at: '2026-01-15T10:00:00Z', updated_at: '2026-01-15T10:00:00Z' },
+  { id: 2, name: 'Sync', schedule_enabled: true, schedule_config: { minutes: 5 }, input_params: { command: 'sync' }, description: null, version: 1, created_at: '2026-02-20T14:30:00Z', updated_at: '2026-02-20T14:30:00Z' },
 ];
 
 function paginationReturn(overrides = {}) {
