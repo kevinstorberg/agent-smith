@@ -8,6 +8,9 @@ import { usePagination } from '../hooks/usePagination';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { FilterBar } from '../components/FilterBar';
 import { Pagination } from '../components/Pagination';
+import { CHAT_SORT_OPTIONS, CHAT_STATUSES } from '../constants';
+import { useViewPreferences } from '../hooks/useViewPreferences';
+import { parseViewField } from '../utils/viewPreferences';
 
 const CHAT_POLL_INTERVAL_MS = 2_000;
 
@@ -33,13 +36,12 @@ function mergeMessages(detail: ChatRoomDetail, incoming: ChatMessage[]): ChatRoo
 }
 
 export function ChatPage() {
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState<'all' | 'open' | 'closed'>('all');
-  const [sort, setSort] = useState('updated');
+  const preferences = useViewPreferences('chat');
+  const { q: search, status, sort } = preferences.values;
   const query = useDebouncedValue(search.trim());
   const list = usePagination<ChatRoom>((limit, offset) => api.chat.list({ limit, offset,
-    q: query || undefined, status: status === 'all' ? undefined : status, sort }), [query, status, sort]);
-  const { items: rooms, setItems: setRooms, refresh, setOffset } = list;
+    q: query || undefined, status: status === 'all' ? undefined : status, sort }), [query, status, sort], 10, { ...preferences.pagination, enabled: query === search.trim() });
+  const { items: rooms, setItems: setRooms, refresh } = list;
   const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null);
   const [detail, setDetail] = useState<ChatRoomDetail | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -66,9 +68,6 @@ export function ChatPage() {
   useEffect(() => {
     if (!list.loading && !list.error) setSelectedRoomId(current => current ?? rooms[0]?.id ?? null);
   }, [list.loading, list.error, rooms]);
-  const lastOffset = list.total > 0 ? Math.floor((list.total - 1) / list.limit) * list.limit : 0;
-  const clamping = !list.loading && !list.error && list.offset > lastOffset;
-  useEffect(() => { if (clamping) setOffset(lastOffset); }, [clamping, lastOffset, setOffset]);
 
   const loadSelectedRoom = useCallback(async (showError = true) => {
     const session = roomSession.current;
@@ -224,18 +223,15 @@ export function ChatPage() {
         </button>
       </div>
 
-      <FilterBar nameValue={search} onNameChange={setSearch} nameLabel="Search rooms" namePlaceholder="Search topics or context...">
+      <FilterBar nameValue={search} onNameChange={value => preferences.setField('q', value)} onReset={preferences.reset} nameLabel="Search rooms" namePlaceholder="Search topics or context...">
         <label><span className="form-label">Room status</span>
-          <select className="input" value={status} onChange={event => {
-            const value = event.target.value;
-            if (value === 'all' || value === 'open' || value === 'closed') setStatus(value);
-          }}>
-            <option value="all">All rooms</option><option value="open">Open</option><option value="closed">Closed</option>
+          <select className="input" value={status} onChange={event => preferences.setField('status', parseViewField('chat', 'status', event.target.value))}>
+            {CHAT_STATUSES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
         <label><span className="form-label">Sort rooms</span>
-          <select className="input" value={sort} onChange={event => setSort(event.target.value)}>
-            <option value="updated">Recently updated</option><option value="newest">Newest first</option><option value="name">Topic A–Z</option>
+          <select className="input" value={sort} onChange={event => preferences.setField('sort', parseViewField('chat', 'sort', event.target.value))}>
+            {CHAT_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
       </FilterBar>
@@ -269,9 +265,9 @@ export function ChatPage() {
 
       <div className="chat-layout">
         <aside className="chat-room-list" aria-label="Chat rooms">
-          {(list.loading || clamping) && <div className="loading">Loading rooms...</div>}
+          {list.loading && <div className="loading">Loading rooms...</div>}
           {list.error && <div role="alert">Could not load rooms. <button className="btn" onClick={() => refresh()}>Retry</button></div>}
-          {!list.loading && !clamping && !list.error && rooms.map(room => (
+          {!list.loading && !list.error && rooms.map(room => (
             <button
               key={room.id}
               className={`chat-room-button${selectedRoomId === room.id ? ' active' : ''}`}
@@ -283,10 +279,10 @@ export function ChatPage() {
               </span>
             </button>
           ))}
-          {!list.loading && !clamping && !list.error && rooms.length === 0 && <div className="chat-empty">{query || status !== 'all' ? 'No rooms match these filters.' : 'No rooms yet.'}</div>}
-          {!list.loading && !clamping && !list.error && selectedRoomId !== null && !rooms.some(room => room.id === selectedRoomId)
+          {!list.loading && !list.error && rooms.length === 0 && <div className="chat-empty">{query || status !== 'all' ? 'No rooms match these filters.' : 'No rooms yet.'}</div>}
+          {!list.loading && !list.error && selectedRoomId !== null && !rooms.some(room => room.id === selectedRoomId)
             && <p className="text-muted-sm">The selected room is outside the current results.</p>}
-          {!list.error && !clamping && <Pagination total={list.total} limit={list.limit} offset={list.offset} disabled={list.loading}
+          {!list.error && <Pagination total={list.total} limit={list.limit} offset={list.offset} disabled={list.loading}
             onPageChange={list.setOffset} onLimitChange={value => { list.setLimit(value); list.setOffset(0); }} />}
         </aside>
 

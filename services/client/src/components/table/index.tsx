@@ -21,6 +21,7 @@ export interface EnabledToggleCellProps {
   onChange: () => void;
   label?: { on: string; off: string };
   accentColor?: string;
+  disabled?: boolean;
   ariaLabel?: string;
 }
 
@@ -29,6 +30,7 @@ export function EnabledToggleCell({
   onChange,
   label = { on: 'On', off: 'Off' },
   accentColor = 'var(--success)',
+  disabled = false,
   ariaLabel,
 }: EnabledToggleCellProps) {
   return (
@@ -38,6 +40,7 @@ export function EnabledToggleCell({
           type="checkbox"
           aria-label={ariaLabel}
           checked={enabled}
+          disabled={disabled}
           onChange={onChange}
           style={{ accentColor, width: 16, height: 16 }}
         />

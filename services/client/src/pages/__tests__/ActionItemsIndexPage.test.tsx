@@ -1,3 +1,4 @@
+import { defaultView, mergeViewCookie, readViewCookie } from '../../utils/viewPreferences';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
@@ -38,6 +39,7 @@ const drop = (source = 0, destination = 2, id = 1): DropResult => ({
 const titles = () => within(screen.getByRole('table')).getAllByRole('button').filter(button => button.hasAttribute('aria-expanded')).map(button => button.getAttribute('aria-label'));
 
 beforeEach(() => {
+  document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.resetAllMocks();
   vi.spyOn(window, 'confirm').mockReturnValue(true); drag.start = null; drag.end = null;
   vi.mocked(api.actionItems.list).mockResolvedValue({ items: rows, total: 3 });
@@ -48,12 +50,33 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 async function renderReady() {
-  const rendered = renderWithProviders(<ActionItemsIndexPage />);
+  const rendered = renderWithProviders(<ActionItemsIndexPage />, { initialEntries: ['/action-items'] });
   await screen.findByRole('button', { name: 'Task 1' });
   return rendered;
 }
 
 describe('ActionItemsIndexPage', () => {
+  it('restores filtered manual ordering before its first request and resets only this view', async () => {
+    document.cookie = mergeViewCookie('', 'actionItems', { ...defaultView('actionItems'), q: 'Task', project: 'Work', tags: 'team, urgent', limit: 25, offset: 50 });
+    vi.mocked(api.actionItems.list).mockResolvedValue({ items: rows, total: 100 });
+    await renderReady();
+    expect(api.actionItems.list).toHaveBeenCalledTimes(1);
+    expect(api.actionItems.list).toHaveBeenCalledWith({ status: 'open', sort: 'manual', q: 'Task', project: 'Work', tags: ['team', 'urgent'], limit: 25, offset: 50 });
+    expect(screen.getByRole('button', { name: 'Reorder Task 1' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Reset view' }));
+    await waitFor(() => expect(api.actionItems.list).toHaveBeenLastCalledWith({ status: 'open', sort: 'manual', q: undefined, project: undefined, tags: [], limit: 10, offset: 0 }));
+    expect(readViewCookie(document.cookie)).toEqual([]);
+  });
+
+  it('honors explicit clears and normalizes an incompatible restored status-sort before fetching', async () => {
+    document.cookie = mergeViewCookie('', 'actionItems', { ...defaultView('actionItems'), q: 'old', status: 'completed', sort: 'completed', limit: 25, offset: 50 });
+    renderWithProviders(<ActionItemsIndexPage />, { initialEntries: ['/action-items?q=&status=all&sort=manual'] });
+    await screen.findByRole('button', { name: 'Task 1' });
+    expect(api.actionItems.list).toHaveBeenCalledTimes(1);
+    expect(api.actionItems.list).toHaveBeenCalledWith(expect.objectContaining({ q: undefined, status: 'all', sort: 'newest', limit: 25, offset: 0 }));
+    expect(screen.getByLabelText('Sort')).toHaveValue('newest');
+  });
+
   it('keeps title disclosures separate from right-side completion and Edit controls', async () => {
     const saving = deferred<ReturnType<typeof actionItem>>();
     vi.mocked(api.actionItems.update).mockReturnValueOnce(saving.promise);
@@ -85,7 +108,7 @@ describe('ActionItemsIndexPage', () => {
   it('debounces typing once, keeps search focused, and resets paging before the new query', async () => {
     vi.useFakeTimers();
     vi.mocked(api.actionItems.list).mockResolvedValue({ items: rows, total: 25 });
-    renderWithProviders(<ActionItemsIndexPage />);
+    renderWithProviders(<ActionItemsIndexPage />, { initialEntries: ['/action-items'] });
     await act(async () => { await Promise.resolve(); });
     expect(screen.getByRole('button', { name: 'Task 1' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
@@ -180,7 +203,7 @@ describe('ActionItemsIndexPage', () => {
     const saving = deferred<ReturnType<typeof actionItem>>();
     vi.mocked(api.actionItems.move).mockReturnValueOnce(saving.promise);
     vi.mocked(api.actionItems.list).mockResolvedValueOnce({ items: rows, total: 25 }).mockResolvedValue({ items: page, total: 25 });
-    renderWithProviders(<ActionItemsIndexPage />);
+    renderWithProviders(<ActionItemsIndexPage />, { initialEntries: ['/action-items'] });
     await screen.findByRole('button', { name: 'Task 1' });
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await screen.findByRole('button', { name: 'Task 11' });
@@ -192,6 +215,7 @@ describe('ActionItemsIndexPage', () => {
     expect(titles().at(-1)).toBe('Task 11');
     expect(screen.getAllByLabelText('Priority updating')).toHaveLength(10);
     expect(screen.getByLabelText('Search action items')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reset view' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Complete Task 12' })).toBeDisabled();
     await act(async () => { saving.resolve(actionItem(11, { revision: 2 })); await ended; });
@@ -366,8 +390,8 @@ describe('ActionItemsIndexPage', () => {
   });
 
   it('opens Edit directly without reading a description or toggling its disclosure', async () => {
-    renderWithProviders(<Routes><Route path="/" element={<ActionItemsIndexPage />} />
-      <Route path="/action-items/:id" element={<p>Direct editor</p>} /></Routes>);
+    renderWithProviders(<Routes><Route path="/action-items" element={<ActionItemsIndexPage />} />
+      <Route path="/action-items/:id" element={<p>Direct editor</p>} /></Routes>, { initialEntries: ['/action-items'] });
     await screen.findByRole('button', { name: 'Task 1' });
     fireEvent.click(screen.getByRole('button', { name: 'Edit Task 1' }));
     expect(await screen.findByText('Direct editor')).toBeVisible();
@@ -428,7 +452,7 @@ describe('ActionItemsIndexPage', () => {
 
   it('pauses polling during a drag and ignores canceled or unchanged drops', async () => {
     vi.useFakeTimers();
-    renderWithProviders(<ActionItemsIndexPage />);
+    renderWithProviders(<ActionItemsIndexPage />, { initialEntries: ['/action-items'] });
     await act(async () => { await Promise.resolve(); });
     await act(async () => { drag.start!(); });
     vi.mocked(api.actionItems.list).mockClear();
@@ -442,7 +466,7 @@ describe('ActionItemsIndexPage', () => {
 
   it('keeps labeled filters available through loading and retryable read failures', async () => {
     vi.mocked(api.actionItems.list).mockRejectedValueOnce(new Error('Private diagnostic'));
-    renderWithProviders(<ActionItemsIndexPage />);
+    renderWithProviders(<ActionItemsIndexPage />, { initialEntries: ['/action-items'] });
     expect(screen.getByLabelText('Search action items')).toBeVisible();
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load action items.');
     expect(screen.queryByText('Private diagnostic')).not.toBeInTheDocument();

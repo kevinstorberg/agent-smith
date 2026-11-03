@@ -1,3 +1,4 @@
+import { defaultView, mergeViewCookie, readViewCookie } from '../../utils/viewPreferences';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
@@ -68,6 +69,7 @@ function makeRun(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.clearAllMocks();
   mockCategories.mockResolvedValue(['rules', 'skills']);
   mockSubcategories.mockResolvedValue(['core', 'advanced']);
@@ -78,6 +80,24 @@ beforeEach(() => {
 });
 
 describe('EvalsPage', () => {
+  it('restores the same filters before table, facet and chart reads and atomically clears dependent criteria', async () => {
+    document.cookie = mergeViewCookie('', 'results', { ...defaultView('results'), q: 'quality', category: 'skills', subcategory: 'core', scenario: 'test_scenario', model: 'gpt-4', sort: 'score', limit: 25, offset: 50 });
+    mockList.mockResolvedValue({ items: [], total: 100 });
+    renderWithProviders(<EvalsPage />, { initialEntries: ['/evals?keep=1'] });
+    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
+    expect(mockList).toHaveBeenCalledWith({ eval_type: 'skills', subcategory: 'core', scenario: 'test_scenario', model: 'gpt-4', q: 'quality', sort: 'score', limit: '25', offset: '50' });
+    expect(mockChartAverage).toHaveBeenCalledWith({ eval_type: 'skills', subcategory: 'core', scenario: 'test_scenario', model: 'gpt-4', q: 'quality' });
+    expect(mockFacets).toHaveBeenCalledWith({ eval_type: 'skills', subcategory: 'core', q: 'quality' });
+    mockList.mockClear();
+    fireEvent.change(screen.getByLabelText('Result category'), { target: { value: '' } });
+    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
+    expect(mockList).toHaveBeenCalledWith({ q: 'quality', sort: 'score', limit: '25', offset: '0' });
+    expect(readViewCookie(document.cookie)[0].values).toEqual({ q: 'quality', sort: 'score', limit: 25 });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset view' }));
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ sort: 'newest', limit: '10', offset: '0' }));
+    expect(readViewCookie(document.cookie)).toEqual([]);
+  });
+
   it('requests all result categories by default across the table, facets and chart', async () => {
     renderWithProviders(<EvalsPage />, { initialEntries: ['/evals'] });
     await waitFor(() => expect(mockList).toHaveBeenCalled());

@@ -16,6 +16,40 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('Harness anchored moves', () => {
+  it('sends raw source and visible-anchor timestamp tokens through the real fetch boundary', async () => {
+    globalThis.fetch = mockFetch({ id: 101, sort_key: 4, updated_at: '2026-11-03T12:00:00.654321+00:00' });
+    const body = { after_id: 107, expected_updated_at: '2026-11-03T12:00:00.123456+00:00',
+      expected_anchor_updated_at: '2026-11-03T07:00:00.654321-05:00' };
+    await api.harness.items.move('rule', 101, body);
+    const [url, options] = vi.mocked(globalThis.fetch).mock.calls[0];
+    expect(url).toBe('/api/harness/items/rule/101/move');
+    expect(options?.method).toBe('POST');
+    expect(JSON.parse(String(options?.body))).toEqual(body);
+  });
+
+  it('bounds moves, metadata writes and recovery reads without changing long-running job calls', async () => {
+    globalThis.fetch = mockFetch({});
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    await api.harness.items.list('rule', { name: 'filtered', offset: 10, limit: 10 });
+    await api.harness.items.updateMetadata('rule', 101, { enabled: false });
+    await api.harness.items.move('rule', 101, { before_id: 107, expected_updated_at: 'source', expected_anchor_updated_at: 'anchor' });
+    await api.jobs.runNow(1);
+    expect(timeout.mock.calls).toEqual([[30_000], [30_000], [30_000]]);
+    const calls = vi.mocked(globalThis.fetch).mock.calls;
+    calls.slice(0, 3).forEach(([, options]) => expect(options?.signal).toBeInstanceOf(AbortSignal));
+    expect(calls[3][1]).not.toHaveProperty('signal');
+  });
+
+  it('reports an uncertain move timeout without automatically retrying the write', async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(new DOMException('Deadline', 'TimeoutError'));
+    await expect(api.harness.items.move('rule', 101, {
+      before_id: 107, expected_updated_at: 'source', expected_anchor_updated_at: 'anchor',
+    })).rejects.toThrow('Refresh to check whether your change was saved');
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('action items', () => {
   it('scopes every discussion-topic endpoint to its encoded profile and preserves UUID/revision/anchor bodies', async () => {
     globalThis.fetch = mockFetch({});
