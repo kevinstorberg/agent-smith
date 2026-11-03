@@ -6,9 +6,13 @@ is portable across devices; sync resolves the token to each device's real repo p
 from __future__ import annotations
 
 import json
+from copy import deepcopy
+
+import pytest
 
 from scripts.shared import hook_utils
 from scripts.shared.agents import AGENT_TARGETS
+from scripts.shared.hook_permissions import ownership_path
 from scripts.shared.paths import REPO_ROOT
 from services.api.models.hook import HookSettings
 
@@ -68,6 +72,74 @@ def test_sync_hooks_delivers_model_and_expanded_permissions(tmp_path, monkeypatc
     written = json.loads(dest.read_text())
     assert written["hooks"]["Stop"][0]["hooks"][0]["model"] == "haiku"
     assert written["permissions"]["allow"] == ["Bash(/host/repo/.venv/bin/python /host/repo/scripts/claude_memory_context.py *)"]
+
+
+def test_sync_legacy_ui_model_reaches_settings_and_preserves_source_and_user_settings(tmp_path, monkeypatch):
+    from services.api.models import hook
+
+    search = "mcp__memory__memory_search"
+    helper = "Bash(${REPO_ROOT}/.venv/bin/python ${REPO_ROOT}/scripts/claude_memory_context.py *)"
+    rows = [{"id": 83, "name": "claude_memories", "version": 6, "enabled": True, "content": {
+        "body": "", "metadata": {"event": "stop", "matcher": "*", "model": "haiku", "hooks": [
+            {"type": "agent", "prompt": "Capture", "timeout": 120},
+            {"type": "prompt", "model": "custom/provider-model", "prompt": "Review"},
+            {"type": "command", "command": "${REPO_ROOT}/scripts/audit_hook.py"},
+            {"type": "http", "url": "https://example.invalid/hook"},
+        ], "permissions": {"allow": [search, helper]}},
+    }}]
+    original = deepcopy(rows)
+    dest = tmp_path / "settings.json"
+    initial = {"model": "opus", "permissions": {"allow": ["Read", search], "deny": ["Bash(rm *)"]}}
+    dest.write_text(json.dumps(initial))
+    monkeypatch.setenv("HOST_REPO_ROOT", "/host/repo")
+    monkeypatch.setitem(AGENT_TARGETS["claude"], "hooks_file", str(dest))
+    calls = []
+
+    def list_items(item_type, **kwargs):
+        calls.append((item_type, kwargs))
+        return rows
+
+    monkeypatch.setattr(hook, "list_items", list_items)
+    previous = None
+    for _ in range(2):
+        hook_utils.sync_hooks("claude", False)
+        written = json.loads(dest.read_text())
+        handlers = written["hooks"]["Stop"][0]["hooks"]
+        assert handlers[0] == {"type": "agent", "model": "haiku", "prompt": "Capture", "timeout": 120}
+        assert handlers[1]["model"] == "custom/provider-model"
+        assert "model" not in handlers[2] and "model" not in handlers[3]
+        assert handlers[2]["command"] == "/host/repo/scripts/audit_hook.py"
+        assert written["model"] == initial["model"]
+        assert written["permissions"] == {"allow": ["Read", search,
+            "Bash(/host/repo/.venv/bin/python /host/repo/scripts/claude_memory_context.py *)"], "deny": ["Bash(rm *)"]}
+        assert rows == original
+        if previous is not None:
+            assert written == previous
+        previous = written
+    assert calls == [("hook", {"project": None, "agent": "claude"})] * 2
+    assert json.loads(ownership_path(dest).read_text())["owned_rules"] == [
+        "Bash(/host/repo/.venv/bin/python /host/repo/scripts/claude_memory_context.py *)"
+    ]
+
+
+@pytest.mark.parametrize("metadata", [
+    {"model": None, "hooks": [{"type": "agent"}]},
+    {"model": "haiku", "hooks": [{"type": "agent", "model": ""}]},
+    {"model": "haiku", "hooks": [{"type": "command", "command": "echo capture"}]},
+])
+def test_sync_invalid_model_contract_preserves_settings_before_any_write(tmp_path, monkeypatch, metadata):
+    from services.api.models import hook
+
+    dest = tmp_path / "settings.json"
+    original = '{"model":"opus","permissions":{"allow":["Read"]}}\n'
+    dest.write_text(original)
+    monkeypatch.setitem(AGENT_TARGETS["claude"], "hooks_file", str(dest))
+    rows = [{"name": "invalid", "content": {"metadata": {"event": "stop", **metadata}}}]
+    monkeypatch.setattr(hook, "list_items", lambda *args, **kwargs: rows)
+    with pytest.raises(ValueError, match=r"Hook invalid: metadata\."):
+        hook_utils.sync_hooks("claude", False)
+    assert dest.read_text() == original
+    assert list(tmp_path.iterdir()) == [dest]
 
 
 def test_sync_empty_hooks_clears_previous_hooks_and_owned_grants(tmp_path, monkeypatch):
