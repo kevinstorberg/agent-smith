@@ -1,14 +1,9 @@
 import http.client
 import json
-import os
-from pathlib import Path
-import random
-import socket
-import subprocess
-import sys
-import time
 
 import pytest
+
+from tests.native_uvicorn import owned_uvicorn
 
 SERVER = """
 from http import HTTPStatus
@@ -50,42 +45,8 @@ def _request(port, path, *, method="GET", accept="application/json", timeout=1):
 def server(request, tmp_path):
     protocol, level = request.param
     output = tmp_path / "uvicorn.log"
-    with socket.socket() as listener, output.open("w") as log:
-        listener.bind(("127.0.0.1", 0))
-        listener.listen()
-        port = listener.getsockname()[1]
-        env = {key: os.environ[key] for key in ("PATH", "TMPDIR", "TMP", "TEMP") if key in os.environ}
-        env.update(AGENT_SMITH_AUTOMATED_TESTS="1", PYTHONUNBUFFERED="1", APP_ENV="test")
-        process = subprocess.Popen(
-            [sys.executable, "-c", SERVER, str(listener.fileno()), protocol, level],
-            cwd=Path(__file__).resolve().parents[1], env=env, pass_fds=(listener.fileno(),),
-            stdout=log, stderr=subprocess.STDOUT,
-        )
-        try:
-            deadline, delay, last_error = time.monotonic() + 8, 0.02, "not started"
-            while time.monotonic() < deadline:
-                if process.poll() is not None:
-                    pytest.fail(f"Owned Uvicorn exited with {process.returncode}: {output.read_text()}")
-                try:
-                    status, _ = _request(port, "/health", timeout=0.2)
-                    if status == 200:
-                        break
-                    last_error = f"health returned {status}"
-                except (OSError, http.client.HTTPException) as error:
-                    last_error = type(error).__name__
-                time.sleep(delay * random.uniform(0.8, 1.2))
-                delay = min(delay * 2, 0.2)
-            else:
-                pytest.fail(f"Owned Uvicorn did not become ready within 8 seconds ({last_error}): {output.read_text()}")
-            yield port, output, level
-        finally:
-            if process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=3)
+    with owned_uvicorn(SERVER, output, protocol, level=level) as running:
+        yield running.port, output, level
 
 
 @pytest.mark.parametrize("server", [(protocol, level) for protocol in ("h11", "httptools") for level in ("info", "debug")], indirect=True)
