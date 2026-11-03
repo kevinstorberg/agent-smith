@@ -17,7 +17,7 @@ export function EvalsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const category = searchParams.get('category') || 'rules';
+  const category = searchParams.get('category') || '';
   const subcategory = searchParams.get('subcategory') || '';
   const scenario = searchParams.get('scenario') || '';
   const model = searchParams.get('model') || '';
@@ -75,7 +75,8 @@ export function EvalsPage() {
           value={category}
           onChange={e => setFilter('category', e.target.value, ['subcategory', 'scenario', 'model'])}
         >
-          {[...new Set([...(categories.data || []), category])].map(c => <option key={c} value={c}>{c}</option>)}
+          <option value="">All categories</option>
+          {[...new Set([...(categories.data || []), ...(category ? [category] : [])])].map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         </label>
         <label><span className="form-label">Subcategory</span>
