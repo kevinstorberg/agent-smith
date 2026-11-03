@@ -81,7 +81,7 @@ describe('MemoryPage', () => {
     }));
     fireEvent.change(screen.getByPlaceholderText('Semantic search...'), { target: { value: 'release plans' } });
     await waitFor(() => expect(mockSearch).toHaveBeenLastCalledWith('release plans', expect.objectContaining({ meeting_only: true, offset: 0, repo: 'agent-smith', tags: ['decision', 'release'], sort: 'relevance' })));
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
     await waitFor(() => expect(mockSearch).toHaveBeenLastCalledWith('release plans', expect.objectContaining({ offset: 10, meeting_only: true })));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Meetings only' }));
     await waitFor(() => expect(mockSearch).toHaveBeenLastCalledWith('release plans', expect.objectContaining({ offset: 0, meeting_only: false, sort: 'relevance' })));
