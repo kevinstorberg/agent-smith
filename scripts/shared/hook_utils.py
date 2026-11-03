@@ -9,6 +9,7 @@ import tomli_w
 from scripts.shared.agents import AGENT_TARGETS, _read_config
 from scripts.shared.env import expand_env
 from scripts.shared.fs import atomic_write
+from scripts.shared.hook_permissions import sync_claude_hook_settings
 from scripts.shared.paths import REPO_ROOT
 
 
@@ -18,21 +19,24 @@ def _expand_hook_paths(hooks: dict) -> dict:
 
 
 def sync_hooks(agent: str, dry_run: bool) -> None:
-    from services.api.models.hook import collect_hooks_from_db
+    from services.api.models.hook import collect_hook_settings_from_db
 
     cfg = AGENT_TARGETS[agent]
     if "hooks_file" not in cfg:
         return
 
     dest = Path(cfg["hooks_file"]).expanduser()
-    hooks = _expand_hook_paths(collect_hooks_from_db(agent))
+    settings = collect_hook_settings_from_db(agent)
+    hooks = _expand_hook_paths(settings.hooks)
+    allowed_tools = _expand_hook_paths({"allow": settings.allowed_tools})["allow"]
 
     if dry_run:
-        print(f"  would sync {len(hooks)} hook event(s) -> {dest}")
+        print(f"  would sync {len(hooks)} hook event(s) and {len(allowed_tools)} permission rule(s) -> {dest}")
         return
 
-    if not hooks:
-        print("  no hooks to sync")
+    if agent == "claude":
+        changed = sync_claude_hook_settings(dest, hooks, allowed_tools)
+        print(f"  {'updated' if changed else 'unchanged'}: {dest}")
         return
 
     data = _read_config(dest, cfg["hooks_format"]) if dest.exists() else {}
