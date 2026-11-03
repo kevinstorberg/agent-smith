@@ -1,3 +1,4 @@
+import { defaultView, mergeViewCookie, readViewCookie } from '../../utils/viewPreferences';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, type ChatMessage, type ChatRoom, type ChatRoomDetail } from '../../api';
@@ -51,6 +52,7 @@ function message(id: number, roomId = room.id): ChatMessage {
 }
 
 beforeEach(() => {
+  document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.clearAllMocks();
   vi.mocked(api.chat.list).mockResolvedValue({ items: [room], total: 1 });
   vi.mocked(api.chat.get).mockResolvedValue(detail);
@@ -66,9 +68,24 @@ afterEach(() => {
 });
 
 describe('ChatPage', () => {
+  it('restores room-list preferences before requesting and keeps room drafts out of saved settings', async () => {
+    document.cookie = mergeViewCookie('', 'chat', { ...defaultView('chat'), q: 'cache', status: 'closed', sort: 'name', limit: 25, offset: 50 });
+    vi.mocked(api.chat.list).mockResolvedValue({ items: [room], total: 100 });
+    renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] });
+    await screen.findByText(detail.messages[0].body);
+    expect(api.chat.list).toHaveBeenCalledTimes(1);
+    expect(api.chat.list).toHaveBeenCalledWith({ q: 'cache', status: 'closed', sort: 'name', limit: 25, offset: 50 });
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Unsent draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset view' }));
+    await waitFor(() => expect(api.chat.list).toHaveBeenLastCalledWith({ q: undefined, status: undefined, sort: 'updated', limit: 10, offset: 0 }));
+    expect(screen.getByLabelText('Message')).toHaveValue('Unsent draft');
+    expect(screen.getByRole('heading', { name: room.topic })).toBeInTheDocument();
+    expect(readViewCookie(document.cookie)).toEqual([]);
+  });
+
   it('keeps search, status and sort available while loading, empty and failed', async () => {
     vi.mocked(api.chat.list).mockRejectedValueOnce(new Error('private server diagnostic'));
-    renderWithProviders(<ChatPage />);
+    renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] });
     expect(screen.getByRole('textbox', { name: 'Search rooms' })).toBeVisible();
     expect(screen.getByRole('combobox', { name: 'Room status' })).toHaveValue('all');
     expect(screen.getByRole('combobox', { name: 'Sort rooms' })).toHaveValue('updated');
@@ -83,7 +100,7 @@ describe('ChatPage', () => {
   it('debounces room search and combines status and sort before paging without replacing the selected room', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.mocked(api.chat.list).mockResolvedValue({ items: [room], total: 25 });
-    renderWithProviders(<ChatPage />);
+    renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] });
     await screen.findByText(detail.messages[0].body);
     fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Keep my current draft' } });
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
@@ -109,7 +126,7 @@ describe('ChatPage', () => {
 
   it('ignores a stale room list response after newer search results arrive', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    renderWithProviders(<ChatPage />);
+    renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] });
     await screen.findByText(detail.messages[0].body);
     let finish!: (result: { items: ChatRoom[]; total: number }) => void;
     vi.mocked(api.chat.list).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
@@ -126,7 +143,7 @@ describe('ChatPage', () => {
   });
 
   it('loads rooms and the selected transcript', async () => {
-    renderWithProviders(<ChatPage />);
+    renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] });
 
     expect(await screen.findByText('Choose a cache strategy')).toBeInTheDocument();
     expect(await screen.findByText('Extend the existing cache interface.')).toBeInTheDocument();
@@ -136,7 +153,7 @@ describe('ChatPage', () => {
   it('creates a room from topic and optional context', async () => {
     const created = { ...room, id: 43, topic: 'New topic' };
     vi.mocked(api.chat.create).mockResolvedValue(created);
-    renderWithProviders(<ChatPage />);
+    renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] });
 
     await screen.findByText('Choose a cache strategy');
     fireEvent.click(screen.getByText('+ New Room'));
@@ -158,7 +175,7 @@ describe('ChatPage', () => {
       body: 'Please compare both options.',
       created_at: '2026-09-09T12:02:00Z',
     });
-    renderWithProviders(<ChatPage />);
+    renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] });
 
     await screen.findByText('Extend the existing cache interface.');
     fireEvent.change(screen.getByLabelText('Message'), {
@@ -180,7 +197,7 @@ describe('ChatPage', () => {
       ...detail,
       room: id === otherRoom.id ? otherRoom : room,
     }));
-    renderWithProviders(<ChatPage />);
+    renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] });
 
     await screen.findByText('Extend the existing cache interface.');
     expect(screen.getAllByRole('button', { name: 'Copy' })).toHaveLength(1);
@@ -206,7 +223,7 @@ describe('ChatPage', () => {
     };
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.mocked(api.chat.stop).mockResolvedValue(closed);
-    renderWithProviders(<ChatPage />);
+    renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] });
 
     fireEvent.click(await screen.findByText('Stop Agent Access'));
 
@@ -232,7 +249,7 @@ describe('ChatPage', () => {
       ],
       last_message_id: 9,
     });
-    renderWithProviders(<ChatPage />);
+    renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] });
 
     const body = await screen.findByText('I would benchmark both caches first.');
     expect(body.closest('article')).toHaveClass(`chat-message-${participant}`);
@@ -240,7 +257,7 @@ describe('ChatPage', () => {
   });
 
   it('offers an AI mention hint but never an AI invite button', async () => {
-    renderWithProviders(<ChatPage />);
+    renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] });
 
     const mentionList = AI_PARTICIPANTS.map(name => `@${name}`).join(' or ');
     expect(
@@ -255,7 +272,7 @@ describe('ChatPage', () => {
   it('edits a room from the header form', async () => {
     const renamed = { ...room, topic: 'Renamed topic', context: 'New context' };
     vi.mocked(api.chat.update).mockResolvedValue(renamed);
-    renderWithProviders(<ChatPage />);
+    renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] });
 
     await screen.findByText('Extend the existing cache interface.');
     fireEvent.click(screen.getByText('Edit'));
@@ -276,7 +293,7 @@ describe('ChatPage', () => {
       vi.mocked(api.chat.list).mockResolvedValue({ items: [], total: 0 });
       return undefined;
     });
-    renderWithProviders(<ChatPage />);
+    renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] });
 
     await screen.findByText('Extend the existing cache interface.');
     fireEvent.click(screen.getByText('Delete'));
@@ -287,7 +304,7 @@ describe('ChatPage', () => {
 
   it('polls without issuing overlapping state machinery', async () => {
     vi.useFakeTimers();
-    await act(async () => { renderWithProviders(<ChatPage />); });
+    await act(async () => { renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] }); });
     vi.mocked(api.chat.list).mockClear();
     vi.mocked(api.chat.get).mockClear();
 
@@ -301,7 +318,7 @@ describe('ChatPage', () => {
 
   it('polls the current room list criteria while retaining the selected transcript cursor', async () => {
     vi.useFakeTimers();
-    await act(async () => { renderWithProviders(<ChatPage />); });
+    await act(async () => { renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] }); });
     await act(async () => {
       fireEvent.change(screen.getByRole('textbox', { name: 'Search rooms' }), { target: { value: 'cache' } });
       fireEvent.change(screen.getByRole('combobox', { name: 'Room status' }), { target: { value: 'open' } });
@@ -324,7 +341,7 @@ describe('ChatPage', () => {
       : { ...detail, room: otherRoom, messages: [message(20, 43)], last_message_id: 20 });
     vi.mocked(api.chat[action]).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
     vi.spyOn(window, 'confirm').mockReturnValue(true);
-    renderWithProviders(<ChatPage />);
+    renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] });
     await screen.findByText(detail.messages[0].body);
     if (action === 'update') {
       fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
@@ -346,7 +363,7 @@ describe('ChatPage', () => {
       .mockResolvedValueOnce({ ...detail, messages: firstPage, last_message_id: 100, has_more: true })
       .mockResolvedValueOnce({ ...detail, messages: [message(101), message(102)], last_message_id: 102 });
     vi.mocked(api.chat.postMessage).mockResolvedValue(message(102));
-    await act(async () => { renderWithProviders(<ChatPage />); });
+    await act(async () => { renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] }); });
     expect(screen.getByText('Loading more messages...')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'A local send' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
@@ -369,7 +386,7 @@ describe('ChatPage', () => {
     vi.mocked(api.chat.get).mockImplementation(id => id === 42
       ? new Promise(done => { resolve = done; })
       : Promise.resolve({ ...detail, room: otherRoom, messages: [message(20, 43)], last_message_id: 20 }));
-    renderWithProviders(<ChatPage />);
+    renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] });
     await waitFor(() => expect(api.chat.get).toHaveBeenCalledWith(42, 0));
     fireEvent.click(screen.getByRole('button', { name: /Another room/ }));
     await screen.findByText('Message 20');
@@ -388,7 +405,7 @@ describe('ChatPage', () => {
     vi.mocked(api.chat.get).mockImplementation(async id => id === 42 ? detail
       : { ...detail, room: otherRoom, messages: [message(20, 43)], last_message_id: 20 });
     vi.mocked(api.chat.postMessage).mockReturnValueOnce(new Promise(done => { resolve = done; }));
-    renderWithProviders(<ChatPage />);
+    renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] });
     await screen.findByText(detail.messages[0].body);
     fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'For the old room' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
@@ -409,7 +426,7 @@ describe('ChatPage', () => {
     if (failure === 'failed request') read.mockRejectedValueOnce(new Error('Read failed'));
     else read.mockResolvedValueOnce({ ...detail, has_more: true });
     read.mockResolvedValueOnce({ ...detail, messages: [message(8)], last_message_id: 8 });
-    await act(async () => { renderWithProviders(<ChatPage />); });
+    await act(async () => { renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] }); });
 
     await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
 
@@ -421,7 +438,7 @@ describe('ChatPage', () => {
 
   it('keeps reading position and the draft after a failed send', async () => {
     vi.mocked(api.chat.postMessage).mockRejectedValueOnce(new Error('Send failed'));
-    renderWithProviders(<ChatPage />);
+    renderWithProviders(<ChatPage />, { initialEntries: ['/chat'] });
     await screen.findByText(detail.messages[0].body);
     const pane = screen.getByRole('region', { name: 'Chat messages' });
     Object.defineProperties(pane, {

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { DropResult } from '@hello-pangea/dnd';
 import type { ActionItem, ActionItemFilters, ActionItemMove, ActionItemPatch, ActionItemRow, Paginated } from '../api';
+import type { PaginationOptions } from './usePagination';
 import { usePagination } from './usePagination';
 import { usePolling } from './usePolling';
 import { useNotification } from '../context/useNotification';
@@ -13,9 +14,9 @@ export interface ActionItemQueueSource {
 }
 interface DragSnapshot { items: ActionItemRow[]; view: string }
 
-export function useActionItemQueue({ source, filters, criteria, viewKey, reorderableView, criteriaPending = false, active = true, disabled = false, editing = false, noun = 'action item' }: {
+export function useActionItemQueue({ source, filters, criteria, viewKey, reorderableView, criteriaPending = false, active = true, disabled = false, editing = false, noun = 'action item', pagination }: {
   source: ActionItemQueueSource; filters: ActionItemFilters; criteria: string; viewKey: string; reorderableView: boolean;
-  criteriaPending?: boolean; active?: boolean; disabled?: boolean; editing?: boolean; noun?: string;
+  criteriaPending?: boolean; active?: boolean; disabled?: boolean; editing?: boolean; noun?: string; pagination?: PaginationOptions;
 }) {
   const [snapshot, setSnapshot] = useState<DragSnapshot | null>(null);
   const drag = useRef<DragSnapshot | null>(null);
@@ -24,7 +25,7 @@ export function useActionItemQueue({ source, filters, criteria, viewKey, reorder
   const [pendingId, setPendingId] = useState<number | null>(null);
   const writing = useRef(false);
   const { notify } = useNotification();
-  const list = usePagination<ActionItemRow>((limit, offset) => source.list({ ...filters, limit, offset }), [criteria]);
+  const list = usePagination<ActionItemRow>((limit, offset) => source.list({ ...filters, limit, offset }), [criteria], 10, pagination);
   const { items, total, loading, error, limit, offset, setOffset, refresh, setItems } = list;
   const latestRefresh = useRef(refresh);
   const mounted = useRef(false);
@@ -51,10 +52,10 @@ export function useActionItemQueue({ source, filters, criteria, viewKey, reorder
 
   usePolling(() => refresh({ showLoading: false }), { enabled: active && !disabled && !snapshot && !busy });
   useEffect(() => {
-    if (!loading && !error && !snapshot && offset > 0 && offset >= total) {
+    if (!pagination?.clampOffset && !loading && !error && !snapshot && offset > 0 && offset >= total) {
       setOffset(total ? Math.floor((total - 1) / limit) * limit : 0);
     }
-  }, [loading, error, snapshot, offset, total, limit, setOffset]);
+  }, [loading, error, snapshot, offset, total, limit, setOffset, pagination?.clampOffset]);
 
   async function finishWrite() {
     if (mounted.current) await latestRefresh.current({ showLoading: false });

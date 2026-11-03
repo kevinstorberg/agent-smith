@@ -1,4 +1,4 @@
-import { ALL_AGENTS, AUDIT_SORT_OPTIONS, AUDIT_STATUSES, EVAL_SUITE_SORT_OPTIONS, HARNESS_SORT_OPTIONS, PAGE_LIMITS, PROPOSAL_SORT_OPTIONS, PROPOSAL_STATUSES } from '../constants';
+import { ACTION_ITEM_SORT_OPTIONS, ACTION_ITEM_STATUSES, CHAT_SORT_OPTIONS, CHAT_STATUSES, PROFILE_SORT_OPTIONS, RESULT_SORT_OPTIONS, actionItemSortOptions, defaultActionItemSort, ALL_AGENTS, AUDIT_SORT_OPTIONS, AUDIT_STATUSES, EVAL_SUITE_SORT_OPTIONS, HARNESS_SORT_OPTIONS, MEMORY_LIST_SORT_OPTIONS, MEMORY_SEARCH_SORT_OPTIONS, MEETING_SORT_OPTIONS, PAGE_LIMITS, PROPOSAL_SORT_OPTIONS, PROPOSAL_STATUSES, VOCABULARY_DEFINITIONS, VOCABULARY_SORT_OPTIONS } from '../constants';
 import type { PageLimit } from '../constants';
 
 export const VIEW_COOKIE_NAME = 'agent-smith.ui.v1';
@@ -19,17 +19,25 @@ export const SCHEDULING_OPTIONS = [
 type HarnessViewKey = 'harness.rule' | 'harness.skill' | 'harness.tool' | 'harness.hook' | 'harness.agent';
 interface HarnessViewSettings { name: string; project: string; sort: typeof HARNESS_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number }
 export interface ViewSettings extends Record<HarnessViewKey, HarnessViewSettings> {
+  actionItems: { q: string; project: string; tags: string; status: typeof ACTION_ITEM_STATUSES[number][0]; sort: typeof ACTION_ITEM_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
+  profiles: { q: string; tags: string; starred: boolean; sort: typeof PROFILE_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
+  chat: { q: string; status: typeof CHAT_STATUSES[number]['value']; sort: typeof CHAT_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
+  results: { q: string; category: string; subcategory: string; scenario: string; model: string; sort: typeof RESULT_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
   jobs: { q: string; schedule_enabled: typeof SCHEDULING_OPTIONS[number]['value']; sort: typeof JOB_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
   plans: { q: string; project: string; status: typeof PLAN_STATUSES[number]; sort: typeof PLAN_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
   audit: { q: string; project: string; agent: '' | typeof ALL_AGENTS[number]; status: '' | typeof AUDIT_STATUSES[number]; sort: typeof AUDIT_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
   proposals: { q: string; status: '' | typeof PROPOSAL_STATUSES[number]; sort: typeof PROPOSAL_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
   evalSuites: { q: string; enabled: typeof SCHEDULING_OPTIONS[number]['value']; sort: typeof EVAL_SUITE_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
+  memory: { q: string; repo: string; tags: string; meeting_only: boolean; listSort: typeof MEMORY_LIST_SORT_OPTIONS[number]['value']; searchSort: typeof MEMORY_SEARCH_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
+  meetings: { q: string; labels: string; sort: typeof MEETING_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
+  vocabulary: { q: string; definition: typeof VOCABULARY_DEFINITIONS[number]['value']; sort: typeof VOCABULARY_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
 }
 export type ViewKey = keyof ViewSettings;
 interface Field<T> { parse: (value: unknown) => T | undefined }
-interface ViewSpec<T> { pathname: string; defaults: T; fields: { [K in keyof T]: Field<T[K]> } }
+interface ViewSpec<T> { pathname: string; defaults: T; fields: { [K in keyof T]: Field<T[K]> }; normalize?: (values: T) => T }
 
 const text: Field<string> = { parse: value => typeof value === 'string' && value.length <= 1000 && !/[\r\n\0]/.test(value) ? value : undefined };
+const boolean: Field<boolean> = { parse: value => typeof value === 'boolean' ? value : value === 'true' ? true : value === 'false' || value === '' ? false : undefined };
 function choice<const T extends string>(values: readonly T[]): Field<T> {
   return { parse: value => values.find(candidate => candidate === value) };
 }
@@ -55,6 +63,24 @@ const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
   'harness.tool': harnessSpec('/harness/tools'),
   'harness.hook': harnessSpec('/harness/hooks'),
   'harness.agent': harnessSpec('/harness/agents'),
+  actionItems: {
+    pathname: '/action-items', defaults: { q: '', project: '', tags: '', status: 'open', sort: 'manual', limit: 10, offset: 0 },
+    fields: { q: text, project: text, tags: text, status: choice(ACTION_ITEM_STATUSES.map(option => option[0])), sort: choice(ACTION_ITEM_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
+    normalize: values => actionItemSortOptions(values.status).some(option => option.value === values.sort)
+      ? values : { ...values, sort: defaultActionItemSort(values.status) },
+  },
+  profiles: {
+    pathname: '/profiles', defaults: { q: '', tags: '', starred: false, sort: 'starred_name_asc', limit: 10, offset: 0 },
+    fields: { q: text, tags: text, starred: boolean, sort: choice(PROFILE_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
+  },
+  chat: {
+    pathname: '/chat', defaults: { q: '', status: 'all', sort: 'updated', limit: 10, offset: 0 },
+    fields: { q: text, status: choice(CHAT_STATUSES.map(option => option.value)), sort: choice(CHAT_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
+  },
+  results: {
+    pathname: '/evals', defaults: { q: '', category: '', subcategory: '', scenario: '', model: '', sort: 'newest', limit: 10, offset: 0 },
+    fields: { q: text, category: text, subcategory: text, scenario: text, model: text, sort: choice(RESULT_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
+  },
   jobs: {
     pathname: '/jobs', defaults: { q: '', schedule_enabled: '', sort: 'updated', limit: 10, offset: 0 },
     fields: { q: text, schedule_enabled: choice(SCHEDULING_OPTIONS.map(option => option.value)), sort: choice(JOB_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
@@ -74,6 +100,18 @@ const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
   evalSuites: {
     pathname: '/eval-configs', defaults: { q: '', enabled: '', sort: 'name', limit: 10, offset: 0 },
     fields: { q: text, enabled: choice(SCHEDULING_OPTIONS.map(option => option.value)), sort: choice(EVAL_SUITE_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
+  },
+  memory: {
+    pathname: '/memory', defaults: { q: '', repo: '', tags: '', meeting_only: false, listSort: 'created_at_desc', searchSort: 'relevance', limit: 10, offset: 0 },
+    fields: { q: text, repo: text, tags: text, meeting_only: boolean, listSort: choice(MEMORY_LIST_SORT_OPTIONS.map(option => option.value)), searchSort: choice(MEMORY_SEARCH_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
+  },
+  meetings: {
+    pathname: '/meetings', defaults: { q: '', labels: '', sort: 'newest', limit: 10, offset: 0 },
+    fields: { q: text, labels: text, sort: choice(MEETING_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
+  },
+  vocabulary: {
+    pathname: '/meetings', defaults: { q: '', definition: 'all', sort: 'term', limit: 10, offset: 0 },
+    fields: { q: text, definition: choice(VOCABULARY_DEFINITIONS.map(option => option.value)), sort: choice(VOCABULARY_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
   },
 };
 
@@ -103,14 +141,18 @@ function validScope(scope: unknown): scope is string | undefined {
 }
 function isViewKey(key: unknown): key is ViewKey { return typeof key === 'string' && Object.hasOwn(SPECS, key); }
 
+export function normalizeViewRelations<K extends ViewKey>(key: K, values: ViewSettings[K]): ViewSettings[K] {
+  return specFor(key).normalize?.(values) ?? values;
+}
+
 function normalizeView<K extends ViewKey>(key: K, values: Record<string, unknown>): ViewSettings[K] {
   const result = defaultView(key);
   for (const field of viewFields(key)) result[field] = parseViewField(key, field, values[String(field)]);
   result.offset = Math.floor(result.offset / result.limit) * result.limit;
-  return result;
+  return normalizeViewRelations(key, result);
 }
 
-function storedValues<K extends ViewKey>(key: K, values: unknown): Record<string, string | number> | null {
+function storedValues<K extends ViewKey>(key: K, values: unknown): Record<string, string | number | boolean> | null {
   if (!object(values)) return null;
   const spec = specFor(key);
   const fields = viewFields(key);
@@ -119,15 +161,15 @@ function storedValues<K extends ViewKey>(key: K, values: unknown): Record<string
     if (Object.hasOwn(values, field) && spec.fields[field].parse(values[String(field)]) === undefined) return null;
   }
   const normalized = normalizeView(key, values);
-  const compact: Record<string, string | number> = {};
+  const compact: Record<string, string | number | boolean> = {};
   for (const field of fields) {
     const value = normalized[field];
-    if (value !== spec.defaults[field] && (typeof value === 'string' || typeof value === 'number')) compact[String(field)] = value;
+    if (value !== spec.defaults[field] && (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')) compact[String(field)] = value;
   }
   return compact;
 }
 
-export interface ViewEntry { key: ViewKey; scope?: string; values: Record<string, string | number> }
+export interface ViewEntry { key: ViewKey; scope?: string; values: Record<string, string | number | boolean> }
 
 export function readViewCookie(header: string): ViewEntry[] {
   const pair = header.split(';').map(part => part.trim()).find(part => part.startsWith(`${VIEW_COOKIE_NAME}=`));
