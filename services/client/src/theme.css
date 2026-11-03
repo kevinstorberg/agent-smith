@@ -99,6 +99,7 @@ body {
   display: flex;
   flex-shrink: 0;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 20px 20px 16px;
   border-bottom: 1px solid var(--border);
@@ -112,6 +113,9 @@ body {
 }
 
 .sidebar-title {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   font-size: 18px;
   font-weight: 700;
   color: var(--text);
@@ -126,6 +130,9 @@ body {
 .sidebar-section:last-child {
   border-bottom: none;
 }
+
+.sidebar-body { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.sidebar .sidebar-menu-toggle { display: none; margin-left: auto; }
 
 .sidebar-navigation {
   flex: 1;
@@ -1322,6 +1329,7 @@ pre {
 .detail-project-input { max-width: 320px; }
 .detail-back { display: inline-flex; align-items: center; min-height: 36px; padding: 4px 0; border: 0; background: none; color: var(--text-muted); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .detail-back:hover { color: var(--text); }
+.not-found-recovery { display: grid; gap: 16px; justify-items: start; }
 .pagination-page-size { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-muted); font-size: var(--font-sm); }
 .memory-controls > label:not(.checkbox-label) { flex: 1 1 200px; min-width: 0; }
 .memory-controls > label > input:not([type="checkbox"]):not([type="radio"]),
@@ -1559,8 +1567,7 @@ pre {
     position: static;
     width: 100%;
     height: auto;
-    max-height: 45vh;
-    max-height: 45dvh;
+    max-height: none;
     flex-direction: column;
     overflow: hidden;
     border-right: none;
@@ -1569,9 +1576,13 @@ pre {
 
   .sidebar-header {
     gap: 8px;
+    flex-wrap: wrap;
     padding: 8px 16px;
   }
 
+  .sidebar .sidebar-menu-toggle { display: inline-flex; }
+  .sidebar-body { display: none; }
+  .sidebar-body.is-open { display: flex; max-height: 70dvh; }
   .sidebar-logo { width: 32px; height: 32px; }
   .sidebar-title { padding: 0; font-size: 16px; white-space: nowrap; }
 
