@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Annotated
+from collections.abc import Callable
+from typing import Annotated, TypeVar
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Path, Query
 
 from services.api.models.proposal import (
     PROPOSAL_STATUSES,
@@ -20,6 +21,7 @@ from services.jobs.models.job import get_job_by_name
 from services.jobs.scheduler import execute_job
 from services.proposals.service import (
     ProposalConflictError,
+    ProposalNotFoundError,
     current_target,
     delete_proposal,
     promote_proposal,
@@ -35,13 +37,16 @@ router = APIRouter()
 GENERATE_JOB_NAME = "improvement-proposals"
 
 
-def _require_pending(proposal_id: int) -> dict:
-    proposal = require_found(get_proposal(proposal_id), "Proposal", proposal_id)
-    if proposal["status"] != "pending":
-        raise HTTPException(
-            status_code=409, detail=f"Proposal {proposal_id} is {proposal['status']}, not pending"
-        )
-    return proposal
+T = TypeVar('T')
+
+
+def _resolve(operation: Callable[[int], T], proposal_id: int) -> T:
+    try:
+        return operation(proposal_id)
+    except ProposalNotFoundError as error:
+        raise HTTPException(404, str(error)) from None
+    except ProposalConflictError as error:
+        raise HTTPException(409, str(error)) from None
 
 
 @router.get("")
@@ -73,25 +78,18 @@ def get_one(proposal_id: int):
 
 
 @router.post("/{proposal_id}/approve")
-def approve(proposal_id: int):
-    _require_pending(proposal_id)
-    try:
-        return promote_proposal(proposal_id)
-    except ProposalConflictError as exc:
-        # The proposal stays pending; the user decides whether to reject it.
-        raise HTTPException(status_code=409, detail=str(exc))
+def approve(proposal_id: int = Path(gt=0)):
+    return _resolve(promote_proposal, proposal_id)
 
 
 @router.post("/{proposal_id}/reject")
-def reject(proposal_id: int):
-    _require_pending(proposal_id)
-    return reject_proposal(proposal_id)
+def reject(proposal_id: int = Path(gt=0)):
+    return _resolve(reject_proposal, proposal_id)
 
 
 @router.delete("/{proposal_id}")
-def remove(proposal_id: int):
-    require_found(get_proposal(proposal_id), "Proposal", proposal_id)
-    delete_proposal(proposal_id)
+def remove(proposal_id: int = Path(gt=0)):
+    _resolve(delete_proposal, proposal_id)
     return delete_response(proposal_id)
 
 
