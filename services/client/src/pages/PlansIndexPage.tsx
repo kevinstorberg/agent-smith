@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { api } from '../api';
 import type { Plan } from '../api';
@@ -10,14 +9,12 @@ import { usePagination } from '../hooks/usePagination';
 import { usePolling } from '../hooks/usePolling';
 import { makeRowClickable } from '../utils/a11y';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
-
-const STATUSES = ['all', 'draft', 'final'] as const;
+import { useViewPreferences } from '../hooks/useViewPreferences';
+import { PLAN_SORT_OPTIONS, PLAN_STATUSES, parseViewField } from '../utils/viewPreferences';
 
 export function PlansIndexPage() {
-  const [projectInput, setProjectInput] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sort, setSort] = useState('updated');
+  const preferences = useViewPreferences('plans');
+  const { project: projectInput, status: statusFilter, q: searchQuery, sort } = preferences.values;
   const projectFilter = useDebouncedValue(projectInput.trim());
   const debouncedSearch = useDebouncedValue(searchQuery.trim());
   const searchTerm = searchQuery.trim() ? debouncedSearch : '';
@@ -27,6 +24,7 @@ export function PlansIndexPage() {
     (limit, offset) => api.plans.list({ limit, offset, q: searchTerm || undefined,
       project: projectFilter || undefined, status: statusFilter === 'all' ? undefined : statusFilter, sort }),
     [searchTerm, projectFilter, statusFilter, sort],
+    10, { ...preferences.pagination, enabled: projectFilter === projectInput.trim() && debouncedSearch === searchQuery.trim() },
   );
   usePolling(() => refresh({ showLoading: false }));
 
@@ -42,24 +40,25 @@ export function PlansIndexPage() {
       <FilterBar
         nameValue={searchQuery}
         projectValue={projectInput}
-        onNameChange={setSearchQuery}
-        onProjectChange={setProjectInput}
+        onNameChange={value => preferences.setField('q', value)}
+        onProjectChange={value => preferences.setField('project', value)}
         nameLabel="Search plans"
         namePlaceholder="Search by title..."
       >
         <label><span className="form-label">Sort plans</span>
-          <select className="input" value={sort} onChange={event => setSort(event.target.value)}>
-            <option value="updated">Recently updated</option><option value="newest">Newest first</option><option value="title">Title A–Z</option>
+          <select className="input" value={sort} onChange={event => preferences.setField('sort', parseViewField('plans', 'sort', event.target.value))}>
+            {PLAN_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
+        <button className="btn" type="button" onClick={preferences.reset}>Reset view</button>
       </FilterBar>
 
       <div className="filters">
-          {STATUSES.map(status => (
+          {PLAN_STATUSES.map(status => (
             <button
               key={status}
               className={`btn${statusFilter === status ? ' btn-primary' : ''}`}
-              onClick={() => { setStatusFilter(status); setOffset(0); }}
+              onClick={() => preferences.setField('status', status)}
             >
               {status}
             </button>

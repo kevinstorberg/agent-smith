@@ -14,6 +14,7 @@ const plans = [
   { id: 2, title: 'Plan Beta', project: null, status: 'draft', updated_at: '2026-02-20T14:30:00Z' },
 ];
 beforeEach(() => {
+  document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.clearAllMocks();
   vi.mocked(api.plans.list).mockImplementation(async params => ({
     items: params?.q ? [{ ...plans[0], id: 3, title: 'Found plan' }] : plans,
@@ -30,7 +31,7 @@ async function typeSearch(value: string) {
 
 describe('PlansIndexPage', () => {
   it('renders existing plans and navigates to create/detail pages', async () => {
-    renderWithProviders(<PlansIndexPage />);
+    renderWithProviders(<PlansIndexPage />, { initialEntries: ['/plans'] });
     await screen.findByText('Plan Alpha');
     expect(screen.getByText('Plan Beta')).toBeInTheDocument();
     expect(screen.getByText('proj-a')).toBeInTheDocument();
@@ -42,7 +43,7 @@ describe('PlansIndexPage', () => {
 
   it('keeps search fields mounted while loading and distinguishes empty results', async () => {
     vi.mocked(api.plans.list).mockResolvedValue({ items: [], total: 0 });
-    renderWithProviders(<PlansIndexPage />);
+    renderWithProviders(<PlansIndexPage />, { initialEntries: ['/plans'] });
     expect(screen.getByText('Loading...')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Search by title...')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Sort plans' })).toBeVisible();
@@ -52,7 +53,7 @@ describe('PlansIndexPage', () => {
 
   it('coalesces typing into one search request without requiring Enter or a button', async () => {
     vi.useFakeTimers();
-    renderWithProviders(<PlansIndexPage />);
+    renderWithProviders(<PlansIndexPage />, { initialEntries: ['/plans'] });
     await act(async () => { await Promise.resolve(); });
     expect(screen.getByText('Plan Alpha')).toBeInTheDocument();
     const input = screen.getByPlaceholderText('Search by title...');
@@ -73,7 +74,7 @@ describe('PlansIndexPage', () => {
 
   it('resets paging before a debounced project request and combines project/status with search', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    renderWithProviders(<PlansIndexPage />);
+    renderWithProviders(<PlansIndexPage />, { initialEntries: ['/plans'] });
     await screen.findByText('Plan Alpha');
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() => expect(api.plans.list).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 })));
@@ -90,7 +91,7 @@ describe('PlansIndexPage', () => {
   it('ignores late search responses after clearing and preserves the current list', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     let complete!: (items: never[]) => void;
-    renderWithProviders(<PlansIndexPage />);
+    renderWithProviders(<PlansIndexPage />, { initialEntries: ['/plans'] });
     await screen.findByText('Plan Alpha');
     vi.mocked(api.plans.list).mockReturnValueOnce(new Promise(resolve => {
       complete = items => resolve({ items, total: items.length });
@@ -105,7 +106,7 @@ describe('PlansIndexPage', () => {
 
   it('shows retryable errors while keeping filters available', async () => {
     vi.mocked(api.plans.list).mockRejectedValueOnce(new Error('private diagnostic'));
-    renderWithProviders(<PlansIndexPage />);
+    renderWithProviders(<PlansIndexPage />, { initialEntries: ['/plans'] });
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load plans.');
     expect(screen.queryByText('private diagnostic')).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText('Search by title...')).toBeInTheDocument();
@@ -116,7 +117,7 @@ describe('PlansIndexPage', () => {
 
   it('polls the current search scope and stops on unmount', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    const { unmount } = renderWithProviders(<PlansIndexPage />);
+    const { unmount } = renderWithProviders(<PlansIndexPage />, { initialEntries: ['/plans'] });
     await screen.findByText('Plan Alpha');
     await typeSearch('Found');
     vi.mocked(api.plans.search).mockClear();
@@ -133,7 +134,7 @@ describe('PlansIndexPage', () => {
   });
 
   it('sorts server-side before paging and resets the current page', async () => {
-    renderWithProviders(<PlansIndexPage />);
+    renderWithProviders(<PlansIndexPage />, { initialEntries: ['/plans'] });
     await screen.findByText('Plan Alpha');
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() => expect(api.plans.list).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 })));
