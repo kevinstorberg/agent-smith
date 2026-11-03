@@ -25,12 +25,11 @@ describe('view preference browser adapter', () => {
     });
     const oldSetField = result.current.setField;
     const oldPageChange = result.current.pagination.onPageChange!;
-    const oldReset = result.current.reset;
     const oldSetFields = result.current.setFields;
     rerender({ scope: '2' });
     const currentCookie = storage.read();
     vi.mocked(storage.store.write).mockClear();
-    act(() => { oldSetField('q', 'wrong scope'); oldPageChange({ limit: 50, offset: 100 }); oldReset(); oldSetFields({ q: 'wrong atomic scope', sort: 'name' }); });
+    act(() => { oldSetField('q', 'wrong scope'); oldPageChange({ limit: 50, offset: 100 }); oldSetFields({ q: 'wrong atomic scope', sort: 'name' }); });
     expect(result.current.values).toMatchObject({ q: 'two', limit: 10, offset: 20 });
     expect(storage.read()).toBe(currentCookie);
     expect(storage.store.write).not.toHaveBeenCalled();
@@ -121,7 +120,7 @@ describe('view preference browser adapter', () => {
     const { result } = renderHook(() => useViewPreferences('jobs', { cookieStore: store }), { wrapper: router() });
     act(() => result.current.setField('q', 'live'));
     expect(result.current.values.q).toBe('live');
-    act(() => result.current.reset());
+    act(() => result.current.setField('q', ''));
     expect(result.current.values).toEqual(defaultView('jobs'));
   });
 });

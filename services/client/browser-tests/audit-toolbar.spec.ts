@@ -2,6 +2,7 @@ import { test, expect, type APIRequest } from './fixtures';
 import { expectControlsUnclipped, expectDocumentContained, expectMainContained } from './geometry';
 import { auditFixture } from './operationsFixture';
 import { expectContrast } from './contrast';
+import { enlargeComputedText } from './typography';
 
 test('Audit keeps five quiet labeled fields visible and keyboard operable without records', async ({ page, fixtureAPI }, testInfo) => {
   fixtureAPI.get('/api/audit/events', { items: [], total: 0 });
@@ -39,10 +40,15 @@ test('Audit keeps five quiet labeled fields visible and keyboard operable withou
   }
   const budget = { 1440: 72, 1024: 150, 390: 300, 320: 350 }[page.viewportSize()!.width]!;
   expect((await toolbar.boundingBox())!.height).toBeLessThanOrEqual(budget);
-  await toolbar.getByRole('button', { name: 'Reset view', exact: true }).click();
+  await agent.selectOption('');
   await expect(agent).toHaveValue('');
-  await expect(status).toHaveValue('');
-  await expect(toolbar.getByRole('combobox', { name: 'Sort', exact: true })).toHaveValue('newest');
+  await expect(status).toHaveValue('error');
+  await expect(toolbar.getByRole('combobox', { name: 'Sort', exact: true })).toHaveValue('duration');
+  await expect.poll(() => fixtureAPI.requests.some(entry => {
+    const url = new URL(entry.url);
+    return url.pathname === '/api/audit/events' && !url.searchParams.has('agent')
+      && url.searchParams.get('status') === 'error' && url.searchParams.get('sort') === 'duration';
+  })).toBe(true);
   await expectDocumentContained(page);
   await expectMainContained(page);
   await expectControlsUnclipped(page);
@@ -126,15 +132,7 @@ test('Audit retains readable selected values after200% computed text enlargement
   await page.getByRole('combobox', { name: 'Agent', exact: true }).selectOption('claude');
   await page.getByRole('combobox', { name: 'Sort', exact: true }).selectOption('duration');
   await expect(page.getByRole('status')).toHaveText('1 matching tool call');
-  await page.evaluate(() => {
-    const styles = [...document.querySelectorAll<HTMLElement>('body, body *')].map(element => ({ element,
-      font: parseFloat(getComputedStyle(element).fontSize), line: parseFloat(getComputedStyle(element).lineHeight) }));
-    for (const { element, font, line } of styles) {
-      element.style.fontSize = `${font * 2}px`;
-      if (Number.isFinite(line)) element.style.lineHeight = `${line * 2}px`;
-    }
-  });
-  await page.waitForTimeout(300);
+  await enlargeComputedText(page);
   const toolbar = page.locator('.audit-toolbar');
   const values = await toolbar.getByRole('combobox').evaluateAll(elements => elements.map(element => {
     const select = element as HTMLSelectElement, style = getComputedStyle(select);

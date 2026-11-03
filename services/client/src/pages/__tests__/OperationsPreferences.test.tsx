@@ -27,25 +27,26 @@ const cases = [
   { name: 'Audit', view: <AuditIndexPage />, route: '/audit', list: api.audit.list,
     cookie: () => mergeViewCookie(otherView(), 'audit', { ...defaultView('audit'), q: 'Read', project: 'repo', agent: 'codex', status: 'error', sort: 'duration', limit: 25, offset: 50 }),
     expected: [{ q: 'Read', project: 'repo', agent: 'codex', status: 'error', sort: 'duration' }, { limit: 25, offset: 50 }],
-    resetExpected: [{ q: undefined, project: undefined, agent: undefined, status: undefined, sort: 'newest' }, { limit: 10, offset: 0 }] },
+    sortLabel: 'Sort', nextSort: 'oldest', updatedExpected: [{ q: 'Read', project: 'repo', agent: 'codex', status: 'error', sort: 'oldest' }, { limit: 25, offset: 0 }] },
   { name: 'Proposals', view: <ProposalsIndexPage />, route: '/proposals', list: api.proposals.list,
     cookie: () => mergeViewCookie(otherView(), 'proposals', { ...defaultView('proposals'), q: 'review', status: 'approved', sort: 'oldest', limit: 25, offset: 50 }),
     expected: ['approved', { q: 'review', sort: 'oldest', limit: 25, offset: 50 }],
-    resetExpected: ['pending', { q: undefined, sort: 'newest', limit: 10, offset: 0 }] },
+    sortLabel: 'Sort proposals', nextSort: 'newest', updatedExpected: ['approved', { q: 'review', sort: 'newest', limit: 25, offset: 0 }] },
   { name: 'Eval suites', view: <EvalSuitesPage />, route: '/eval-configs', list: api.evalConfigs.suites.list,
     cookie: () => mergeViewCookie(otherView(), 'evalSuites', { ...defaultView('evalSuites'), q: 'quality', enabled: 'false', sort: 'updated', limit: 25, offset: 50 }),
     expected: [{ q: 'quality', enabled: 'false', enabled_only: 'false', sort: 'updated', limit: '25', offset: '50' }],
-    resetExpected: [{ enabled_only: 'false', sort: 'name', limit: '10', offset: '0' }] },
+    sortLabel: 'Sort eval suites', nextSort: 'name', updatedExpected: [{ q: 'quality', enabled: 'false', enabled_only: 'false', sort: 'name', limit: '25', offset: '0' }] },
 ];
 
 describe('Operations preference consumers', () => {
-  it.each(cases)('restores $name criteria and page before the first request and resets only that view', async ({ view, route, list, cookie, expected, resetExpected }) => {
+  it.each(cases)('restores $name criteria and page before the first request and updates only that view', async ({ view, route, list, cookie, expected, sortLabel, nextSort, updatedExpected }) => {
     document.cookie = cookie();
     renderWithProviders(view, { initialEntries: [route] });
     await waitFor(() => expect(list).toHaveBeenCalledTimes(1));
     expect(list).toHaveBeenCalledWith(...expected);
-    fireEvent.click(screen.getByRole('button', { name: 'Reset view' }));
-    await waitFor(() => expect(list).toHaveBeenLastCalledWith(...resetExpected));
-    expect(readViewCookie(document.cookie)).toEqual([{ key: 'jobs', values: { q: 'keep jobs' } }]);
+    fireEvent.change(screen.getByRole('combobox', { name: sortLabel }), { target: { value: nextSort } });
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith(...updatedExpected));
+    expect(readViewCookie(document.cookie).find(entry => entry.key === 'jobs')).toEqual({ key: 'jobs', values: { q: 'keep jobs' } });
+    expect(readViewCookie(document.cookie)[0].values).toMatchObject({ limit: 25 });
   });
 });

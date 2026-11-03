@@ -12,7 +12,6 @@ import { parseTags } from '../utils/tags';
 import { MEMORY_LIST_SORT_OPTIONS, MEMORY_SEARCH_SORT_OPTIONS } from '../constants';
 import { useViewPreferences } from '../hooks/useViewPreferences';
 import { parseViewField } from '../utils/viewPreferences';
-import { ResetViewButton } from '../components/ResetViewButton';
 
 export function MemoryPage() {
   const { notify } = useNotification();
@@ -71,7 +70,6 @@ export function MemoryPage() {
     if (mode === 'search') preferences.setField('searchSort', parseViewField('memory', 'searchSort', value));
     else preferences.setField('listSort', parseViewField('memory', 'listSort', value));
   };
-  const resetView = () => { setQueryDraft({ applied: '', restoredAt: preferences.restoreKey, input: '' }); preferences.reset(); };
 
   const startEdit = (item: MemoryItem) => {
     setEditingId(item.id);
@@ -132,10 +130,6 @@ export function MemoryPage() {
       </div>
 
       <div className="search-bar memory-controls">
-        <label className="checkbox-label">
-          <input className="form-checkbox" type="checkbox" checked={meetingsOnly} onChange={event => preferences.setField('meeting_only', event.target.checked)} />
-          Meetings only
-        </label>
         <label><span className="form-label">Repository</span><input
           className="input"
           placeholder="Filter by repo"
@@ -161,7 +155,10 @@ export function MemoryPage() {
           ))}
         </select>
         </label>
-        <ResetViewButton onReset={resetView} />
+        <label className="checkbox-label filter-checkbox">
+          <input className="form-checkbox" type="checkbox" checked={meetingsOnly} onChange={event => preferences.setField('meeting_only', event.target.checked)} />
+          Meetings only
+        </label>
       </div>
 
       {tagsArray.length > 0 && (

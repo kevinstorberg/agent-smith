@@ -77,16 +77,16 @@ describe('saved list preferences reach the API boundary', () => {
     expect(readViewCookie(document.cookie)[0].values).toEqual({ limit: 25 });
   });
 
-  it('resets only this view while retaining another screen and live controls when cookies are blocked', async () => {
+  it('updates only this view while retaining another screen and live controls when cookies are blocked', async () => {
     document.cookie = 'existing-session=keep; Path=/';
     let cookie = mergeViewCookie('', 'jobs', { ...defaultView('jobs'), sort: 'name', limit: 25, offset: 25 });
     cookie = mergeViewCookie(cookie, 'plans', { ...defaultView('plans'), q: 'keep' });
     document.cookie = cookie;
     renderWithProviders(<JobsIndexPage />, { initialEntries: ['/jobs'] });
     await waitFor(() => expect(api.jobs.list).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole('button', { name: 'Reset view' }));
-    await waitFor(() => expect(api.jobs.list).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'updated', limit: 10, offset: 0 })));
-    expect(readViewCookie(document.cookie)).toEqual([{ key: 'plans', values: { q: 'keep' } }]);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort jobs' }), { target: { value: 'updated' } });
+    await waitFor(() => expect(api.jobs.list).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'updated', limit: 25, offset: 0 })));
+    expect(readViewCookie(document.cookie)).toEqual([{ key: 'jobs', values: { limit: 25 } }, { key: 'plans', values: { q: 'keep' } }]);
     expect(document.cookie).toContain('existing-session=keep');
     vi.spyOn(document, 'cookie', 'set').mockImplementation(() => { throw new DOMException('Blocked', 'SecurityError'); });
     fireEvent.change(screen.getByRole('combobox', { name: 'Sort jobs' }), { target: { value: 'newest' } });

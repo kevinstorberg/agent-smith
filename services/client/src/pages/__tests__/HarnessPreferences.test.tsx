@@ -26,7 +26,7 @@ describe('Harness preference consumers', () => {
     expect(screen.getByRole('textbox', { name: 'Search' })).toHaveValue('saved name');
   });
 
-  it('keeps Harness name/project URL keys, debounces from the restored page and resets only the active resource', async () => {
+  it('keeps Harness name/project URL keys, debounces from the restored page and updates only the active resource', async () => {
     vi.useFakeTimers();
     let cookie = mergeViewCookie('', 'harness.tool', { ...defaultView('harness.tool'), name: 'other kind' });
     cookie = mergeViewCookie(cookie, 'harness.rule', { ...defaultView('harness.rule'), name: 'old', sort: 'name', limit: 25, offset: 50 });
@@ -42,9 +42,9 @@ describe('Harness preference consumers', () => {
     expect(params.get('name')).toBe('new');
     expect(params.has('q')).toBe(false);
     expect(params.get('keep')).toBe('1');
-    fireEvent.click(screen.getByRole('button', { name: 'Reset view' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), { target: { value: 'manual' } });
     await act(async () => { vi.advanceTimersByTime(300); });
-    expect(api.harness.items.list).toHaveBeenLastCalledWith('rule', { name: undefined, project: undefined, sort: 'manual', limit: 10, offset: 0 });
-    expect(readViewCookie(document.cookie)).toEqual([{ key: 'harness.tool', values: { name: 'other kind' } }]);
+    expect(api.harness.items.list).toHaveBeenLastCalledWith('rule', { name: 'new', project: undefined, sort: 'manual', limit: 25, offset: 0 });
+    expect(readViewCookie(document.cookie)).toEqual([{ key: 'harness.rule', values: { name: 'new', limit: 25 } }, { key: 'harness.tool', values: { name: 'other kind' } }]);
   });
 });

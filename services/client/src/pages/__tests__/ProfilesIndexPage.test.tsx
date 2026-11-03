@@ -46,10 +46,10 @@ describe('ProfilesIndexPage', () => {
     expect(screen.getByLabelText('Starred only')).toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: 'New profile' }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Unsaved person' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Reset view' }));
-    await waitFor(() => expect(read).toHaveBeenLastCalledWith({ q: undefined, sort: 'starred_name_asc', limit: 10, offset: 0 }));
+    fireEvent.click(screen.getByLabelText('Starred only'));
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith({ q: 'Alex', tags: ['team', 'urgent'], sort: 'updated_at_asc', limit: 25, offset: 0 }));
     expect(screen.getByLabelText('Name')).toHaveValue('Unsaved person');
-    expect(readViewCookie(document.cookie)).toEqual([]);
+    expect(readViewCookie(document.cookie)).toEqual([{ key: 'profiles', values: { q: 'Alex', tags: 'team, urgent', sort: 'updated_at_asc', limit: 25 } }]);
   });
 
   it('uses explicit URL query and false star values instead of saved filters on its first request', async () => {

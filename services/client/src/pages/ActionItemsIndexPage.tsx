@@ -7,7 +7,6 @@ import { actionItemTags } from '../utils/actionItems';
 import { ACTION_ITEM_STATUSES, actionItemSortOptions, defaultActionItemSort } from '../constants';
 import { useViewPreferences } from '../hooks/useViewPreferences';
 import { parseViewField } from '../utils/viewPreferences';
-import { ResetViewButton } from '../components/ResetViewButton';
 
 export function ActionItemsIndexPage() {
   const navigate = useNavigate();
@@ -46,7 +45,6 @@ export function ActionItemsIndexPage() {
         onChange={event => preferences.setField('sort', parseViewField('actionItems', 'sort', event.target.value))}>
         {actionItemSortOptions(status).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select></label>
-      <ResetViewButton onReset={preferences.reset} disabled={freezeControls} />
     </div>
     {(status !== 'open' || sort !== 'manual') && <p className="text-muted-sm">To drag items into order, use Open with Manual order; search and filters can stay applied.</p>}
     <ActionItemQueueTable queue={queue} status={status} onEdit={item => navigate(`/action-items/${item.id}?edit=1`)} />

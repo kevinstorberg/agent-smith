@@ -13,7 +13,7 @@ export const PLAN_SORT_OPTIONS = [
 ] as const;
 export const PLAN_STATUSES = ['all', 'draft', 'final'] as const;
 export const SCHEDULING_OPTIONS = [
-  { value: '', label: 'All scheduling states' }, { value: 'true', label: 'Automatic runs enabled' }, { value: 'false', label: 'Automatic runs paused' },
+  { value: '', label: 'All states' }, { value: 'true', label: 'Enabled' }, { value: 'false', label: 'Paused' },
 ] as const;
 
 type HarnessViewKey = 'harness.rule' | 'harness.skill' | 'harness.tool' | 'harness.hook' | 'harness.agent';

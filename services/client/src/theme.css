@@ -1331,10 +1331,9 @@ pre {
 .detail-back:hover { color: var(--text); }
 .not-found-recovery { display: grid; gap: 16px; justify-items: start; }
 .pagination-page-size { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-muted); font-size: var(--font-sm); }
-.memory-controls > label:not(.checkbox-label) { flex: 1 1 200px; min-width: 0; }
+.memory-controls > label:not(.checkbox-label) { flex: 1 1 max(180px, 10em); min-width: 0; }
 .memory-controls > label > input:not([type="checkbox"]):not([type="radio"]),
 .memory-controls > label > select { width: 100%; min-height: 38px; }
-.memory-controls .checkbox-label { min-height: 38px; }
 .filters > label { max-width: 100%; min-width: 0; }
 .filters > label input,
 .filters > label select { max-width: 100%; }
@@ -1417,7 +1416,7 @@ pre {
 .form-checkbox:focus-visible { outline: 2px solid var(--info); outline-offset: 3px; }
 .form-checkbox:disabled { cursor: default; opacity: 0.55; }
 .profile-metadata-star { margin-top: 8px; }
-.profile-filters { display: grid; grid-template-columns: minmax(180px, 1.6fr) minmax(150px, 1fr) minmax(210px, 1fr) auto; align-items: end; gap: 12px; margin: 20px 0 16px; }
+.profile-filters { display: grid; grid-template-columns: minmax(180px, 1.6fr) minmax(150px, 1fr) minmax(max-content, 1fr) auto; align-items: end; gap: 12px; margin: 20px 0 16px; }
 .profile-filters > * { min-width: 0; }
 .action-items-table { min-width: 860px; table-layout: fixed; --action-priority-width: 92px; --action-topics-width: 23%; --action-updated-width: 158px; --action-controls-width: 170px; }
 .action-priority-column, .action-item-row > td:nth-child(1) { width: var(--action-priority-width); }
@@ -1435,8 +1434,8 @@ pre {
 .profile-filters .input { min-height: 40px; }
 .profile-search-input { display: flex; gap: 8px; }
 .profile-search-input .input { min-width: 0; }
-.profile-starred-filter { min-height: 40px; width: fit-content; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); font-size: 13px; }
-.profile-starred-filter:has(input:checked) { border-color: var(--highlight); background: var(--accent); }
+.filter-checkbox { min-height: 40px; width: fit-content; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); font-size: 13px; line-height: normal; }
+.filter-checkbox:has(input:checked) { border-color: var(--highlight); background: var(--accent); }
 .profile-star { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text-muted); font: inherit; font-size: 21px; line-height: 1; cursor: pointer; }
 .profile-star[aria-pressed="true"] { color: var(--warning); }
 .profile-star:hover:not(:disabled) { background: var(--accent); border-color: var(--border); }
@@ -1480,6 +1479,7 @@ pre {
 .manual-analysis-filters { display: grid; grid-template-columns: minmax(180px, 2fr) minmax(140px, 1fr) repeat(2, minmax(130px, 1fr)); gap: 12px; margin: 16px 0 8px; }
 .manual-analysis-filters .form-label { min-width: 0; }
 .manual-analysis-filters .input { margin-top: 6px; }
+.manual-analysis-dialog .checkbox-label { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .manual-analysis-scope { display: block; max-width: 360px; margin: 16px 0; }
 .manual-analysis-scope .input { margin-top: 6px; }
 .manual-analysis-meeting { border-top: 1px solid var(--border); padding: 16px 0; overflow-wrap: anywhere; }
@@ -1544,8 +1544,8 @@ pre {
   .form-checkbox:indeterminate,
   .form-checkbox:hover:not(:disabled) { appearance: auto; border: revert; background: revert; forced-color-adjust: auto; }
   .form-checkbox::before { display: none; }
-  .profile-starred-filter,
-  .profile-starred-filter:has(input:checked) { border-color: CanvasText; background: Canvas; }
+  .filter-checkbox,
+  .filter-checkbox:has(input:checked) { border-color: CanvasText; background: Canvas; }
 }
 .profile-picker { min-width: 0; }
 .profile-picker .search-bar { margin-bottom: 8px; flex-wrap: wrap; }
@@ -1559,7 +1559,6 @@ pre {
 .profile-detail textarea { resize: vertical; }
 .memory-page { min-width: 0; overflow-wrap: anywhere; }
 .memory-page .tag { max-width: 100%; }
-.memory-page .search-bar { flex-wrap: wrap; align-items: center; }
 .memory-page .search-bar input:not([type="checkbox"]):not([type="radio"]) { min-width: 0; flex: 1 1 160px; }
 
 @media (max-width: 768px) {
@@ -1690,26 +1689,23 @@ pre {
 .proposals-list-table th:last-child { width: 180px; }
 .results-list-table th:nth-child(3) { width: 28%; }
 .audit-page { container: audit / inline-size; min-width: 0; }
-.audit-toolbar { display: grid; grid-template-columns: minmax(15em, 2fr) minmax(10em, 1.25fr) minmax(8em, 1fr) minmax(8em, 1fr) minmax(12em, 1.1fr) auto; grid-template-areas: 'search project agent status sort reset'; gap: 8px; margin-bottom: 20px; }
+.audit-toolbar { display: grid; grid-template-columns: minmax(15em, 2fr) minmax(10em, 1.25fr) minmax(8em, 1fr) minmax(8em, 1fr) minmax(12em, 1.1fr); grid-template-areas: 'search project agent status sort'; gap: 8px; margin-bottom: 20px; }
 .audit-toolbar .filter-search { grid-area: search; }
 .audit-toolbar .filter-project { grid-area: project; }
 .audit-agent-filter { grid-area: agent; }
 .audit-status-filter { grid-area: status; }
 .audit-sort-filter { grid-area: sort; }
 .audit-toolbar input, .audit-toolbar select { width: 100%; }
-.audit-toolbar .filter-reset { grid-area: reset; justify-self: end; background: none; border-color: transparent; color: var(--text-muted); padding-inline: 8px; text-decoration: underline; text-underline-offset: 3px; }
-.audit-toolbar .filter-reset:hover { color: var(--text); background: var(--surface-hover); }
 @container audit (max-width: 70em) {
-  .audit-toolbar { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-areas: 'search search project project' 'agent status sort reset'; }
+  .audit-toolbar { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-areas: 'search search project project' 'agent status sort sort'; }
 }
 @container audit (max-width: 36em) {
   .audit-toolbar { grid-template-columns: repeat(auto-fit, minmax(min(100%, 9em), 1fr)); grid-template-areas: none; }
   .audit-toolbar > * { grid-area: auto; }
   .audit-toolbar .filter-search, .audit-toolbar .filter-project { grid-area: auto; grid-column: 1 / -1; }
-  .audit-toolbar .filter-reset { grid-area: auto; }
 }
 @container audit (max-width: 24em) {
-  .audit-toolbar .audit-sort-filter, .audit-toolbar .filter-reset { grid-column: 1 / -1; }
+  .audit-toolbar .audit-sort-filter { grid-column: 1 / -1; }
 }
 .audit-results-summary { min-height: 24px; margin-bottom: 8px; color: var(--text-muted); font-size: var(--font-sm); }
 .audit-empty { padding: 32px 16px; border-top: 1px solid var(--border); text-align: center; }
@@ -1746,6 +1742,7 @@ pre {
 .job-paused-notice { margin: -4px 0 16px; }
 
 .resource-controls { align-items: end; }
+.filter-status-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
 .resource-controls > label { min-width: 0; max-width: 100%; }
 .resource-controls label input,
 .resource-controls label select { max-width: 100%; }

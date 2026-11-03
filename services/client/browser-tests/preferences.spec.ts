@@ -68,7 +68,7 @@ for (const view of cases) {
     await page.reload();
     await expect.poll(() => requests().length).toBe(2);
     expect(Object.fromEntries(new URL(requests()[1].url).searchParams)).toEqual(view.expected);
-    await expect(page.getByRole('button', { name: 'Reset view', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reset view', exact: true })).toHaveCount(0);
   });
 }
 

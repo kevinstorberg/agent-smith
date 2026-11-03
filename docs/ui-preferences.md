@@ -37,6 +37,6 @@ Stale offsets clamp only inside `usePagination`'s accepted response gate using t
 Older totals, failed requests and stale responses cannot change a newer view's page.
 
 Action item status and its default sort change atomically; incompatible sorts normalize before fetching and during live updates.
-Queue controls, including Reset view, remain frozen during reordering.
+Queue filter controls remain frozen during reordering.
 Profile creation drafts, selected chat rooms, room edits, unsent messages, and result chart modes remain local.
 Result category and subcategory changes clear dependent filters in one update.
