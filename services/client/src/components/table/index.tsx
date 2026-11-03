@@ -22,6 +22,7 @@ export interface EnabledToggleCellProps {
   label?: { on: string; off: string };
   accentColor?: string;
   disabled?: boolean;
+  ariaLabel?: string;
 }
 
 export function EnabledToggleCell({
@@ -30,18 +31,20 @@ export function EnabledToggleCell({
   label = { on: 'On', off: 'Off' },
   accentColor = 'var(--success)',
   disabled = false,
+  ariaLabel,
 }: EnabledToggleCellProps) {
   return (
     <div onClick={e => e.stopPropagation()}>
       <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
         <input
           type="checkbox"
+          aria-label={ariaLabel}
           checked={enabled}
           disabled={disabled}
           onChange={onChange}
           style={{ accentColor, width: 16, height: 16 }}
         />
-        <span style={{ color: enabled ? accentColor : 'var(--text-muted)', fontSize: 'var(--font-sm)' }}>
+        <span style={{ color: enabled ? 'var(--text)' : 'var(--text-muted)', fontSize: 'var(--font-sm)' }}>
           {enabled ? label.on : label.off}
         </span>
       </label>

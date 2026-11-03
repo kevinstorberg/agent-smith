@@ -137,12 +137,14 @@ export function HarnessIndexPage({ type }: { type: string }) {
                           enabled={item.enabled}
                           disabled={!readable || actions.freezeControls}
                           onChange={() => actions.updateMetadata(item, { enabled: !item.enabled })}
+                          ariaLabel={`Enable ${item.name}`}
                         />
                         {type === 'rule' && (
                           <EnabledToggleCell
                             enabled={!!item.clone_as_skill}
                             disabled={!readable || actions.freezeControls}
                             onChange={() => actions.updateMetadata(item, { clone_as_skill: !item.clone_as_skill })}
+                            ariaLabel={`Clone ${item.name} as a skill`}
                             accentColor="var(--highlight)"
                           />
                         )}

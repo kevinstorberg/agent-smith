@@ -30,10 +30,10 @@ for (const [kind, label] of Object.entries(labels)) {
     const version = region.getByText('v2', { exact: true });
     await version.scrollIntoViewIfNeeded();
     await expectControlContained(version, region);
-    const toggle = region.getByRole('checkbox', { name: kind === 'rule' ? 'Off' : 'On', exact: true });
+    const toggle = region.getByRole('checkbox', { name: kind === 'rule' ? `Clone ${item.name} as a skill` : `Enable ${item.name}`, exact: true });
     await toggle.click();
     await expect.poll(() => fixtureAPI.requests.filter(entry => entry.method === 'PATCH').length).toBe(1);
-    await expect(region.getByRole('checkbox', { name: kind === 'rule' ? 'On' : 'Off', exact: true }).last()).toBeChecked({ checked: kind === 'rule' });
+    await expect(toggle).toBeChecked({ checked: kind === 'rule' });
     const fonts = await region.locator('.tag').evaluateAll(elements => elements.map(element => parseFloat(getComputedStyle(element).fontSize)));
     expect(Math.min(...fonts)).toBeGreaterThanOrEqual(12);
     await expectDocumentContained(page);

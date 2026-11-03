@@ -224,8 +224,7 @@ describe('HarnessIndexPage', () => {
       expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
     });
 
-    const checkboxes = screen.getAllByRole('checkbox');
-    fireEvent.click(checkboxes[0]);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Enable test_rule' }));
 
     await waitFor(() => {
       expect(mockUpdateMetadata).toHaveBeenCalledWith('rule', 1, { enabled: false });
