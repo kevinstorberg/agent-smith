@@ -240,8 +240,7 @@ describe('ProfileDetailPage', () => {
     renderPage();
     expect(await screen.findByRole('alert')).toHaveTextContent('It may be unavailable or deleted.');
     expect(screen.queryByText(/PRIVATE_PROFILE_DETAIL/)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Back to profiles/ }));
-    expect(navigate).toHaveBeenCalledWith('/profiles');
+    expect(screen.getByRole('link', { name: /Back to profiles/ })).toHaveAttribute('href', '/profiles');
   });
 
   it('polls the compact profile without mounting Evidence or hiding the current content', async () => {

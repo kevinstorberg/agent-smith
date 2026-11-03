@@ -250,7 +250,6 @@ function JobDetail({ id }: { id?: string }) {
         onSave={save}
         onCancel={() => { setGraphInputsText(null); cancelEdit(); }}
         onDelete={job ? () => deleteMutation.mutateAsync() : undefined}
-        onNavigateBack={() => navigate('/jobs')}
         deleteConfirmMessage={job ? `Delete job "${job.name}"?` : undefined}
         showActions={!isNew || editing}
       />

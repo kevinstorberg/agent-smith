@@ -74,6 +74,7 @@ function paginationResult() {
 }
 
 beforeEach(() => {
+  document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.clearAllMocks();
   mockUsePagination.mockReturnValue(paginationResult());
   mockCounts.mockResolvedValue({ claude: 1, codex: 1, gemini: 0 });
@@ -81,7 +82,7 @@ beforeEach(() => {
 
 describe('AuditIndexPage', () => {
   it('renders events with tool, status, and duration', async () => {
-    renderWithProviders(<AuditIndexPage />);
+    renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
 
     expect(screen.getByText('Audit Trail')).toBeInTheDocument();
     expect(screen.getByText('Bash')).toBeInTheDocument();
@@ -94,16 +95,17 @@ describe('AuditIndexPage', () => {
   });
 
   it('filters by agent and resets paging', async () => {
-    renderWithProviders(<AuditIndexPage />);
+    renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
 
     await screen.findByText(/claude \(1\)/);
     fireEvent.change(screen.getByRole('combobox', { name: 'Agent' }), { target: { value: 'claude' } });
 
-    expect(mockSetOffset).toHaveBeenCalledWith(0);
+    expect(screen.getByRole('combobox', { name: 'Agent' })).toHaveValue('claude');
+    expect(mockUsePagination).toHaveBeenLastCalledWith(expect.any(Function), expect.arrayContaining(['claude']), 10, expect.objectContaining({ page: { limit: 10, offset: 0 } }));
   });
 
   it('navigates to detail on row click', () => {
-    renderWithProviders(<AuditIndexPage />);
+    renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
 
     const link = screen.getByRole('link', { name: 'Bash' });
     expect(link).toHaveAttribute('href', '/audit/1');
@@ -113,7 +115,7 @@ describe('AuditIndexPage', () => {
   });
 
   it('preserves native tool link behavior without activating supplemental row navigation', () => {
-    renderWithProviders(<AuditIndexPage />);
+    renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
     fireEvent.click(screen.getByRole('link', { name: 'Bash' }));
     expect(mockNavigate).not.toHaveBeenCalled();
   });
@@ -124,7 +126,7 @@ describe('AuditIndexPage', () => {
     { loading: false, dataCurrent: false, error: 'Unavailable' },
   ])('keeps filters mounted without claiming empty results during $error/$loading/$dataCurrent', state => {
     mockUsePagination.mockReturnValue({ ...paginationResult(), ...state, items: [], total: 0 });
-    renderWithProviders(<AuditIndexPage />);
+    renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
     expect(screen.getByRole('combobox', { name: 'Agent' })).toBeVisible();
     expect(screen.getByRole('combobox', { name: 'Status' })).toBeVisible();
     expect(screen.queryByText('No tool calls yet')).not.toBeInTheDocument();
@@ -135,7 +137,7 @@ describe('AuditIndexPage', () => {
 
   it('announces an in-flight retry without enabling another retry or claiming empty results', () => {
     mockUsePagination.mockReturnValue({ ...paginationResult(), loading: true, error: 'Unavailable', dataCurrent: false, items: [] });
-    renderWithProviders(<AuditIndexPage />);
+    renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
     expect(screen.getByRole('status')).toHaveTextContent('Updating…');
     expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled();
     expect(screen.queryByText('No tool calls yet')).not.toBeInTheDocument();
@@ -143,7 +145,7 @@ describe('AuditIndexPage', () => {
 
   it('polls audit events and counts every 60 seconds', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    renderWithProviders(<AuditIndexPage />);
+    renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
     await waitFor(() => expect(mockCounts).toHaveBeenCalledTimes(1));
 
     mockCounts.mockClear();

@@ -35,6 +35,30 @@ export async function expectControlContained(control: Locator, container: Locato
   }).toPass({ timeout: 5_000, intervals: [25, 50, 100] });
 }
 
+export async function expectControlReachable(control: Locator) {
+  const hiddenOverflow = await control.evaluate(element => {
+    const ancestors: string[] = [];
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+      if (['hidden', 'clip'].includes(getComputedStyle(parent).overflowY) && parent.scrollHeight > parent.clientHeight + 1) {
+        ancestors.push(parent.className || parent.tagName);
+      }
+    }
+    return ancestors;
+  });
+  expect(hiddenOverflow, 'Controls must not depend on programmatically scrolling a clipped panel').toEqual([]);
+  await control.scrollIntoViewIfNeeded();
+  await control.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }));
+  const geometry = await control.evaluate(element => {
+    const bounds = element.getBoundingClientRect();
+    const hit = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+    return { top: bounds.top, bottom: bounds.bottom, viewportHeight: innerHeight,
+      receivesPointer: hit === element || (hit !== null && element.contains(hit)) };
+  });
+  expect(geometry.top, 'Control must scroll into the visible viewport').toBeGreaterThanOrEqual(-1);
+  expect(geometry.bottom, 'Control must fit inside the visible viewport').toBeLessThanOrEqual(geometry.viewportHeight + 1);
+  expect(geometry.receivesPointer, 'Another panel must not intercept the control’s pointer target').toBe(true);
+}
+
 export async function expectControlLabel(control: Locator, name: string) {
   await expect(control).toHaveAccessibleName(name);
 }

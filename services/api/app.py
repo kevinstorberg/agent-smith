@@ -133,17 +133,21 @@ def _frontend_file(path: str) -> Path | None:
         raise HTTPException(status_code=404) from None
 
 
+def _frontend_response(path: Path) -> FileResponse:
+    return FileResponse(path, headers={"Cache-Control": "no-cache"})
+
+
 @app.api_route("/{path:path}", methods=["GET"], include_in_schema=False)
 async def spa_fallback(path: str):
     file_path = _frontend_file(path)
     if file_path is not None:
-        return FileResponse(file_path)
+        return _frontend_response(file_path)
     # Machine-readable discovery URLs must never fall back to the dashboard's HTML.
     if path.partition("/")[0] == ".well-known":
         raise HTTPException(status_code=404)
     index_path = _frontend_file("index.html")
     if index_path is not None:
-        return FileResponse(index_path)
+        return _frontend_response(index_path)
     raise HTTPException(status_code=404)
 
 

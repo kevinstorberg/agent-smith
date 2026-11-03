@@ -191,6 +191,40 @@ async def test_static_discovery_files_and_dashboard_deep_links_still_work(tmp_pa
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/", "/index.html", "/audit", "/jobs/new"])
+async def test_dashboard_navigation_requires_revalidation_after_a_build(tmp_path, monkeypatch, path, dashboard_client):
+    index = tmp_path / "index.html"
+    index.write_text("<!doctype html><title>Old dashboard</title>")
+    monkeypatch.setattr("services.api.app.dist_dir", tmp_path)
+    response = await dashboard_client.get(path)
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-cache"
+    assert response.headers["last-modified"]
+    old_etag = response.headers["etag"]
+
+    updated = "<!doctype html><title>Updated dashboard build with new assets</title>"
+    index.write_text(updated)
+    response = await dashboard_client.get(path, headers={"If-None-Match": old_etag})
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-cache"
+    assert response.headers["etag"] != old_etag
+    assert response.text == updated
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/agent_smith_logo.svg", "/.well-known/security.txt"])
+async def test_unfingerprinted_public_files_require_revalidation(tmp_path, monkeypatch, path, dashboard_client):
+    file = tmp_path / path.removeprefix("/")
+    file.parent.mkdir(parents=True, exist_ok=True)
+    file.write_text("public file content")
+    monkeypatch.setattr("services.api.app.dist_dir", tmp_path)
+    response = await dashboard_client.get(path)
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-cache"
+    assert response.text == "public file content"
+
+
+@pytest.mark.asyncio
 async def test_fallback_cannot_serve_files_outside_the_frontend_build(tmp_path, monkeypatch, dashboard_client):
     dist = tmp_path / "dist"
     dist.mkdir()

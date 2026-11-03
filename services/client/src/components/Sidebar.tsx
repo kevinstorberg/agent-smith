@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Link, NavLink, useLocation } from 'react-router';
 import { api } from '../api';
 import { TYPE_PATHS } from '../constants';
@@ -60,6 +60,8 @@ export function Sidebar() {
   const activeAlias = harnessType ? `/harness/${TYPE_PATHS[harnessType]}` : null;
   const activeSection = NAV_SECTIONS.find(section => section.links.some(link => containsRoute(pathname, link.path) || activeAlias === link.path))?.id;
   const [collapsed, setCollapsed] = useState<SectionId[]>(() => readCollapsedSections().filter(id => id !== activeSection));
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const navigationToggle = useRef<HTMLButtonElement>(null);
   const [syncing, setSyncing] = useState(false);
   const [unsyncing, setUnsyncing] = useState(false);
   const busy = syncing || unsyncing;
@@ -75,6 +77,14 @@ export function Sidebar() {
       return;
     }
   }, [collapsed]);
+
+  useEffect(() => { setNavigationOpen(false); }, [pathname]);
+
+  function followNavigation(event: MouseEvent<HTMLAnchorElement>) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    setNavigationOpen(false);
+    requestAnimationFrame(() => document.getElementById('main-content')?.focus());
+  }
 
   async function handleSync() {
     if (busy) return;
@@ -113,12 +123,21 @@ export function Sidebar() {
   }
 
   return (
-    <nav className="sidebar" aria-label="Primary navigation">
+    <nav className="sidebar" aria-label="Primary navigation" onKeyDown={event => {
+      if (event.key === "Escape" && navigationOpen) {
+        event.preventDefault(); setNavigationOpen(false); navigationToggle.current?.focus();
+      }
+    }}>
       <div className="sidebar-header">
         <img src="/agent_smith_logo.svg" alt="Agent Smith" className="sidebar-logo" />
         <div className="sidebar-title">Agent Smith</div>
+        <button type="button" ref={navigationToggle} className="btn btn-sm sidebar-menu-toggle"
+          aria-expanded={navigationOpen} aria-controls="sidebar-menu" onClick={() => setNavigationOpen(previous => !previous)}>
+          {navigationOpen ? "Close menu" : "Menu"}
+        </button>
       </div>
 
+      <div className={`sidebar-body${navigationOpen ? " is-open" : ""}`} id="sidebar-menu">
       <div className="sidebar-navigation">
       {NAV_SECTIONS.map(section => <section className="sidebar-section" key={section.id} aria-labelledby={`sidebar-toggle-${section.id}`}>
         <h2 className="sidebar-section-heading"><button type="button" className="sidebar-section-toggle"
@@ -129,8 +148,8 @@ export function Sidebar() {
         <div className="sidebar-section-links" id={`sidebar-links-${section.id}`} hidden={collapsed.includes(section.id)}>
         {[...section.links].sort((left, right) => left.label.localeCompare(right.label)).map(link => (
           activeAlias === link.path
-            ? <Link key={link.path} to={link.path} className={navClass({ isActive: true })} aria-current="page">{link.label}</Link>
-            : <NavLink key={link.path} to={link.path} className={navClass}>{link.label}</NavLink>
+            ? <Link key={link.path} to={link.path} onClick={followNavigation} className={navClass({ isActive: true })} aria-current="page">{link.label}</Link>
+            : <NavLink key={link.path} to={link.path} onClick={followNavigation} className={navClass}>{link.label}</NavLink>
         ))}
         </div>
       </section>)}
@@ -145,6 +164,7 @@ export function Sidebar() {
             {unsyncing ? 'Unsyncing...' : 'Unsync'}
           </button>
         </div>
+      </div>
       </div>
 
     </nav>
