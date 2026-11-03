@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { api } from '../api';
 import type { Job } from '../api';
@@ -11,18 +10,20 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { usePolling } from '../hooks/usePolling';
 import { makeRowClickable } from '../utils/a11y';
 import { formatSchedule } from '../utils/schedule';
+import { useViewPreferences } from '../hooks/useViewPreferences';
+import { JOB_SORT_OPTIONS, SCHEDULING_OPTIONS, parseViewField } from '../utils/viewPreferences';
 
 export function JobsIndexPage() {
   const navigate = useNavigate();
-  const [query, setQuery] = useState('');
-  const [scheduling, setScheduling] = useState('');
-  const [sort, setSort] = useState<'updated' | 'newest' | 'name'>('updated');
+  const preferences = useViewPreferences('jobs');
+  const { q: query, schedule_enabled: scheduling, sort } = preferences.values;
   const debouncedQuery = useDebouncedValue(query);
 
   const { items, setItems, total, loading, error, dataCurrent, limit, offset, setLimit, setOffset, refresh } = usePagination<Job>(
     (l, o) => api.jobs.list({ limit: l, offset: o, q: debouncedQuery || undefined,
       schedule_enabled: scheduling ? scheduling === 'true' : undefined, sort }),
     [debouncedQuery, scheduling, sort],
+    10, { ...preferences.pagination, enabled: debouncedQuery === query },
   );
   usePolling(() => refresh({ showLoading: false }));
   const schedulingChanged = (updated: Job) => {
@@ -41,21 +42,18 @@ export function JobsIndexPage() {
         </button>
       </div>
 
-      <FilterBar nameValue={query} onNameChange={setQuery} namePlaceholder="Search jobs...">
+      <FilterBar nameValue={query} onNameChange={value => preferences.setField('q', value)} namePlaceholder="Search jobs...">
         <label><span className="form-label">Scheduling</span>
-        <select aria-label="Scheduling" value={scheduling} onChange={event => setScheduling(event.target.value)}>
-          <option value="">All scheduling states</option>
-          <option value="true">Automatic runs enabled</option>
-          <option value="false">Automatic runs paused</option>
+        <select aria-label="Scheduling" value={scheduling} onChange={event => preferences.setField('schedule_enabled', parseViewField('jobs', 'schedule_enabled', event.target.value))}>
+          {SCHEDULING_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
         </label>
         <label><span className="form-label">Sort jobs</span>
-        <select aria-label="Sort jobs" value={sort} onChange={event => setSort(event.target.value as typeof sort)}>
-          <option value="updated">Recently updated</option>
-          <option value="newest">Newest first</option>
-          <option value="name">Name</option>
+        <select aria-label="Sort jobs" value={sort} onChange={event => preferences.setField('sort', parseViewField('jobs', 'sort', event.target.value))}>
+          {JOB_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
         </label>
+        <button className="btn" type="button" onClick={preferences.reset}>Reset view</button>
       </FilterBar>
       {error && <p role="alert">Could not refresh jobs. <button className="btn btn-sm" onClick={() => refresh({ showLoading: false })}>Retry</button></p>}
       {loading && <div className="loading" role="status">Loading...</div>}

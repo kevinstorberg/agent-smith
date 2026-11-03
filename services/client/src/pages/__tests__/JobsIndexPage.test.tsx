@@ -41,13 +41,14 @@ function paginationReturn(overrides = {}) {
 }
 
 beforeEach(() => {
+  document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.clearAllMocks();
   mockUsePagination.mockReturnValue(paginationReturn());
 });
 
 describe('JobsIndexPage', () => {
   it('renders the jobs table with data', () => {
-    renderWithProviders(<JobsIndexPage />);
+    renderWithProviders(<JobsIndexPage />, { initialEntries: ['/jobs'] });
     expect(screen.getByText('Jobs')).toBeInTheDocument();
     expect(screen.getByText('Backup')).toBeInTheDocument();
     expect(screen.getByText('Sync')).toBeInTheDocument();
@@ -56,7 +57,7 @@ describe('JobsIndexPage', () => {
 
   it('shows loading state', () => {
     mockUsePagination.mockReturnValue(paginationReturn({ items: [], total: 0, loading: true }));
-    renderWithProviders(<JobsIndexPage />);
+    renderWithProviders(<JobsIndexPage />, { initialEntries: ['/jobs'] });
     expect(screen.getByText('Loading...')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Search jobs...')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Scheduling' })).toBeInTheDocument();
@@ -64,34 +65,34 @@ describe('JobsIndexPage', () => {
 
   it('shows empty state when no jobs exist', () => {
     mockUsePagination.mockReturnValue(paginationReturn({ items: [], total: 0 }));
-    renderWithProviders(<JobsIndexPage />);
+    renderWithProviders(<JobsIndexPage />, { initialEntries: ['/jobs'] });
     expect(screen.getByText('No jobs found')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Search jobs...')).toBeInTheDocument();
   });
 
   it('keeps filters available after a failed request', () => {
     mockUsePagination.mockReturnValue(paginationReturn({ error: 'Request failed' }));
-    renderWithProviders(<JobsIndexPage />);
+    renderWithProviders(<JobsIndexPage />, { initialEntries: ['/jobs'] });
     expect(screen.getByRole('alert')).toHaveTextContent('Could not refresh jobs');
     expect(screen.getByPlaceholderText('Search jobs...')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Sort jobs' })).toBeInTheDocument();
   });
 
   it('navigates to new job on button click', () => {
-    renderWithProviders(<JobsIndexPage />);
+    renderWithProviders(<JobsIndexPage />, { initialEntries: ['/jobs'] });
     fireEvent.click(screen.getByText('+ New Job'));
     expect(mockNavigate).toHaveBeenCalledWith('/jobs/new');
   });
 
   it('navigates to job detail on row click', () => {
-    renderWithProviders(<JobsIndexPage />);
+    renderWithProviders(<JobsIndexPage />, { initialEntries: ['/jobs'] });
     fireEvent.click(screen.getByText('Backup'));
     expect(mockNavigate).toHaveBeenCalledWith('/jobs/1');
   });
 
   it('polls the current jobs page every 60 seconds', () => {
     vi.useFakeTimers();
-    const { unmount } = renderWithProviders(<JobsIndexPage />);
+    const { unmount } = renderWithProviders(<JobsIndexPage />, { initialEntries: ['/jobs'] });
 
     vi.advanceTimersByTime(POLL_INTERVAL_MS);
     expect(mockRefresh).toHaveBeenCalledWith({ showLoading: false });

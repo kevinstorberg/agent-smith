@@ -1,8 +1,66 @@
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { usePagination } from '../usePagination';
+import { useState } from 'react';
 
 describe('usePagination', () => {
+  it('clamps an opted-in controlled page only after its accepted response, then fetches the corrected page', async () => {
+    const fetcher = vi.fn().mockResolvedValue({ items: [], total: 60 });
+    const { result } = renderHook(() => {
+      const [page, onPageChange] = useState({ limit: 25, offset: 75 });
+      return usePagination(fetcher, [], 10, { page, onPageChange, clampOffset: true });
+    });
+    await waitFor(() => expect(result.current.dataCurrent).toBe(true));
+    expect(fetcher.mock.calls).toEqual([[25, 75], [25, 50]]);
+    expect(result.current.offset).toBe(50);
+  });
+
+  it('does not clamp a new page using the previous accepted total while its request is pending', async () => {
+    let finish!: (value: { items: string[]; total: number }) => void;
+    const fetcher = vi.fn().mockResolvedValueOnce({ items: ['old'], total: 1 })
+      .mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const { result } = renderHook(() => {
+      const [page, onPageChange] = useState({ limit: 10, offset: 0 });
+      return usePagination(fetcher, [], 10, { page, onPageChange, clampOffset: true });
+    });
+    await waitFor(() => expect(result.current.dataCurrent).toBe(true));
+    act(() => result.current.setOffset(50));
+    expect(result.current.offset).toBe(50);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    await act(async () => finish({ items: ['new'], total: 100 }));
+    expect(result.current.offset).toBe(50);
+    expect(result.current.dataCurrent).toBe(true);
+  });
+
+  it('does not let an old query response clamp an explicitly restored controlled page for a new query', async () => {
+    let finishOld!: (value: { items: string[]; total: number }) => void;
+    const fetcher = vi.fn().mockReturnValueOnce(new Promise(resolve => { finishOld = resolve; }))
+      .mockResolvedValue({ items: ['new'], total: 100 });
+    const { result, rerender } = renderHook(({ query }) => {
+      const [page, onPageChange] = useState({ limit: 10, offset: 50 });
+      return usePagination((limit, offset) => fetcher(query, limit, offset), [query], 10, { page, onPageChange, clampOffset: true });
+    }, { initialProps: { query: 'old' } });
+    rerender({ query: 'new' });
+    await waitFor(() => expect(result.current.dataCurrent).toBe(true));
+    await act(async () => finishOld({ items: [], total: 0 }));
+    expect(fetcher.mock.calls).toEqual([['old', 10, 50], ['new', 10, 50]]);
+    expect(result.current.offset).toBe(50);
+    expect(result.current.items).toEqual(['new']);
+  });
+
+  it('defers reads while criteria are pending and preserves a saved offset after a request failure', async () => {
+    const fetcher = vi.fn().mockRejectedValue(new Error('Unavailable'));
+    const { result, rerender } = renderHook(({ enabled }) => {
+      const [page, onPageChange] = useState({ limit: 25, offset: 50 });
+      return usePagination(fetcher, [], 10, { page, onPageChange, clampOffset: true, enabled });
+    }, { initialProps: { enabled: false } });
+    expect(fetcher).not.toHaveBeenCalled();
+    rerender({ enabled: true });
+    await waitFor(() => expect(result.current.error).toBe('Unavailable'));
+    expect(result.current.offset).toBe(50);
+    expect(fetcher.mock.calls).toEqual([[25, 50]]);
+  });
+
   it.each(['offset', 'limit'] as const)('marks retained rows stale immediately after %s changes until its matching response arrives', async field => {
     let finish!: (value: { items: string[]; total: number }) => void;
     const fetcher = vi.fn().mockResolvedValueOnce({ items: ['previous page'], total: 50 })
