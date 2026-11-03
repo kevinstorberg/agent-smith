@@ -1,41 +1,83 @@
-import { useState } from 'react';
-import { NavLink } from 'react-router';
+import { useEffect, useState } from 'react';
+import { Link, NavLink, useLocation } from 'react-router';
 import { api } from '../api';
+import { TYPE_PATHS } from '../constants';
 import { useNotification } from '../context/useNotification';
 
-// Separate deployable harness configuration from its management tools and general-purpose resources.
-// Group names stay internal; the sidebar uses separators without headings.
-const NAV_SECTIONS = [{ id: 'harness', links: [
-  { path: '/harness/agents', label: 'Agents' },
-  { path: '/harness/hooks', label: 'Hooks' },
-  { path: '/harness/rules', label: 'Rules' },
-  { path: '/harness/skills', label: 'Skills' },
-  { path: '/harness/tools', label: 'Tools' },
-] }, { id: 'maintenance', links: [
-  { path: '/audit', label: 'Audit' },
-  { path: '/eval-configs', label: 'Evals' },
-  { path: '/jobs', label: 'Jobs' },
-  { path: '/proposals', label: 'Proposals' },
-  { path: '/evals', label: 'Results' },
-] }, { id: 'external', links: [
+const NAV_SECTIONS = [{ id: 'external', label: 'Workspace', links: [
   { path: '/action-items', label: 'Action items' },
   { path: '/chat', label: 'Chat' },
   { path: '/meetings', label: 'Meetings' },
   { path: '/memory', label: 'Memory' },
   { path: '/plans', label: 'Plans' },
   { path: '/profiles', label: 'Profiles' },
-] }];
+] }, { id: 'harness', label: 'Agent setup', links: [
+  { path: '/harness/agents', label: 'Agents' },
+  { path: '/harness/hooks', label: 'Hooks' },
+  { path: '/harness/rules', label: 'Rules' },
+  { path: '/harness/skills', label: 'Skills' },
+  { path: '/harness/tools', label: 'Tools' },
+] }, { id: 'maintenance', label: 'Operations', links: [
+  { path: '/audit', label: 'Audit' },
+  { path: '/eval-configs', label: 'Evals' },
+  { path: '/jobs', label: 'Jobs' },
+  { path: '/proposals', label: 'Proposals' },
+  { path: '/evals', label: 'Results' },
+] }] as const;
+
+type SectionId = typeof NAV_SECTIONS[number]['id'];
+const STORAGE_KEY = 'agent-smith.sidebar.v1';
+
+function isSectionId(value: unknown): value is SectionId {
+  return NAV_SECTIONS.some(section => section.id === value);
+}
+
+function readCollapsedSections(): SectionId[] {
+  try {
+    const saved: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || 'null');
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)
+        && 'version' in saved && saved.version === 1 && 'collapsed' in saved
+        && Array.isArray(saved.collapsed) && saved.collapsed.every(isSectionId)) {
+      return [...new Set(saved.collapsed)];
+    }
+  } catch {
+    return [];
+  }
+  return [];
+}
+
+function containsRoute(path: string, route: string): boolean {
+  return path === route || path.startsWith(`${route}/`);
+}
 
 function navClass({ isActive }: { isActive: boolean }): string {
   return `sidebar-link${isActive ? ' active' : ''}`;
 }
 
 export function Sidebar() {
+  const { pathname } = useLocation();
+  const harnessType = Object.keys(TYPE_PATHS).find(type => containsRoute(pathname, `/harness/${type}`));
+  const activeAlias = harnessType ? `/harness/${TYPE_PATHS[harnessType]}` : null;
+  const activeSection = NAV_SECTIONS.find(section => section.links.some(link => containsRoute(pathname, link.path) || activeAlias === link.path))?.id;
+  const [collapsed, setCollapsed] = useState<SectionId[]>(() => readCollapsedSections().filter(id => id !== activeSection));
   const [syncing, setSyncing] = useState(false);
   const [unsyncing, setUnsyncing] = useState(false);
+  const busy = syncing || unsyncing;
   const { notify } = useNotification();
 
+  useEffect(() => {
+    if (activeSection) setCollapsed(previous => previous.includes(activeSection) ? previous.filter(id => id !== activeSection) : previous);
+  }, [pathname, activeSection]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, collapsed }));
+    } catch {
+      return;
+    }
+  }, [collapsed]);
+
   async function handleSync() {
+    if (busy) return;
     setSyncing(true);
     try {
       const res = await api.harness.sync();
@@ -52,6 +94,7 @@ export function Sidebar() {
   }
 
   async function handleUnsync() {
+    if (busy) return;
     if (!confirm('Remove all synced agent files?')) return;
     setUnsyncing(true);
     try {
@@ -70,24 +113,35 @@ export function Sidebar() {
   }
 
   return (
-    <nav className="sidebar">
+    <nav className="sidebar" aria-label="Primary navigation">
       <div className="sidebar-header">
         <img src="/agent_smith_logo.svg" alt="Agent Smith" className="sidebar-logo" />
         <div className="sidebar-title">Agent Smith</div>
       </div>
 
-      {NAV_SECTIONS.map(section => <div className="sidebar-section" key={section.id}>
+      <div className="sidebar-navigation">
+      {NAV_SECTIONS.map(section => <section className="sidebar-section" key={section.id} aria-labelledby={`sidebar-toggle-${section.id}`}>
+        <h2 className="sidebar-section-heading"><button type="button" className="sidebar-section-toggle"
+          id={`sidebar-toggle-${section.id}`} aria-expanded={!collapsed.includes(section.id)} aria-controls={`sidebar-links-${section.id}`}
+          onClick={() => setCollapsed(previous => previous.includes(section.id) ? previous.filter(id => id !== section.id) : [...previous, section.id])}>
+          {section.label}<span className="sidebar-section-chevron" aria-hidden="true">›</span>
+        </button></h2>
+        <div className="sidebar-section-links" id={`sidebar-links-${section.id}`} hidden={collapsed.includes(section.id)}>
         {[...section.links].sort((left, right) => left.label.localeCompare(right.label)).map(link => (
-          <NavLink key={link.path} to={link.path} className={navClass}>{link.label}</NavLink>
+          activeAlias === link.path
+            ? <Link key={link.path} to={link.path} className={navClass({ isActive: true })} aria-current="page">{link.label}</Link>
+            : <NavLink key={link.path} to={link.path} className={navClass}>{link.label}</NavLink>
         ))}
-      </div>)}
+        </div>
+      </section>)}
+      </div>
 
-      <div className="sidebar-section">
+      <div className="sidebar-footer">
         <div className="sidebar-actions">
-          <button onClick={handleSync} disabled={syncing} className="sidebar-btn">
+          <button type="button" onClick={handleSync} disabled={busy} className="sidebar-btn">
             {syncing ? 'Syncing...' : 'Sync'}
           </button>
-          <button onClick={handleUnsync} disabled={unsyncing} className="sidebar-btn sidebar-btn-danger">
+          <button type="button" onClick={handleUnsync} disabled={busy} className="sidebar-btn sidebar-btn-danger">
             {unsyncing ? 'Unsyncing...' : 'Unsync'}
           </button>
         </div>

@@ -1,7 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useNavigate } from 'react-router';
+import userEvent from '@testing-library/user-event';
 import { Sidebar } from '../Sidebar';
+
+declare const jsdom: { window: { localStorage: Storage } };
 
 const mockNotify = vi.fn();
 
@@ -30,7 +33,11 @@ function renderSidebar(path = '/') {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Node's experimental global storage must not shadow the jsdom browser store.
+  vi.stubGlobal('localStorage', jsdom.window.localStorage);
+  window.localStorage.clear();
 });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('Sidebar', () => {
   it('renders title', () => {
@@ -40,7 +47,7 @@ describe('Sidebar', () => {
 
   it('renders all navigation links', () => {
     renderSidebar();
-    for (const label of ['Agents', 'Hooks', 'Rules', 'Skills', 'Tools', 'Audit', 'Evals', 'Jobs', 'Proposals', 'Results', 'Chat', 'Meetings', 'Memory', 'Plans', 'Profiles']) {
+    for (const label of ['Action items', 'Agents', 'Hooks', 'Rules', 'Skills', 'Tools', 'Audit', 'Evals', 'Jobs', 'Proposals', 'Results', 'Chat', 'Meetings', 'Memory', 'Plans', 'Profiles']) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
   });
@@ -53,15 +60,122 @@ describe('Sidebar', () => {
     expect(screen.getByRole('link', { name: 'Meetings' })).not.toHaveClass('active');
   });
 
-  it('alphabetizes links within the three unlabeled functional groups', () => {
-    const { container } = renderSidebar();
-    const sections = [...container.querySelectorAll('.sidebar-section')].map(section => within(section as HTMLElement).queryAllByRole('link').map(link => link.textContent));
+  it('orders named groups by workspace, agent setup and operations, retaining all 16 alphabetized links', () => {
+    renderSidebar();
+    expect(screen.getAllByRole('heading', { level: 2 }).map(heading => heading.textContent?.replace('›', ''))).toEqual(['Workspace', 'Agent setup', 'Operations']);
+    const sections = screen.getAllByRole('region').map(section => within(section).queryAllByRole('link').map(link => link.textContent));
     expect(sections).toEqual([
+      ['Action items', 'Chat', 'Meetings', 'Memory', 'Plans', 'Profiles'],
       ['Agents', 'Hooks', 'Rules', 'Skills', 'Tools'],
       ['Audit', 'Evals', 'Jobs', 'Proposals', 'Results'],
-      ['Action items', 'Chat', 'Meetings', 'Memory', 'Plans', 'Profiles'],
-      [],
     ]);
+    expect(screen.getAllByRole('link')).toHaveLength(16);
+  });
+
+  it('supports mouse, Enter and Space disclosure while removing collapsed links from keyboard navigation', async () => {
+    const user = userEvent.setup();
+    renderSidebar();
+    const toggle = screen.getByRole('button', { name: 'Agent setup' });
+    const panel = document.getElementById(toggle.getAttribute('aria-controls')!);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(panel).toHaveAttribute('hidden');
+    expect(screen.queryByRole('link', { name: 'Rules' })).not.toBeInTheDocument();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('link', { name: 'Rules' })).toBeVisible();
+    await user.keyboard(' ');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Operations' })).toHaveFocus();
+  });
+
+  it('restores collapsed groups across remounts while opening the current route group', () => {
+    const first = renderSidebar('/action-items');
+    fireEvent.click(screen.getByRole('button', { name: 'Operations' }));
+    expect(JSON.parse(window.localStorage.getItem('agent-smith.sidebar.v1')!)).toEqual({ version: 1, collapsed: ['maintenance'] });
+    first.unmount();
+    renderSidebar('/profiles/profile-id');
+    expect(screen.getByRole('button', { name: 'Operations' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: 'Workspace' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('link', { name: 'Profiles' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('opens an initially collapsed destination without forcing other groups open', () => {
+    window.localStorage.setItem('agent-smith.sidebar.v1', JSON.stringify({ version: 1, collapsed: ['external', 'harness', 'maintenance'] }));
+    renderSidebar('/harness/rule/83');
+    expect(screen.getByRole('button', { name: 'Agent setup' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'Workspace' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: 'Operations' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('link', { name: 'Rules' })).toHaveClass('active');
+    expect(screen.getByRole('link', { name: 'Rules' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('opens route destinations and allows the active group to be collapsed manually afterwards', () => {
+    function RouteControls() {
+      const navigate = useNavigate();
+      return <><button onClick={() => navigate('/harness/rule/83')}>Open rule</button>
+        <button onClick={() => navigate('/harness/hook/new')}>New hook</button>
+        <button onClick={() => navigate('/jobs/1')}>Open job</button></>;
+    }
+    render(<MemoryRouter initialEntries={['/profiles/profile-id']}><Sidebar /><RouteControls /></MemoryRouter>);
+    fireEvent.click(screen.getByRole('button', { name: 'Agent setup' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Operations' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open rule' }));
+    expect(screen.getByRole('link', { name: 'Rules' })).toHaveAttribute('aria-current', 'page');
+    fireEvent.click(screen.getByRole('button', { name: 'Agent setup' }));
+    expect(screen.queryByRole('link', { name: 'Rules' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'New hook' }));
+    expect(screen.getByRole('link', { name: 'Hooks' })).toHaveAttribute('aria-current', 'page');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job' }));
+    expect(screen.getByRole('link', { name: 'Jobs' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it.each(['not-json', '{"version":2,"collapsed":["harness"]}', '{"version":1,"collapsed":"harness"}', '{"version":1,"collapsed":["unknown"]}'])(
+    'ignores malformed or incompatible stored preferences: %s', stored => {
+      window.localStorage.setItem('agent-smith.sidebar.v1', stored);
+      renderSidebar();
+      for (const name of ['Workspace', 'Agent setup', 'Operations']) {
+        expect(screen.getByRole('button', { name })).toHaveAttribute('aria-expanded', 'true');
+      }
+    },
+  );
+
+  it('keeps disclosure usable when browser storage is unavailable', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new DOMException('Storage denied', 'SecurityError'); });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Storage denied', 'SecurityError'); });
+    renderSidebar();
+    const toggle = screen.getByRole('button', { name: 'Workspace' });
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(screen.getByRole('link', { name: 'Action items' })).toBeVisible();
+  });
+
+  it('keeps deployment actions outside the scrolling navigation region', () => {
+    const { container } = renderSidebar();
+    const scrolling = container.querySelector('.sidebar-navigation');
+    const footer = container.querySelector('.sidebar-footer');
+    expect(scrolling?.contains(footer)).toBe(false);
+    expect(footer?.contains(screen.getByRole('button', { name: 'Sync' }))).toBe(true);
+    expect(footer?.contains(screen.getByRole('button', { name: 'Unsync' }))).toBe(true);
+  });
+
+  it.each(['sync', 'unsync'] as const)('locks both deployment actions while %s waits without locking navigation', async action => {
+    let finish!: (result: { success: boolean; stdout: string; stderr: string; removed: string[] }) => void;
+    const response = new Promise<{ success: boolean; stdout: string; stderr: string; removed: string[] }>(resolve => { finish = resolve; });
+    vi.mocked(api.harness[action]).mockReturnValueOnce(response);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderSidebar();
+    fireEvent.click(screen.getByRole('button', { name: action === 'sync' ? 'Sync' : 'Unsync' }));
+    expect(screen.getByRole('button', { name: /^(Sync|Syncing\.\.\.)$/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^(Unsync|Unsyncing\.\.\.)$/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Workspace' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: action === 'sync' ? 'Unsync' : 'Sync' }));
+    expect(api.harness[action === 'sync' ? 'unsync' : 'sync']).not.toHaveBeenCalled();
+    finish({ success: true, stdout: '', stderr: '', removed: [] });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sync' })).toBeEnabled());
+    expect(screen.getByRole('button', { name: 'Unsync' })).toBeEnabled();
   });
 
   it('sync success notifies user', async () => {
