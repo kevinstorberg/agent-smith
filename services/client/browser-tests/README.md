@@ -7,7 +7,9 @@ types, and runs bundled Chromium at widths 1440, 1024, 390, and 320 pixels.
 Playwright owns one preview process on an available loopback port. Workers inherit
 that port; an existing server is never reused. The preview disables API proxying.
 Each browser context blocks service workers, external requests, WebSockets,
-unregistered APIs, and writes. Register exact GET paths through `fixtureAPI.get`.
+unregistered APIs, and writes. Register exact GET paths through `fixtureAPI.get`;
+use `fixtureAPI.mock(method, path, response, status)` for explicit synthetic mutations
+or HTTP failure fixtures. Unregistered methods remain blocked.
 The rejection proving case explicitly exercises blocked requests; other unexpected
 traffic fails teardown. The guard stays installed until its context closes.
 

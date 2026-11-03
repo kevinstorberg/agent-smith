@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router';
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
 import { api } from '../api';
@@ -47,6 +47,8 @@ export function HarnessIndexPage({ type }: { type: string }) {
 
   const dragDisabled = hasFilters || criteriaPending || !dataCurrent || sort !== 'manual' || loading || Boolean(error)
     || offset !== 0 || items.length !== total;
+  const columns = [!dragDisabled && '32px', 'minmax(220px, 2fr)', 'minmax(120px, 1fr)', '72px',
+    type === 'rule' && '88px', 'minmax(160px, 1fr)', '90px', '64px', '144px'].filter(Boolean).join(' ');
   const currentView = useRef({ type, items, dragDisabled, refresh, mounted: false });
   useEffect(() => {
     currentView.current = { type, items, dragDisabled, refresh, mounted: true };
@@ -104,7 +106,7 @@ export function HarnessIndexPage({ type }: { type: string }) {
         onProjectChange={value => preferences.setField('project', value)}
         onReset={preferences.reset}
       >
-        <label className="form-label">Sort
+        <label><span className="form-label">Sort</span>
           <select className="input" value={sort} onChange={event => preferences.setField('sort', parseViewField(preferenceKey, 'sort', event.target.value))}>
             {HARNESS_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
@@ -119,22 +121,10 @@ export function HarnessIndexPage({ type }: { type: string }) {
       <DragDropContext onDragEnd={onDragEnd}>
         <Droppable droppableId="harness-table" isDropDisabled={dragDisabled}>
           {(provided) => (
-            <div className="table-container">
-              <div className="table-header" style={{
-                display: 'grid',
-                gridTemplateColumns: dragDisabled
-                  ? (type === 'rule' ? '1fr 0.8fr 0.6fr 0.6fr 1fr 0.6fr 0.5fr 1fr' : '1fr 0.8fr 0.6fr 1fr 0.6fr 0.5fr 1fr')
-                  : (type === 'rule' ? '36px 1fr 0.8fr 0.6fr 0.6fr 1fr 0.6fr 0.5fr 1fr' : '36px 1fr 0.8fr 0.6fr 1fr 0.6fr 0.5fr 1fr'),
-                gap: '8px',
-                padding: '12px 16px',
-                background: 'var(--surface)',
-                borderBottom: '1px solid var(--border)',
-                fontSize: '12px',
-                fontWeight: 600,
-                color: 'var(--text-muted)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-              }}>
+            <div className="table-container" style={{ '--harness-columns': columns } as CSSProperties}>
+              <div className="harness-list-scroll" role="region" aria-label={`${TYPE_LABELS[type] || type} list`} tabIndex={0}>
+              <div className="harness-list-table">
+              <div className="table-header harness-list-header">
                 {!dragDisabled && <div></div>}
                 <div>Name</div>
                 <div>Project</div>
@@ -150,21 +140,12 @@ export function HarnessIndexPage({ type }: { type: string }) {
                   <Draggable key={String(item.id)} draggableId={String(item.id)} index={index} isDragDisabled={dragDisabled}>
                     {(prov, snapshot) => (
                       <div
+                        className="harness-list-row"
                         ref={prov.innerRef}
                         {...prov.draggableProps}
                         {...makeKeyboardClickable(() => navigate(`/harness/${type}/${item.id}`))}
                         style={{
-                          display: 'grid',
-                          gridTemplateColumns: dragDisabled
-                            ? (type === 'rule' ? '1fr 0.8fr 0.6fr 0.6fr 1fr 0.6fr 0.5fr 1fr' : '1fr 0.8fr 0.6fr 1fr 0.6fr 0.5fr 1fr')
-                            : (type === 'rule' ? '36px 1fr 0.8fr 0.6fr 0.6fr 1fr 0.6fr 0.5fr 1fr' : '36px 1fr 0.8fr 0.6fr 1fr 0.6fr 0.5fr 1fr'),
-                          gap: '8px',
-                          padding: '12px 16px',
-                          alignItems: 'center',
-                          cursor: 'pointer',
                           background: snapshot.isDragging ? 'var(--surface-hover)' : undefined,
-                          borderBottom: '1px solid var(--border)',
-                          transition: 'background var(--transition)',
                           ...prov.draggableProps.style,
                         }}
                         onMouseEnter={e => { if (!snapshot.isDragging) e.currentTarget.style.background = 'var(--surface-hover)'; }}
@@ -198,10 +179,10 @@ export function HarnessIndexPage({ type }: { type: string }) {
                             <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                               <span className="tag tag-sm">{item.configs.length}</span>
                               {item.configs.some(c => c.device !== '*') && (
-                                <span className="tag tag-warning" style={{ fontSize: 10 }}>device</span>
+                                <span className="tag tag-warning">device</span>
                               )}
                               {item.configs.some(c => c.repo !== '*') && (
-                                <span className="tag tag-success" style={{ fontSize: 10 }}>repo</span>
+                                <span className="tag tag-success">repo</span>
                               )}
                             </div>
                           ) : (
@@ -214,13 +195,11 @@ export function HarnessIndexPage({ type }: { type: string }) {
                     )}
                   </Draggable>
                 ))}
-                {!loading && items.length === 0 && (
-                  <div className="loading" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '48px 24px' }}>
-                    No {TYPE_LABELS[type]?.toLowerCase() || 'items'} found
-                  </div>
-                )}
                 {provided.placeholder}
               </div>
+              </div>
+              </div>
+              {!loading && items.length === 0 && <div className="loading">No {TYPE_LABELS[type]?.toLowerCase() || 'items'} found</div>}
             </div>
           )}
         </Droppable>

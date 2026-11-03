@@ -20,7 +20,10 @@ import psycopg2
 from psycopg2.extras import Json, RealDictCursor
 
 from services.api.models.proposal import ProposalModel, existing_fingerprints, get_proposal
-from services.api.models.shared.harness import VALID_TABLES, _copy_configs, _get_model, get_item, get_item_by_id, inherited_version_metadata
+from services.api.models.shared.harness import (
+    VALID_TABLES, HarnessWriteConflict, _copy_configs, _get_model, get_item, get_item_by_id,
+    harness_write, inherited_version_metadata,
+)
 from services.db import get_connection
 from services.jobs.models.job import get_job, get_job_by_name
 from services.jobs.schedule import parse_interval
@@ -306,6 +309,7 @@ def _promote_harness(cur, proposal: dict) -> dict:
 
     _get_model(kind).dynamic_update(proposed_id, {
         "state": "active", "version": new_version,
+        **({"sort_key": current["sort_key"]} if proposal["action"] == "update" else {}),
         **inherited_version_metadata(kind, current if proposal["action"] == "update" else None),
     }, conn=cur.connection)
     if proposal["action"] == "update":
@@ -401,12 +405,15 @@ def promote_proposal(proposal_id: int) -> dict:
                 if proposal["target_kind"] == "job":
                     applied_ref = _promote_job(cur, proposal)
                 else:
-                    applied_ref = _promote_harness(cur, proposal)
+                    with harness_write(proposal["target_kind"], conn=conn):
+                        applied_ref = _promote_harness(cur, proposal)
                 assert applied_ref, "promotion produced no applied_ref"
                 cur.execute(
                     "UPDATE improvement_proposals SET status = 'approved', applied_ref = %s, updated_at = now() WHERE id = %s",
                     (Json(applied_ref), proposal_id),
                 )
+    except HarnessWriteConflict as error:
+        raise ProposalConflictError(str(error)) from None
     except psycopg2.IntegrityError as exc:
         raise ProposalConflictError(
             "promotion hit a uniqueness conflict — the target changed concurrently"

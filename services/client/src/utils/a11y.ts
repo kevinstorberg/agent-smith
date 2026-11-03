@@ -1,5 +1,9 @@
 import type { KeyboardEvent } from 'react';
 
+function isOwnActivation(event: KeyboardEvent, keys: readonly string[]): boolean {
+  return !event.defaultPrevented && event.target === event.currentTarget && keys.includes(event.key);
+}
+
 /**
  * Makes a non-button element keyboard accessible.
  * Returns props that should be spread onto the element.
@@ -15,7 +19,7 @@ export function makeKeyboardClickable(onClick: () => void) {
     tabIndex: 0,
     onClick,
     onKeyDown: (e: KeyboardEvent) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isOwnActivation(e, ['Enter', ' '])) {
         e.preventDefault();
         onClick();
       }
@@ -37,7 +41,7 @@ export function makeRowClickable(onClick: () => void) {
     tabIndex: 0,
     onClick,
     onKeyDown: (e: KeyboardEvent) => {
-      if (e.key === 'Enter') {
+      if (isOwnActivation(e, ['Enter'])) {
         e.preventDefault();
         onClick();
       }
