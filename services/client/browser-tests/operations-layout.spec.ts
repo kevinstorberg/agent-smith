@@ -179,7 +179,7 @@ test('Proposal create previews keep long content inside their panes', async ({ p
 
 for (const resource of [
   { route: '/proposals', endpoint: '/api/proposals', label: 'Proposals list', error: 'Could not load proposals.', empty: 'No pending proposals' },
-  { route: '/audit', endpoint: '/api/audit/events', label: 'Audit events', error: 'Could not load audit events.', empty: 'No tool-call events' },
+  { route: '/audit', endpoint: '/api/audit/events', label: 'Audit events', error: 'Could not load audit events.', empty: 'No tool calls yet' },
   { route: '/evals', endpoint: '/api/evals', label: 'Results list', error: 'Could not load results.', empty: 'No eval runs found' },
   { route: '/eval-configs', endpoint: '/api/eval-configs/suites', label: 'Eval suites', error: 'Could not load eval suites.', empty: 'No eval suites found' },
 ]) {

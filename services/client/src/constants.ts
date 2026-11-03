@@ -1,7 +1,11 @@
-export const ALL_AGENTS = ['claude', 'codex', 'gemini'];
+export const ALL_AGENTS = ['claude', 'codex', 'gemini'] as const;
 export const POLL_INTERVAL_MS = 60_000;
 export const PAGE_LIMITS = [10, 25, 50] as const;
 export type PageLimit = typeof PAGE_LIMITS[number];
+export const AUDIT_STATUSES = ['pending', 'success', 'error'] as const;
+export const AUDIT_SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest first' }, { value: 'oldest', label: 'Oldest first' }, { value: 'duration', label: 'Longest duration' },
+] as const;
 
 export const TYPE_PATHS: Record<string, string> = {
   rule: 'rules',
