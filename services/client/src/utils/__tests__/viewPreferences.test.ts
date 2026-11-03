@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { COOKIE_MAX_AGE, MAX_COOKIE_BYTES, MAX_VIEW_ENTRIES, VIEW_COOKIE_NAME, cookieBytes, defaultView, mergeViewCookie, readViewCookie, resolveView } from '../viewPreferences';
 
 describe('view preference cookie boundary', () => {
+  it('normalizes restored action item sorting against the selected status before requests', () => {
+    for (const [status, sort] of [['open', 'manual'], ['completed', 'completed'], ['all', 'newest']] as const) {
+      expect(resolveView('actionItems', '', new URLSearchParams({ status, sort: status === 'open' ? 'completed' : 'manual' })).sort).toBe(sort);
+    }
+    const cookie = mergeViewCookie('', 'actionItems', { ...defaultView('actionItems'), status: 'completed', sort: 'title' });
+    expect(resolveView('actionItems', cookie, new URLSearchParams())).toMatchObject({ status: 'completed', sort: 'title' });
+    expect(resolveView('actionItems', cookie, new URLSearchParams('status=open&sort=')).sort).toBe('manual');
+  });
+
   it('stores only nondefaults, preserves other cookies, and emits the complete host-only attribute budget', () => {
     const value = mergeViewCookie('other=keep', 'jobs', { ...defaultView('jobs'), q: 'release', sort: 'name', limit: 25, offset: 50 }, { secure: true });
     expect(value).toContain(`; Path=/; SameSite=Lax; Max-Age=${COOKIE_MAX_AGE}; Secure`);

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { ResetViewButton } from './ResetViewButton';
 
 export interface FilterBarProps {
   nameValue: string;
@@ -10,6 +11,7 @@ export interface FilterBarProps {
   namePlaceholder?: string;
   projectPlaceholder?: string;
   children?: ReactNode;
+  onReset?: () => void;
 }
 
 export function FilterBar({
@@ -22,6 +24,7 @@ export function FilterBar({
   namePlaceholder = 'Search by name...',
   projectPlaceholder = 'Filter by project...',
   children,
+  onReset,
 }: FilterBarProps) {
   return (
     <div className="filters resource-controls">
@@ -43,6 +46,7 @@ export function FilterBar({
         />
       </label>}
       {children}
+      {onReset && <ResetViewButton onReset={onReset} />}
     </div>
   );
 }

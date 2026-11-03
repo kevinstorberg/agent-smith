@@ -3,6 +3,36 @@ export const POLL_INTERVAL_MS = 60_000;
 export const PAGE_LIMITS = [10, 25, 50] as const;
 export type PageLimit = typeof PAGE_LIMITS[number];
 
+export const ACTION_ITEM_STATUSES = [['open', 'Open'], ['completed', 'Completed'], ['all', 'All']] as const;
+export type ActionItemStatus = typeof ACTION_ITEM_STATUSES[number][0];
+const ACTION_ITEM_COMMON_SORTS = [
+  { value: 'newest', label: 'Newest' }, { value: 'updated', label: 'Recently updated' }, { value: 'title', label: 'Title A–Z' },
+] as const;
+export const ACTION_ITEM_SORT_OPTIONS = [
+  { value: 'manual', label: 'Manual order' }, { value: 'completed', label: 'Recently completed' }, ...ACTION_ITEM_COMMON_SORTS,
+] as const;
+export function actionItemSortOptions(status: ActionItemStatus) {
+  return ACTION_ITEM_SORT_OPTIONS.filter(option => option.value === 'manual' ? status === 'open' : option.value === 'completed' ? status === 'completed' : true);
+}
+export function defaultActionItemSort(status: ActionItemStatus) {
+  return status === 'open' ? 'manual' : status === 'completed' ? 'completed' : 'newest';
+}
+export const PROFILE_SORT_OPTIONS = [
+  { value: 'starred_name_asc', label: 'Starred first · Name A–Z' },
+  { value: 'created_at_desc', label: 'Newest profiles' }, { value: 'created_at_asc', label: 'Oldest profiles' },
+  { value: 'name_asc', label: 'Name A–Z' }, { value: 'name_desc', label: 'Name Z–A' },
+  { value: 'updated_at_desc', label: 'Recently updated' }, { value: 'updated_at_asc', label: 'Least recently updated' },
+] as const;
+export const CHAT_STATUSES = [
+  { value: 'all', label: 'All rooms' }, { value: 'open', label: 'Open' }, { value: 'closed', label: 'Closed' },
+] as const;
+export const CHAT_SORT_OPTIONS = [
+  { value: 'updated', label: 'Recently updated' }, { value: 'newest', label: 'Newest first' }, { value: 'name', label: 'Topic A–Z' },
+] as const;
+export const RESULT_SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest first' }, { value: 'oldest', label: 'Oldest first' }, { value: 'score', label: 'Highest score' },
+] as const;
+
 export const TYPE_PATHS: Record<string, string> = {
   rule: 'rules',
   skill: 'skills',

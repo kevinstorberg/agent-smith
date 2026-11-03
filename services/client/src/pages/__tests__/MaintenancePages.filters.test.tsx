@@ -185,7 +185,7 @@ describe('Maintenance page server controls', () => {
     vi.mocked(api.evals.list).mockImplementationOnce(() => new Promise(resolve => { finishRows = resolve; }));
     vi.mocked(api.evals.chartAverage).mockImplementationOnce(() => new Promise(resolve => { finishChart = resolve; }));
     vi.mocked(api.evals.facets).mockImplementationOnce(() => new Promise(resolve => { finishFacets = resolve; }));
-    renderWithProviders(<EvalsPage />);
+    renderWithProviders(<EvalsPage />, { initialEntries: ['/evals'] });
     const input = screen.getByPlaceholderText('Search results...');
     fireEvent.change(input, { target: { value: 'current' } });
     await advance();
