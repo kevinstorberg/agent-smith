@@ -3,6 +3,20 @@ import { describe, it, expect, vi } from 'vitest';
 import { usePagination } from '../usePagination';
 
 describe('usePagination', () => {
+  it.each(['offset', 'limit'] as const)('marks retained rows stale immediately after %s changes until its matching response arrives', async field => {
+    let finish!: (value: { items: string[]; total: number }) => void;
+    const fetcher = vi.fn().mockResolvedValueOnce({ items: ['previous page'], total: 50 })
+      .mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const { result } = renderHook(() => usePagination(fetcher));
+    await waitFor(() => expect(result.current.dataCurrent).toBe(true));
+    act(() => { if (field === 'offset') result.current.setOffset(10); else result.current.setLimit(25); });
+    expect(result.current.items).toEqual(['previous page']);
+    expect(result.current.dataCurrent).toBe(false);
+    await act(async () => { finish({ items: ['matching page'], total: 50 }); });
+    expect(result.current.items).toEqual(['matching page']);
+    expect(result.current.dataCurrent).toBe(true);
+  });
+
   it('uses a configured page size on the first request', async () => {
     const fetcher = vi.fn().mockResolvedValue({ items: [], total: 0 });
     renderHook(() => usePagination(fetcher, [], 20));
