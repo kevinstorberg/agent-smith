@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 import pytest
 
 from services.api.models import hook
@@ -37,9 +39,65 @@ def test_combined_collector_reads_one_snapshot_and_legacy_collector_returns_hook
     assert hook.collect_hooks_from_db("claude") == result.hooks
 
 
-def test_compiler_rejects_misplaced_model_with_item_and_remediation():
-    with pytest.raises(ValueError, match=r"capture: move metadata.model into each metadata.hooks entry"):
-        hook.compile_hook_settings([_row(model="haiku")], "claude")
+@pytest.mark.parametrize("default_model", ["haiku", "future/provider-model"])
+def test_compiler_normalizes_legacy_model_without_mutating_stored_metadata(default_model):
+    handlers = [
+        {"type": "agent", "prompt": "Capture", "timeout": 120},
+        {"type": "prompt", "prompt": "Review"},
+        {"type": "agent", "model": "custom/provider-model", "prompt": "Explicit"},
+        {"type": "command", "command": "echo capture"},
+        {"type": "http", "url": "https://example.invalid/hook"},
+    ]
+    row = _row(model=default_model, hooks=handlers)
+    original = deepcopy(row)
+    settings = hook.compile_hook_settings([row], "claude")
+    normalized = settings.hooks["Stop"][0]["hooks"]
+    assert [handler.get("model") for handler in normalized] == [default_model, default_model, "custom/provider-model", None, None]
+    assert all(result is not source for result, source in zip(normalized, handlers))
+    assert normalized[0]["timeout"] == 120
+    assert row == original
+
+
+@pytest.mark.parametrize("model", [None, "", " \t", 1, False, [], {}])
+def test_compiler_rejects_invalid_legacy_model_with_its_field(model):
+    with pytest.raises(ValueError, match=r"Hook capture: metadata\.model must be a nonblank string"):
+        hook.compile_hook_settings([_row(model=model)], "claude")
+
+
+@pytest.mark.parametrize("handler_type", ["command", "http", "unknown"])
+def test_compiler_rejects_explicit_model_on_non_ai_handlers(handler_type):
+    with pytest.raises(ValueError, match=r"Hook capture: metadata\.hooks\[0\]\.model is supported only for prompt or agent hooks"):
+        hook.compile_hook_settings([_row(hooks=[{"type": handler_type, "model": "haiku"}])], "claude")
+
+
+@pytest.mark.parametrize("handlers", [[{"type": "command"}], [{"type": "http"}], [{"type": "command"}, {"type": "http"}]])
+def test_compiler_rejects_legacy_default_without_an_ai_recipient(handlers):
+    with pytest.raises(ValueError, match=r"Hook capture: metadata\.model requires a prompt or agent handler"):
+        hook.compile_hook_settings([_row(model="haiku", hooks=handlers)], "claude")
+
+
+@pytest.mark.parametrize("agent", ["codex", "gemini"])
+def test_irrelevant_event_is_filtered_before_legacy_model_normalization(agent):
+    settings = hook.compile_hook_settings([_row(event="notification", model=None, hooks="invalid", permissions={"deny": [SEARCH]})], agent)
+    assert settings == hook.HookSettings({}, [])
+
+
+@pytest.mark.parametrize("content", [None, [], "invalid"])
+def test_compiler_rejects_invalid_content_with_item_and_field(content):
+    with pytest.raises(ValueError, match=r"Hook capture: content must be an object"):
+        hook.compile_hook_settings([{"name": "capture", "content": content}], "claude")
+
+
+@pytest.mark.parametrize("metadata", [None, [], "invalid"])
+def test_compiler_rejects_invalid_metadata_with_item_and_field(metadata):
+    with pytest.raises(ValueError, match=r"Hook capture: metadata must be an object"):
+        hook.compile_hook_settings([{"name": "capture", "content": {"metadata": metadata}}], "claude")
+
+
+@pytest.mark.parametrize("handlers", [None, {}, "invalid", [None]])
+def test_compiler_rejects_invalid_handler_collection_with_item_and_field(handlers):
+    with pytest.raises(ValueError, match=r"Hook capture: metadata\.hooks must be a list of objects"):
+        hook.compile_hook_settings([_row(hooks=handlers)], "claude")
 
 
 @pytest.mark.parametrize("permissions", [None, [], {"allow": "bad"}, {"allow": [""]}, {"allow": [1]}, {"deny": [SEARCH]}])
@@ -54,10 +112,11 @@ def test_compiler_rejects_broad_or_ambiguous_permission_rules(rule):
         hook.compile_hook_settings([_row(permissions={"allow": [rule]})], "claude")
 
 
-@pytest.mark.parametrize("model", [None, "", 1])
-def test_compiler_rejects_invalid_nested_model(model):
+@pytest.mark.parametrize("model", [None, "", " \t", 1, False])
+@pytest.mark.parametrize("legacy_default", [{}, {"model": "haiku"}])
+def test_compiler_rejects_invalid_nested_model_without_default_fallback(model, legacy_default):
     with pytest.raises(ValueError, match="model must be a nonblank string"):
-        hook.compile_hook_settings([_row(hooks=[{"type": "agent", "model": model}])], "claude")
+        hook.compile_hook_settings([_row(hooks=[{"type": "agent", "model": model}], **legacy_default)], "claude")
 
 
 def test_permissions_are_claude_only_and_other_agents_still_map_hooks():
@@ -68,6 +127,9 @@ def test_permissions_are_claude_only_and_other_agents_still_map_hooks():
 
 def test_empty_handler_group_and_empty_collection_are_valid():
     assert hook.compile_hook_settings([_row(hooks=[])], "claude").hooks == {"Stop": [{"matcher": "*", "hooks": []}]}
+    assert hook.compile_hook_settings([_row(hooks=[], model="haiku", permissions={"allow": [SEARCH]})], "claude") == hook.HookSettings(
+        {"Stop": [{"matcher": "*", "hooks": []}]}, []
+    )
     assert hook.compile_hook_settings([], "claude").hooks == {}
 
 

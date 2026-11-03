@@ -59,6 +59,36 @@ class HookSettings:
     allowed_tools: list[str]
 
 
+def _validate_hook_model(value: object, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{label} must be a nonblank string")
+    return value
+
+
+def _normalize_hook_handlers(metadata: dict, name: str) -> list[dict]:
+    handlers = metadata.get("hooks", [])
+    if not isinstance(handlers, list) or any(not isinstance(handler, dict) for handler in handlers):
+        raise ValueError(f"Hook {name}: metadata.hooks must be a list of objects")
+    has_default = "model" in metadata
+    default_model = _validate_hook_model(metadata["model"], f"Hook {name}: metadata.model") if has_default else None
+    normalized = []
+    has_ai_handler = False
+    for index, handler in enumerate(handlers):
+        copied = dict(handler)
+        supports_model = handler.get("type") in ("prompt", "agent")
+        has_ai_handler = has_ai_handler or supports_model
+        if "model" in handler:
+            _validate_hook_model(handler["model"], f"Hook {name}: metadata.hooks[{index}].model")
+            if not supports_model:
+                raise ValueError(f"Hook {name}: metadata.hooks[{index}].model is supported only for prompt or agent hooks")
+        elif has_default and supports_model:
+            copied["model"] = default_model
+        normalized.append(copied)
+    if has_default and handlers and not has_ai_handler:
+        raise ValueError(f"Hook {name}: metadata.model requires a prompt or agent handler; remove the unused default")
+    return normalized
+
+
 def compile_hook_settings(rows: list[dict], agent: str) -> HookSettings:
     if agent not in HOOK_EVENT_MAP:
         raise ValueError(f"Unsupported hook agent: {agent}")
@@ -66,23 +96,18 @@ def compile_hook_settings(rows: list[dict], agent: str) -> HookSettings:
     allowed_tools: list[str] = []
     for row in rows:
         name = row.get("name", "unnamed")
+        if not isinstance(row.get("content", {}), dict):
+            raise ValueError(f"Hook {name}: content must be an object")
         meta = content_metadata(row)
         if not isinstance(meta, dict):
             raise ValueError(f"Hook {name}: metadata must be an object")
-        if "model" in meta:
-            raise ValueError(f"Hook {name}: move metadata.model into each metadata.hooks entry before Sync")
         canonical = meta.get("event")
         if not isinstance(canonical, str) or not canonical.strip():
             raise ValueError(f"Hook {name}: metadata.event must be a nonblank canonical event name")
         mapped = map_hook_event(canonical, agent)
         if not mapped:
             continue
-        hooks = meta.get("hooks", [])
-        if not isinstance(hooks, list) or any(not isinstance(hook, dict) for hook in hooks):
-            raise ValueError(f"Hook {name}: metadata.hooks must be a list of objects")
-        for index, hook in enumerate(hooks):
-            if "model" in hook and (not isinstance(hook["model"], str) or not hook["model"].strip()):
-                raise ValueError(f"Hook {name}: metadata.hooks[{index}].model must be a nonblank string")
+        hooks = _normalize_hook_handlers(meta, name)
         permissions = meta.get("permissions", {})
         if not isinstance(permissions, dict) or set(permissions) - {"allow"}:
             raise ValueError(f"Hook {name}: metadata.permissions must contain only an allow list")
