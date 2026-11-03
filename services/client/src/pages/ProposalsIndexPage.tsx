@@ -11,13 +11,13 @@ import { usePagination } from '../hooks/usePagination';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { usePolling } from '../hooks/usePolling';
 import { makeRowClickable } from '../utils/a11y';
-
-const STATUSES = ['pending', 'approved', 'rejected'] as const;
+import { PROPOSAL_SORT_OPTIONS, PROPOSAL_STATUSES } from '../constants';
+import { useViewPreferences } from '../hooks/useViewPreferences';
+import { parseViewField } from '../utils/viewPreferences';
 
 export function ProposalsIndexPage() {
-  const [statusFilter, setStatusFilter] = useState<string>('pending');
-  const [query, setQuery] = useState('');
-  const [sort, setSort] = useState<'newest' | 'oldest' | 'title'>('newest');
+  const preferences = useViewPreferences('proposals');
+  const { status: statusFilter, q: query, sort } = preferences.values;
   const debouncedQuery = useDebouncedValue(query);
   const [counts, setCounts] = useState<ProposalCounts | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -28,6 +28,7 @@ export function ProposalsIndexPage() {
   const { items, total, loading, error, limit, offset, setLimit, setOffset, refresh } = usePagination<Proposal>(
     (l, o) => api.proposals.list(statusFilter || undefined, { limit: l, offset: o, q: debouncedQuery || undefined, sort }),
     [statusFilter, debouncedQuery, sort],
+    10, { ...preferences.pagination, enabled: debouncedQuery === query },
   );
   const latestRefresh = useRef(refresh);
   const mounted = useRef(false);
@@ -94,23 +95,21 @@ export function ProposalsIndexPage() {
         </button>
       </div>
 
-      <FilterBar nameValue={query} onNameChange={setQuery} namePlaceholder="Search proposals...">
+      <FilterBar nameValue={query} onNameChange={value => preferences.setField('q', value)} namePlaceholder="Search proposals..." onReset={preferences.reset}>
         <label><span className="form-label">Sort proposals</span>
-        <select aria-label="Sort proposals" value={sort} onChange={event => setSort(event.target.value as typeof sort)}>
-          <option value="newest">Newest first</option>
-          <option value="oldest">Oldest first</option>
-          <option value="title">Title</option>
+        <select aria-label="Sort proposals" value={sort} onChange={event => preferences.setField('sort', parseViewField('proposals', 'sort', event.target.value))}>
+          {PROPOSAL_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
         </label>
       </FilterBar>
       <div className="filters">
         <button className={`btn${statusFilter === '' ? ' btn-primary' : ''}`}
-          onClick={() => { setStatusFilter(''); setOffset(0); }}>all statuses</button>
-        {STATUSES.map(status => (
+          onClick={() => preferences.setField('status', '')}>all statuses</button>
+        {PROPOSAL_STATUSES.map(status => (
           <button
             key={status}
             className={`btn${statusFilter === status ? ' btn-primary' : ''}`}
-            onClick={() => { setStatusFilter(status); setOffset(0); }}
+            onClick={() => preferences.setField('status', status)}
           >
             {status}{!query && !debouncedQuery && counts ? ` (${counts[status]})` : ''}
           </button>

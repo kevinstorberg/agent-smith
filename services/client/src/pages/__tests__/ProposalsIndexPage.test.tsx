@@ -72,6 +72,7 @@ const fakeProposals = [
 ];
 
 beforeEach(() => {
+  document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.clearAllMocks();
   mockUsePagination.mockReturnValue({
     items: fakeProposals,
@@ -92,7 +93,7 @@ beforeEach(() => {
 
 describe('ProposalsIndexPage', () => {
   it('renders proposals with kind and target', async () => {
-    renderWithProviders(<ProposalsIndexPage />);
+    renderWithProviders(<ProposalsIndexPage />, { initialEntries: ['/proposals'] });
 
     expect(screen.getByText('Proposals')).toBeInTheDocument();
     expect(screen.getByText('Clarify the DRY rule')).toBeInTheDocument();
@@ -102,15 +103,15 @@ describe('ProposalsIndexPage', () => {
   });
 
   it('switches the status filter and resets paging', () => {
-    renderWithProviders(<ProposalsIndexPage />);
+    renderWithProviders(<ProposalsIndexPage />, { initialEntries: ['/proposals'] });
 
     fireEvent.click(screen.getByText(/approved/));
 
-    expect(mockSetOffset).toHaveBeenCalledWith(0);
+    expect(mockUsePagination.mock.calls.at(-1)?.[3].page.offset).toBe(0);
   });
 
   it('navigates to the detail page on row click', () => {
-    renderWithProviders(<ProposalsIndexPage />);
+    renderWithProviders(<ProposalsIndexPage />, { initialEntries: ['/proposals'] });
 
     fireEvent.click(screen.getByText('Clarify the DRY rule'));
 
@@ -118,7 +119,7 @@ describe('ProposalsIndexPage', () => {
   });
 
   it('quick-approves a row without navigating', async () => {
-    renderWithProviders(<ProposalsIndexPage />);
+    renderWithProviders(<ProposalsIndexPage />, { initialEntries: ['/proposals'] });
 
     fireEvent.click(screen.getAllByText('Approve')[0]);
 
@@ -132,7 +133,7 @@ describe('ProposalsIndexPage', () => {
 
   it('quick-rejects a row and surfaces conflicts as errors', async () => {
     mockReject.mockRejectedValue(new Error('proposal 2 is approved, not pending'));
-    renderWithProviders(<ProposalsIndexPage />);
+    renderWithProviders(<ProposalsIndexPage />, { initialEntries: ['/proposals'] });
 
     fireEvent.click(screen.getAllByText('Reject')[1]);
 
@@ -143,7 +144,7 @@ describe('ProposalsIndexPage', () => {
   });
 
   it('triggers manual generation from the button', async () => {
-    renderWithProviders(<ProposalsIndexPage />);
+    renderWithProviders(<ProposalsIndexPage />, { initialEntries: ['/proposals'] });
 
     fireEvent.click(screen.getByText('Generate now'));
 
@@ -155,7 +156,7 @@ describe('ProposalsIndexPage', () => {
 
   it('surfaces generate errors (e.g. job not seeded)', async () => {
     mockGenerate.mockRejectedValue(new Error("No background job named 'improvement-proposals'"));
-    renderWithProviders(<ProposalsIndexPage />);
+    renderWithProviders(<ProposalsIndexPage />, { initialEntries: ['/proposals'] });
 
     fireEvent.click(screen.getByText('Generate now'));
 
@@ -166,7 +167,7 @@ describe('ProposalsIndexPage', () => {
 
   it('polls proposals and counts every 60 seconds', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    renderWithProviders(<ProposalsIndexPage />);
+    renderWithProviders(<ProposalsIndexPage />, { initialEntries: ['/proposals'] });
     await waitFor(() => expect(mockCounts).toHaveBeenCalledTimes(1));
 
     mockCounts.mockClear();
