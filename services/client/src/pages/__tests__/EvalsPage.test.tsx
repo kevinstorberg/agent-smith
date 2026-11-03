@@ -27,9 +27,10 @@ vi.mock('react-router', async () => {
   };
 });
 
-const { mockCategories, mockSubcategories, mockList, mockChart, mockChartAverage } = vi.hoisted(() => ({
+const { mockCategories, mockSubcategories, mockFacets, mockList, mockChart, mockChartAverage } = vi.hoisted(() => ({
   mockCategories: vi.fn(),
   mockSubcategories: vi.fn(),
+  mockFacets: vi.fn(),
   mockList: vi.fn(),
   mockChart: vi.fn(),
   mockChartAverage: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock('../../api', () => ({
     evals: {
       categories: mockCategories,
       subcategories: mockSubcategories,
+      facets: mockFacets,
       list: mockList,
       chart: mockChart,
       chartAverage: mockChartAverage,
@@ -69,6 +71,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockCategories.mockResolvedValue(['rules', 'skills']);
   mockSubcategories.mockResolvedValue(['core', 'advanced']);
+  mockFacets.mockResolvedValue({ scenarios: ['test_scenario'], models: ['gpt-4'] });
   mockList.mockResolvedValue({ items: [], total: 0 });
   mockChartAverage.mockResolvedValue([]);
   mockChart.mockResolvedValue([]);

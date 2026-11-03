@@ -13,8 +13,11 @@ type Change = { action: 'save'; draft: Draft } | { action: 'remove'; entry: Voca
 
 export function MeetingVocabulary() {
   const [search, setSearch] = useState('');
+  const [definition, setDefinition] = useState<'all' | 'defined' | 'undefined'>('all');
+  const [sort, setSort] = useState('term');
   const query = useDebouncedValue(search.trim());
-  const list = usePagination<VocabularyTerm>((limit, offset) => api.meetings.vocabulary.list({ limit, offset, q: query }), [query]);
+  const list = usePagination<VocabularyTerm>((limit, offset) => api.meetings.vocabulary.list({ limit, offset, q: query,
+    definition: definition === 'all' ? undefined : definition, sort }), [query, definition, sort]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [removing, setRemoving] = useState<VocabularyTerm | null>(null);
   const [conflictId, setConflictId] = useState<string | null>(null);
@@ -87,9 +90,24 @@ export function MeetingVocabulary() {
       {!draft && <button className="btn btn-primary" disabled={busy || loading} onClick={() => start()}>Add term</button>}
     </div>
     <p className="text-muted-sm" style={{ marginTop: 12 }}>Terms and meanings that guide new meeting memories.</p>
-    <div className="search-bar" style={{ marginTop: 16 }}>
-      <label className="form-label" htmlFor="vocabulary-search">Search vocabulary</label>
-      <input id="vocabulary-search" className="input" maxLength={1000} value={search} placeholder="Search terms or definitions..." onChange={event => { setSearch(event.target.value); setRemoving(null); }} />
+    <div className="filters resource-controls" style={{ marginTop: 16 }}>
+      <label><span className="form-label">Search vocabulary</span>
+        <input id="vocabulary-search" className="input" maxLength={1000} value={search} placeholder="Search terms or definitions..." onChange={event => { setSearch(event.target.value); setRemoving(null); }} />
+      </label>
+      <label><span className="form-label">Definition</span>
+        <select className="input" value={definition} onChange={event => {
+          const value = event.target.value;
+          if (value === 'all' || value === 'defined' || value === 'undefined') setDefinition(value);
+          setRemoving(null);
+        }}>
+          <option value="all">All terms</option><option value="defined">With definition</option><option value="undefined">Without definition</option>
+        </select>
+      </label>
+      <label><span className="form-label">Sort vocabulary</span>
+        <select className="input" value={sort} onChange={event => { setSort(event.target.value); setRemoving(null); }}>
+          <option value="term">Term A–Z</option><option value="updated">Recently updated</option>
+        </select>
+      </label>
     </div>
     {loading && <p role="status">Loading vocabulary...</p>}
     {list.error && <p role="alert">Could not load vocabulary. <button className="btn btn-sm" onClick={() => list.refresh()}>Retry</button></p>}

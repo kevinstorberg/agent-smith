@@ -10,6 +10,7 @@ import { makeRowClickable } from '../utils/a11y';
 import { MeetingVocabulary } from '../components/MeetingVocabulary';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { parseTags } from '../utils/tags';
+import { FilterBar } from '../components/FilterBar';
 
 export function MeetingsIndexPage() {
   const navigate = useNavigate();
@@ -24,11 +25,12 @@ export function MeetingsIndexPage() {
   const debouncedQuery = useDebouncedValue(searchText.trim());
   const query = searchText.trim() ? debouncedQuery : '';
   const [labelInput, setLabelInput] = useState('');
+  const [sort, setSort] = useState('newest');
   const labelText = useDebouncedValue(labelInput);
   const labels = useMemo(() => parseTags(labelText), [labelText]);
   const { items, total, loading, error, limit, offset, setLimit, setOffset, refresh } = usePagination<MeetingSummary>(
-    (pageLimit, pageOffset) => api.meetings.list({ limit: pageLimit, offset: pageOffset, q: query || undefined, ...(labels.length ? { labels } : {}) }),
-    [query, labels],
+    (pageLimit, pageOffset) => api.meetings.list({ limit: pageLimit, offset: pageOffset, q: query || undefined, ...(labels.length ? { labels } : {}), sort }),
+    [query, labels, sort],
   );
   usePolling(() => refresh({ showLoading: false }), { enabled: !vocabularyActive });
 
@@ -42,22 +44,21 @@ export function MeetingsIndexPage() {
       </nav>
       <div hidden={vocabularyActive} role="region" aria-labelledby="meeting-tab-meetings">
 
-      <div className="search-bar">
-        <input
-          aria-label="Search meetings"
-          placeholder="Search titles and summaries..."
-          maxLength={1000}
-          value={searchText}
-          onChange={event => setSearchText(event.target.value)}
-        />
+      <FilterBar nameValue={searchText} onNameChange={setSearchText} nameLabel="Search meetings" namePlaceholder="Search titles and summaries...">
         {searchText && (
           <button className="btn" type="button" onClick={() => setSearchText('')}>Clear</button>
         )}
-      </div>
-      <div className="search-bar"><input aria-label="Filter meetings by labels" placeholder="Labels (comma-separated)" maxLength={600}
-        value={labelInput} onChange={event => setLabelInput(event.target.value)} />
+        <label><span className="form-label">Filter meetings by labels</span>
+          <input placeholder="Labels (comma-separated)" maxLength={600}
+            value={labelInput} onChange={event => setLabelInput(event.target.value)} />
+        </label>
         {labelInput && <button className="btn" onClick={() => setLabelInput('')}>Clear labels</button>}
-      </div>
+        <label><span className="form-label">Sort meetings</span>
+          <select className="input" value={sort} onChange={event => setSort(event.target.value)}>
+            <option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Title A–Z</option>
+          </select>
+        </label>
+      </FilterBar>
 
       {loading ? <div className="loading">Loading meetings...</div> : error ? (
         <div className="card" role="alert">

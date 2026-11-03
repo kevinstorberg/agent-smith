@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+from typing import Annotated
 from fastapi import APIRouter, Query
 from psycopg2.extras import RealDictCursor
 
 from services.db import get_connection
 from services.api.models.base import BaseModel
-from services.api.routers.base import require_found, list_response, delete_response
+from services.api.routers.base import require_found, list_response, delete_response, query_result
+from services.api.models.shared.listing import search_pattern, sort_clause, sort_pattern
+
+RESULT_SORTS = {"newest": "timestamp DESC, id DESC", "oldest": "timestamp, id", "score": "score_avg DESC NULLS LAST, timestamp DESC, id DESC"}
 
 router = APIRouter()
 
 
-def _build_filters(scenario="", model="", eval_type="", subcategory="", date_from="", date_to=""):
+def _build_filters(scenario="", model="", eval_type="", subcategory="", date_from="", date_to="", *, q: str | None = None):
     conditions, params = [], []
     if scenario:
         conditions.append("scenario = %s")
@@ -30,6 +34,10 @@ def _build_filters(scenario="", model="", eval_type="", subcategory="", date_fro
     if date_to:
         conditions.append("timestamp <= %s")
         params.append(date_to)
+    pattern = search_pattern(q)
+    if pattern is not None:
+        conditions.append("(scenario ILIKE %s OR test_model ILIKE %s OR eval_type ILIKE %s OR subcategory ILIKE %s)")
+        params.extend([pattern] * 4)
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     return where, params
 
@@ -44,8 +52,11 @@ def list_evals(
     date_to: str = Query(""),
     limit: int = Query(10, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    q: Annotated[str, Query(max_length=1000)] = "",
+    sort: Annotated[str, Query(pattern=sort_pattern(RESULT_SORTS))] = "newest",
 ):
-    where, params = _build_filters(scenario, model, eval_type, subcategory, date_from, date_to)
+    where, params = query_result(_build_filters, scenario, model, eval_type, subcategory, date_from, date_to, q=q)
+    order = query_result(sort_clause, sort, RESULT_SORTS)
 
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -58,7 +69,7 @@ def list_evals(
                 f"(SELECT avg((r->>'score')::float) FROM jsonb_array_elements(results) r) AS score_avg, "
                 f"jsonb_array_length(results) AS score_count "
                 f"FROM eval_results {where} "
-                f"ORDER BY timestamp DESC LIMIT %s OFFSET %s",
+                f"ORDER BY {order} LIMIT %s OFFSET %s",
                 params + [limit, offset],
             )
             rows = cur.fetchall()
@@ -102,14 +113,14 @@ def list_subcategories(eval_type: str = Query("")):
             return [row[0] for row in cur.fetchall()]
 
 
-def _fetch_chart_rows(scenario: str, model: str, eval_type: str, subcategory: str = "") -> list[dict]:
-    where, params = _build_filters(scenario, model, eval_type, subcategory)
+def _fetch_chart_rows(scenario: str, model: str, eval_type: str, subcategory: str = "", *, q: str | None = None) -> list[dict]:
+    where, params = _build_filters(scenario, model, eval_type, subcategory, q=q)
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 f"SELECT id, timestamp, results "
                 f"FROM eval_results {where} "
-                f"ORDER BY timestamp ASC",
+                f"ORDER BY timestamp ASC, id ASC",
                 params,
             )
             return cur.fetchall()
@@ -121,6 +132,7 @@ def chart_data(
     model: str = Query(""),
     eval_type: str = Query(""),
     subcategory: str = Query(""),
+    q: Annotated[str, Query(max_length=1000)] = "",
 ):
     return [
         {
@@ -128,7 +140,7 @@ def chart_data(
             "timestamp": row["timestamp"].isoformat(),
             "scores": {r["rule"]: r["score"] for r in row["results"]},
         }
-        for row in _fetch_chart_rows(scenario, model, eval_type, subcategory)
+        for row in query_result(_fetch_chart_rows, scenario, model, eval_type, subcategory, q=q)
     ]
 
 
@@ -138,6 +150,7 @@ def chart_average(
     model: str = Query(""),
     eval_type: str = Query(""),
     subcategory: str = Query(""),
+    q: Annotated[str, Query(max_length=1000)] = "",
 ):
     return [
         {
@@ -145,8 +158,18 @@ def chart_average(
             "timestamp": row["timestamp"].isoformat(),
             "score": sum(r["score"] for r in row["results"]) / max(len(row["results"]), 1),
         }
-        for row in _fetch_chart_rows(scenario, model, eval_type, subcategory)
+        for row in query_result(_fetch_chart_rows, scenario, model, eval_type, subcategory, q=q)
     ]
+
+
+@router.get("/facets")
+def result_facets(eval_type: str = "", subcategory: str = "", q: Annotated[str, Query(max_length=1000)] = ""):
+    where, params = query_result(_build_filters, eval_type=eval_type, subcategory=subcategory, q=q)
+    with get_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(f"""WITH matching AS (SELECT scenario,test_model FROM eval_results {where})
+            SELECT ARRAY(SELECT DISTINCT scenario FROM matching WHERE scenario IS NOT NULL ORDER BY scenario) AS scenarios,
+                   ARRAY(SELECT DISTINCT test_model FROM matching WHERE test_model IS NOT NULL ORDER BY test_model) AS models""", params)
+        return dict(cur.fetchone())
 
 
 @router.get("/{eval_id}")

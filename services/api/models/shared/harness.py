@@ -6,6 +6,9 @@ from scripts.shared.agents import VIRTUAL_AGENTS
 from scripts.shared.validation import assert_not_empty
 from services.db import get_connection
 from services.api.models.base import BaseModel
+from services.api.models.shared.listing import sort_clause
+
+HARNESS_SORTS = {"manual": "sort_key, id", "name": "lower(name), id", "newest": "created_at DESC, id DESC", "updated": "updated_at DESC, id DESC"}
 
 
 def content_metadata(item: dict) -> dict:
@@ -131,7 +134,7 @@ def list_items(item_type: str, project: str | None = None, agent: str | None = N
     return _list_items_internal(item_type, project, agent, enabled_only=True)
 
 
-def list_items_summary(item_type: str, project: str | None = None, agent: str | None = None) -> list[dict]:
+def list_items_summary(item_type: str, project: str | None = None, agent: str | None = None, *, sort: str = "manual", enabled: bool | None = None) -> list[dict]:
     table = _table(item_type)
     latest = _LATEST_VERSION_CLAUSE.format(table=table)
     base_cols = "id, name, project, agents, sort_key, enabled, version, created_at, updated_at"
@@ -144,7 +147,12 @@ def list_items_summary(item_type: str, project: str | None = None, agent: str | 
         query += "\n          AND %s = ANY(agents)"
         params.append(agent)
 
-    query += "\n        ORDER BY sort_key"
+    if enabled is not None:
+        if type(enabled) is not bool:
+            raise ValueError("enabled must be a boolean")
+        query += "\n          AND enabled = %s"
+        params.append(enabled)
+    query += "\n        ORDER BY " + sort_clause(sort, HARNESS_SORTS)
 
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
 import { api } from '../api';
@@ -19,9 +19,17 @@ const TYPE_LABELS: Record<string, string> = {
   agent: 'Agents',
 };
 
+const SORT_OPTIONS = [
+  { value: 'manual', label: 'Manual order' },
+  { value: 'name', label: 'Name A–Z' },
+  { value: 'newest', label: 'Newest first' },
+  { value: 'updated', label: 'Recently updated' },
+] as const;
+
 export function HarnessIndexPage({ type }: { type: string }) {
   const [nameInput, setNameInput] = useState('');
   const [projectInput, setProjectInput] = useState('');
+  const [sort, setSort] = useState<typeof SORT_OPTIONS[number]['value']>('manual');
   const nameFilter = useDebouncedValue(nameInput);
   const projectFilter = useDebouncedValue(projectInput);
   const navigate = useNavigate();
@@ -34,29 +42,44 @@ export function HarnessIndexPage({ type }: { type: string }) {
       limit: l, offset: o,
       name: nameFilter || undefined,
       project: projectFilter || undefined,
+      sort,
     }),
-    [type, nameFilter, projectFilter],
+    [type, nameFilter, projectFilter, sort],
   );
 
-  const dragDisabled = hasFilters || loading || Boolean(error);
+  const dragDisabled = hasFilters || sort !== 'manual' || loading || Boolean(error)
+    || offset !== 0 || items.length !== total;
+  const currentView = useRef({ type, items, dragDisabled, refresh, mounted: false });
+  useEffect(() => {
+    currentView.current = { type, items, dragDisabled, refresh, mounted: true };
+    return () => { currentView.current.mounted = false; };
+  }, [type, items, dragDisabled, refresh]);
 
   useEffect(() => {
     setNameInput('');
     setProjectInput('');
+    setSort('manual');
   }, [type]);
 
-  const toggleEnabled = async (item: HarnessItem) => {
-    await api.harness.items.updateMetadata(type, item.id, { enabled: !item.enabled });
-    setItems(prev => prev.map(i => i.id === item.id ? { ...i, enabled: !i.enabled } : i));
+  const updateMetadata = async (item: HarnessItem, metadata: Partial<Pick<HarnessItem, 'enabled' | 'clone_as_skill'>>) => {
+    try {
+      await api.harness.items.updateMetadata(type, item.id, metadata);
+      const view = currentView.current;
+      if (!view.mounted || view.type !== type) return;
+      setItems(previous => previous.map(existing => existing.id === item.id ? { ...existing, ...metadata } : existing));
+      await view.refresh({ showLoading: false });
+    } catch {
+      if (currentView.current.mounted) notify('Could not update item. Please try again.', 'error');
+    }
   };
 
-  const toggleCloneAsSkill = async (item: HarnessItem) => {
-    await api.harness.items.updateMetadata(type, item.id, { clone_as_skill: !item.clone_as_skill });
-    setItems(prev => prev.map(i => i.id === item.id ? { ...i, clone_as_skill: !i.clone_as_skill } : i));
-  };
+  const toggleEnabled = (item: HarnessItem) => updateMetadata(item, { enabled: !item.enabled });
+  const toggleCloneAsSkill = (item: HarnessItem) => updateMetadata(item, { clone_as_skill: !item.clone_as_skill });
 
   const onDragEnd = async (result: DropResult) => {
-    if (dragDisabled || !result.destination || result.source.index === result.destination.index) return;
+    const current = currentView.current;
+    if (!current.mounted || current.dragDisabled || current.items !== items || current.type !== type
+        || !result.destination || result.source.index === result.destination.index) return;
 
     const reordered = [...items];
     const [moved] = reordered.splice(result.source.index, 1);
@@ -87,7 +110,13 @@ export function HarnessIndexPage({ type }: { type: string }) {
         projectValue={projectInput}
         onNameChange={setNameInput}
         onProjectChange={setProjectInput}
-      />
+      >
+        <label className="form-label">Sort
+          <select className="input" value={sort} onChange={event => setSort(event.target.value as typeof sort)}>
+            {SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
+      </FilterBar>
       {loading && <div className="loading">Loading...</div>}
       {!loading && error && <div role="alert" className="card">
         Could not load {TYPE_LABELS[type]?.toLowerCase() || 'items'}. <button className="btn" onClick={() => refresh()}>Retry</button>

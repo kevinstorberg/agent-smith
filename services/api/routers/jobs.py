@@ -16,7 +16,8 @@ from services.jobs.models.config import (
     update_config,
 )
 from services.jobs.models.execution import get_execution, list_executions_for_job
-from services.jobs.models.job import JobNotFoundError, delete_job, get_job, list_graph_jobs, list_jobs, set_schedule_enabled, update_job
+from services.jobs.models.job import JOB_SORTS, JobNotFoundError, delete_job, get_job, list_graph_jobs, list_jobs, set_schedule_enabled, update_job
+from services.api.models.shared.listing import sort_pattern
 from services.jobs.scoping import job_targets
 from services.jobs.schedule import parse_interval
 from services.jobs.scheduler import execute_job
@@ -25,6 +26,7 @@ from services.api.routers.base import (
     delete_response,
     list_response,
     require_found,
+    query_result,
     update_fields,
 )
 
@@ -40,8 +42,11 @@ def _job_detail(job_id: int) -> dict:
 
 
 @router.get("")
-def list_all(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)):
-    items, total = list_jobs(limit=limit, offset=offset)
+def list_all(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
+             q: Annotated[str, Query(max_length=1000)] = "",
+             schedule_enabled: bool | None = None,
+             sort: Annotated[str, Query(pattern=sort_pattern(JOB_SORTS))] = "updated"):
+    items, total = query_result(list_jobs, limit=limit, offset=offset, q=q, schedule_enabled=schedule_enabled, sort=sort)
     return list_response(items, total)
 
 

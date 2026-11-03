@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
@@ -11,6 +12,7 @@ from services.api.routers.profiles import profile_change, router as profiles_rou
 from services.api.routers.meeting_vocabulary import router as vocabulary_router
 from services.meetings import db, digestion_db, management_db, memory_db, profile_db
 from services.meetings import labels_db, processing_db
+from services.api.models.shared.listing import sort_pattern
 
 router = APIRouter()
 router.include_router(profiles_router, prefix="/profiles", include_in_schema=False)
@@ -77,12 +79,13 @@ def list_all(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     labels: list[str] = Query(default_factory=list, max_length=8),
+    sort: Annotated[str, Query(pattern=sort_pattern(db.MEETING_SORTS))] = "newest",
 ):
     try:
         return db.list_summaries(
             source=empty_to_none(source), project=empty_to_none(project), query=empty_to_none(q),
             after=empty_to_none(after), before=empty_to_none(before), limit=limit, offset=offset,
-            labels=labels or None,
+            labels=labels or None, sort=sort,
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None

@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router';
 import { api } from '../api';
 import type { AuditEvent, AuditCounts } from '../api';
 import { Pagination } from '../components/Pagination';
+import { FilterBar } from '../components/FilterBar';
 import { StatusBadge } from '../components/StatusBadge';
 import { DateCell, ProjectCell } from '../components/table';
 import { usePagination } from '../hooks/usePagination';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { usePolling } from '../hooks/usePolling';
 import { makeRowClickable } from '../utils/a11y';
 import { formatDuration } from '../utils/audit';
@@ -16,12 +18,18 @@ const STATUSES = ['pending', 'success', 'error'] as const;
 export function AuditIndexPage() {
   const [agent, setAgent] = useState<string>('');
   const [status, setStatus] = useState<string>('');
+  const [query, setQuery] = useState('');
+  const [project, setProject] = useState('');
+  const [sort, setSort] = useState<'newest' | 'oldest' | 'duration'>('newest');
+  const debouncedQuery = useDebouncedValue(query);
+  const debouncedProject = useDebouncedValue(project);
   const [counts, setCounts] = useState<AuditCounts | null>(null);
   const navigate = useNavigate();
 
-  const { items, total, loading, limit, offset, setLimit, setOffset, refresh } = usePagination<AuditEvent>(
-    (l, o) => api.audit.list({ agent: agent || undefined, status: status || undefined }, { limit: l, offset: o }),
-    [agent, status],
+  const { items, total, loading, error, limit, offset, setLimit, setOffset, refresh } = usePagination<AuditEvent>(
+    (l, o) => api.audit.list({ agent: agent || undefined, status: status || undefined,
+      q: debouncedQuery || undefined, project: debouncedProject || undefined, sort }, { limit: l, offset: o }),
+    [agent, status, debouncedQuery, debouncedProject, sort],
   );
   const loadCounts = useCallback(async () => {
     try {
@@ -41,7 +49,7 @@ export function AuditIndexPage() {
     ]);
   });
 
-  if (loading) return <div className="loading">Loading...</div>;
+  const showCounts = !query && !debouncedQuery && !project && !debouncedProject && !status;
 
   return (
     <div>
@@ -49,6 +57,16 @@ export function AuditIndexPage() {
         <h2 className="page-title">Audit Trail</h2>
       </div>
 
+      <FilterBar nameValue={query} onNameChange={setQuery} namePlaceholder="Search audit events..."
+        projectValue={project} onProjectChange={setProject}>
+        <label><span className="form-label">Sort audit events</span>
+        <select aria-label="Sort audit events" value={sort} onChange={event => setSort(event.target.value as typeof sort)}>
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="duration">Longest duration</option>
+        </select>
+        </label>
+      </FilterBar>
       <div className="filters">
         <button
           className={`btn${agent === '' ? ' btn-primary' : ''}`}
@@ -62,7 +80,7 @@ export function AuditIndexPage() {
             className={`btn${agent === a ? ' btn-primary' : ''}`}
             onClick={() => { setAgent(a); setOffset(0); }}
           >
-            {a}{counts ? ` (${counts[a]})` : ''}
+            {a}{showCounts && counts ? ` (${counts[a]})` : ''}
           </button>
         ))}
       </div>
@@ -85,6 +103,8 @@ export function AuditIndexPage() {
         ))}
       </div>
 
+      {error && <p role="alert">Could not load audit events. <button className="btn btn-sm" onClick={() => refresh()}>Retry</button></p>}
+      {loading && <div className="loading" role="status">Loading...</div>}
       <table className="table">
         <thead>
           <tr>
@@ -97,7 +117,7 @@ export function AuditIndexPage() {
           </tr>
         </thead>
         <tbody>
-          {items.map(event => (
+          {!loading && !error && items.map(event => (
             <tr
               key={event.id}
               {...makeRowClickable(() => navigate(`/audit/${event.id}`))}
@@ -111,19 +131,20 @@ export function AuditIndexPage() {
               <td><ProjectCell project={event.project} /></td>
             </tr>
           ))}
-          {items.length === 0 && (
+          {!loading && !error && items.length === 0 && (
             <tr><td colSpan={6} className="loading">No tool-call events</td></tr>
           )}
         </tbody>
       </table>
 
-      <Pagination
+      {!error && <Pagination
         total={total}
         limit={limit}
         offset={offset}
         onPageChange={setOffset}
         onLimitChange={newLimit => { setLimit(newLimit); setOffset(0); }}
-      />
+        disabled={loading}
+      />}
     </div>
   );
 }

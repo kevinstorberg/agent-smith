@@ -529,3 +529,41 @@ describe('specific API methods', () => {
     expect(opts.method).toBe('POST');
   });
 });
+
+describe('resource list criteria', () => {
+  it('preserves search, filters, ordering and page boundaries across resource APIs', async () => {
+    globalThis.fetch = mockFetch({ items: [], total: 0 });
+    await api.harness.items.list('hook', { name: 'memory', project: 'agent-smith', sort: 'name', limit: 10, offset: 20 });
+    await api.jobs.list({ q: 'memory', schedule_enabled: false, sort: 'name', limit: 10, offset: 20 });
+    await api.plans.list({ q: 'memory', project: 'agent-smith', status: 'draft', sort: 'title', limit: 10, offset: 120 });
+    await api.chat.list({ q: 'memory', status: 'closed', sort: 'name', limit: 10, offset: 20 });
+    await api.meetings.list({ q: 'memory', sort: 'oldest', labels: ['planning'], limit: 10, offset: 20 });
+    await api.meetings.vocabulary.list({ q: 'memory', definition: 'undefined', sort: 'updated', limit: 10, offset: 20 });
+    await api.proposals.list('pending', { q: 'memory', sort: 'title', limit: 10, offset: 20 });
+    await api.audit.list({ q: 'memory', agent: 'claude', sort: 'duration' }, { limit: 10, offset: 20 });
+    const queries = vi.mocked(globalThis.fetch).mock.calls.map(([url]) => new URL(String(url)).searchParams);
+    expect(queries[0].get('name')).toBe('memory');
+    expect(queries[0].get('project')).toBe('agent-smith');
+    expect(queries[1].get('schedule_enabled')).toBe('false');
+    expect(queries[2].get('offset')).toBe('120');
+    expect(queries[3].get('status')).toBe('closed');
+    expect(queries[4].get('labels')).toBe('planning');
+    expect(queries[5].get('definition')).toBe('undefined');
+    expect(queries[6].get('status')).toBe('pending');
+    expect(queries[7].get('agent')).toBe('claude');
+    for (const query of queries) {
+      expect(query.get('limit')).toBe('10');
+      expect(query.get('sort')).toBeTruthy();
+    }
+    for (const query of queries.slice(1)) expect(query.get('q')).toBe('memory');
+  });
+
+  it('requests result facets independently of the current result page', async () => {
+    globalThis.fetch = mockFetch({ scenarios: ['off-page'], models: ['model'] });
+    await api.evals.facets({ q: 'memory', eval_type: 'quality', subcategory: 'summary' });
+    const url = new URL(String(vi.mocked(globalThis.fetch).mock.calls[0][0]));
+    expect(url.pathname).toBe('/api/evals/facets');
+    expect(url.searchParams.get('q')).toBe('memory');
+    expect(url.searchParams.has('limit')).toBe(false);
+  });
+});

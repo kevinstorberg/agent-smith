@@ -58,12 +58,23 @@ describe('JobsIndexPage', () => {
     mockUsePagination.mockReturnValue(paginationReturn({ items: [], total: 0, loading: true }));
     renderWithProviders(<JobsIndexPage />);
     expect(screen.getByText('Loading...')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Search jobs...')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Scheduling' })).toBeInTheDocument();
   });
 
   it('shows empty state when no jobs exist', () => {
     mockUsePagination.mockReturnValue(paginationReturn({ items: [], total: 0 }));
     renderWithProviders(<JobsIndexPage />);
     expect(screen.getByText('No jobs found')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Search jobs...')).toBeInTheDocument();
+  });
+
+  it('keeps filters available after a failed request', () => {
+    mockUsePagination.mockReturnValue(paginationReturn({ error: 'Request failed' }));
+    renderWithProviders(<JobsIndexPage />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not refresh jobs');
+    expect(screen.getByPlaceholderText('Search jobs...')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Sort jobs' })).toBeInTheDocument();
   });
 
   it('navigates to new job on button click', () => {

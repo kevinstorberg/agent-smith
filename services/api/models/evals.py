@@ -5,6 +5,9 @@ from psycopg2.extras import RealDictCursor
 from scripts.shared.validation import assert_not_empty
 from services.db import get_connection
 from services.api.models.base import BaseModel
+from services.api.models.shared.listing import search_pattern, sort_clause
+
+SUITE_SORTS = {"name": "lower(s.name), s.id", "updated": "s.updated_at DESC, s.id DESC", "newest": "s.created_at DESC, s.id DESC"}
 
 
 class SuiteModel(BaseModel):
@@ -34,19 +37,32 @@ class SuiteModel(BaseModel):
             cls.dynamic_update(suite_id, fields)
 
     @classmethod
-    def list(cls, enabled_only=True, limit=50, offset=0):
-        where = "WHERE enabled = true" if enabled_only else ""
+    def list(cls, enabled_only=True, limit=50, offset=0, *, q: str | None = None, enabled: bool | None = None, sort: str = "name"):
+        clauses, params = [], []
+        if enabled is not None:
+            if type(enabled) is not bool:
+                raise ValueError("enabled must be a boolean")
+            clauses.append("s.enabled = %s")
+            params.append(enabled)
+        elif enabled_only:
+            clauses.append("s.enabled = true")
+        pattern = search_pattern(q)
+        if pattern is not None:
+            clauses.append("(s.name ILIKE %s OR s.eval_type ILIKE %s OR s.subcategory ILIKE %s)")
+            params.extend([pattern] * 3)
+        where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        order = sort_clause(sort, SUITE_SORTS)
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(f"SELECT count(*) as cnt FROM {cls.table} {where}")
+                cur.execute(f"SELECT count(*) as cnt FROM {cls.table} s {where}", params)
                 total = cur.fetchone()["cnt"]
                 cur.execute(
                     f"SELECT s.id, s.name, s.eval_type, s.subcategory, s.enabled, "
                     f"s.created_at, s.updated_at, "
                     f"(SELECT COUNT(*) FROM eval_scenarios WHERE suite_id = s.id) AS scenario_count "
                     f"FROM {cls.table} s {where} "
-                    f"ORDER BY s.name LIMIT %s OFFSET %s",
-                    (limit, offset),
+                    f"ORDER BY {order} LIMIT %s OFFSET %s",
+                    (*params, limit, offset),
                 )
                 items = [cls.serialize_timestamps(r) for r in cur.fetchall()]
         return items, total

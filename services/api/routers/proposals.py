@@ -3,16 +3,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 
 from services.api.models.proposal import (
     PROPOSAL_STATUSES,
+    PROPOSAL_SORTS,
     count_by_status,
     get_proposal,
     list_proposals,
 )
-from services.api.routers.base import delete_response, list_response, require_found
+from services.api.routers.base import delete_response, list_response, require_found, query_result
+from services.api.models.shared.listing import sort_pattern
 from services.jobs.models.job import get_job_by_name
 from services.jobs.scheduler import execute_job
 from services.proposals.service import (
@@ -46,10 +49,12 @@ def list_all(
     status: str | None = Query(None),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    q: Annotated[str, Query(max_length=1000)] = "",
+    sort: Annotated[str, Query(pattern=sort_pattern(PROPOSAL_SORTS))] = "newest",
 ):
     if status is not None and status not in PROPOSAL_STATUSES:
         raise HTTPException(status_code=422, detail=f"status must be one of {PROPOSAL_STATUSES}")
-    items, total = list_proposals(status=status, limit=limit, offset=offset)
+    items, total = query_result(list_proposals, status=status, limit=limit, offset=offset, q=q, sort=sort)
     return list_response(items, total)
 
 

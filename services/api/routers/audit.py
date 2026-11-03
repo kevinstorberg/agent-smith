@@ -8,11 +8,13 @@ dashboard.
 from __future__ import annotations
 
 import os
+from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel
 
 from services.api.models.audit import (
+    AUDIT_SORTS,
     AUDIT_AGENTS,
     COMPLETION_STATUSES,
     complete_event,
@@ -22,7 +24,8 @@ from services.api.models.audit import (
     prune,
     start_event,
 )
-from services.api.routers.base import list_response, require_found
+from services.api.routers.base import list_response, require_found, query_result
+from services.api.models.shared.listing import sort_pattern
 
 router = APIRouter()
 
@@ -112,8 +115,10 @@ def list_all(
     status: str | None = Query(None),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    q: Annotated[str, Query(max_length=1000)] = "",
+    sort: Annotated[str, Query(pattern=sort_pattern(AUDIT_SORTS))] = "newest",
 ):
-    items, total = list_events(
+    items, total = query_result(list_events,
         agent=agent,
         tool_name=tool_name,
         session_id=session_id,
@@ -121,6 +126,7 @@ def list_all(
         status=status,
         limit=limit,
         offset=offset,
+        q=q, sort=sort,
     )
     return list_response(items, total)
 

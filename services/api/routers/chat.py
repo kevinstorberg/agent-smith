@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from services.api.routers.base import list_response
 from services.chat.participants import chat_participants
 from services.chat.service import (
+    CHAT_SORTS,
     MAX_CONTEXT_LENGTH,
     MAX_MESSAGE_LENGTH,
     MAX_TOPIC_LENGTH,
@@ -24,6 +25,7 @@ from services.chat.service import (
     stop_agent_access,
     update_room,
 )
+from services.api.models.shared.listing import sort_pattern
 
 log = logging.getLogger("graphs.chat")
 
@@ -54,8 +56,11 @@ class PostMessageRequest(BaseModel):
 def list_all(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    q: Annotated[str, Query(max_length=1000)] = "",
+    status: Literal["open", "closed"] | None = None,
+    sort: Annotated[str, Query(pattern=sort_pattern(CHAT_SORTS))] = "updated",
 ):
-    rooms, total = list_rooms(limit=limit, offset=offset)
+    rooms, total = _call(list_rooms, limit=limit, offset=offset, q=q, status=status, sort=sort)
     return list_response(rooms, total)
 
 

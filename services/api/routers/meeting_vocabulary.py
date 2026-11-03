@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from uuid import UUID
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from services.api.routers.base import delete_response, require_found
 from services.meetings import vocabulary_db
+from services.api.models.shared.listing import sort_pattern
 
 router = APIRouter()
 
@@ -38,8 +40,10 @@ def _change(function, *args, **kwargs):
 
 
 @router.get("")
-def list_terms(q: str = Query("", max_length=1000), limit: int | None = Query(None, ge=1, le=100), offset: int = Query(0, ge=0)):
-    return _change(vocabulary_db.list_terms, query=q, limit=limit, offset=offset)
+def list_terms(q: str = Query("", max_length=1000), limit: int | None = Query(None, ge=1, le=100), offset: int = Query(0, ge=0),
+               definition: Literal["defined", "undefined"] | None = None,
+               sort: Annotated[str, Query(pattern=sort_pattern(vocabulary_db.VOCABULARY_SORTS))] = "term"):
+    return _change(vocabulary_db.list_terms, query=q, limit=limit, offset=offset, definition=definition, sort=sort)
 
 
 @router.get("/{term_id}")

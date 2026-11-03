@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from services.api.models.base import BaseModel
 from services.db import get_connection
+from services.api.models.shared.listing import search_pattern, sort_clause
 
 PROPOSAL_STATUSES = ("pending", "approved", "rejected")
+PROPOSAL_SORTS = {"newest": "created_at DESC, id DESC", "oldest": "created_at, id", "title": "lower(title), id"}
 
 
 class ProposalModel(BaseModel):
@@ -17,13 +19,19 @@ class ProposalModel(BaseModel):
     json_fields = {"evidence", "applied_ref"}
 
 
-def list_proposals(status: str | None = None, limit: int = 50, offset: int = 0) -> tuple[list[dict], int]:
-    where, params = "", ()
+def list_proposals(status: str | None = None, limit: int = 50, offset: int = 0, *, q: str | None = None, sort: str = "newest") -> tuple[list[dict], int]:
+    clauses, params = [], []
     if status:
         assert status in PROPOSAL_STATUSES, f"Invalid status: {status}"
-        where, params = "WHERE status = %s", (status,)
+        clauses.append("status = %s")
+        params.append(status)
+    pattern = search_pattern(q)
+    if pattern is not None:
+        clauses.append("(title ILIKE %s OR target_name ILIKE %s)")
+        params.extend([pattern, pattern])
+    where = "WHERE " + " AND ".join(clauses) if clauses else ""
     return ProposalModel.list(
-        where=where, params=params, order_by="created_at DESC", limit=limit, offset=offset
+        where=where, params=tuple(params), order_by=sort_clause(sort, PROPOSAL_SORTS), limit=limit, offset=offset
     )
 
 

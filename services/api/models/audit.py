@@ -11,7 +11,10 @@ from __future__ import annotations
 from psycopg2.extras import Json
 
 from services.api.models.base import BaseModel
+from services.api.models.shared.listing import search_pattern, sort_clause
 from services.db import get_connection
+
+AUDIT_SORTS = {"newest": "created_at DESC, id DESC", "oldest": "created_at, id", "duration": "duration_ms DESC NULLS LAST, id DESC"}
 
 # Server-side home for the coding-agent list. The host hook derives its own list
 # from scripts/audit_hook.py:FIELD_KEYS (it can't import services.*), and the
@@ -133,8 +136,9 @@ def list_events(
     status: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    *, q: str | None = None, sort: str = "newest",
 ) -> tuple[list[dict], int]:
-    """List audit events with optional filters, newest first. Returns (rows, total).
+    """List audit events with optional filters. Returns (rows, total).
 
     Omits the large tool_input/result blobs; fetch a single event for full payloads.
     """
@@ -150,11 +154,16 @@ def list_events(
             clauses.append(f"{col} = %s")
             params.append(val)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    pattern = search_pattern(q)
+    if pattern is not None:
+        clauses.append("(tool_name ILIKE %s OR project ILIKE %s OR session_id ILIKE %s)")
+        params.extend([pattern] * 3)
+        where = "WHERE " + " AND ".join(clauses)
     return ToolCallEventModel.list(
         columns=LIST_COLUMNS,
         where=where,
         params=tuple(params),
-        order_by="created_at DESC",
+        order_by=sort_clause(sort, AUDIT_SORTS),
         limit=limit,
         offset=offset,
     )

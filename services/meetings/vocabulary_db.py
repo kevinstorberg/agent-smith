@@ -6,6 +6,9 @@ from uuid import UUID
 
 from services.meetings.db import _cursor, _serialize
 from services.meetings.profile_fields import text
+from services.api.models.shared.listing import sort_clause
+
+VOCABULARY_SORTS = {"term": "normalized_term, id", "updated": "updated_at DESC, id"}
 
 MAX_TERMS = 100
 MAX_CONTEXT_CHARS = 16_000
@@ -31,7 +34,7 @@ def _revision(value: int) -> None:
         raise ValueError("Expected vocabulary revision must be a positive integer")
 
 
-def list_terms(*, query: str | None = None, limit: int | None = None, offset: int = 0) -> dict:
+def list_terms(*, query: str | None = None, limit: int | None = None, offset: int = 0, definition: str | None = None, sort: str = "term") -> dict:
     if query is not None and (not isinstance(query, str) or len(query) > 1000):
         raise ValueError("Vocabulary query must contain at most 1000 characters")
     if limit is not None and (type(limit) is not int or not 1 <= limit <= 100):
@@ -39,14 +42,20 @@ def list_terms(*, query: str | None = None, limit: int | None = None, offset: in
     if type(offset) is not int or offset < 0:
         raise ValueError("Vocabulary offset must be a nonnegative integer")
     query = " ".join((query or "").casefold().split())
+    order = sort_clause(sort, VOCABULARY_SORTS)
+    if definition not in (None, "", "defined", "undefined"):
+        raise ValueError("definition must be defined, undefined, or empty")
+    meaning = ""
+    if definition:
+        meaning = " AND NULLIF(btrim(definition),'') IS " + ("NOT NULL" if definition == "defined" else "NULL")
     with _cursor() as cur:
-        cur.execute("""WITH matching AS (
-            SELECT * FROM meeting_vocabulary WHERE %s='' OR strpos(normalized_term,%s)>0 OR strpos(lower(definition),%s)>0
+        cur.execute(f"""WITH matching AS (
+            SELECT * FROM meeting_vocabulary WHERE (%s='' OR strpos(normalized_term,%s)>0 OR strpos(lower(definition),%s)>0){meaning}
         ), page AS (
-            SELECT * FROM matching ORDER BY normalized_term,id LIMIT %s OFFSET %s
+            SELECT * FROM matching ORDER BY {order} LIMIT %s OFFSET %s
         ) SELECT totals.total,page.*
           FROM (SELECT count(*) AS total FROM matching) totals LEFT JOIN page ON true
-          ORDER BY page.normalized_term,page.id""", (query, query, query, limit, offset))
+          ORDER BY {', '.join('page.' + part.strip() for part in order.split(','))}""", (query, query, query, limit, offset))
         rows = cur.fetchall()
         return {"items": [_serialize({key: value for key, value in row.items() if key != "total"}) for row in rows if row["id"] is not None], "total": rows[0]["total"]}
 

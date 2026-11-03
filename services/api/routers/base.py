@@ -1,6 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import ParamSpec, TypeVar
 from fastapi import HTTPException
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def query_result(operation: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    try:
+        return operation(*args, **kwargs)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
 
 
 def require_found(item, label: str = "Item", item_id: int | str = ""):

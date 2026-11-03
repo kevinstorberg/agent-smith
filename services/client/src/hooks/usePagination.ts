@@ -11,6 +11,7 @@ export function usePagination<T>(
   initialLimit = 10,
 ) {
   const [items, setItems] = useState<T[]>([]);
+  const [resultFilters, setResultFilters] = useState<unknown[] | null>(null);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,11 +38,13 @@ export function usePagination<T>(
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     if (showLoading) setLoading(true);
+    const requestFilters = filtersRef.current;
 
     try {
       const res = await fetcherRef.current(limit, offset);
       if (mountedRef.current && requestId === requestIdRef.current) {
         setItems(res.items);
+        setResultFilters(requestFilters);
         setTotal(res.total);
         setError(null);
       }
@@ -69,5 +72,7 @@ export function usePagination<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refresh, ...deps]);
 
-  return { items, setItems, total, loading, error, limit, offset, setLimit, setOffset, refresh };
+  const dataCurrent = resultFilters !== null && deps.length === resultFilters.length
+    && deps.every((value, index) => Object.is(value, resultFilters[index]));
+  return { items, setItems, total, loading, error, dataCurrent, limit, offset, setLimit, setOffset, refresh };
 }

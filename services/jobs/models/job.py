@@ -4,8 +4,11 @@ from __future__ import annotations
 from psycopg2.extras import RealDictCursor
 
 from services.api.models.base import BaseModel
+from services.api.models.shared.listing import search_pattern, sort_clause
 from services.db import get_connection
 from services.jobs.schedule import parse_interval
+
+JOB_SORTS = {"updated": "updated_at DESC, id DESC", "newest": "created_at DESC, id DESC", "name": "lower(name), id"}
 
 
 class JobNotFoundError(LookupError):
@@ -33,9 +36,27 @@ class BackgroundJobModel(BaseModel):
         order_by: str = "updated_at DESC",
         limit: int | None = 100,
         offset: int = 0,
+        *,
+        q: str | None = None,
+        schedule_enabled: bool | None = None,
+        sort: str | None = None,
     ) -> tuple[list[dict], int]:
+        clauses, values = [], list(params)
+        pattern = search_pattern(q)
+        if pattern is not None:
+            clauses.append("(name ILIKE %s OR description ILIKE %s)")
+            values.extend([pattern, pattern])
+        if schedule_enabled is not None:
+            if type(schedule_enabled) is not bool:
+                raise ValueError("schedule_enabled must be a boolean")
+            clauses.append("schedule_enabled = %s")
+            values.append(schedule_enabled)
+        if clauses:
+            where += (" AND " if where else "WHERE ") + " AND ".join(clauses)
+        if sort is not None:
+            order_by = sort_clause(sort, JOB_SORTS)
         return super().list(
-            columns=columns, where=where, params=params,
+            columns=columns, where=where, params=tuple(values),
             order_by=order_by, limit=limit, offset=offset,
         )
 
