@@ -97,11 +97,9 @@ def harness_upsert(
         item_type, name, content,
         project=empty_to_none(project),
         agents=agents,
+        device=device,
+        repo=repo,
     )
-    if device != "*" or repo != "*":
-        configs = list_configs(item_id, item_type)
-        if configs:
-            update_config(configs[0]["id"], device=device, repo=repo)
     return f"Upserted {item_type} '{name}' (id={item_id})"
 
 
