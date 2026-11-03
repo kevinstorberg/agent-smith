@@ -15,6 +15,10 @@ test('Memory checkbox remains labeled, operable, and contained beside text contr
   await expect(page.getByText(longText, { exact: true })).toBeVisible();
   const checkbox = page.getByRole('checkbox', { name: 'Meetings only' });
   await expectControlLabel(checkbox, 'Meetings only');
+  const bounds = await checkbox.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(Math.abs(bounds!.width - bounds!.height), 'Checkbox must remain square beside text fields').toBeLessThanOrEqual(1);
+  expect((await checkbox.locator('..').boundingBox())!.height, 'The label keeps a comfortable pointer target').toBeGreaterThanOrEqual(24);
   await expectControlContained(checkbox, page.locator('.memory-controls').nth(1));
   await expect(checkbox).not.toBeChecked();
   await page.getByText('Meetings only', { exact: true }).click();
@@ -23,6 +27,7 @@ test('Memory checkbox remains labeled, operable, and contained beside text contr
   await checkbox.focus();
   await page.keyboard.press('Space');
   await expect(checkbox).not.toBeChecked();
+  await expect(checkbox).toHaveCSS('outline-style', 'solid');
   await testInfo.attach('checkbox-geometry.json', { body: JSON.stringify(await checkbox.boundingBox()), contentType: 'application/json' });
   await expectDocumentContained(page);
   await expectMainContained(page);

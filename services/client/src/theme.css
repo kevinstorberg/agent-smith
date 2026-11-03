@@ -1269,7 +1269,7 @@ pre {
 .detail-back:hover { color: var(--text); }
 .pagination-page-size { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-muted); font-size: var(--font-sm); }
 .memory-controls > label:not(.checkbox-label) { flex: 1 1 200px; min-width: 0; }
-.memory-controls > label > input,
+.memory-controls > label > input:not([type="checkbox"]):not([type="radio"]),
 .memory-controls > label > select { width: 100%; min-height: 38px; }
 .memory-controls .checkbox-label { min-height: 38px; }
 .filters > label { max-width: 100%; min-width: 0; }
