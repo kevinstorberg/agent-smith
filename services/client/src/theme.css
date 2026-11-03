@@ -985,6 +985,22 @@ pre {
   margin-bottom: 12px;
 }
 
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 16px; min-width: 0; }
+.form-grid > * { min-width: 0; }
+.form-group { min-width: 0; border: 0; padding: 0; margin: 0 0 16px; }
+.form-group > legend { padding: 0; }
+.choice-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-width: 0; }
+.agent-checkbox-name { min-width: 0; overflow-wrap: anywhere; }
+.checkbox-label.agent-checkbox-label { white-space: normal; overflow-wrap: anywhere; min-width: 0; max-width: 100%; }
+.form-radio { width: 18px; height: 18px; flex: 0 0 18px; margin: 0; accent-color: var(--highlight); }
+.config-form { min-width: 0; padding: 16px; margin: 12px 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.config-form > legend { padding: 0 6px; margin: 0; }
+.config-form .form-grid { margin-bottom: 16px; }
+.config-options { margin-bottom: 16px; }
+.config-options .form-group { margin: 0; }
+.field-feedback { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; margin-top: 4px; }
+.field-error { display: block; color: var(--danger-text); font-size: var(--font-xs); margin-top: 4px; }
+
 .form-label {
   display: block;
   font-size: var(--font-sm);

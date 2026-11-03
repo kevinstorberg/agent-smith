@@ -134,7 +134,6 @@ export function PlanDetailPage() {
         onSave={save}
         onCancel={cancelEdit}
         onDelete={plan ? handleDelete : undefined}
-        onNavigateBack={() => navigate('/plans')}
         deleteConfirmMessage={plan ? `Delete plan "${plan.title}"?` : undefined}
         showActions={!isNew || editing}
       />
