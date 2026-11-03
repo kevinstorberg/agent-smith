@@ -1,4 +1,4 @@
-import { ALL_AGENTS, AUDIT_SORT_OPTIONS, AUDIT_STATUSES, EVAL_SUITE_SORT_OPTIONS, HARNESS_SORT_OPTIONS, PAGE_LIMITS, PROPOSAL_SORT_OPTIONS, PROPOSAL_STATUSES } from '../constants';
+import { ALL_AGENTS, AUDIT_SORT_OPTIONS, AUDIT_STATUSES, EVAL_SUITE_SORT_OPTIONS, HARNESS_SORT_OPTIONS, MEMORY_LIST_SORT_OPTIONS, MEMORY_SEARCH_SORT_OPTIONS, MEETING_SORT_OPTIONS, PAGE_LIMITS, PROPOSAL_SORT_OPTIONS, PROPOSAL_STATUSES, VOCABULARY_DEFINITIONS, VOCABULARY_SORT_OPTIONS } from '../constants';
 import type { PageLimit } from '../constants';
 
 export const VIEW_COOKIE_NAME = 'agent-smith.ui.v1';
@@ -24,12 +24,16 @@ export interface ViewSettings extends Record<HarnessViewKey, HarnessViewSettings
   audit: { q: string; project: string; agent: '' | typeof ALL_AGENTS[number]; status: '' | typeof AUDIT_STATUSES[number]; sort: typeof AUDIT_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
   proposals: { q: string; status: '' | typeof PROPOSAL_STATUSES[number]; sort: typeof PROPOSAL_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
   evalSuites: { q: string; enabled: typeof SCHEDULING_OPTIONS[number]['value']; sort: typeof EVAL_SUITE_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
+  memory: { q: string; repo: string; tags: string; meeting_only: boolean; listSort: typeof MEMORY_LIST_SORT_OPTIONS[number]['value']; searchSort: typeof MEMORY_SEARCH_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
+  meetings: { q: string; labels: string; sort: typeof MEETING_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
+  vocabulary: { q: string; definition: typeof VOCABULARY_DEFINITIONS[number]['value']; sort: typeof VOCABULARY_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
 }
 export type ViewKey = keyof ViewSettings;
 interface Field<T> { parse: (value: unknown) => T | undefined }
 interface ViewSpec<T> { pathname: string; defaults: T; fields: { [K in keyof T]: Field<T[K]> } }
 
 const text: Field<string> = { parse: value => typeof value === 'string' && value.length <= 1000 && !/[\r\n\0]/.test(value) ? value : undefined };
+const boolean: Field<boolean> = { parse: value => typeof value === 'boolean' ? value : value === 'true' ? true : value === 'false' || value === '' ? false : undefined };
 function choice<const T extends string>(values: readonly T[]): Field<T> {
   return { parse: value => values.find(candidate => candidate === value) };
 }
@@ -75,6 +79,18 @@ const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
     pathname: '/eval-configs', defaults: { q: '', enabled: '', sort: 'name', limit: 10, offset: 0 },
     fields: { q: text, enabled: choice(SCHEDULING_OPTIONS.map(option => option.value)), sort: choice(EVAL_SUITE_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
   },
+  memory: {
+    pathname: '/memory', defaults: { q: '', repo: '', tags: '', meeting_only: false, listSort: 'created_at_desc', searchSort: 'relevance', limit: 10, offset: 0 },
+    fields: { q: text, repo: text, tags: text, meeting_only: boolean, listSort: choice(MEMORY_LIST_SORT_OPTIONS.map(option => option.value)), searchSort: choice(MEMORY_SEARCH_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
+  },
+  meetings: {
+    pathname: '/meetings', defaults: { q: '', labels: '', sort: 'newest', limit: 10, offset: 0 },
+    fields: { q: text, labels: text, sort: choice(MEETING_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
+  },
+  vocabulary: {
+    pathname: '/meetings', defaults: { q: '', definition: 'all', sort: 'term', limit: 10, offset: 0 },
+    fields: { q: text, definition: choice(VOCABULARY_DEFINITIONS.map(option => option.value)), sort: choice(VOCABULARY_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
+  },
 };
 
 export function harnessViewKey(type: string): HarnessViewKey {
@@ -110,7 +126,7 @@ function normalizeView<K extends ViewKey>(key: K, values: Record<string, unknown
   return result;
 }
 
-function storedValues<K extends ViewKey>(key: K, values: unknown): Record<string, string | number> | null {
+function storedValues<K extends ViewKey>(key: K, values: unknown): Record<string, string | number | boolean> | null {
   if (!object(values)) return null;
   const spec = specFor(key);
   const fields = viewFields(key);
@@ -119,15 +135,15 @@ function storedValues<K extends ViewKey>(key: K, values: unknown): Record<string
     if (Object.hasOwn(values, field) && spec.fields[field].parse(values[String(field)]) === undefined) return null;
   }
   const normalized = normalizeView(key, values);
-  const compact: Record<string, string | number> = {};
+  const compact: Record<string, string | number | boolean> = {};
   for (const field of fields) {
     const value = normalized[field];
-    if (value !== spec.defaults[field] && (typeof value === 'string' || typeof value === 'number')) compact[String(field)] = value;
+    if (value !== spec.defaults[field] && (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')) compact[String(field)] = value;
   }
   return compact;
 }
 
-export interface ViewEntry { key: ViewKey; scope?: string; values: Record<string, string | number> }
+export interface ViewEntry { key: ViewKey; scope?: string; values: Record<string, string | number | boolean> }
 
 export function readViewCookie(header: string): ViewEntry[] {
   const pair = header.split(';').map(part => part.trim()).find(part => part.startsWith(`${VIEW_COOKIE_NAME}=`));

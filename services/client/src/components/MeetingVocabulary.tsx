@@ -7,17 +7,20 @@ import { useApiMutation } from '../hooks/useApiMutation';
 import { usePagination } from '../hooks/usePagination';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { Pagination } from './Pagination';
+import { useViewPreferences } from '../hooks/useViewPreferences';
+import { parseViewField } from '../utils/viewPreferences';
+import { VOCABULARY_DEFINITIONS, VOCABULARY_SORT_OPTIONS } from '../constants';
+import { ResetViewButton } from './ResetViewButton';
 
 type Draft = { term: string; definition: string; entry?: VocabularyTerm };
 type Change = { action: 'save'; draft: Draft } | { action: 'remove'; entry: VocabularyTerm };
 
-export function MeetingVocabulary() {
-  const [search, setSearch] = useState('');
-  const [definition, setDefinition] = useState<'all' | 'defined' | 'undefined'>('all');
-  const [sort, setSort] = useState('term');
+export function MeetingVocabulary({ active = true }: { active?: boolean }) {
+  const preferences = useViewPreferences('vocabulary', { active });
+  const { q: search, definition, sort } = preferences.values;
   const query = useDebouncedValue(search.trim());
   const list = usePagination<VocabularyTerm>((limit, offset) => api.meetings.vocabulary.list({ limit, offset, q: query,
-    definition: definition === 'all' ? undefined : definition, sort }), [query, definition, sort]);
+    definition: definition === 'all' ? undefined : definition, sort }), [query, definition, sort], 10, { ...preferences.pagination, enabled: active && query === search.trim() });
   const [draft, setDraft] = useState<Draft | null>(null);
   const [removing, setRemoving] = useState<VocabularyTerm | null>(null);
   const [conflictId, setConflictId] = useState<string | null>(null);
@@ -40,10 +43,6 @@ export function MeetingVocabulary() {
   const accepted = current.data?.epoch === conflictRead;
   const latest = accepted && current.data?.entry?.id === conflictId ? current.data.entry : null;
   const conflictBlocked = conflicted && (current.loading || Boolean(current.error) || !accepted || !latest);
-  const lastOffset = list.total > 0 ? Math.floor((list.total - 1) / list.limit) * list.limit : 0;
-  const clamping = !list.loading && !list.error && list.offset > lastOffset;
-  const { setOffset } = list;
-  useEffect(() => { if (clamping) setOffset(lastOffset); }, [clamping, lastOffset, setOffset]);
   const change = useApiMutation({
     mutationFn: async (value: Change) => {
       if (value.action === 'remove') await api.meetings.vocabulary.remove(value.entry.id, value.entry.revision);
@@ -83,7 +82,7 @@ export function MeetingVocabulary() {
     if (conflictBlocked) return;
     change.mutate({ action: 'save', draft: { ...draft, term: draft.term.trim(), definition: draft.definition.trim(), entry: conflicted ? latest! : draft.entry } });
   };
-  const loading = list.loading || clamping;
+  const loading = list.loading;
   return <section className="card meeting-vocabulary" aria-label="Meeting vocabulary">
     <div className="page-header profiles-header">
       <h3 className="section-title">Vocabulary</h3>
@@ -92,22 +91,22 @@ export function MeetingVocabulary() {
     <p className="text-muted-sm" style={{ marginTop: 12 }}>Terms and meanings that guide new meeting memories.</p>
     <div className="filters resource-controls" style={{ marginTop: 16 }}>
       <label><span className="form-label">Search vocabulary</span>
-        <input id="vocabulary-search" className="input" maxLength={1000} value={search} placeholder="Search terms or definitions..." onChange={event => { setSearch(event.target.value); setRemoving(null); }} />
+        <input id="vocabulary-search" className="input" maxLength={1000} value={search} placeholder="Search terms or definitions..." onChange={event => { preferences.setField('q', event.target.value); setRemoving(null); }} />
       </label>
       <label><span className="form-label">Definition</span>
         <select className="input" value={definition} onChange={event => {
-          const value = event.target.value;
-          if (value === 'all' || value === 'defined' || value === 'undefined') setDefinition(value);
+          preferences.setField('definition', parseViewField('vocabulary', 'definition', event.target.value));
           setRemoving(null);
         }}>
-          <option value="all">All terms</option><option value="defined">With definition</option><option value="undefined">Without definition</option>
+          {VOCABULARY_DEFINITIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
       </label>
       <label><span className="form-label">Sort vocabulary</span>
-        <select className="input" value={sort} onChange={event => { setSort(event.target.value); setRemoving(null); }}>
-          <option value="term">Term A–Z</option><option value="updated">Recently updated</option>
+        <select className="input" value={sort} onChange={event => { preferences.setField('sort', parseViewField('vocabulary', 'sort', event.target.value)); setRemoving(null); }}>
+          {VOCABULARY_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
       </label>
+      <ResetViewButton onReset={() => { preferences.reset(); setRemoving(null); }} />
     </div>
     {loading && <p role="status">Loading vocabulary...</p>}
     {list.error && <p role="alert">Could not load vocabulary. <button className="btn btn-sm" onClick={() => list.refresh()}>Retry</button></p>}
@@ -139,7 +138,7 @@ export function MeetingVocabulary() {
         </tr>)}</tbody>
       </table>
     </div>}
-    {!list.error && !clamping && <Pagination total={list.total} limit={list.limit} offset={list.offset} disabled={loading || Boolean(removing)}
+    {!list.error && <Pagination total={list.total} limit={list.limit} offset={list.offset} disabled={loading || Boolean(removing)}
       onPageChange={offset => { setRemoving(null); list.setOffset(offset); }} onLimitChange={value => { setRemoving(null); list.setLimit(value); list.setOffset(0); }} />}
   </section>;
 }

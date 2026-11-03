@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { ResetViewButton } from './ResetViewButton';
 
 export interface FilterBarProps {
   nameValue: string;
@@ -45,7 +46,7 @@ export function FilterBar({
         />
       </label>}
       {children}
-      {onReset && <button className="btn" type="button" onClick={onReset}>Reset view</button>}
+      {onReset && <ResetViewButton onReset={onReset} />}
     </div>
   );
 }

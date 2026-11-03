@@ -15,6 +15,7 @@ interface ViewSnapshot<K extends ViewKey> {
   identity: string;
   locationKey: string;
   search: string;
+  restoreKey: string;
   values: ViewSettings[K];
   pending: string[];
 }
@@ -32,7 +33,7 @@ export function useViewPreferences<K extends ViewKey>(key: K, { scope, active = 
   const identity = JSON.stringify([key, scope ?? null, location.pathname]);
   const matched = active && location.pathname === viewPath(key);
   const initialize = (): ViewSnapshot<K> => ({
-    identity, locationKey: location.key, search: location.search, pending: [],
+    identity, locationKey: location.key, search: location.search, restoreKey: JSON.stringify([identity, location.key]), pending: [],
     values: resolveView(key, readCookies(cookieStore), new URLSearchParams(location.search), scope),
   });
   const [saved, setSaved] = useState(initialize);
@@ -84,5 +85,5 @@ export function useViewPreferences<K extends ViewKey>(key: K, { scope, active = 
   const pagination = useMemo<PaginationOptions>(() => ({
     page: { limit: current.values.limit, offset: current.values.offset }, onPageChange, clampOffset: true,
   }), [current.values.limit, current.values.offset, onPageChange]);
-  return { values: current.values, setField, reset, pagination };
+  return { values: current.values, restoreKey: current.restoreKey, setField, reset, pagination };
 }

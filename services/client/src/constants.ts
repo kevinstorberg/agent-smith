@@ -18,6 +18,19 @@ export const EVAL_SUITE_SORT_OPTIONS = [
   { value: 'name', label: 'Name' }, { value: 'updated', label: 'Recently updated' }, { value: 'newest', label: 'Newest first' },
 ] as const;
 
+export const MEMORY_LIST_SORT_OPTIONS = [
+  { value: 'created_at_desc', label: 'Newest first' }, { value: 'created_at_asc', label: 'Oldest first' },
+  { value: 'updated_at_desc', label: 'Recently updated' }, { value: 'updated_at_asc', label: 'Least recently updated' },
+] as const;
+export const MEMORY_SEARCH_SORT_OPTIONS = [{ value: 'relevance', label: 'Relevance' }, ...MEMORY_LIST_SORT_OPTIONS] as const;
+export const MEETING_SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest first' }, { value: 'oldest', label: 'Oldest first' }, { value: 'title', label: 'Title A–Z' },
+] as const;
+export const VOCABULARY_DEFINITIONS = [
+  { value: 'all', label: 'All terms' }, { value: 'defined', label: 'With definition' }, { value: 'undefined', label: 'Without definition' },
+] as const;
+export const VOCABULARY_SORT_OPTIONS = [{ value: 'term', label: 'Term A–Z' }, { value: 'updated', label: 'Recently updated' }] as const;
+
 export const TYPE_PATHS: Record<string, string> = {
   rule: 'rules',
   skill: 'skills',
