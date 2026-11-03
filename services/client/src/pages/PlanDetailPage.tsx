@@ -15,38 +15,7 @@ import { useNotification } from '../context/useNotification';
 import { MAX_TITLE_LENGTH } from '../constants';
 import { validators } from '../utils/validation';
 
-const styles = {
-  input: {
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius)',
-    color: 'var(--text)',
-    padding: '8px 12px',
-    fontSize: 18,
-    fontWeight: 600,
-    fontFamily: 'var(--font)',
-    width: '100%',
-  } as React.CSSProperties,
-  fieldLabel: {
-    display: 'block',
-    fontSize: 12,
-    fontWeight: 500,
-    color: 'var(--text-muted)',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.05em',
-    marginBottom: 6,
-  } as React.CSSProperties,
-  fieldInput: {
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius)',
-    color: 'var(--text)',
-    padding: '6px 10px',
-    fontSize: 13,
-    fontFamily: 'var(--font)',
-    width: 220,
-  } as React.CSSProperties,
-} as const;
+
 
 export function PlanDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -172,8 +141,11 @@ export function PlanDetailPage() {
 
       {editing ? (
         <>
+          <h2 className="page-title detail-form-title">{isNew ? 'New plan' : 'Edit plan'}</h2>
+          <label className="form-label" htmlFor="plan-title">Plan title</label>
           <input
-            style={{ ...styles.input, borderColor: editValues.title && editValues.title.length > MAX_TITLE_LENGTH ? 'var(--highlight)' : undefined }}
+            id="plan-title"
+            className="input detail-title-input" style={{ borderColor: editValues.title && editValues.title.length > MAX_TITLE_LENGTH ? 'var(--highlight)' : undefined }}
             value={editValues.title ?? ''}
             onChange={e => setEditValue('title', e.target.value)}
             placeholder="Plan title"
@@ -181,16 +153,19 @@ export function PlanDetailPage() {
           />
           <FieldError maxLength={MAX_TITLE_LENGTH} currentLength={editValues.title?.length ?? 0} />
           <div style={{ marginBottom: 16 }}>
-            <label style={styles.fieldLabel}>Project</label>
+            <label className="form-label" htmlFor="plan-project">Project</label>
             <input
-              style={styles.fieldInput}
+              id="plan-project"
+              className="input detail-project-input"
               value={editValues.project ?? ''}
               onChange={e => setEditValue('project', e.target.value)}
               placeholder="Empty = no project"
             />
           </div>
+          <label className="form-label" htmlFor="plan-body">Plan content</label>
           <div data-color-mode="dark">
             <MDEditor
+              textareaProps={{ id: 'plan-body', 'aria-label': 'Plan content' }}
               value={editValues.body ?? ''}
               onChange={val => setEditValue('body', val || '')}
               height={400}

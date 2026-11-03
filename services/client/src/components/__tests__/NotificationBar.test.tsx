@@ -8,12 +8,22 @@ vi.mock('../../context/useNotification', () => ({
     notifications: [
       { id: '1', message: 'Saved successfully', type: 'success' },
       { id: '2', message: 'Something failed', type: 'error' },
+      { id: '3', message: 'An update is available', type: 'info' },
     ],
     dismiss: mockDismiss,
   }),
 }));
 
 describe('NotificationBar', () => {
+  it('announces success and information politely and errors as alerts', () => {
+    render(<NotificationBar />);
+    expect(screen.getAllByRole('status').map(element => element.textContent)).toEqual([
+      'Saved successfully×', 'An update is available×',
+    ]);
+    expect(screen.getByRole('alert')).toHaveTextContent('Something failed');
+    expect(screen.getByRole('alert')).toHaveAttribute('aria-atomic', 'true');
+  });
+
   it('renders all notification messages', () => {
     render(<NotificationBar />);
     expect(screen.getByText('Saved successfully')).toBeInTheDocument();

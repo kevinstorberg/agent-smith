@@ -19,37 +19,7 @@ import { JobScheduleButton } from '../components/JobScheduleButton';
 
 const INTERVAL_UNITS = ['seconds', 'minutes', 'hours', 'days'];
 
-const styles = {
-  input: {
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius)',
-    color: 'var(--text)',
-    padding: '8px 12px',
-    fontSize: 18,
-    fontWeight: 600,
-    fontFamily: 'var(--font)',
-    width: '100%',
-  } as React.CSSProperties,
-  label: {
-    display: 'block',
-    fontSize: 12,
-    fontWeight: 500,
-    color: 'var(--text-muted)',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.05em',
-    margin: '16px 0 6px',
-  } as React.CSSProperties,
-  field: {
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius)',
-    color: 'var(--text)',
-    padding: '6px 10px',
-    fontSize: 13,
-    fontFamily: 'var(--font)',
-  } as React.CSSProperties,
-} as const;
+
 
 function scheduleParts(cfg: Record<string, number> | undefined): { value: number; unit: string } {
   const entries = Object.entries(cfg ?? {});
@@ -288,8 +258,11 @@ function JobDetail({ id }: { id?: string }) {
 
       {editing ? (
         <>
+          <h2 className="page-title detail-form-title">{isNew ? 'New job' : 'Edit job'}</h2>
+          <label className="form-label" htmlFor="job-name">Job name</label>
           <input
-            style={styles.input}
+            id="job-name"
+            className="input detail-title-input"
             value={editValues.name ?? ''}
             onChange={e => setEditValue('name', e.target.value)}
             placeholder="Job name"
@@ -297,28 +270,28 @@ function JobDetail({ id }: { id?: string }) {
           />
           <FieldError maxLength={MAX_TITLE_LENGTH} currentLength={editValues.name?.length ?? 0} />
 
-          <label style={styles.label} htmlFor="job-type">Job type</label>
-          <select id="job-type" style={styles.field} value={jobType} onChange={e => changeJobType(e.target.value)}>
+          <label className="form-label detail-field-label" htmlFor="job-type">Job type</label>
+          <select id="job-type" className="input" value={jobType} onChange={e => changeJobType(e.target.value)}>
             <option value="command">Command</option>
             <option value="graph">Graph</option>
           </select>
 
           {jobType === 'graph' ? (
             <>
-              <label style={styles.label} htmlFor="job-graph">Graph</label>
+              <label className="form-label detail-field-label" htmlFor="job-graph">Graph</label>
               <input
                 id="job-graph"
-                style={{ ...styles.field, width: '100%', fontFamily: 'var(--mono)' }}
+                className="input" style={{ width: '100%', fontFamily: 'var(--mono)' }}
                 value={String(inputParams.graph_type ?? '')}
                 onChange={e => changeGraph(e.target.value)}
                 placeholder="meeting_ingest"
                 list="meeting-graph-presets"
               />
               <datalist id="meeting-graph-presets"><option value="meeting_ingest">Meeting transcripts and memories</option><option value="persona">Persona enrichment</option></datalist>
-              <label style={styles.label} htmlFor="job-graph-inputs">Graph inputs (JSON)</label>
+              <label className="form-label detail-field-label" htmlFor="job-graph-inputs">Graph inputs (JSON)</label>
               <textarea
                 id="job-graph-inputs"
-                style={{ ...styles.field, width: '100%', minHeight: 100, fontFamily: 'var(--mono)' }}
+                className="input" style={{ width: '100%', minHeight: 100, fontFamily: 'var(--mono)' }}
                 value={graphInputs}
                 onChange={e => setGraphInputsText(e.target.value)}
                 placeholder="{}"
@@ -332,10 +305,10 @@ function JobDetail({ id }: { id?: string }) {
             </>
           ) : (
             <>
-              <label style={styles.label} htmlFor="job-command">Command</label>
+              <label className="form-label detail-field-label" htmlFor="job-command">Command</label>
               <input
                 id="job-command"
-                style={{ ...styles.field, width: '100%', fontFamily: 'var(--mono)' }}
+                className="input" style={{ width: '100%', fontFamily: 'var(--mono)' }}
                 value={command}
                 onChange={e => setEditValue('input_params', { ...inputParams, command: e.target.value })}
                 placeholder="echo hello"
@@ -345,31 +318,31 @@ function JobDetail({ id }: { id?: string }) {
 
           {(jobType === 'graph' || 'timeout' in inputParams) && (
             <>
-              <label style={styles.label} htmlFor="job-timeout">Timeout (seconds)</label>
+              <label className="form-label detail-field-label" htmlFor="job-timeout">Timeout (seconds)</label>
               <input
                 id="job-timeout"
                 type="number"
                 min={1}
-                style={styles.field}
+                className="input"
                 value={String(inputParams.timeout ?? 300)}
                 onChange={e => setEditValue('input_params', { ...inputParams, timeout: e.target.value })}
               />
             </>
           )}
 
-          <label style={styles.label} htmlFor="job-interval">Run every</label>
+          <label className="form-label detail-field-label" htmlFor="job-interval">Run every</label>
           <div style={{ display: 'flex', gap: 8 }}>
             <input
               id="job-interval"
               type="number"
               min={1}
-              style={{ ...styles.field, width: 100 }}
+              className="input" style={{ width: 100 }}
               value={sched.value}
               onChange={e => setEditValue('schedule_config', { [sched.unit]: Math.max(1, Number(e.target.value)) })}
             />
             <select
               aria-label="Interval unit"
-              style={styles.field}
+              className="input"
               value={sched.unit}
               onChange={e => setEditValue('schedule_config', { [e.target.value]: sched.value })}
             >
@@ -384,10 +357,10 @@ function JobDetail({ id }: { id?: string }) {
 
           {isNew && (
             <>
-              <label style={styles.label} htmlFor="job-device-scope">Run on</label>
+              <label className="form-label detail-field-label" htmlFor="job-device-scope">Run on</label>
               <select
                 id="job-device-scope"
-                style={styles.field}
+                className="input"
                 value={deviceScope}
                 onChange={e => { setDeviceScope(e.target.value as typeof deviceScope); setDeviceScopeTouched(true); }}
               >
@@ -400,9 +373,10 @@ function JobDetail({ id }: { id?: string }) {
             </>
           )}
 
-          <label style={styles.label}>Description</label>
+          <label className="form-label detail-field-label" htmlFor="job-description">Description</label>
           <textarea
-            style={{ ...styles.field, width: '100%', minHeight: 80 }}
+            id="job-description"
+            className="input" style={{ width: '100%', minHeight: 80 }}
             value={(editValues.description as string) ?? ''}
             onChange={e => setEditValue('description', e.target.value)}
             placeholder="Optional description"
@@ -435,20 +409,20 @@ function JobDetail({ id }: { id?: string }) {
               {job.description && <p style={{ marginBottom: 12 }}>{job.description}</p>}
               {job.input_params.graph_type ? (
                 <>
-                  <label style={styles.label}>Graph</label>
+                  <label className="form-label detail-field-label">Graph</label>
                   <pre style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>{String(job.input_params.graph_type)}</pre>
-                  <label style={styles.label}>Graph inputs</label>
+                  <label className="form-label detail-field-label">Graph inputs</label>
                   <pre style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>{JSON.stringify(job.input_params.graph_inputs ?? {}, null, 2)}</pre>
                   {job.input_params.timeout != null && <p>Timeout: {String(job.input_params.timeout)} seconds</p>}
                 </>
               ) : (
                 <>
-                  <label style={styles.label}>Command</label>
+                  <label className="form-label detail-field-label">Command</label>
                   <pre style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>{String(job.input_params.command ?? '--')}</pre>
                 </>
               )}
 
-              <label style={styles.label}>Configs (device / repo scoping)</label>
+              <label className="form-label detail-field-label">Configs (device / repo scoping)</label>
               <table className="table">
                 <thead><tr><th>Device</th><th>Repo</th><th>Enabled</th><th>Exclude</th></tr></thead>
                 <tbody>

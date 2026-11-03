@@ -3,6 +3,23 @@ import { describe, it, expect, vi } from 'vitest';
 import { Pagination } from '../Pagination';
 
 describe('Pagination', () => {
+  it('labels its navigation and identifies the current page without changing page button names', () => {
+    render(<Pagination total={45} limit={10} offset={10} onPageChange={vi.fn()} onLimitChange={vi.fn()} />);
+    expect(screen.getByRole('navigation', { name: 'Pagination' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '2' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '1' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('combobox', { name: 'Rows per page' })).toHaveValue('10');
+    expect(screen.getByText('Rows per page', { selector: 'label' })).toBeVisible();
+  });
+
+  it('keeps independently rendered page-size labels connected to unique selectors', () => {
+    render(<><Pagination total={25} limit={10} offset={0} onPageChange={vi.fn()} onLimitChange={vi.fn()} />
+      <Pagination total={50} limit={25} offset={0} onPageChange={vi.fn()} onLimitChange={vi.fn()} /></>);
+    const controls = screen.getAllByRole('combobox', { name: 'Rows per page' });
+    expect(controls[0].id).not.toBe(controls[1].id);
+    expect(controls.map(control => document.querySelector(`label[for="${control.id}"]`))).not.toContain(null);
+  });
+
   it('supports fixed page sizes and locks navigation during an edit', () => {
     const change = vi.fn();
     render(<Pagination total={45} limit={20} offset={0} onPageChange={change} disabled />);

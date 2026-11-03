@@ -1,3 +1,5 @@
+import { Link } from 'react-router';
+
 export interface DetailPageHeaderProps {
   backTo: { label: string; path: string };
   editing: boolean;
@@ -13,10 +15,6 @@ export interface DetailPageHeaderProps {
   saveDisabled?: boolean;
 }
 
-/**
- * Reusable header component for detail pages.
- * Handles back navigation and edit/save/cancel/delete actions.
- */
 export function DetailPageHeader({
   backTo,
   editing,
@@ -38,40 +36,22 @@ export function DetailPageHeader({
     onDelete?.();
   };
 
-  const handleBack = () => {
-    if (onNavigateBack) {
-      onNavigateBack();
-    } else {
-      window.history.back();
-    }
-  };
-
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-      <button
-        style={{
-          color: 'var(--text-muted)',
-          cursor: 'pointer',
-          fontSize: 'var(--font-base)',
-          background: 'none',
-          border: 'none',
-          fontFamily: 'var(--font)',
-          textDecoration: 'underline',
-        }}
-        onClick={handleBack}
-      >
+    <div className="detail-page-header">
+      {onNavigateBack ? <button type="button" className="detail-back" onClick={onNavigateBack}>
         &larr; Back to {backTo.label}
-      </button>
+      </button> : <Link className="detail-back" to={backTo.path}>&larr; Back to {backTo.label}</Link>}
       {showActions && (
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="detail-page-actions">
           {!editing && (
             <>
-              <button className="btn" onClick={onEdit} disabled={disabled}>
+              <button type="button" className="btn" onClick={onEdit} disabled={disabled}>
                 Edit
               </button>
               {onDelete && (
                 <button
                   className="btn btn-danger"
+                  type="button"
                   onClick={handleDelete}
                   disabled={disabled}
                 >
@@ -83,13 +63,14 @@ export function DetailPageHeader({
           {editing && (
             <>
               <button
-                className="btn"
+                type="button"
+                className="btn btn-primary"
                 onClick={onSave}
                 disabled={saving || disabled || saveDisabled}
               >
                 {saving ? 'Saving...' : 'Save'}
               </button>
-              <button className="btn" onClick={onCancel} disabled={saving || disabled}>
+              <button type="button" className="btn" onClick={onCancel} disabled={saving || disabled}>
                 Cancel
               </button>
             </>
