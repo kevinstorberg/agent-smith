@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from psycopg2.extensions import connection as Connection
 from psycopg2.extras import Json, RealDictCursor
 
 from scripts.shared.agents import VIRTUAL_AGENTS
@@ -63,6 +64,37 @@ def _copy_configs(cursor, source_item_id: int, target_item_id: int, item_type: s
         """,
         (target_item_id, item_type, source_item_id, item_type),
     )
+
+
+def inherited_version_metadata(item_type: str, source: dict | None) -> dict[str, bool]:
+    _table(item_type)
+    if item_type != "rule" or source is None:
+        return {}
+    value = source.get("clone_as_skill")
+    if type(value) is not bool:
+        raise ValueError("Rule version source must contain boolean clone_as_skill")
+    return {"clone_as_skill": value}
+
+
+def _insert_version(
+    conn: Connection, item_type: str, fields: dict, source: dict | None = None,
+    *, device: str = "*", repo: str = "*",
+) -> int:
+    values = {**fields, **inherited_version_metadata(item_type, source)}
+    values["content"] = Json(values["content"])
+    item_id = _get_model(item_type).create(conn=conn, **values)
+    with conn.cursor() as cur:
+        if source is not None:
+            _copy_configs(cur, source["id"], item_id, item_type)
+        else:
+            cur.execute(
+                """
+                INSERT INTO harness_configs (item_id, item_type, device, repo, agents, subagents, enabled, exclude)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, false)
+                """,
+                (item_id, item_type, device, repo, fields["agents"], fields["subagents"], fields["enabled"]),
+            )
+    return item_id
 
 
 def _get_model(item_type: str):
@@ -195,31 +227,13 @@ def create_item(
 ) -> int:
     assert_not_empty(name, "name")
     assert isinstance(content, dict) and "body" in content, "content must be a dict with a 'body' key."
-    table = _table(item_type)
-
-    agents = _sort_optional_list(agents)
-    subagents = _sort_optional_list(subagents)
-
+    _table(item_type)
     with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                INSERT INTO {table} (name, project, agents, subagents, content, sort_key, enabled, version)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, 1)
-                RETURNING id
-                """,
-                (name, project, agents or [], subagents or [], Json(content), sort_key if sort_key is not None else 0, enabled),
-            )
-            item_id = cur.fetchone()[0]
-
-            cur.execute(
-                """
-                INSERT INTO harness_configs (item_id, item_type, device, repo, agents, subagents, enabled, exclude)
-                VALUES (%s, %s, '*', '*', %s, %s, %s, false)
-                """,
-                (item_id, item_type, agents or [], subagents or [], enabled),
-            )
-            return item_id
+        return _insert_version(conn, item_type, {
+            "name": name, "project": project, "agents": _sort_optional_list(agents) or [],
+            "subagents": _sort_optional_list(subagents) or [], "content": content,
+            "sort_key": sort_key if sort_key is not None else 0, "enabled": enabled, "version": 1,
+        })
 
 
 def update_content(item_type: str, item_id: int, content: dict) -> int:
@@ -229,29 +243,18 @@ def update_content(item_type: str, item_id: int, content: dict) -> int:
 
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(f"SELECT * FROM {table} WHERE id = %s", (item_id,))
+            cur.execute(f"SELECT * FROM {table} WHERE id = %s FOR UPDATE", (item_id,))
             source = cur.fetchone()
             assert source, f"Item not found: {item_id}"
             assert source["version"] is not None, (
                 f"Item {item_id} is a proposed row (no version); promote it via the proposals service instead."
             )
 
-            new_version = source["version"] + 1
-            cur.execute(
-                f"""
-                INSERT INTO {table} (name, project, agents, subagents, content, sort_key, enabled, version)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-                """,
-                (
-                    source["name"], source["project"], source["agents"],
-                    source["subagents"], Json(content), source["sort_key"],
-                    source["enabled"], new_version,
-                ),
-            )
-            new_id = cur.fetchone()["id"]
-            _copy_configs(cur, item_id, new_id, item_type)
-            return new_id
+            return _insert_version(conn, item_type, {
+                "name": source["name"], "project": source["project"], "agents": source["agents"],
+                "subagents": source["subagents"], "content": content, "sort_key": source["sort_key"],
+                "enabled": source["enabled"], "version": source["version"] + 1,
+            }, source)
 
 
 def update_metadata(
@@ -322,28 +325,28 @@ def get_version_history_summary(item_type: str, name: str, project: str | None =
             return [dict(r) for r in cur.fetchall()]
 
 
-def get_item(item_type: str, name: str, project: str | None = None) -> dict | None:
-    assert_not_empty(name, "name")
+def _get_scoped_item(cursor, item_type: str, name: str, project: str | None, *, for_update: bool = False) -> dict | None:
     table = _table(item_type)
     latest = _LATEST_VERSION_CLAUSE.format(table=table)
+    cursor.execute(
+        f"SELECT * FROM {table} WHERE name = %s AND project IS NOT DISTINCT FROM %s AND {latest}"
+        + (" FOR UPDATE" if for_update else ""),
+        (name, project),
+    )
+    row = cursor.fetchone()
+    return _row_to_dict(row) if row else None
+
+
+def get_item(item_type: str, name: str, project: str | None = None) -> dict | None:
+    assert_not_empty(name, "name")
 
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             if project:
-                cur.execute(
-                    f"SELECT * FROM {table} WHERE name = %s AND project = %s AND {latest}",
-                    (name, project),
-                )
-                row = cur.fetchone()
+                row = _get_scoped_item(cur, item_type, name, project)
                 if row:
-                    return _row_to_dict(row)
-
-            cur.execute(
-                f"SELECT * FROM {table} WHERE name = %s AND project IS NULL AND {latest}",
-                (name,),
-            )
-            row = cur.fetchone()
-            return _row_to_dict(row) if row else None
+                    return row
+            return _get_scoped_item(cur, item_type, name, None)
 
 
 def upsert_item(
@@ -355,47 +358,33 @@ def upsert_item(
     subagents: list[str] | None = None,
     sort_key: int | None = None,
     enabled: bool = True,
+    *,
+    device: str = "*",
+    repo: str = "*",
 ) -> int:
     assert_not_empty(name, "name")
     assert isinstance(content, dict) and "body" in content, "content must be a dict with a 'body' key."
-    table = _table(item_type)
+    _table(item_type)
 
     agents = _sort_optional_list(agents)
     subagents = _sort_optional_list(subagents)
 
-    existing = get_item(item_type, name, project=project)
-    if existing:
-        new_version = existing["version"] + 1
-        # Virtual agents (e.g. the opinion graph) have no synced config files,
-        # so file-derived upserts like reverse_sync can never legitimately
-        # remove them. Explicit removal goes through update_metadata instead.
-        preserved = set(existing.get("agents") or []) & set(VIRTUAL_AGENTS)
-        if preserved:
-            agents = sorted(set(agents or []) | preserved)
-    else:
-        new_version = 1
-
     with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                INSERT INTO {table} (name, project, agents, subagents, content, sort_key, enabled, version)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-                """,
-                (name, project, agents or [], subagents or [], Json(content), sort_key if sort_key is not None else 0, enabled, new_version),
-            )
-            item_id = cur.fetchone()[0]
-
-            if new_version == 1:
-                cur.execute(
-                    """
-                    INSERT INTO harness_configs (item_id, item_type, device, repo, agents, subagents, enabled, exclude)
-                    VALUES (%s, %s, '*', '*', %s, %s, %s, false)
-                    """,
-                    (item_id, item_type, agents or [], subagents or [], enabled),
-                )
-            return item_id
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            existing = _get_scoped_item(cur, item_type, name, project, for_update=True)
+        if existing:
+            new_version = existing["version"] + 1
+            # File-derived upserts cannot observe virtual agent assignments.
+            preserved = set(existing.get("agents") or []) & set(VIRTUAL_AGENTS)
+            if preserved:
+                agents = sorted(set(agents or []) | preserved)
+        else:
+            new_version = 1
+        return _insert_version(conn, item_type, {
+            "name": name, "project": project, "agents": agents or [], "subagents": subagents or [],
+            "content": content, "sort_key": sort_key if sort_key is not None else 0,
+            "enabled": enabled, "version": new_version,
+        }, existing, device=device, repo=repo)
 
 
 def delete_item(item_type: str, item_id: int) -> None:
