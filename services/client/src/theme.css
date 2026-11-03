@@ -351,6 +351,7 @@ body {
 .chat-create {
   display: grid;
   gap: 10px;
+  min-width: 0;
   max-width: 760px;
 }
 
@@ -372,7 +373,8 @@ body {
   grid-template-columns: minmax(190px, 260px) minmax(0, 1fr);
   gap: 16px;
   flex: 1;
-  min-height: 0;
+  min-height: min-content;
+  grid-template-rows: minmax(min-content, 1fr);
 }
 
 .chat-room-list,
@@ -382,6 +384,9 @@ body {
   border-radius: var(--radius);
   overflow: hidden;
 }
+
+/* Scroll contents must not set the conversation grid's minimum height. */
+.chat-room-list, .chat-transcript-area { contain: size; }
 
 .chat-room-list {
   padding: 8px;
@@ -412,14 +417,17 @@ body {
 }
 
 .chat-room-button > span:first-child {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.chat-room-button > .tag { flex-shrink: 0; }
+
 .chat-room {
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  min-height: min-content;
 }
 
 .chat-room-header {
@@ -435,10 +443,17 @@ body {
 
 .chat-room-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
 }
+
+.chat-room-header > div { min-width: 0; max-width: 100%; }
+.chat-room-header h3, .chat-room-context { overflow-wrap: anywhere; }
+.chat-room-context { max-height: 160px; overflow-y: auto; }
+.chat-room-context:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
 
 .chat-room-header h3 {
   font-size: var(--font-md);
@@ -473,7 +488,7 @@ body {
   display: flex;
   position: relative;
   flex: 1;
-  min-height: 0;
+  min-height: 180px;
 }
 
 .chat-transcript {
@@ -507,12 +522,15 @@ body {
 
 .chat-message-meta {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 16px;
+  gap: 4px 16px;
   color: var(--text-muted);
   font-size: var(--font-xs);
   text-transform: capitalize;
 }
+
+.chat-message-meta > strong { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 
 .chat-message-body {
   margin-top: 4px;
@@ -530,6 +548,8 @@ body {
 }
 
 .chat-composer textarea {
+  flex: 1;
+  min-width: 0;
   min-height: 70px;
   resize: vertical;
 }
@@ -538,15 +558,17 @@ body {
   color: var(--text-muted);
   padding: 24px 12px;
   text-align: center;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 800px) {
   .chat-layout {
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(min-content, 1fr);
   }
 
   .chat-room-list {
+    contain: none;
     max-height: 220px;
     overflow-y: auto;
   }
@@ -558,7 +580,7 @@ body {
   }
 
   .chat-room-list {
-    max-height: 44px;
+    max-height: 180px;
   }
 
   .chat-room {
