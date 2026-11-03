@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { COOKIE_MAX_AGE, MAX_COOKIE_BYTES, MAX_VIEW_ENTRIES, VIEW_COOKIE_NAME, cookieBytes, defaultView, mergeViewCookie, readViewCookie, resolveView } from '../viewPreferences';
 
 describe('view preference cookie boundary', () => {
+  it('validates native boolean values and explicit URL boolean clearing without resurrecting saved true', () => {
+    const cookie = mergeViewCookie('', 'memory', { ...defaultView('memory'), meeting_only: true, listSort: 'updated_at_asc', searchSort: 'created_at_asc' });
+    expect(readViewCookie(cookie)[0].values.meeting_only).toBe(true);
+    expect(resolveView('memory', cookie, new URLSearchParams())).toMatchObject({ meeting_only: true, listSort: 'updated_at_asc', searchSort: 'created_at_asc' });
+    for (const value of ['', 'false', 'invalid']) expect(resolveView('memory', cookie, new URLSearchParams({ meeting_only: value })).meeting_only).toBe(false);
+    expect(resolveView('memory', '', new URLSearchParams('meeting_only=true')).meeting_only).toBe(true);
+    const invalid = { v: 1, views: [{ key: 'memory', values: { meeting_only: 1 } }] };
+    expect(readViewCookie(`${VIEW_COOKIE_NAME}=${encodeURIComponent(JSON.stringify(invalid))}`)).toEqual([]);
+  });
+
   it('stores only nondefaults, preserves other cookies, and emits the complete host-only attribute budget', () => {
     const value = mergeViewCookie('other=keep', 'jobs', { ...defaultView('jobs'), q: 'release', sort: 'name', limit: 25, offset: 50 }, { secure: true });
     expect(value).toContain(`; Path=/; SameSite=Lax; Max-Age=${COOKIE_MAX_AGE}; Secure`);

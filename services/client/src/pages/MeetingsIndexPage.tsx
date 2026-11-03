@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { api } from '../api';
 import type { MeetingSummary } from '../api';
@@ -11,6 +11,9 @@ import { MeetingVocabulary } from '../components/MeetingVocabulary';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { parseTags } from '../utils/tags';
 import { FilterBar } from '../components/FilterBar';
+import { MEETING_SORT_OPTIONS } from '../constants';
+import { useViewPreferences } from '../hooks/useViewPreferences';
+import { parseViewField, viewFields } from '../utils/viewPreferences';
 
 export function MeetingsIndexPage() {
   const navigate = useNavigate();
@@ -18,19 +21,22 @@ export function MeetingsIndexPage() {
   const vocabularyActive = searchParams.get('tab') === 'vocabulary';
   const tabSearch = (tab: 'meetings' | 'vocabulary') => {
     const next = new URLSearchParams(searchParams);
+    if ((tab === 'vocabulary') !== vocabularyActive) {
+      for (const field of new Set([...viewFields('meetings'), ...viewFields('vocabulary')])) next.delete(field);
+    }
     next.set('tab', tab);
     return `?${next}`;
   };
-  const [searchText, setSearchText] = useState('');
+  const preferences = useViewPreferences('meetings', { active: !vocabularyActive });
+  const { q: searchText, labels: labelInput, sort } = preferences.values;
   const debouncedQuery = useDebouncedValue(searchText.trim());
   const query = searchText.trim() ? debouncedQuery : '';
-  const [labelInput, setLabelInput] = useState('');
-  const [sort, setSort] = useState('newest');
   const labelText = useDebouncedValue(labelInput);
   const labels = useMemo(() => parseTags(labelText), [labelText]);
   const { items, total, loading, error, limit, offset, setLimit, setOffset, refresh } = usePagination<MeetingSummary>(
     (pageLimit, pageOffset) => api.meetings.list({ limit: pageLimit, offset: pageOffset, q: query || undefined, ...(labels.length ? { labels } : {}), sort }),
     [query, labels, sort],
+    10, { ...preferences.pagination, enabled: !vocabularyActive && (!searchText.trim() || debouncedQuery === searchText.trim()) && labelText === labelInput },
   );
   usePolling(() => refresh({ showLoading: false }), { enabled: !vocabularyActive });
 
@@ -44,18 +50,18 @@ export function MeetingsIndexPage() {
       </nav>
       <div hidden={vocabularyActive} role="region" aria-labelledby="meeting-tab-meetings">
 
-      <FilterBar nameValue={searchText} onNameChange={setSearchText} nameLabel="Search meetings" namePlaceholder="Search titles and summaries...">
+      <FilterBar nameValue={searchText} onNameChange={value => preferences.setField('q', value)} nameLabel="Search meetings" namePlaceholder="Search titles and summaries..." onReset={preferences.reset}>
         {searchText && (
-          <button className="btn" type="button" onClick={() => setSearchText('')}>Clear</button>
+          <button className="btn" type="button" onClick={() => preferences.setField('q', '')}>Clear</button>
         )}
         <label><span className="form-label">Filter meetings by labels</span>
           <input placeholder="Labels (comma-separated)" maxLength={600}
-            value={labelInput} onChange={event => setLabelInput(event.target.value)} />
+            value={labelInput} onChange={event => preferences.setField('labels', event.target.value)} />
         </label>
-        {labelInput && <button className="btn" onClick={() => setLabelInput('')}>Clear labels</button>}
+        {labelInput && <button className="btn" onClick={() => preferences.setField('labels', '')}>Clear labels</button>}
         <label><span className="form-label">Sort meetings</span>
-          <select className="input" value={sort} onChange={event => setSort(event.target.value)}>
-            <option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Title A–Z</option>
+          <select className="input" value={sort} onChange={event => preferences.setField('sort', parseViewField('meetings', 'sort', event.target.value))}>
+            {MEETING_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
       </FilterBar>
@@ -103,7 +109,7 @@ export function MeetingsIndexPage() {
       )}
       </div>
       <div hidden={!vocabularyActive} role="region" aria-labelledby="meeting-tab-vocabulary">
-        <MeetingVocabulary />
+        <MeetingVocabulary active={vocabularyActive} />
       </div>
     </div>
   );

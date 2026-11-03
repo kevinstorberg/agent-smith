@@ -25,6 +25,7 @@ function Location() {
 }
 
 beforeEach(() => {
+  document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.clearAllMocks();
   mockList.mockResolvedValue({ items: meetings, total: 2 });
   vi.mocked(api.meetings.vocabulary.list).mockResolvedValue({ items: [], total: 0 });
@@ -33,7 +34,7 @@ beforeEach(() => {
 describe('MeetingsIndexPage', () => {
   it('keeps search, labels and sort controls available during loading and empty results', async () => {
     mockList.mockResolvedValue({ items: [], total: 0 });
-    renderWithProviders(<MeetingsIndexPage />);
+    renderWithProviders(<MeetingsIndexPage />, { initialEntries: ['/meetings'] });
     expect(screen.getByRole('textbox', { name: 'Search meetings' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Filter meetings by labels' })).toBeVisible();
     expect(screen.getByRole('combobox', { name: 'Sort meetings' })).toHaveValue('newest');
@@ -43,7 +44,7 @@ describe('MeetingsIndexPage', () => {
 
   it('requests a new server sort from the first page', async () => {
     mockList.mockResolvedValue({ items: meetings, total: 25 });
-    renderWithProviders(<MeetingsIndexPage />);
+    renderWithProviders(<MeetingsIndexPage />, { initialEntries: ['/meetings'] });
     await screen.findByText('Product planning');
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() => expect(mockList).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 })));
@@ -68,20 +69,19 @@ describe('MeetingsIndexPage', () => {
   it('retains meeting search, pagination and an unsaved vocabulary edit across tab changes', async () => {
     mockList.mockResolvedValue({ items: meetings, total: 25 });
     vi.mocked(api.meetings.vocabulary.list).mockResolvedValue({ items: [term], total: 1 });
-    renderWithProviders(<MeetingsIndexPage />);
+    renderWithProviders(<MeetingsIndexPage />, { initialEntries: ['/meetings'] });
     await screen.findByText('Product planning');
     fireEvent.change(screen.getByRole('textbox', { name: 'Search meetings' }), { target: { value: 'release' } });
     await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'release', sort: 'newest' }));
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: 'release', sort: 'newest' }));
-    const listReads = mockList.mock.calls.length;
     fireEvent.click(screen.getByRole('link', { name: 'Vocabulary' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Edit LTV' }));
     fireEvent.change(screen.getByLabelText('Meaning / definition (optional)'), { target: { value: 'My definition draft' } });
     fireEvent.click(screen.getByRole('link', { name: 'Meetings' }));
     expect(screen.getByRole('textbox', { name: 'Search meetings' })).toHaveValue('release');
-    expect(screen.getByText('Showing 11–20 of 25')).toBeVisible();
-    expect(mockList).toHaveBeenCalledTimes(listReads);
+    expect(await screen.findByText('Showing 11–20 of 25')).toBeVisible();
+    expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: 'release', sort: 'newest' });
     fireEvent.click(screen.getByRole('link', { name: 'Vocabulary' }));
     expect(screen.getByLabelText('Meaning / definition (optional)')).toHaveValue('My definition draft');
     expect(api.meetings.vocabulary.update).not.toHaveBeenCalled();
@@ -89,13 +89,13 @@ describe('MeetingsIndexPage', () => {
 
   it('renders meeting topics and filters them while typing from the first page', async () => {
     mockList.mockResolvedValue({ items: [{ ...meetingFixture, labels: ['product', 'roadmapping'] }], total: 1 });
-    renderWithProviders(<MeetingsIndexPage />);
+    renderWithProviders(<MeetingsIndexPage />, { initialEntries: ['/meetings'] });
     expect(await screen.findByText('roadmapping')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Filter meetings by labels'), { target: { value: 'product, roadmapping' } });
     await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: undefined, labels: ['product', 'roadmapping'], sort: 'newest' }));
   });
   it('shows summaries from multiple connections without a source or device filter', async () => {
-    renderWithProviders(<MeetingsIndexPage />);
+    renderWithProviders(<MeetingsIndexPage />, { initialEntries: ['/meetings'] });
 
     expect(await screen.findByText('Product planning')).toBeInTheDocument();
     expect(screen.getByText('Team retrospective')).toBeInTheDocument();
@@ -105,7 +105,7 @@ describe('MeetingsIndexPage', () => {
   });
 
   it('opens the selected summary with keyboard navigation', async () => {
-    renderWithProviders(<MeetingsIndexPage />);
+    renderWithProviders(<MeetingsIndexPage />, { initialEntries: ['/meetings'] });
     const title = await screen.findByText('Product planning');
     fireEvent.keyDown(title.closest('tr')!, { key: 'Enter' });
 
@@ -114,7 +114,7 @@ describe('MeetingsIndexPage', () => {
 
   it('searches and clears while keeping pagination on the server', async () => {
     mockList.mockResolvedValue({ items: meetings, total: 25 });
-    renderWithProviders(<MeetingsIndexPage />);
+    renderWithProviders(<MeetingsIndexPage />, { initialEntries: ['/meetings'] });
     await screen.findByText('Product planning');
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: undefined, sort: 'newest' }));
@@ -128,7 +128,7 @@ describe('MeetingsIndexPage', () => {
 
   it('distinguishes loading, empty imports and search results', async () => {
     mockList.mockResolvedValue({ items: [], total: 0 });
-    renderWithProviders(<MeetingsIndexPage />);
+    renderWithProviders(<MeetingsIndexPage />, { initialEntries: ['/meetings'] });
     expect(screen.getByText('Loading meetings...')).toBeInTheDocument();
     expect(await screen.findByText(/No meeting summaries saved yet/)).toBeInTheDocument();
 
@@ -138,7 +138,7 @@ describe('MeetingsIndexPage', () => {
 
   it('shows a failed import reader separately from an empty list and can retry', async () => {
     mockList.mockRejectedValueOnce(new Error('Storage unavailable'));
-    renderWithProviders(<MeetingsIndexPage />);
+    renderWithProviders(<MeetingsIndexPage />, { initialEntries: ['/meetings'] });
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load meetings: Storage unavailable');
     expect(screen.queryByText(/No meeting summaries saved yet/)).not.toBeInTheDocument();
