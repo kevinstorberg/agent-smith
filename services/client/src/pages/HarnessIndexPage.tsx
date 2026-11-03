@@ -1,18 +1,18 @@
-import { useEffect, useRef, type CSSProperties } from 'react';
+import type { CSSProperties } from 'react';
 import { useNavigate } from 'react-router';
-import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { api } from '../api';
 import type { HarnessItem } from '../api';
 import { Pagination } from '../components/Pagination';
 import { FilterBar } from '../components/FilterBar';
 import { ProjectCell, EnabledToggleCell, BadgeCell, DateCell, VersionCell } from '../components/table';
 import { usePagination } from '../hooks/usePagination';
-import { useNotification } from '../context/useNotification';
 import { makeKeyboardClickable } from '../utils/a11y';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { HARNESS_SORT_OPTIONS } from '../constants';
 import { harnessViewKey, parseViewField } from '../utils/viewPreferences';
 import { useViewPreferences } from '../hooks/useViewPreferences';
+import { useHarnessListActions } from '../hooks/useHarnessListActions';
 
 const TYPE_LABELS: Record<string, string> = {
   rule: 'Rules',
@@ -29,10 +29,8 @@ export function HarnessIndexPage({ type }: { type: string }) {
   const nameFilter = useDebouncedValue(nameInput);
   const projectFilter = useDebouncedValue(projectInput);
   const navigate = useNavigate();
-  const { notify } = useNotification();
 
   const criteriaPending = nameFilter !== nameInput || projectFilter !== projectInput;
-  const hasFilters = !!(nameInput || projectInput || nameFilter || projectFilter);
 
   const { items, setItems, total, loading, error, dataCurrent, refresh, limit, offset, setLimit, setOffset } = usePagination<HarnessItem>(
     (l, o) => api.harness.items.list(type, {
@@ -45,48 +43,12 @@ export function HarnessIndexPage({ type }: { type: string }) {
     10, { ...preferences.pagination, enabled: !criteriaPending },
   );
 
-  const dragDisabled = hasFilters || criteriaPending || !dataCurrent || sort !== 'manual' || loading || Boolean(error)
-    || offset !== 0 || items.length !== total;
-  const columns = [!dragDisabled && '32px', 'minmax(220px, 2fr)', 'minmax(120px, 1fr)', '72px',
+  const manual = sort === 'manual';
+  const readable = !criteriaPending && dataCurrent && !loading && !error;
+  const view = JSON.stringify([type, nameInput, projectInput, nameFilter, projectFilter, sort, limit, offset]);
+  const actions = useHarnessListActions({ type, view, items, readable, manual, refresh, setItems });
+  const columns = [manual && '32px', 'minmax(220px, 2fr)', 'minmax(120px, 1fr)', '72px',
     type === 'rule' && '88px', 'minmax(160px, 1fr)', '90px', '64px', '144px'].filter(Boolean).join(' ');
-  const currentView = useRef({ type, items, dragDisabled, refresh, mounted: false });
-  useEffect(() => {
-    currentView.current = { type, items, dragDisabled, refresh, mounted: true };
-    return () => { currentView.current.mounted = false; };
-  }, [type, items, dragDisabled, refresh]);
-
-  const updateMetadata = async (item: HarnessItem, metadata: Partial<Pick<HarnessItem, 'enabled' | 'clone_as_skill'>>) => {
-    try {
-      await api.harness.items.updateMetadata(type, item.id, metadata);
-      const view = currentView.current;
-      if (!view.mounted || view.type !== type) return;
-      setItems(previous => previous.map(existing => existing.id === item.id ? { ...existing, ...metadata } : existing));
-      await view.refresh({ showLoading: false });
-    } catch {
-      if (currentView.current.mounted) notify('Could not update item. Please try again.', 'error');
-    }
-  };
-
-  const toggleEnabled = (item: HarnessItem) => updateMetadata(item, { enabled: !item.enabled });
-  const toggleCloneAsSkill = (item: HarnessItem) => updateMetadata(item, { clone_as_skill: !item.clone_as_skill });
-
-  const onDragEnd = async (result: DropResult) => {
-    const current = currentView.current;
-    if (!current.mounted || current.dragDisabled || current.items !== items || current.type !== type
-        || !result.destination || result.source.index === result.destination.index) return;
-
-    const reordered = [...items];
-    const [moved] = reordered.splice(result.source.index, 1);
-    reordered.splice(result.destination.index, 0, moved);
-    setItems(reordered);
-
-    try {
-      await api.harness.items.reorder(type, reordered.map(i => i.id));
-      notify('Sort order saved', 'success');
-    } catch {
-      notify('Failed to save order', 'error');
-    }
-  };
 
   return (
     <div>
@@ -94,7 +56,7 @@ export function HarnessIndexPage({ type }: { type: string }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <h2 className="page-title">{TYPE_LABELS[type] || type}</h2>
         </div>
-        <button className="btn btn-primary" onClick={() => navigate(`/harness/${type}/new`)}>
+        <button className="btn btn-primary" disabled={actions.freezeControls} onClick={() => navigate(`/harness/${type}/new`)}>
           + New {type.charAt(0).toUpperCase() + type.slice(1)}
         </button>
       </div>
@@ -105,27 +67,30 @@ export function HarnessIndexPage({ type }: { type: string }) {
         onNameChange={value => preferences.setField('name', value)}
         onProjectChange={value => preferences.setField('project', value)}
         onReset={preferences.reset}
+        disabled={actions.freezeControls}
       >
         <label><span className="form-label">Sort</span>
-          <select className="input" value={sort} onChange={event => preferences.setField('sort', parseViewField(preferenceKey, 'sort', event.target.value))}>
+          <select className="input" disabled={actions.freezeControls} value={sort} onChange={event => { if (!actions.freezeControls) preferences.setField('sort', parseViewField(preferenceKey, 'sort', event.target.value)); }}>
             {HARNESS_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
       </FilterBar>
-      {loading && <div className="loading">Loading...</div>}
+      {loading && items.length === 0 && <div className="loading">Loading...</div>}
       {!loading && error && <div role="alert" className="card">
         Could not load {TYPE_LABELS[type]?.toLowerCase() || 'items'}. <button className="btn" onClick={() => refresh()}>Retry</button>
       </div>}
+      {items.length > 0 && !readable && <p role="status">Showing previous results. Reordering is unavailable until this view loads.</p>}
+      <span role="status" className="visually-hidden">{actions.savingOrder ? 'Saving order…' : actions.busy ? 'Updating item…' : ''}</span>
 
-      {!loading && !error && <>
-      <DragDropContext onDragEnd={onDragEnd}>
-        <Droppable droppableId="harness-table" isDropDisabled={dragDisabled}>
+      {(items.length > 0 || (!loading && !error)) && <>
+      <DragDropContext onBeforeDragStart={actions.startDrag} onDragEnd={actions.endDrag}>
+        <Droppable droppableId="harness-table" isDropDisabled={!actions.canDrag}>
           {(provided) => (
             <div className="table-container" style={{ '--harness-columns': columns } as CSSProperties}>
               <div className="harness-list-scroll" role="region" aria-label={`${TYPE_LABELS[type] || type} list`} tabIndex={0}>
               <div className="harness-list-table">
               <div className="table-header harness-list-header">
-                {!dragDisabled && <div></div>}
+                {manual && <div></div>}
                 <div>Name</div>
                 <div>Project</div>
                 <div>Enabled</div>
@@ -136,8 +101,8 @@ export function HarnessIndexPage({ type }: { type: string }) {
                 <div>Updated</div>
               </div>
               <div ref={provided.innerRef} {...provided.droppableProps}>
-                {items.map((item, index) => (
-                  <Draggable key={String(item.id)} draggableId={String(item.id)} index={index} isDragDisabled={dragDisabled}>
+                {actions.displayed.map((item, index) => (
+                  <Draggable key={String(item.id)} draggableId={String(item.id)} index={index} isDragDisabled={!manual} disableInteractiveElementBlocking>
                     {(prov, snapshot) => (
                       <div
                         className="harness-list-row"
@@ -151,25 +116,33 @@ export function HarnessIndexPage({ type }: { type: string }) {
                         onMouseEnter={e => { if (!snapshot.isDragging) e.currentTarget.style.background = 'var(--surface-hover)'; }}
                         onMouseLeave={e => { if (!snapshot.isDragging) e.currentTarget.style.background = ''; }}
                       >
-                        {!dragDisabled && (
-                          <div
+                        {manual && (
+                          <button
                             {...prov.dragHandleProps}
+                            type="button"
+                            className="harness-drag-handle"
+                            aria-label={`Reorder ${item.name}`}
+                            disabled={!actions.canDrag}
                             onClick={e => e.stopPropagation()}
-                            style={{ cursor: 'grab', color: 'var(--text-muted)', fontSize: 16, textAlign: 'center' }}
+                            style={{ cursor: actions.canDrag ? 'grab' : 'default', color: 'var(--text-muted)', fontSize: 16,
+                              textAlign: 'center', background: 'transparent', border: 0, padding: 0,
+                              pointerEvents: actions.canDrag ? undefined : 'none' }}
                           >
                             ⠿
-                          </div>
+                          </button>
                         )}
                         <div>{item.name}</div>
                         <ProjectCell project={item.project} />
                         <EnabledToggleCell
                           enabled={item.enabled}
-                          onChange={() => toggleEnabled(item)}
+                          disabled={!readable || actions.freezeControls}
+                          onChange={() => actions.updateMetadata(item, { enabled: !item.enabled })}
                         />
                         {type === 'rule' && (
                           <EnabledToggleCell
                             enabled={!!item.clone_as_skill}
-                            onChange={() => toggleCloneAsSkill(item)}
+                            disabled={!readable || actions.freezeControls}
+                            onChange={() => actions.updateMetadata(item, { clone_as_skill: !item.clone_as_skill })}
                             accentColor="var(--highlight)"
                           />
                         )}
@@ -211,6 +184,7 @@ export function HarnessIndexPage({ type }: { type: string }) {
         offset={offset}
         onPageChange={setOffset}
         onLimitChange={newLimit => { setLimit(newLimit); setOffset(0); }}
+        disabled={actions.freezeControls || !readable}
       />
       </>}
     </div>

@@ -45,10 +45,11 @@ for (const [kind, label] of Object.entries(labels)) {
 test('Rules keyboard drag preserves columns and scroll position, then reconciles the saved order', async ({ page, fixtureAPI }) => {
   let items = [1, 2, 3].map(id => harnessFixture({ id, name: `release_review_${id}`, sort_key: id }));
   fixtureAPI.get('/api/harness/items/rule', () => ({ items, total: items.length }));
-  fixtureAPI.mock('PUT', '/api/harness/items/rule/reorder', ({ request }: APIRequest) => {
-    expect(request.postDataJSON()).toEqual({ ids: [2, 1, 3] });
+  fixtureAPI.mock('POST', '/api/harness/items/rule/1/move', ({ request }: APIRequest) => {
+    expect(request.postDataJSON()).toEqual({ before_id: 3,
+      expected_updated_at: items[0].updated_at, expected_anchor_updated_at: items[2].updated_at });
     items = [items[1], items[0], items[2]];
-    return { reordered: true };
+    return { id: 1, sort_key: 2, updated_at: items[1].updated_at };
   });
   await page.goto('/harness/rules');
   const region = page.getByRole('region', { name: 'Rules list', exact: true });
@@ -64,7 +65,7 @@ test('Rules keyboard drag preserves columns and scroll position, then reconciles
   expect(during).toEqual(before.columns);
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Space');
-  await expect.poll(() => fixtureAPI.requests.filter(entry => entry.method === 'PUT').length).toBe(1);
+  await expect.poll(() => fixtureAPI.requests.filter(entry => entry.method === 'POST').length).toBe(1);
   await expect(rows.locator(':scope > div:nth-child(2)')).toHaveText(['release_review_2', 'release_review_1', 'release_review_3']);
   expect(await region.evaluate(element => element.scrollLeft)).toBe(before.scrollLeft);
   await page.reload();
