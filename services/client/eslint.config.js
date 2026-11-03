@@ -24,6 +24,11 @@ export default defineConfig([
     },
   },
   {
+    files: ['browser-tests/**/*.mjs'],
+    extends: [js.configs.recommended],
+    languageOptions: { globals: globals.node },
+  },
+  {
     files: ['**/*.test.{ts,tsx}', '**/__tests__/**'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
