@@ -10,6 +10,7 @@ export interface FilterBarProps {
   namePlaceholder?: string;
   projectPlaceholder?: string;
   children?: ReactNode;
+  disabled?: boolean;
 }
 
 export function FilterBar({
@@ -22,6 +23,7 @@ export function FilterBar({
   namePlaceholder = 'Search by name...',
   projectPlaceholder = 'Filter by project...',
   children,
+  disabled = false,
 }: FilterBarProps) {
   return (
     <div className="filters resource-controls">
@@ -30,16 +32,18 @@ export function FilterBar({
         <input
           placeholder={namePlaceholder}
           maxLength={1000}
+          disabled={disabled}
           value={nameValue}
-          onChange={e => onNameChange(e.target.value)}
+          onChange={e => { if (!disabled) onNameChange(e.target.value); }}
         />
       </label>
       {onProjectChange && <label>
         <span className="form-label">{projectLabel}</span>
         <input
           placeholder={projectPlaceholder}
+          disabled={disabled}
           value={projectValue ?? ''}
-          onChange={e => onProjectChange(e.target.value)}
+          onChange={e => { if (!disabled) onProjectChange(e.target.value); }}
         />
       </label>}
       {children}

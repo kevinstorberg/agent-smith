@@ -132,6 +132,7 @@ export type ProfileDiscussionTopicPatch = Omit<ActionItemPatch, 'project'>;
 export type ProfileDiscussionTopicFilters = Omit<ActionItemFilters, 'project'>;
 
 const ACTION_ITEM_TIMEOUT_MS = 30_000;
+const HARNESS_TIMEOUT_MS = 30_000;
 
 export interface AssignableAgents {
   agents: string[];
@@ -162,6 +163,11 @@ export interface HarnessItem {
   updated_at: string;
   configs: HarnessConfig[];
 }
+
+export type HarnessMove = {
+  expected_updated_at: string;
+  expected_anchor_updated_at: string;
+} & ({ before_id: number; after_id?: never } | { after_id: number; before_id?: never });
 
 export interface Rule {
   name: string;
@@ -815,14 +821,16 @@ export const api = {
         const query = resourceListParams(params);
         if (params?.name) query.name = params.name;
         if (params?.project) query.project = params.project;
-        return get<Paginated<HarnessItem>>(`/harness/items/${type}`, query);
+        return get<Paginated<HarnessItem>>(`/harness/items/${type}`, query, HARNESS_TIMEOUT_MS);
       },
       get: (type: string, id: number) => get<HarnessItem>(`/harness/items/${type}/${id}`),
       create: (type: string, body: unknown) => post<HarnessItem>(`/harness/items/${type}`, body),
       updateContent: (type: string, id: number, content: unknown) =>
         put<HarnessItem>(`/harness/items/${type}/${id}/content`, { content }),
       updateMetadata: (type: string, id: number, body: unknown) =>
-        patch<HarnessItem>(`/harness/items/${type}/${id}`, body),
+        patch<HarnessItem>(`/harness/items/${type}/${id}`, body, HARNESS_TIMEOUT_MS),
+      move: (type: string, id: number, body: HarnessMove) =>
+        post<Pick<HarnessItem, 'id' | 'sort_key' | 'updated_at'>>(`/harness/items/${type}/${id}/move`, body, HARNESS_TIMEOUT_MS),
       history: (type: string, id: number) => get<HarnessItem[]>(`/harness/items/${type}/${id}/history`),
       remove: (type: string, id: number) => del(`/harness/items/${type}/${id}`),
       configs: {

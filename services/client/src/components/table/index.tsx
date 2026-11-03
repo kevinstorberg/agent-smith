@@ -21,6 +21,7 @@ export interface EnabledToggleCellProps {
   onChange: () => void;
   label?: { on: string; off: string };
   accentColor?: string;
+  disabled?: boolean;
 }
 
 export function EnabledToggleCell({
@@ -28,6 +29,7 @@ export function EnabledToggleCell({
   onChange,
   label = { on: 'On', off: 'Off' },
   accentColor = 'var(--success)',
+  disabled = false,
 }: EnabledToggleCellProps) {
   return (
     <div onClick={e => e.stopPropagation()}>
@@ -35,6 +37,7 @@ export function EnabledToggleCell({
         <input
           type="checkbox"
           checked={enabled}
+          disabled={disabled}
           onChange={onChange}
           style={{ accentColor, width: 16, height: 16 }}
         />
