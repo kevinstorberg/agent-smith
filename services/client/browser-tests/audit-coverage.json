@@ -1,0 +1,83 @@
+{
+  "audit_date": "2026-11-03",
+  "local_evidence": {
+    "route_patterns": 37,
+    "states": 111,
+    "captures": 444,
+    "empty_captures": 34,
+    "text_enlargement_captures": 24,
+    "fixture_gaps": 0,
+    "page_errors": 0,
+    "api_writes": 0,
+    "external_requests": 0
+  },
+  "method": "Offline built-app renders with synthetic APIs; geometry checked for every capture; representative and failing screenshots inspected. Text enlargement scales computed font/line-height, not browser zoom.",
+  "ci_cases": [
+    "Memory checkbox labels, interaction and containment",
+    "Plans long-title containment",
+    "Harness long Markdown and four-sided padding",
+    "Profile topic dialog labels and reachable Cancel",
+    "Unmatched API, external traffic and write rejection"
+  ],
+  "widths": [
+    1440,
+    1024,
+    390,
+    320
+  ],
+  "routes": [
+    {"route": "/", "local_states": [], "gap": "Redirect not explicitly exercised"},
+    {"route": "/harness/rules", "local_states": ["harness-rule-complete-list", "harness-rule-filtered-list", "harness-rule-list"]},
+    {"route": "/harness/skills", "local_states": ["harness-skill-list"]},
+    {"route": "/harness/tools", "local_states": ["harness-tool-list"]},
+    {"route": "/harness/hooks", "local_states": ["harness-hook-list"]},
+    {"route": "/harness/agents", "local_states": ["harness-agent-list"]},
+    {"route": "/harness/rule/new", "local_states": ["harness-rule-create"]},
+    {"route": "/harness/skill/new", "local_states": ["harness-skill-create"]},
+    {"route": "/harness/tool/new", "local_states": ["harness-tool-create"]},
+    {"route": "/harness/hook/new", "local_states": ["harness-hook-create"]},
+    {"route": "/harness/agent/new", "local_states": ["harness-agent-create"]},
+    {"route": "/harness/:type/:id", "local_states": ["harness-agent-detail", "harness-agent-edit", "harness-hook-detail", "harness-hook-edit", "harness-rule-add-config", "harness-rule-detail", "harness-rule-edit", "harness-skill-detail", "harness-skill-edit", "harness-tool-detail", "harness-tool-edit"]},
+    {"route": "/memory", "local_states": ["memory-delete-confirm", "memory-edit", "memory-list"]},
+    {"route": "/action-items", "local_states": ["action-expanded", "actions-all", "actions-completed", "actions-list"]},
+    {"route": "/action-items/new", "local_states": ["action-create"]},
+    {"route": "/action-items/:id", "local_states": ["action-detail", "action-edit"]},
+    {"route": "/meetings", "local_states": ["meetings-list", "vocabulary-create", "vocabulary-delete-confirm", "vocabulary-edit", "vocabulary-list"]},
+    {"route": "/meetings/:id", "local_states": ["meeting-labels-edit", "meeting-manual-analysis-dialog", "meeting-manual-analysis-dialog-bottom", "meeting-memories", "meeting-overview", "meeting-participant-dialog", "meeting-participant-dialog-bottom", "meeting-participant-manual", "meeting-profiles", "meeting-source-details", "meeting-statement-dialog", "meeting-transcript"]},
+    {"route": "/meetings/profiles/:id", "local_states": [], "gap": "Redirect not explicitly exercised"},
+    {"route": "/profiles", "local_states": ["profile-create", "profiles-list"]},
+    {"route": "/profiles/:id", "local_states": ["profile-assessment", "profile-assign-analysis-dialog", "profile-assign-analysis-dialog-bottom", "profile-correct-claim", "profile-edit-relationship", "profile-edit-topic-dialog", "profile-edit-topic-dialog-bottom", "profile-evidence", "profile-evidence-detail", "profile-history", "profile-history-after", "profile-history-before", "profile-identity-email", "profile-identity-merge", "profile-manual-analysis-all", "profile-manual-analysis-dialog", "profile-manual-analysis-dialog-bottom", "profile-metadata-edit", "profile-new-relationship", "profile-new-topic-dialog", "profile-new-topic-dialog-bottom", "profile-overview", "profile-overview-edit", "profile-relationships", "profile-topics", "profile-topics-all", "profile-topics-completed"]},
+    {"route": "/evals", "local_states": ["results-breakdown", "results-list"]},
+    {"route": "/evals/:id", "local_states": ["result-detail", "result-output", "result-overview", "result-raw"]},
+    {"route": "/plans", "local_states": ["plans-list"]},
+    {"route": "/plans/new", "local_states": ["plan-create"]},
+    {"route": "/plans/:id", "local_states": ["plan-detail", "plan-edit"]},
+    {"route": "/proposals", "local_states": ["proposals-list"]},
+    {"route": "/proposals/:id", "local_states": ["proposal-detail"]},
+    {"route": "/audit", "local_states": ["audit-list"]},
+    {"route": "/audit/:id", "local_states": ["audit-detail"]},
+    {"route": "/jobs", "local_states": ["jobs-list"]},
+    {"route": "/jobs/new", "local_states": ["job-create", "job-create-persona"]},
+    {"route": "/jobs/:id", "local_states": ["job-detail", "job-edit", "job-execution-result", "job-executions"]},
+    {"route": "/eval-configs", "local_states": ["suites-list"]},
+    {"route": "/eval-configs/new", "local_states": ["suite-create"]},
+    {"route": "/eval-configs/:id", "local_states": ["suite-add-scenario", "suite-detail", "suite-edit", "suite-edit-scenario", "suite-expanded-scenario"]},
+    {"route": "/chat", "local_states": ["chat-create", "chat-edit", "chat-list", "chat-selected"]}
+  ],
+  "known_findings": [
+    {"id": "chat-mobile-collapse", "severity": "high", "states": ["chat-selected", "chat-edit"], "widths": [390, 320], "evidence": "Conversation panel collapses; enabled Edit is intercepted by the room-list/layout during normal click.", "source": "theme.css chat fixed viewport/flex/grid rules at322\u2013337,543\u2013565"},
+    {"id": "harness-grid-clipping", "severity": "high", "states": ["harness-rule-list"], "widths": [390, 320], "evidence": "93 clipped text nodes at390; Configs/Version/Updated and controls disappear inside overflow:hidden.", "source": "HarnessIndexPage.tsx129\u2013149 and theme.css740\u2013747"},
+    {"id": "audit-values-overflow", "severity": "high", "states": ["audit-detail"], "widths": [390, 320], "evidence": "Main scrollWidth709 for390/320px main; long session/correlation identifiers do not shrink/wrap.", "source": "AuditDetailPage.tsx13\u201318"},
+    {"id": "operations-table-overflow", "severity": "high", "states": ["proposals-list", "results-list", "suites-list", "audit-list", "suite-detail"], "widths": [390, 320], "evidence": "List main widths470\u2013523 at390; primary titles form narrow towers and actions spill offscreen; scenarios table also overflows320.", "source": "Unwrapped tables in ProposalsIndexPage121, EvalsPage139, EvalSuitesPage69, AuditIndexPage108, EvalSuiteDetailPage412"},
+    {"id": "harness-form-overflow", "severity": "high", "states": ["harness-rule-create", "harness-rule-edit"], "widths": [390, 320], "evidence": "Create main405px with four valid assignable choices; Rule edit main589px at390; fixed Project/Sort widths and nowrap checkbox row.", "source": "styles/harness.ts checkboxRow; HarnessDetailPage.tsx364\u2013390"},
+    {"id": "filtered-reorder-removed", "severity": "functional", "states": ["harness-rule-complete-list", "harness-rule-filtered-list"], "widths": [1440, 1024, 390, 320], "evidence": "Complete three-row view has3 handles; matching search removes all3.", "source": "HarnessIndexPage.tsx dragDisabled policy"}
+  ],
+  "remaining_gaps": [
+    "Root and legacy-profile redirects not directly exercised",
+    "Chat edit mobile remains unreachable and is recorded as a product failure",
+    "Loading/error states and native confirmation prompts are not exhaustive",
+    "Manual-analysis progress receipts and confirmation-step variants remain to extend",
+    "200% sample uses computed font/line-height enlargement, not browser zoom",
+    "Automated metrics cover every capture; screenshots were visually inspected for representative and failing states, not every pixel of all444 images"
+  ]
+}
