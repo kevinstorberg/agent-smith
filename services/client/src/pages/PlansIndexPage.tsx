@@ -44,13 +44,13 @@ export function PlansIndexPage() {
         onProjectChange={value => preferences.setField('project', value)}
         nameLabel="Search plans"
         namePlaceholder="Search by title..."
+        onReset={preferences.reset}
       >
         <label><span className="form-label">Sort plans</span>
           <select className="input" value={sort} onChange={event => preferences.setField('sort', parseViewField('plans', 'sort', event.target.value))}>
             {PLAN_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
-        <button className="btn" type="button" onClick={preferences.reset}>Reset view</button>
       </FilterBar>
 
       <div className="filters">

@@ -10,6 +10,7 @@ export interface FilterBarProps {
   namePlaceholder?: string;
   projectPlaceholder?: string;
   children?: ReactNode;
+  onReset?: () => void;
 }
 
 export function FilterBar({
@@ -22,6 +23,7 @@ export function FilterBar({
   namePlaceholder = 'Search by name...',
   projectPlaceholder = 'Filter by project...',
   children,
+  onReset,
 }: FilterBarProps) {
   return (
     <div className="filters resource-controls">
@@ -43,6 +45,7 @@ export function FilterBar({
         />
       </label>}
       {children}
+      {onReset && <button className="btn" type="button" onClick={onReset}>Reset view</button>}
     </div>
   );
 }

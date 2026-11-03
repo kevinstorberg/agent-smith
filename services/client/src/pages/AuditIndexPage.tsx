@@ -11,16 +11,13 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { usePolling } from '../hooks/usePolling';
 import { makeRowClickable } from '../utils/a11y';
 import { formatDuration } from '../utils/audit';
-
-const AGENTS = ['claude', 'codex', 'gemini'] as const;
-const STATUSES = ['pending', 'success', 'error'] as const;
+import { ALL_AGENTS, AUDIT_SORT_OPTIONS, AUDIT_STATUSES } from '../constants';
+import { useViewPreferences } from '../hooks/useViewPreferences';
+import { parseViewField } from '../utils/viewPreferences';
 
 export function AuditIndexPage() {
-  const [agent, setAgent] = useState<string>('');
-  const [status, setStatus] = useState<string>('');
-  const [query, setQuery] = useState('');
-  const [project, setProject] = useState('');
-  const [sort, setSort] = useState<'newest' | 'oldest' | 'duration'>('newest');
+  const preferences = useViewPreferences('audit');
+  const { agent, status, q: query, project, sort } = preferences.values;
   const debouncedQuery = useDebouncedValue(query);
   const debouncedProject = useDebouncedValue(project);
   const [counts, setCounts] = useState<AuditCounts | null>(null);
@@ -30,6 +27,7 @@ export function AuditIndexPage() {
     (l, o) => api.audit.list({ agent: agent || undefined, status: status || undefined,
       q: debouncedQuery || undefined, project: debouncedProject || undefined, sort }, { limit: l, offset: o }),
     [agent, status, debouncedQuery, debouncedProject, sort],
+    10, { ...preferences.pagination, enabled: debouncedQuery === query && debouncedProject === project },
   );
   const loadCounts = useCallback(async () => {
     try {
@@ -57,28 +55,26 @@ export function AuditIndexPage() {
         <h2 className="page-title">Audit Trail</h2>
       </div>
 
-      <FilterBar nameValue={query} onNameChange={setQuery} namePlaceholder="Search audit events..."
-        projectValue={project} onProjectChange={setProject}>
+      <FilterBar nameValue={query} onNameChange={value => preferences.setField('q', value)} namePlaceholder="Search audit events..."
+        projectValue={project} onProjectChange={value => preferences.setField('project', value)} onReset={preferences.reset}>
         <label><span className="form-label">Sort audit events</span>
-        <select aria-label="Sort audit events" value={sort} onChange={event => setSort(event.target.value as typeof sort)}>
-          <option value="newest">Newest first</option>
-          <option value="oldest">Oldest first</option>
-          <option value="duration">Longest duration</option>
+        <select aria-label="Sort audit events" value={sort} onChange={event => preferences.setField('sort', parseViewField('audit', 'sort', event.target.value))}>
+          {AUDIT_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
         </label>
       </FilterBar>
       <div className="filters">
         <button
           className={`btn${agent === '' ? ' btn-primary' : ''}`}
-          onClick={() => { setAgent(''); setOffset(0); }}
+          onClick={() => preferences.setField('agent', '')}
         >
           all agents
         </button>
-        {AGENTS.map(a => (
+        {ALL_AGENTS.map(a => (
           <button
             key={a}
             className={`btn${agent === a ? ' btn-primary' : ''}`}
-            onClick={() => { setAgent(a); setOffset(0); }}
+            onClick={() => preferences.setField('agent', a)}
           >
             {a}{showCounts && counts ? ` (${counts[a]})` : ''}
           </button>
@@ -88,15 +84,15 @@ export function AuditIndexPage() {
       <div className="filters">
         <button
           className={`btn${status === '' ? ' btn-primary' : ''}`}
-          onClick={() => { setStatus(''); setOffset(0); }}
+          onClick={() => preferences.setField('status', '')}
         >
           any status
         </button>
-        {STATUSES.map(s => (
+        {AUDIT_STATUSES.map(s => (
           <button
             key={s}
             className={`btn${status === s ? ' btn-primary' : ''}`}
-            onClick={() => { setStatus(s); setOffset(0); }}
+            onClick={() => preferences.setField('status', s)}
           >
             {s}
           </button>

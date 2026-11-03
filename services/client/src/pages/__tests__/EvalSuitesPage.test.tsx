@@ -56,6 +56,7 @@ const fakeSuites = [
 ];
 
 beforeEach(() => {
+  document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.clearAllMocks();
   mockList.mockResolvedValue({ items: fakeSuites, total: 2 });
   mockSuiteUpdate.mockResolvedValue({});
@@ -63,7 +64,7 @@ beforeEach(() => {
 
 describe('EvalSuitesPage', () => {
   it('renders the suites table with data', async () => {
-    renderWithProviders(<EvalSuitesPage />);
+    renderWithProviders(<EvalSuitesPage />, { initialEntries: ['/eval-configs'] });
 
     await waitFor(() => {
       expect(screen.getByText('Code Quality Suite')).toBeInTheDocument();
@@ -80,7 +81,7 @@ describe('EvalSuitesPage', () => {
   it('shows loading state initially', () => {
     mockList.mockReturnValue(new Promise(() => {}));
 
-    renderWithProviders(<EvalSuitesPage />);
+    renderWithProviders(<EvalSuitesPage />, { initialEntries: ['/eval-configs'] });
 
     expect(screen.getByText('Loading...')).toBeInTheDocument();
   });
@@ -88,7 +89,7 @@ describe('EvalSuitesPage', () => {
   it('shows empty state when no suites exist', async () => {
     mockList.mockResolvedValue({ items: [], total: 0 });
 
-    renderWithProviders(<EvalSuitesPage />);
+    renderWithProviders(<EvalSuitesPage />, { initialEntries: ['/eval-configs'] });
 
     await waitFor(() => {
       expect(screen.getByText('No eval suites found')).toBeInTheDocument();
@@ -98,7 +99,7 @@ describe('EvalSuitesPage', () => {
   });
 
   it('toggles enabled state on checkbox click', async () => {
-    renderWithProviders(<EvalSuitesPage />);
+    renderWithProviders(<EvalSuitesPage />, { initialEntries: ['/eval-configs'] });
 
     await waitFor(() => {
       expect(screen.getByText('Code Quality Suite')).toBeInTheDocument();
@@ -113,7 +114,7 @@ describe('EvalSuitesPage', () => {
   });
 
   it('toggles disabled suite to enabled', async () => {
-    renderWithProviders(<EvalSuitesPage />);
+    renderWithProviders(<EvalSuitesPage />, { initialEntries: ['/eval-configs'] });
 
     await waitFor(() => {
       expect(screen.getByText('Safety Suite')).toBeInTheDocument();
@@ -128,7 +129,7 @@ describe('EvalSuitesPage', () => {
   });
 
   it('navigates to suite detail on row click', async () => {
-    renderWithProviders(<EvalSuitesPage />);
+    renderWithProviders(<EvalSuitesPage />, { initialEntries: ['/eval-configs'] });
 
     await waitFor(() => {
       expect(screen.getByText('Code Quality Suite')).toBeInTheDocument();
@@ -140,7 +141,7 @@ describe('EvalSuitesPage', () => {
   });
 
   it('navigates to new suite on button click', async () => {
-    renderWithProviders(<EvalSuitesPage />);
+    renderWithProviders(<EvalSuitesPage />, { initialEntries: ['/eval-configs'] });
 
     await waitFor(() => {
       expect(screen.getByText('+ New Suite')).toBeInTheDocument();
@@ -154,7 +155,7 @@ describe('EvalSuitesPage', () => {
   });
 
   it('navigates to eval results on Results link click', async () => {
-    renderWithProviders(<EvalSuitesPage />);
+    renderWithProviders(<EvalSuitesPage />, { initialEntries: ['/eval-configs'] });
 
     await waitFor(() => {
       expect(screen.getByText('Code Quality Suite')).toBeInTheDocument();
