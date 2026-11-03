@@ -67,7 +67,7 @@ describe('ActionItemDetailPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByLabelText('Title')).toHaveValue('Task 1');
     expect(screen.getByLabelText('Current route')).toHaveTextContent('/action-items/1');
-    expect(screen.getByLabelText('Current route')).not.toHaveTextContent('edit=1');
+    await waitFor(() => expect(screen.getByLabelText('Current route')).not.toHaveTextContent('edit=1'));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(await screen.findByRole('button', { name: 'Edit' })).toBeEnabled();
     expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
