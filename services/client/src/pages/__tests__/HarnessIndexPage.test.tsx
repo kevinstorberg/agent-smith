@@ -56,6 +56,7 @@ function makeItem(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.clearAllMocks();
   mockList.mockResolvedValue({ items: [makeItem()], total: 1 });
   mockUpdateMetadata.mockResolvedValue({});
@@ -72,7 +73,7 @@ describe('HarnessIndexPage', () => {
     mockList.mockResolvedValue({ items, total: 25 });
     let finish!: (value: unknown) => void;
     mockUpdateMetadata.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
-    renderWithProviders(<HarnessIndexPage type="rule" />);
+    renderWithProviders(<HarnessIndexPage type="rule" />, { initialEntries: ['/harness/rules'] });
     await screen.findByText('test_rule');
     fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), { target: { value: 'updated' } });
     await waitFor(() => expect(mockList).toHaveBeenLastCalledWith('rule', expect.objectContaining({ sort: 'updated' })));
@@ -95,7 +96,7 @@ describe('HarnessIndexPage', () => {
 
   it('keeps search, project filter and sort available while loading and with no resources', async () => {
     mockList.mockResolvedValue({ items: [], total: 0 });
-    renderWithProviders(<HarnessIndexPage type="rule" />);
+    renderWithProviders(<HarnessIndexPage type="rule" />, { initialEntries: ['/harness/rules'] });
     for (const name of ['Search', 'Project scope']) expect(screen.getByRole('textbox', { name })).toBeVisible();
     expect(screen.getByRole('combobox', { name: 'Sort' })).toHaveValue('manual');
     await screen.findByText('No rules found');
@@ -105,7 +106,7 @@ describe('HarnessIndexPage', () => {
 
   it('applies sort on the server from page zero and keeps partial manual lists non-draggable', async () => {
     mockList.mockResolvedValue({ items: [makeItem()], total: 25 });
-    renderWithProviders(<HarnessIndexPage type="rule" />);
+    renderWithProviders(<HarnessIndexPage type="rule" />, { initialEntries: ['/harness/rules'] });
     await screen.findByText('test_rule');
     expect(screen.getByTestId('harness-drop-zone')).toHaveAttribute('data-disabled', 'true');
     await act(async () => { await drag.end({ source: { index: 0 }, destination: { index: 1 } }); });
@@ -122,7 +123,7 @@ describe('HarnessIndexPage', () => {
   it('rejects a saved manual drag callback after sorting changes and restores full-list manual dragging', async () => {
     const items = [makeItem(), makeItem({ id: 2, name: 'another_rule' })];
     mockList.mockResolvedValue({ items, total: 2 });
-    renderWithProviders(<HarnessIndexPage type="rule" />);
+    renderWithProviders(<HarnessIndexPage type="rule" />, { initialEntries: ['/harness/rules'] });
     await screen.findByText('test_rule');
     expect(screen.getByTestId('harness-drop-zone')).toHaveAttribute('data-disabled', 'false');
     const manualDrop = drag.end;
@@ -139,7 +140,7 @@ describe('HarnessIndexPage', () => {
 
   it('hides a filtered subset and blocks stale reorder callbacks while clearing the filter refetches all rows', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    renderWithProviders(<HarnessIndexPage type="rule" />);
+    renderWithProviders(<HarnessIndexPage type="rule" />, { initialEntries: ['/harness/rules'] });
     await screen.findByText('test_rule');
     const input = screen.getByPlaceholderText('Search by name...');
     fireEvent.change(input, { target: { value: 'subset' } });
@@ -165,7 +166,7 @@ describe('HarnessIndexPage', () => {
 
   it('shows a retryable read error without stale rows or row mutations and preserves filter focus', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    renderWithProviders(<HarnessIndexPage type="rule" />);
+    renderWithProviders(<HarnessIndexPage type="rule" />, { initialEntries: ['/harness/rules'] });
     await screen.findByText('test_rule');
     mockList.mockRejectedValueOnce(new Error('Private backend diagnostic'));
     const input = screen.getByPlaceholderText('Search by name...');
@@ -186,7 +187,7 @@ describe('HarnessIndexPage', () => {
   });
 
   it('renders table with item data', async () => {
-    renderWithProviders(<HarnessIndexPage type="rule" />);
+    renderWithProviders(<HarnessIndexPage type="rule" />, { initialEntries: ['/harness/rules'] });
 
     await waitFor(() => {
       expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
@@ -198,7 +199,7 @@ describe('HarnessIndexPage', () => {
   });
 
   it('shows the correct type heading', async () => {
-    renderWithProviders(<HarnessIndexPage type="rule" />);
+    renderWithProviders(<HarnessIndexPage type="rule" />, { initialEntries: ['/harness/rules'] });
 
     await waitFor(() => {
       expect(screen.getByText('Rules')).toBeInTheDocument();
@@ -206,7 +207,7 @@ describe('HarnessIndexPage', () => {
   });
 
   it('toggles enabled state on checkbox click', async () => {
-    renderWithProviders(<HarnessIndexPage type="rule" />);
+    renderWithProviders(<HarnessIndexPage type="rule" />, { initialEntries: ['/harness/rules'] });
 
     await waitFor(() => {
       expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
@@ -220,7 +221,7 @@ describe('HarnessIndexPage', () => {
   });
 
   it('shows clone_as_skill column only for rules', async () => {
-    renderWithProviders(<HarnessIndexPage type="rule" />);
+    renderWithProviders(<HarnessIndexPage type="rule" />, { initialEntries: ['/harness/rules'] });
 
     await waitFor(() => {
       expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
@@ -231,7 +232,7 @@ describe('HarnessIndexPage', () => {
 
   it('hides clone_as_skill column for non-rule types', async () => {
     mockList.mockResolvedValue({ items: [makeItem({ id: 2, name: 'test_tool' })], total: 1 });
-    renderWithProviders(<HarnessIndexPage type="tool" />);
+    renderWithProviders(<HarnessIndexPage type="tool" />, { initialEntries: ['/harness/tools'] });
 
     await waitFor(() => {
       expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
@@ -241,7 +242,7 @@ describe('HarnessIndexPage', () => {
   });
 
   it('navigates to detail page on row click', async () => {
-    renderWithProviders(<HarnessIndexPage type="rule" />);
+    renderWithProviders(<HarnessIndexPage type="rule" />, { initialEntries: ['/harness/rules'] });
 
     await waitFor(() => {
       expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
@@ -252,7 +253,7 @@ describe('HarnessIndexPage', () => {
   });
 
   it('navigates to create page on new button click', async () => {
-    renderWithProviders(<HarnessIndexPage type="rule" />);
+    renderWithProviders(<HarnessIndexPage type="rule" />, { initialEntries: ['/harness/rules'] });
 
     await waitFor(() => {
       expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
@@ -264,7 +265,7 @@ describe('HarnessIndexPage', () => {
 
   it('shows empty state when no items found', async () => {
     mockList.mockResolvedValue({ items: [], total: 0 });
-    renderWithProviders(<HarnessIndexPage type="rule" />);
+    renderWithProviders(<HarnessIndexPage type="rule" />, { initialEntries: ['/harness/rules'] });
 
     await waitFor(() => {
       expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
@@ -275,7 +276,7 @@ describe('HarnessIndexPage', () => {
 
   it('debounces name filter input', async () => {
     vi.useFakeTimers();
-    renderWithProviders(<HarnessIndexPage type="rule" />);
+    renderWithProviders(<HarnessIndexPage type="rule" />, { initialEntries: ['/harness/rules'] });
 
     // Wait for initial load
     await act(async () => {

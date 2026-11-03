@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router';
+import { Link, useNavigate, useLocation } from 'react-router';
 import MDEditor from '@uiw/react-md-editor';
 import { api } from '../api';
 import { useNotification } from '../context/useNotification';
@@ -54,7 +54,7 @@ export function HarnessCreatePage() {
       return;
     }
     if (!isValidRepo(repo)) {
-      notify('Repo must be * or an absolute path.', 'error');
+      notify('Repository must be * or an absolute path.', 'error');
       return;
     }
 
@@ -98,9 +98,9 @@ export function HarnessCreatePage() {
   return (
     <div>
       <div style={styles.header}>
-        <button style={styles.backLink} onClick={() => navigate(backPath)}>
+        <Link className="detail-back" to={backPath}>
           &larr; Back to {TYPE_PATHS[type] || type}
-        </button>
+        </Link>
       </div>
 
       <h2 className="page-title" style={{ marginBottom: 20 }}>
@@ -108,33 +108,33 @@ export function HarnessCreatePage() {
       </h2>
 
       <div style={styles.field}>
-        <label style={styles.label}>Name</label>
+        <label className="form-label" htmlFor="harness-name">Name</label>
         <input
-          style={{ ...styles.input, borderColor: name && nameError(name) ? 'var(--highlight)' : undefined }}
+          id="harness-name" className="input" aria-invalid={Boolean(name && nameError(name))} aria-describedby={name && nameError(name) ? "harness-name-error" : undefined}
           value={name}
           onChange={e => setName(e.target.value)}
           placeholder={`e.g. ${type === 'tool' ? 'my_api' : type === 'hook' ? 'lint_on_save' : 'my_new_' + type}`}
           maxLength={MAX_NAME_LENGTH}
         />
-        <FieldError error={name ? nameError(name) : null} maxLength={MAX_NAME_LENGTH} currentLength={name.length} />
+        <FieldError id="harness-name-error" error={name ? nameError(name) : null} maxLength={MAX_NAME_LENGTH} currentLength={name.length} />
       </div>
 
-      <div style={{ ...styles.field, display: 'flex', gap: 16 }}>
-        <div style={{ flex: 1 }}>
-          <label style={styles.label}>Project</label>
+      <div className="form-grid" style={styles.field}>
+        <div>
+          <label className="form-label" htmlFor="harness-project">Project</label>
           <input
-            style={styles.input}
+            id="harness-project" className="input"
             value={project}
             onChange={e => setProject(e.target.value)}
             placeholder="Empty = shared/global"
           />
         </div>
-        <div style={{ width: 140 }}>
-          <label style={styles.label}>Sort Order</label>
+        <div>
+          <label className="form-label" htmlFor="harness-sort">Sort Order</label>
           <input
             type="number"
             min={0}
-            style={{ ...styles.input, fontFamily: 'var(--mono)' }}
+            id="harness-sort" className="input"
             value={sortKey}
             onChange={e => setSortKey(e.target.value)}
             placeholder="e.g. 5"
@@ -142,26 +142,24 @@ export function HarnessCreatePage() {
         </div>
       </div>
 
-      <div style={styles.field}>
-        <label style={styles.label}>Agents</label>
+      <fieldset className="form-group" disabled={saving}>
+        <legend className="form-label">Agents</legend>
         <div style={styles.checkboxRow}>
           <AgentCheckboxes
             selected={agents}
             onToggle={toggleAgent}
-            labelStyle={styles.checkboxLabel}
-            checkboxStyle={{ accentColor: 'var(--highlight)', width: 16, height: 16 }}
           />
         </div>
-      </div>
+      </fieldset>
 
       <div style={styles.field}>
         <div style={styles.checkboxRow}>
           <label style={styles.checkboxLabel}>
             <input
               type="checkbox"
+                className="form-checkbox"
               checked={enabled}
               onChange={() => setEnabled(!enabled)}
-              style={{ accentColor: 'var(--success)', width: 16, height: 16 }}
             />
             Enabled
           </label>
@@ -169,9 +167,9 @@ export function HarnessCreatePage() {
             <label style={styles.checkboxLabel}>
               <input
                 type="checkbox"
+                className="form-checkbox"
                 checked={cloneAsSkill}
                 onChange={() => setCloneAsSkill(!cloneAsSkill)}
-                style={{ accentColor: 'var(--highlight)', width: 16, height: 16 }}
               />
               Clone as Skill
             </label>
@@ -180,37 +178,38 @@ export function HarnessCreatePage() {
       </div>
 
       <div style={{ ...styles.field, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-        <label style={{ ...styles.label, marginBottom: 12 }}>Deployment Configuration</label>
-        <div style={{ display: 'flex', gap: 16 }}>
-          <div style={{ flex: '1 1 180px' }}>
-            <label style={styles.label}>Device</label>
+        <h3 className="section-title">Deployment configuration</h3>
+        <div className="form-grid">
+          <div>
+            <label className="form-label" htmlFor="harness-device">Device</label>
             <input
-              style={styles.input}
+              id="harness-device" className="input"
               value={device}
               onChange={e => setDevice(e.target.value)}
               placeholder="* = all devices"
             />
           </div>
-          <div style={{ flex: '2 1 280px' }}>
-            <label style={styles.label}>Repo</label>
+          <div>
+            <label className="form-label" htmlFor="harness-repo">Repository</label>
             <input
-              style={{ ...styles.input, fontFamily: 'var(--mono)', borderColor: isValidRepo(repo) ? undefined : 'var(--highlight)' }}
+              id="harness-repo" className="input" aria-invalid={!isValidRepo(repo)} aria-describedby={!isValidRepo(repo) ? "harness-repo-error" : undefined}
               value={repo}
               onChange={e => setRepo(e.target.value)}
               placeholder="* = global, or /absolute/path"
             />
-            {!isValidRepo(repo) && <span style={{ fontSize: 11, color: 'var(--highlight)', marginTop: 2, display: 'block' }}>Must be * or an absolute path</span>}
+            {!isValidRepo(repo) && <span id="harness-repo-error" className="field-error">Must be * or an absolute path</span>}
           </div>
         </div>
       </div>
 
       <div style={styles.field}>
-        <label style={styles.label}>
+        <label className="form-label" htmlFor="harness-body">
           {isMarkdownType(type) ? 'Body' : 'Configuration (JSON)'}
         </label>
         {isMarkdownType(type) ? (
           <div data-color-mode="dark">
             <MDEditor
+              textareaProps={{ id: "harness-body", "aria-label": "Body" }}
               value={body}
               onChange={val => setBody(val || '')}
               height={400}
@@ -218,7 +217,7 @@ export function HarnessCreatePage() {
           </div>
         ) : (
           <textarea
-            style={styles.textarea}
+            id="harness-body" style={styles.textarea}
             value={metadataJson}
             onChange={e => setMetadataJson(e.target.value)}
             spellCheck={false}
@@ -227,10 +226,10 @@ export function HarnessCreatePage() {
       </div>
 
       <div style={styles.actions}>
-        <button className="btn btn-success" onClick={save} disabled={saving}>
+        <button className="btn btn-primary" onClick={save} disabled={saving}>
           {saving ? 'Creating...' : `Create ${TYPE_LABELS[type] || type}`}
         </button>
-        <button className="btn" onClick={() => navigate(backPath)}>
+        <button className="btn" disabled={saving} onClick={() => navigate(backPath)}>
           Cancel
         </button>
       </div>

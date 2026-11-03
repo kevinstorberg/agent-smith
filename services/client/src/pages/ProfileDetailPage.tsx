@@ -74,7 +74,7 @@ export function ProfileDetailPage() {
 
   return <div className="profile-detail">
     <div className="card profile-summary">
-      <DetailPageHeader backTo={{ label: 'profiles', path: '/profiles' }} onNavigateBack={() => navigate('/profiles')}
+      <DetailPageHeader backTo={{ label: 'profiles', path: '/profiles' }}
         editing={metadataEditing} saving={metadataSaving} showActions={Boolean(profile)}
         disabled={identityBusy || otherBusy || deletion.loading || (!metadataEditing && metadataBusy)}
         onEdit={() => { setView('overview'); setMetadataEditing(true); }} onSave={() => metadataForm.current?.requestSubmit()}

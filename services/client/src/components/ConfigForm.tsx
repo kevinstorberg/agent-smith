@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { ALL_AGENTS, toggleArrayItem, isValidRepo } from '../constants';
 import { AgentCheckboxes } from './AgentCheckboxes';
 
@@ -28,64 +29,43 @@ export function ConfigForm({
   onSave, onCancel,
   submitLabel = 'Save',
 }: ConfigFormProps) {
+  const id = useId();
+  const validRepo = isValidRepo(repo);
   const toggleAgent = (agent: string) => onAgentsChange(toggleArrayItem(agents, agent));
   const toggleSubagent = (agent: string) => onSubagentsChange(toggleArrayItem(subagents, agent));
 
-  return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 14, marginBottom: 8 }}>
-      {title && <div style={{ fontSize: 'var(--font-base)', fontWeight: 600, marginBottom: 10 }}>{title}</div>}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-        <div style={{ flex: '1 1 180px' }}>
-          <label className="form-label">Device</label>
-          <input style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', padding: '6px 10px', fontSize: 'var(--font-base)', fontFamily: 'var(--font)', width: '100%' }} value={device} onChange={e => onDeviceChange(e.target.value)} placeholder="* = all devices" />
-        </div>
-        <div style={{ flex: '2 1 280px' }}>
-          <label className="form-label">Repo</label>
-          <input style={{ background: 'var(--bg)', border: `1px solid ${isValidRepo(repo) ? 'var(--border)' : 'var(--highlight)'}`, borderRadius: 'var(--radius)', color: 'var(--text)', padding: '6px 10px', fontSize: 'var(--font-base)', fontFamily: 'var(--mono)', width: '100%' }} value={repo} onChange={e => onRepoChange(e.target.value)} placeholder="* = global, or /absolute/path" />
-          {!isValidRepo(repo) && <span style={{ fontSize: 'var(--font-xs)', color: 'var(--highlight)', marginTop: 2, display: 'block' }}>Must be * or an absolute path</span>}
-        </div>
-      </div>
-      <div style={{ marginBottom: 8 }}>
-        <label className="form-label">Agents</label>
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-          <AgentCheckboxes
-            selected={agents}
-            onToggle={toggleAgent}
-            labelStyle={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 'var(--font-base)' }}
-            checkboxStyle={{ accentColor: 'var(--highlight)', width: 14, height: 14 }}
-          />
-        </div>
-      </div>
-      <div style={{ marginBottom: 12 }}>
-        <label className="form-label">Subagents (optional)</label>
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-          {ALL_AGENTS.map(a => (
-            <label key={a} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 'var(--font-base)' }}>
-              <input type="checkbox" checked={subagents.includes(a)} onChange={() => toggleSubagent(a)} style={{ accentColor: 'var(--warning)', width: 14, height: 14 }} />
-              {a}
-            </label>
-          ))}
-        </div>
-      </div>
-      <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 'var(--font-base)' }}>
-          <input type="checkbox" checked={enabled} onChange={() => onEnabledChange(!enabled)} style={{ accentColor: 'var(--success)', width: 14, height: 14 }} />
-          Enabled
-        </label>
-        <span style={{ color: 'var(--text-muted)', fontSize: 'var(--font-sm)' }}>|</span>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 'var(--font-base)' }}>
-          <input type="radio" name="cfgMode" checked={!exclude} onChange={() => onExcludeChange(false)} style={{ accentColor: 'var(--success)', width: 14, height: 14 }} />
-          Include
-        </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 'var(--font-base)' }}>
-          <input type="radio" name="cfgMode" checked={exclude} onChange={() => onExcludeChange(true)} style={{ accentColor: 'var(--highlight)', width: 14, height: 14 }} />
-          Exclude
-        </label>
-      </div>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button className="btn btn-sm" onClick={onSave} disabled={saving || !isValidRepo(repo)}>{saving ? 'Saving...' : submitLabel}</button>
-        <button className="btn btn-sm" onClick={onCancel}>Cancel</button>
+  return <fieldset className="config-form" disabled={saving} aria-busy={saving}>
+    <legend className="form-label">{title || 'Deployment configuration'}</legend>
+    <div className="form-grid">
+      <label><span className="form-label">Device</span>
+        <input className="input" value={device} onChange={event => onDeviceChange(event.target.value)} placeholder="* = all devices" />
+      </label>
+      <div><label><span className="form-label">Repository</span>
+        <input className="input" value={repo} onChange={event => onRepoChange(event.target.value)} placeholder="* = global, or /absolute/path"
+          aria-invalid={!validRepo} aria-describedby={!validRepo ? `${id}-repo-error` : undefined} /></label>
+        {!validRepo && <span className="field-error" id={`${id}-repo-error`}>Must be * or an absolute path</span>}
       </div>
     </div>
-  );
+    <fieldset className="form-group"><legend className="form-label">Agents</legend>
+      <div className="choice-row"><AgentCheckboxes selected={agents} onToggle={toggleAgent} /></div>
+    </fieldset>
+    <fieldset className="form-group"><legend className="form-label">Subagents (optional)</legend>
+      <div className="choice-row">{ALL_AGENTS.map(agent => <label key={agent} className="checkbox-label">
+        <input type="checkbox" className="form-checkbox" checked={subagents.includes(agent)} onChange={() => toggleSubagent(agent)} />{agent}
+      </label>)}</div>
+    </fieldset>
+    <div className="choice-row config-options">
+      <label className="checkbox-label"><input type="checkbox" className="form-checkbox" checked={enabled} onChange={() => onEnabledChange(!enabled)} />Enabled</label>
+      <fieldset className="form-group"><legend className="form-label">Deployment mode</legend>
+        <div className="choice-row">
+          <label className="checkbox-label"><input type="radio" className="form-radio" name={`${id}-mode`} checked={!exclude} onChange={() => onExcludeChange(false)} />Include</label>
+          <label className="checkbox-label"><input type="radio" className="form-radio" name={`${id}-mode`} checked={exclude} onChange={() => onExcludeChange(true)} />Exclude</label>
+        </div>
+      </fieldset>
+    </div>
+    <div className="flex-wrap">
+      <button type="button" className="btn btn-primary btn-sm" onClick={onSave} disabled={!validRepo}>{saving ? 'Saving...' : submitLabel}</button>
+      <button type="button" className="btn btn-sm" onClick={onCancel}>Cancel</button>
+    </div>
+  </fieldset>;
 }
