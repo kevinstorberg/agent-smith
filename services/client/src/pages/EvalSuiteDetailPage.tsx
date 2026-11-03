@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { Link, useParams, useNavigate } from 'react-router';
 import { api } from '../api';
 import type { EvalSuite, EvalScenario } from '../api';
 import { CopyButton } from '../components/CopyButton';
 import { DetailPageHeader } from '../components/DetailPageHeader';
+import { ScrollableTable } from '../components/ScrollableTable';
 import { useDetailPageEdit } from '../hooks/useDetailPageEdit';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { useNotification } from '../context/useNotification';
@@ -216,16 +217,16 @@ export function EvalSuiteDetailPage() {
   };
 
   return (
-    <div>
+    <div className="eval-suite-detail">
       {/* View Results link */}
       {!isNew && suite.eval_type && (
         <div style={{ marginBottom: 12 }}>
-          <a
-            onClick={() => navigate(`/evals?category=${suite.eval_type}&subcategory=${suite.subcategory}`)}
+          <Link
+            to={`/evals?category=${encodeURIComponent(suite.eval_type)}&subcategory=${encodeURIComponent(suite.subcategory || '')}`}
             style={{ color: 'var(--info)', cursor: 'pointer', fontSize: 13 }}
           >
             View Results &rarr;
-          </a>
+          </Link>
         </div>
       )}
 
@@ -261,18 +262,18 @@ export function EvalSuiteDetailPage() {
       <div className="card" style={{ marginBottom: 24 }}>
         {/* Eval Type / Subcategory */}
         {editing ? (
-          <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
-            <div style={{ flex: 1 }}>
+          <div className="eval-suite-fields">
+            <div>
               <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Eval Type</label>
               <input type="text" value={editValues.eval_type ?? ''} onChange={e => setEditValue('eval_type', e.target.value)} style={{ width: '100%', fontSize: 13 }} />
             </div>
-            <div style={{ flex: 1 }}>
+            <div>
               <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Subcategory</label>
               <input type="text" value={editValues.subcategory ?? ''} onChange={e => setEditValue('subcategory', e.target.value)} style={{ width: '100%', fontSize: 13 }} />
             </div>
           </div>
         ) : (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <div className="flex-wrap" style={{ gap: 8, marginBottom: 16 }}>
             <span className="tag">{suite.eval_type} / {suite.subcategory}</span>
             <span style={{ color: suite.enabled ? 'var(--success)' : 'var(--text-muted)', fontSize: 12, alignSelf: 'center' }}>
               {suite.enabled ? 'Enabled' : 'Disabled'}
@@ -381,7 +382,7 @@ export function EvalSuiteDetailPage() {
       {/* Scenarios */}
       {!isNew && (
         <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div className="eval-scenarios-header">
             <h3 className="section-title">Scenarios ({scenarios.length})</h3>
             <button onClick={() => setAddingScenario(true)} className="btn btn-primary" style={{ fontSize: 12 }}>
               + Add Scenario
@@ -409,7 +410,7 @@ export function EvalSuiteDetailPage() {
             </div>
           )}
 
-          <table className="table">
+          <ScrollableTable label="Suite scenarios" className="suite-scenarios-table" empty={scenarios.length === 0}>
             <thead>
               <tr>
                 <th>Name</th>
@@ -442,10 +443,10 @@ export function EvalSuiteDetailPage() {
                             style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, marginBottom: 8, color: 'var(--text)' }}
                           />
                           <div style={{ display: 'flex', gap: 8 }}>
-                            <button onClick={() => saveScenarioEdit(sc.id)} disabled={saving} className="btn btn-primary" style={{ fontSize: 11 }}>
+                            <button onClick={() => saveScenarioEdit(sc.id)} disabled={saving} className="btn btn-sm btn-primary">
                               {saving ? 'Saving...' : 'Save'}
                             </button>
-                            <button onClick={cancelScenarioEdit} className="btn" style={{ fontSize: 11 }}>Cancel</button>
+                            <button onClick={cancelScenarioEdit} className="btn btn-sm">Cancel</button>
                           </div>
                         </div>
                       ) : isExpanded ? (
@@ -457,8 +458,8 @@ export function EvalSuiteDetailPage() {
                             </pre>
                           </div>
                           <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                            <button onClick={() => startScenarioEdit(sc)} className="btn" style={{ fontSize: 11 }}>Edit</button>
-                            <button onClick={() => setExpandedId(null)} className="btn" style={{ fontSize: 11 }}>Collapse</button>
+                            <button onClick={() => startScenarioEdit(sc)} className="btn btn-sm">Edit</button>
+                            <button onClick={() => setExpandedId(null)} className="btn btn-sm">Collapse</button>
                           </div>
                         </div>
                       ) : (
@@ -494,7 +495,7 @@ export function EvalSuiteDetailPage() {
                       </label>
                     </td>
                     <td>
-                      <button onClick={() => deleteScenario(sc)} className="btn btn-danger" style={{ fontSize: 11, padding: '2px 8px' }}>
+                      <button onClick={() => deleteScenario(sc)} className="btn btn-sm btn-danger">
                         Delete
                       </button>
                     </td>
@@ -502,7 +503,7 @@ export function EvalSuiteDetailPage() {
                 );
               })}
             </tbody>
-          </table>
+          </ScrollableTable>
         </>
       )}
     </div>

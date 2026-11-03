@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { api } from '../api';
 import type { EvalRun, ChartPoint, AverageChartPoint } from '../api';
 import { ScoreChart } from '../components/ScoreChart';
+import { ScrollableTable } from '../components/ScrollableTable';
 import { Pagination } from '../components/Pagination';
 import { FilterBar } from '../components/FilterBar';
 import { useApiRead } from '../hooks/useApiRead';
@@ -137,7 +138,7 @@ export function EvalsPage() {
 
       {!loading && !error && (
         <>
-          <table className="table">
+          <ScrollableTable label="Results list" className="results-list-table" empty={runs.length === 0}>
             <thead>
               <tr>
                 <th>Time</th>
@@ -169,7 +170,7 @@ export function EvalsPage() {
                 <tr><td colSpan={6} className="loading">No eval runs found</td></tr>
               )}
             </tbody>
-          </table>
+          </ScrollableTable>
 
         </>
       )}

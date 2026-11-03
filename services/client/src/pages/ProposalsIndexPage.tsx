@@ -5,6 +5,7 @@ import type { Proposal, ProposalCounts } from '../api';
 import { Pagination } from '../components/Pagination';
 import { FilterBar } from '../components/FilterBar';
 import { DateCell } from '../components/table';
+import { ScrollableTable } from '../components/ScrollableTable';
 import { useNotification } from '../context/useNotification';
 import { usePagination } from '../hooks/usePagination';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
@@ -117,7 +118,7 @@ export function ProposalsIndexPage() {
 
       {error && <p role="alert">Could not load proposals. <button className="btn btn-sm" onClick={() => refresh()}>Retry</button></p>}
       {loading && <div className="loading" role="status">Loading...</div>}
-      <table className="table">
+      <ScrollableTable label="Proposals list" className="proposals-list-table" empty={items.length === 0}>
         <thead>
           <tr>
             <th>Title</th>
@@ -175,7 +176,7 @@ export function ProposalsIndexPage() {
             <tr><td colSpan={6} className="loading">No {statusFilter ? `${statusFilter} ` : ''}proposals</td></tr>
           )}
         </tbody>
-      </table>
+      </ScrollableTable>
 
       {!error && <Pagination
         total={total}

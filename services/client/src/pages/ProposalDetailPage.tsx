@@ -20,7 +20,7 @@ function jobFields(item: Proposal['proposed_item']): Record<string, unknown> {
 
 function Pane({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ flex: 1, minWidth: 280 }}>
+    <div className="operations-content-pane">
       <div className="form-label">{title}</div>
       <pre style={CODE_BOX}>{children}</pre>
     </div>
@@ -87,10 +87,10 @@ export function ProposalDetailPage() {
     : bodyOf(proposal.proposed_item);
 
   return (
-    <div>
+    <div className="proposal-detail-page">
       <div className="page-header">
         <h2 className="page-title">{proposal.title}</h2>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="flex-wrap" style={{ gap: 8 }}>
           {proposal.status === 'pending' && (
             <>
               <button
