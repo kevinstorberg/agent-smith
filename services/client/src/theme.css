@@ -1246,6 +1246,8 @@ pre {
   gap: 4px;
 }
 
+.pagination-page-size { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-muted); font-size: var(--font-sm); }
+
 .pagination-btn {
   background: var(--surface);
   border: 1px solid var(--control-border);
@@ -1368,7 +1370,6 @@ pre {
 .detail-back { display: inline-flex; align-items: center; min-height: 36px; padding: 4px 0; border: 0; background: none; color: var(--text-muted); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .detail-back:hover { color: var(--text); }
 .not-found-recovery { display: grid; gap: 16px; justify-items: start; }
-.pagination-page-size { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-muted); font-size: var(--font-sm); }
 .memory-controls > label:not(.checkbox-label) { flex: 1 1 200px; min-width: 0; }
 .memory-controls > label > input:not([type="checkbox"]):not([type="radio"]),
 .memory-controls > label > select { width: 100%; min-height: 38px; }
