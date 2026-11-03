@@ -44,26 +44,25 @@ export function PlansIndexPage() {
         onProjectChange={value => preferences.setField('project', value)}
         nameLabel="Search plans"
         namePlaceholder="Search by title..."
-        onReset={preferences.reset}
       >
         <label><span className="form-label">Sort plans</span>
           <select className="input" value={sort} onChange={event => preferences.setField('sort', parseViewField('plans', 'sort', event.target.value))}>
             {PLAN_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
-      </FilterBar>
-
-      <div className="filters">
+        <div className="filter-status-group" role="group" aria-label="Plan status">
           {PLAN_STATUSES.map(status => (
             <button
               key={status}
               className={`btn${statusFilter === status ? ' btn-primary' : ''}`}
+              aria-pressed={statusFilter === status}
               onClick={() => preferences.setField('status', status)}
             >
               {status}
             </button>
           ))}
-      </div>
+        </div>
+      </FilterBar>
 
       {loading && <div className="loading">Loading...</div>}
       {error && <div role="alert" className="card">Could not load plans. <button className="btn" onClick={() => refresh()}>Retry</button></div>}

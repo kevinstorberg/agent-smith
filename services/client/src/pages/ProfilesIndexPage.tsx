@@ -16,7 +16,6 @@ import { PersonaJob } from '../components/PersonaJob';
 import { PROFILE_SORT_OPTIONS } from '../constants';
 import { useViewPreferences } from '../hooks/useViewPreferences';
 import { parseViewField } from '../utils/viewPreferences';
-import { ResetViewButton } from '../components/ResetViewButton';
 
 export function ProfilesIndexPage() {
   const navigate = useNavigate();
@@ -95,8 +94,7 @@ export function ProfilesIndexPage() {
             {PROFILE_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </div>
-        <label className="checkbox-label profile-starred-filter"><input className="form-checkbox" type="checkbox" checked={starredOnly} onChange={event => preferences.setField('starred', event.target.checked)} /> Starred only</label>
-        <ResetViewButton onReset={preferences.reset} />
+        <label className="checkbox-label filter-checkbox"><input className="form-checkbox" type="checkbox" checked={starredOnly} onChange={event => preferences.setField('starred', event.target.checked)} /> Starred only</label>
       </div>
       {tags.length > 0 && <p className="text-muted-sm">Matches all tags: {tags.join(', ')}</p>}
       {notice && <p role="alert" className="card">{notice}</p>}

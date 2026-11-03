@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { ResetViewButton } from './ResetViewButton';
 
 export interface FilterBarProps {
   nameValue: string;
@@ -13,7 +12,6 @@ export interface FilterBarProps {
   children?: ReactNode;
   className?: string;
   disabled?: boolean;
-  onReset?: () => void;
 }
 
 export function FilterBar({
@@ -28,7 +26,6 @@ export function FilterBar({
   children,
   className = '',
   disabled = false,
-  onReset,
 }: FilterBarProps) {
   return (
     <div className={`filters resource-controls ${className}`}>
@@ -52,7 +49,6 @@ export function FilterBar({
         />
       </label>}
       {children}
-      {onReset && <ResetViewButton onReset={onReset} disabled={disabled} />}
     </div>
   );
 }

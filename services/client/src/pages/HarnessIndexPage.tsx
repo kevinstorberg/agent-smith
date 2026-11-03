@@ -66,7 +66,6 @@ export function HarnessIndexPage({ type }: { type: string }) {
         projectValue={projectInput}
         onNameChange={value => preferences.setField('name', value)}
         onProjectChange={value => preferences.setField('project', value)}
-        onReset={preferences.reset}
         disabled={actions.freezeControls}
       >
         <label><span className="form-label">Sort</span>

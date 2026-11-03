@@ -56,7 +56,7 @@ export function EvalsPage() {
     <div>
       <h2 className="page-title" style={{ marginBottom: 16 }}>Results</h2>
 
-      <FilterBar nameValue={query} onNameChange={value => preferences.setField('q', value)} onReset={preferences.reset} namePlaceholder="Search results...">
+      <FilterBar nameValue={query} onNameChange={value => preferences.setField('q', value)} namePlaceholder="Search results...">
         <label><span className="form-label">Category</span>
         <select
           aria-label="Result category"

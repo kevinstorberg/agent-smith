@@ -49,7 +49,7 @@ export function EvalSuitesPage() {
         </button>
       </div>
 
-      <FilterBar nameValue={query} onNameChange={value => preferences.setField('q', value)} namePlaceholder="Search eval suites..." onReset={preferences.reset}>
+      <FilterBar nameValue={query} onNameChange={value => preferences.setField('q', value)} namePlaceholder="Search eval suites...">
         <label><span className="form-label">Enabled state</span>
         <select aria-label="Suite enabled state" value={enabled} onChange={event => preferences.setField('enabled', parseViewField('evalSuites', 'enabled', event.target.value))}>
           <option value="">All enabled states</option>

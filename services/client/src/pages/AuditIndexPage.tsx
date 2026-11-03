@@ -60,7 +60,7 @@ export function AuditIndexPage() {
       </div>
 
       <FilterBar className="audit-toolbar" nameValue={query} onNameChange={value => preferences.setField('q', value)} namePlaceholder="Search audit events..."
-        projectLabel="Project" projectValue={project} onProjectChange={value => preferences.setField('project', value)} onReset={preferences.reset}>
+        projectLabel="Project" projectValue={project} onProjectChange={value => preferences.setField('project', value)}>
         <label className="audit-agent-filter"><span className="form-label">Agent</span>
           <select value={agent} onChange={event => preferences.setField('agent', parseViewField('audit', 'agent', event.target.value))}>
             <option value="">All agents</option>

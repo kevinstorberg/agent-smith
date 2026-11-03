@@ -8,7 +8,7 @@ import { useApiRead } from '../hooks/useApiRead';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { actionItemTags } from '../utils/actionItems';
-import { MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from '../constants';
+import { ACTION_ITEM_STATUSES, actionItemSortOptions, defaultActionItemSort, MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from '../constants';
 import { ActionItemQueueTable } from './ActionItemQueueTable';
 
 interface Draft { title: string; description: string; tags: string; revision: number }
@@ -166,13 +166,12 @@ export function ProfileDiscussionTopics({ profileId, active, disabled, onBusyCha
   return <>
     {active && <section aria-label="Discussion topics">
       <div className="page-header"><h3 className="section-title">Discussion topics</h3><button className="btn btn-primary" disabled={disabled || identityChanged || busy || queue.loading || Boolean(queue.error)} onClick={() => open()}>New discussion topic</button></div>
-      <div className="sub-tabs" role="tablist" aria-label="Discussion topic status">{(['open', 'completed', 'all'] as const).map(value => <button key={value} role="tab" aria-selected={status === value} className={status === value ? 'active' : ''} disabled={queue.freezeControls} onClick={() => { setStatus(value); setSort(value === 'open' ? 'manual' : value === 'completed' ? 'completed' : 'newest'); }}>{value === 'all' ? 'All' : value === 'open' ? 'Open' : 'Completed'}</button>)}</div>
+      <div className="sub-tabs" role="tablist" aria-label="Discussion topic status">{ACTION_ITEM_STATUSES.map(([value, label]) => <button key={value} role="tab" aria-selected={status === value} className={status === value ? 'active' : ''} disabled={queue.freezeControls} onClick={() => { setStatus(value); setSort(defaultActionItemSort(value)); }}>{label}</button>)}</div>
       <div className="profile-filters">
         <label><span className="form-label">Search discussion topics</span><input className="input" type="search" maxLength={1000} value={queryInput} disabled={queue.freezeControls} onChange={event => setQueryInput(event.target.value)} placeholder="Search title or notes…" /></label>
         <label><span className="form-label">Filter tags</span><input className="input" value={tagsInput} disabled={queue.freezeControls} onChange={event => setTagsInput(event.target.value)} placeholder="Tags, comma-separated" /></label>
         <label><span className="form-label">Sort</span><select className="input" value={sort} disabled={queue.freezeControls} onChange={event => setSort(event.target.value as ActionItemSort)}>
-          {status === 'open' && <option value="manual">Manual order</option>}{status === 'completed' && <option value="completed">Recently completed</option>}
-          <option value="newest">Newest</option><option value="updated">Recently updated</option><option value="title">Title A–Z</option>
+          {actionItemSortOptions(status).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select></label>
       </div>
       {!queue.reorderableView && <p className="text-muted-sm">To drag topics into order, use Open with Manual order; search and filters can stay applied.</p>}

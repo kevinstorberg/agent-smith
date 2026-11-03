@@ -50,7 +50,7 @@ export function MeetingsIndexPage() {
       </nav>
       <div hidden={vocabularyActive} role="region" aria-labelledby="meeting-tab-meetings">
 
-      <FilterBar nameValue={searchText} onNameChange={value => preferences.setField('q', value)} nameLabel="Search meetings" namePlaceholder="Search titles and summaries..." onReset={preferences.reset}>
+      <FilterBar nameValue={searchText} onNameChange={value => preferences.setField('q', value)} nameLabel="Search meetings" namePlaceholder="Search titles and summaries...">
         {searchText && (
           <button className="btn" type="button" onClick={() => preferences.setField('q', '')}>Clear</button>
         )}

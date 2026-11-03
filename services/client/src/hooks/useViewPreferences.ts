@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigationType, useSearchParams } from 'react-router';
-import { defaultView, mergeViewCookie, normalizeViewRelations, parseViewField, resolveView, viewPath } from '../utils/viewPreferences';
+import { mergeViewCookie, normalizeViewRelations, parseViewField, resolveView, viewPath } from '../utils/viewPreferences';
 import type { ViewKey, ViewSettings } from '../utils/viewPreferences';
 import type { PaginationOptions, PaginationState } from './usePagination';
 
@@ -81,12 +81,11 @@ export function useViewPreferences<K extends ViewKey>(key: K, { scope, active = 
     patch[field] = value;
     update(patch, field !== 'offset');
   }, [update]);
-  const reset = useCallback(() => update(defaultView(key), false), [key, update]);
   const onPageChange = useCallback((page: PaginationState) => update({
     limit: parseViewField(key, 'limit', page.limit), offset: page.offset,
   } as Partial<ViewSettings[K]>, false), [key, update]);
   const pagination = useMemo<PaginationOptions>(() => ({
     page: { limit: current.values.limit, offset: current.values.offset }, onPageChange, clampOffset: true,
   }), [current.values.limit, current.values.offset, onPageChange]);
-  return { values: current.values, restoreKey: current.restoreKey, setField, setFields, reset, pagination };
+  return { values: current.values, restoreKey: current.restoreKey, setField, setFields, pagination };
 }

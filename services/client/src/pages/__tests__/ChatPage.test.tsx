@@ -76,11 +76,11 @@ describe('ChatPage', () => {
     expect(api.chat.list).toHaveBeenCalledTimes(1);
     expect(api.chat.list).toHaveBeenCalledWith({ q: 'cache', status: 'closed', sort: 'name', limit: 25, offset: 50 });
     fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Unsent draft' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Reset view' }));
-    await waitFor(() => expect(api.chat.list).toHaveBeenLastCalledWith({ q: undefined, status: undefined, sort: 'updated', limit: 10, offset: 0 }));
+    fireEvent.change(screen.getByLabelText('Room status'), { target: { value: 'open' } });
+    await waitFor(() => expect(api.chat.list).toHaveBeenLastCalledWith({ q: 'cache', status: 'open', sort: 'name', limit: 25, offset: 0 }));
     expect(screen.getByLabelText('Message')).toHaveValue('Unsent draft');
     expect(screen.getByRole('heading', { name: room.topic })).toBeInTheDocument();
-    expect(readViewCookie(document.cookie)).toEqual([]);
+    expect(readViewCookie(document.cookie)).toEqual([{ key: 'chat', values: { q: 'cache', status: 'open', sort: 'name', limit: 25 } }]);
   });
 
   it('keeps search, status and sort available while loading, empty and failed', async () => {

@@ -95,26 +95,28 @@ export function ProposalsIndexPage() {
         </button>
       </div>
 
-      <FilterBar nameValue={query} onNameChange={value => preferences.setField('q', value)} namePlaceholder="Search proposals..." onReset={preferences.reset}>
+      <FilterBar nameValue={query} onNameChange={value => preferences.setField('q', value)} namePlaceholder="Search proposals...">
         <label><span className="form-label">Sort proposals</span>
-        <select aria-label="Sort proposals" value={sort} onChange={event => preferences.setField('sort', parseViewField('proposals', 'sort', event.target.value))}>
-          {PROPOSAL_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
+          <select aria-label="Sort proposals" value={sort} onChange={event => preferences.setField('sort', parseViewField('proposals', 'sort', event.target.value))}>
+            {PROPOSAL_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
         </label>
+        <div className="filter-status-group" role="group" aria-label="Proposal status">
+          <button className={`btn${statusFilter === '' ? ' btn-primary' : ''}`}
+            aria-pressed={statusFilter === ''}
+            onClick={() => preferences.setField('status', '')}>all statuses</button>
+          {PROPOSAL_STATUSES.map(status => (
+            <button
+              key={status}
+              className={`btn${statusFilter === status ? ' btn-primary' : ''}`}
+              aria-pressed={statusFilter === status}
+              onClick={() => preferences.setField('status', status)}
+            >
+              {status}{!query && !debouncedQuery && counts ? ` (${counts[status]})` : ''}
+            </button>
+          ))}
+        </div>
       </FilterBar>
-      <div className="filters">
-        <button className={`btn${statusFilter === '' ? ' btn-primary' : ''}`}
-          onClick={() => preferences.setField('status', '')}>all statuses</button>
-        {PROPOSAL_STATUSES.map(status => (
-          <button
-            key={status}
-            className={`btn${statusFilter === status ? ' btn-primary' : ''}`}
-            onClick={() => preferences.setField('status', status)}
-          >
-            {status}{!query && !debouncedQuery && counts ? ` (${counts[status]})` : ''}
-          </button>
-        ))}
-      </div>
 
       {error && <p role="alert">Could not load proposals. <button className="btn btn-sm" onClick={() => refresh()}>Retry</button></p>}
       {loading && <div className="loading" role="status">Loading...</div>}

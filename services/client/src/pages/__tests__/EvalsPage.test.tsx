@@ -93,9 +93,9 @@ describe('EvalsPage', () => {
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
     expect(mockList).toHaveBeenCalledWith({ q: 'quality', sort: 'score', limit: '25', offset: '0' });
     expect(readViewCookie(document.cookie)[0].values).toEqual({ q: 'quality', sort: 'score', limit: 25 });
-    fireEvent.click(screen.getByRole('button', { name: 'Reset view' }));
-    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ sort: 'newest', limit: '10', offset: '0' }));
-    expect(readViewCookie(document.cookie)).toEqual([]);
+    fireEvent.change(screen.getByLabelText('Sort results'), { target: { value: 'newest' } });
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ q: 'quality', sort: 'newest', limit: '25', offset: '0' }));
+    expect(readViewCookie(document.cookie)).toEqual([{ key: 'results', values: { q: 'quality', limit: 25 } }]);
   });
 
   it('requests all result categories by default across the table, facets and chart', async () => {

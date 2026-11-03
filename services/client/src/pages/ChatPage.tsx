@@ -223,7 +223,7 @@ export function ChatPage() {
         </button>
       </div>
 
-      <FilterBar nameValue={search} onNameChange={value => preferences.setField('q', value)} onReset={preferences.reset} nameLabel="Search rooms" namePlaceholder="Search topics or context...">
+      <FilterBar nameValue={search} onNameChange={value => preferences.setField('q', value)} nameLabel="Search rooms" namePlaceholder="Search topics or context...">
         <label><span className="form-label">Room status</span>
           <select className="input" value={status} onChange={event => preferences.setField('status', parseViewField('chat', 'status', event.target.value))}>
             {CHAT_STATUSES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}

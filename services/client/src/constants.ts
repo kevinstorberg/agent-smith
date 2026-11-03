@@ -17,9 +17,12 @@ export const PROPOSAL_SORT_OPTIONS = [
 export const EVAL_SUITE_SORT_OPTIONS = [
   { value: 'name', label: 'Name' }, { value: 'updated', label: 'Recently updated' }, { value: 'newest', label: 'Newest first' },
 ] as const;
+const UPDATED_AT_SORT_OPTIONS = [
+  { value: 'updated_at_desc', label: 'Updated: newest' }, { value: 'updated_at_asc', label: 'Updated: oldest' },
+] as const;
 export const MEMORY_LIST_SORT_OPTIONS = [
   { value: 'created_at_desc', label: 'Newest first' }, { value: 'created_at_asc', label: 'Oldest first' },
-  { value: 'updated_at_desc', label: 'Recently updated' }, { value: 'updated_at_asc', label: 'Least recently updated' },
+  ...UPDATED_AT_SORT_OPTIONS,
 ] as const;
 export const MEMORY_SEARCH_SORT_OPTIONS = [{ value: 'relevance', label: 'Relevance' }, ...MEMORY_LIST_SORT_OPTIONS] as const;
 export const MEETING_SORT_OPTIONS = [
@@ -33,10 +36,10 @@ export const VOCABULARY_SORT_OPTIONS = [{ value: 'term', label: 'Term A–Z' }, 
 export const ACTION_ITEM_STATUSES = [['open', 'Open'], ['completed', 'Completed'], ['all', 'All']] as const;
 export type ActionItemStatus = typeof ACTION_ITEM_STATUSES[number][0];
 const ACTION_ITEM_COMMON_SORTS = [
-  { value: 'newest', label: 'Newest' }, { value: 'updated', label: 'Recently updated' }, { value: 'title', label: 'Title A–Z' },
+  { value: 'newest', label: 'Newest' }, { value: 'updated', label: 'Updated: newest' }, { value: 'title', label: 'Title A–Z' },
 ] as const;
 export const ACTION_ITEM_SORT_OPTIONS = [
-  { value: 'manual', label: 'Manual order' }, { value: 'completed', label: 'Recently completed' }, ...ACTION_ITEM_COMMON_SORTS,
+  { value: 'manual', label: 'Manual order' }, { value: 'completed', label: 'Completed: newest' }, ...ACTION_ITEM_COMMON_SORTS,
 ] as const;
 export function actionItemSortOptions(status: ActionItemStatus) {
   return ACTION_ITEM_SORT_OPTIONS.filter(option => option.value === 'manual' ? status === 'open' : option.value === 'completed' ? status === 'completed' : true);
@@ -45,10 +48,10 @@ export function defaultActionItemSort(status: ActionItemStatus) {
   return status === 'open' ? 'manual' : status === 'completed' ? 'completed' : 'newest';
 }
 export const PROFILE_SORT_OPTIONS = [
-  { value: 'starred_name_asc', label: 'Starred first · Name A–Z' },
+  { value: 'starred_name_asc', label: 'Starred, name A–Z' },
   { value: 'created_at_desc', label: 'Newest profiles' }, { value: 'created_at_asc', label: 'Oldest profiles' },
   { value: 'name_asc', label: 'Name A–Z' }, { value: 'name_desc', label: 'Name Z–A' },
-  { value: 'updated_at_desc', label: 'Recently updated' }, { value: 'updated_at_asc', label: 'Least recently updated' },
+  ...UPDATED_AT_SORT_OPTIONS,
 ] as const;
 export const CHAT_STATUSES = [
   { value: 'all', label: 'All rooms' }, { value: 'open', label: 'Open' }, { value: 'closed', label: 'Closed' },

@@ -42,7 +42,7 @@ export function JobsIndexPage() {
         </button>
       </div>
 
-      <FilterBar nameValue={query} onNameChange={value => preferences.setField('q', value)} namePlaceholder="Search jobs..." onReset={preferences.reset}>
+      <FilterBar nameValue={query} onNameChange={value => preferences.setField('q', value)} namePlaceholder="Search jobs...">
         <label><span className="form-label">Scheduling</span>
         <select aria-label="Scheduling" value={scheduling} onChange={event => preferences.setField('schedule_enabled', parseViewField('jobs', 'schedule_enabled', event.target.value))}>
           {SCHEDULING_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}

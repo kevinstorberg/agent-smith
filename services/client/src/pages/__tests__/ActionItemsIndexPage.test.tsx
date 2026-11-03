@@ -56,16 +56,16 @@ async function renderReady() {
 }
 
 describe('ActionItemsIndexPage', () => {
-  it('restores filtered manual ordering before its first request and resets only this view', async () => {
+  it('restores filtered manual ordering and preserves saved criteria during ordinary sort changes', async () => {
     document.cookie = mergeViewCookie('', 'actionItems', { ...defaultView('actionItems'), q: 'Task', project: 'Work', tags: 'team, urgent', limit: 25, offset: 50 });
     vi.mocked(api.actionItems.list).mockResolvedValue({ items: rows, total: 100 });
     await renderReady();
     expect(api.actionItems.list).toHaveBeenCalledTimes(1);
     expect(api.actionItems.list).toHaveBeenCalledWith({ status: 'open', sort: 'manual', q: 'Task', project: 'Work', tags: ['team', 'urgent'], limit: 25, offset: 50 });
     expect(screen.getByRole('button', { name: 'Reorder Task 1' })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Reset view' }));
-    await waitFor(() => expect(api.actionItems.list).toHaveBeenLastCalledWith({ status: 'open', sort: 'manual', q: undefined, project: undefined, tags: [], limit: 10, offset: 0 }));
-    expect(readViewCookie(document.cookie)).toEqual([]);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), { target: { value: 'title' } });
+    await waitFor(() => expect(api.actionItems.list).toHaveBeenLastCalledWith({ status: 'open', sort: 'title', q: 'Task', project: 'Work', tags: ['team', 'urgent'], limit: 25, offset: 0 }));
+    expect(readViewCookie(document.cookie)).toEqual([{ key: 'actionItems', values: { q: 'Task', project: 'Work', tags: 'team, urgent', sort: 'title', limit: 25 } }]);
   });
 
   it('honors explicit clears and normalizes an incompatible restored status-sort before fetching', async () => {
@@ -215,7 +215,7 @@ describe('ActionItemsIndexPage', () => {
     expect(titles().at(-1)).toBe('Task 11');
     expect(screen.getAllByLabelText('Priority updating')).toHaveLength(10);
     expect(screen.getByLabelText('Search action items')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Reset view' })).toBeDisabled();
+    for (const label of ['Project', 'Tags', 'Sort']) expect(screen.getByLabelText(label)).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Complete Task 12' })).toBeDisabled();
     await act(async () => { saving.resolve(actionItem(11, { revision: 2 })); await ended; });

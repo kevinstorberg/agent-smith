@@ -10,7 +10,6 @@ import { Pagination } from './Pagination';
 import { useViewPreferences } from '../hooks/useViewPreferences';
 import { parseViewField } from '../utils/viewPreferences';
 import { VOCABULARY_DEFINITIONS, VOCABULARY_SORT_OPTIONS } from '../constants';
-import { ResetViewButton } from './ResetViewButton';
 
 type Draft = { term: string; definition: string; entry?: VocabularyTerm };
 type Change = { action: 'save'; draft: Draft } | { action: 'remove'; entry: VocabularyTerm };
@@ -106,7 +105,6 @@ export function MeetingVocabulary({ active = true }: { active?: boolean }) {
           {VOCABULARY_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
       </label>
-      <ResetViewButton onReset={() => { preferences.reset(); setRemoving(null); }} />
     </div>
     {loading && <p role="status">Loading vocabulary...</p>}
     {list.error && <p role="alert">Could not load vocabulary. <button className="btn btn-sm" onClick={() => list.refresh()}>Retry</button></p>}
