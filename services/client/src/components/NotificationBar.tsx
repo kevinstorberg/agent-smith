@@ -7,7 +7,7 @@ export function NotificationBar() {
   return (
     <div className="notification-bar">
       {notifications.map(n => (
-        <div key={n.id} className={`notification notification-${n.type}`}>
+        <div key={n.id} className={`notification notification-${n.type}`} role={n.type === 'error' ? 'alert' : 'status'} aria-atomic="true">
           <span className="notification-message">{n.message}</span>
           <button
             className="notification-dismiss"

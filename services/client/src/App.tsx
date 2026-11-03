@@ -46,8 +46,9 @@ export default function App() {
   return (
     <NotificationProvider>
       <div className="app">
+        <a className="skip-link" href="#main-content">Skip to content</a>
         <Sidebar />
-        <div className="main-content">
+        <main className="main-content" id="main-content" tabIndex={-1}>
           <NotificationBar />
           <Routes>
           <Route path="/" element={<Navigate to="/action-items" replace />} />
@@ -88,7 +89,7 @@ export default function App() {
           <Route path="/eval-configs/:id" element={<EvalSuiteDetailPage />} />
           <Route path="/chat" element={<ChatPage />} />
           </Routes>
-        </div>
+        </main>
       </div>
     </NotificationProvider>
   );

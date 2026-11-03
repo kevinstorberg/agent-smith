@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 interface PaginationProps {
   total: number;
   limit: number;
@@ -28,6 +30,7 @@ function buildPageNumbers(current: number, total: number): (number | 'ellipsis')
 }
 
 export function Pagination({ total, limit, offset, onPageChange, onLimitChange, disabled = false }: PaginationProps) {
+  const limitId = useId();
   if (total === 0) return null;
 
   const totalPages = Math.ceil(total / limit);
@@ -42,13 +45,14 @@ export function Pagination({ total, limit, offset, onPageChange, onLimitChange, 
   const pages = buildPageNumbers(currentPage, totalPages);
 
   return (
-    <div className="pagination">
+    <nav className="pagination" aria-label="Pagination">
       <span className="pagination-info">
         Showing {showStart}&ndash;{showEnd} of {total}
       </span>
       <div className="pagination-controls">
         <button
           className="pagination-btn"
+          type="button"
           disabled={disabled || currentPage <= 1}
           onClick={() => goToPage(currentPage - 1)}
         >
@@ -61,6 +65,8 @@ export function Pagination({ total, limit, offset, onPageChange, onLimitChange, 
             <button
               key={p}
               className={`pagination-btn${p === currentPage ? ' active' : ''}`}
+              type="button"
+              aria-current={p === currentPage ? 'page' : undefined}
               disabled={disabled}
               onClick={() => goToPage(p)}
             >
@@ -70,12 +76,14 @@ export function Pagination({ total, limit, offset, onPageChange, onLimitChange, 
         )}
         <button
           className="pagination-btn"
+          type="button"
           disabled={disabled || currentPage >= totalPages}
           onClick={() => goToPage(currentPage + 1)}
         >
           Next
         </button>
-        {onLimitChange && <select
+        {onLimitChange && <label className="pagination-page-size" htmlFor={limitId}>Rows per page<select
+          id={limitId}
           className="pagination-select"
           value={limit}
           disabled={disabled}
@@ -84,8 +92,8 @@ export function Pagination({ total, limit, offset, onPageChange, onLimitChange, 
           {LIMIT_OPTIONS.map(n => (
             <option key={n} value={n}>{n} / page</option>
           ))}
-        </select>}
+        </select></label>}
       </div>
-    </div>
+    </nav>
   );
 }

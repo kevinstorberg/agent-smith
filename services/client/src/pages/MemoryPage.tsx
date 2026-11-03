@@ -112,35 +112,37 @@ export function MemoryPage() {
     <div className="memory-page">
       <h2 className="page-title" style={{ marginBottom: 16 }}>Memory</h2>
 
-      <div className="search-bar">
+      <div className="search-bar memory-controls">
+        <label><span className="form-label">Search memories</span>
         <input
           placeholder="Semantic search..."
           value={query}
           onChange={e => setQuery(e.target.value)}
         />
+        </label>
         {query && (
           <button className="btn" onClick={() => setQuery('')}>Clear</button>
         )}
       </div>
 
-      <div className="search-bar" style={{ marginTop: 8 }}>
+      <div className="search-bar memory-controls">
         <label className="checkbox-label">
           <input className="form-checkbox" type="checkbox" checked={meetingsOnly} onChange={event => { setMeetingsOnly(event.target.checked); setOffset(0); }} />
           Meetings only
         </label>
-        <input
+        <label><span className="form-label">Repository</span><input
           className="input"
           placeholder="Filter by repo"
           value={filterRepo}
           onChange={e => setFilterRepo(e.target.value)}
-        />
-        <input
+        /></label>
+        <label><span className="form-label">Tags</span><input
           className="input"
           placeholder="Filter by tags (comma-separated)"
           value={filterTags}
           onChange={e => setFilterTags(e.target.value)}
-        />
-        <label htmlFor="memory-sort" style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sort</label>
+        /></label>
+        <label><span className="form-label">Sort</span>
         <select
           id="memory-sort"
           aria-label="Sort"
@@ -152,6 +154,7 @@ export function MemoryPage() {
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
+        </label>
       </div>
 
       {tagsArray.length > 0 && (
