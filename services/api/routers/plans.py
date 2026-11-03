@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+from typing import Annotated
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
 from scripts.shared.validation import MAX_TITLE_LENGTH, MAX_BODY_LENGTH
 
-from services.api.models.plan import list_plans, search_plans, get_plan, create_plan, update_plan, delete_plan
+from services.api.models.plan import PLAN_SORTS, list_plans, search_plans, get_plan, create_plan, update_plan, delete_plan
+from services.api.models.shared.listing import sort_pattern
 from services.api.models.plan_feedback import list_feedback_for_plan
-from services.api.routers.base import require_found, list_response, delete_response, empty_to_none, resolve_project
+from services.api.routers.base import require_found, list_response, delete_response, empty_to_none, resolve_project, query_result
 
 router = APIRouter()
 
@@ -18,9 +20,11 @@ def list_all(
     status: str = Query(""),
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    q: Annotated[str, Query(max_length=1000)] = "",
+    sort: Annotated[str, Query(pattern=sort_pattern(PLAN_SORTS))] = "updated",
 ):
-    items, total = list_plans(
-        project=empty_to_none(project), status=empty_to_none(status), limit=limit, offset=offset
+    items, total = query_result(list_plans,
+        project=empty_to_none(project), status=empty_to_none(status), limit=limit, offset=offset, q=q, sort=sort,
     )
     return list_response(items, total)
 

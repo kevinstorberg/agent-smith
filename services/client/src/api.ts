@@ -97,6 +97,11 @@ export interface Paginated<T> {
   total: number;
 }
 
+export interface ResourceListParams extends PaginationParams {
+  q?: string;
+  sort?: string;
+}
+
 export interface PaginationParams {
   limit?: number;
   offset?: number;
@@ -211,9 +216,8 @@ export interface MeetingSummary {
   updated_at: string;
 }
 
-export interface MeetingListParams extends PaginationParams {
+export interface MeetingListParams extends ResourceListParams {
   labels?: string[];
-  q?: string;
   source?: string;
   project?: string;
   after?: string;
@@ -688,7 +692,7 @@ export interface AuditCounts {
   gemini: number;
 }
 
-export interface AuditFilters {
+export interface AuditFilters extends ResourceListParams {
   agent?: string;
   tool_name?: string;
   session_id?: string;
@@ -772,6 +776,11 @@ function paginationToParams(p?: PaginationParams): Record<string, string> {
   return params;
 }
 
+function resourceListParams(params?: ResourceListParams): Record<string, string> {
+  return { ...paginationToParams(params), ...(params?.q ? { q: params.q } : {}),
+    ...(params?.sort ? { sort: params.sort } : {}) };
+}
+
 function itemFilterParams(filters: ProfileDiscussionTopicFilters): Record<string, string | string[]> {
   return { ...paginationToParams(filters), ...(filters.q ? { q: filters.q } : {}),
     ...(filters.tags?.length ? { tags: filters.tags } : {}), ...(filters.status ? { status: filters.status } : {}),
@@ -802,8 +811,8 @@ export const api = {
     sync: () => post<{ success: boolean; stdout: string; stderr: string }>('/harness/sync', {}),
     unsync: () => post<{ success: boolean; removed: string[] }>('/harness/unsync', {}),
     items: {
-      list: (type: string, params?: PaginationParams & { name?: string; project?: string }) => {
-        const query = paginationToParams(params);
+      list: (type: string, params?: ResourceListParams & { name?: string; project?: string }) => {
+        const query = resourceListParams(params);
         if (params?.name) query.name = params.name;
         if (params?.project) query.project = params.project;
         return get<Paginated<HarnessItem>>(`/harness/items/${type}`, query);
@@ -829,8 +838,7 @@ export const api = {
   },
   meetings: {
     list: (params?: MeetingListParams) => get<Paginated<MeetingSummary>>('/meetings', {
-      ...paginationToParams(params),
-      ...(params?.q ? { q: params.q } : {}),
+      ...resourceListParams(params),
       ...(params?.source ? { source: params.source } : {}),
       ...(params?.project ? { project: params.project } : {}),
       ...(params?.after ? { after: params.after } : {}),
@@ -856,7 +864,7 @@ export const api = {
       put<MeetingParticipants>(`/meetings/${encodeURIComponent(id)}/participants`, body),
     process: (id: string) => post<{ status: 'queued' | 'running' | 'done' }>(`/meetings/${encodeURIComponent(id)}/process`, {}),
     vocabulary: {
-      list: (params?: PaginationParams & { q?: string }) => get<Paginated<MeetingVocabulary>>('/meetings/vocabulary', { ...paginationToParams(params), ...(params?.q ? { q: params.q } : {}) }),
+      list: (params?: ResourceListParams & { definition?: 'defined' | 'undefined' }) => get<Paginated<MeetingVocabulary>>('/meetings/vocabulary', { ...resourceListParams(params), ...(params?.definition ? { definition: params.definition } : {}) }),
       get: (id: string) => get<MeetingVocabulary>(`/meetings/vocabulary/${encodeURIComponent(id)}`),
       create: (body: { term: string; definition: string }) => post<MeetingVocabulary>('/meetings/vocabulary', body),
       update: (id: string, body: { expected_revision: number; term?: string; definition?: string }) => patch<MeetingVocabulary>(`/meetings/vocabulary/${encodeURIComponent(id)}`, body),
@@ -964,17 +972,18 @@ export const api = {
     chartAverage: (params?: Record<string, string>) =>
       get<AverageChartPoint[]>('/evals/chart/average', params),
     categories: () => get<string[]>('/evals/categories'),
+    facets: (params?: Record<string, string>) => get<{ scenarios: string[]; models: string[] }>('/evals/facets', params),
     subcategories: (params?: Record<string, string>) =>
       get<string[]>('/evals/subcategories', params),
     get: (id: number) => get<EvalRunDetail>(`/evals/${id}`),
     remove: (id: number) => del<{ deleted: number }>(`/evals/${id}`),
   },
   plans: {
-    list: (pagination?: PaginationParams & { project?: string; status?: string }) =>
+    list: (pagination?: ResourceListParams & { project?: string; status?: string }) =>
       get<Paginated<Plan>>('/plans', {
         ...(pagination?.project ? { project: pagination.project } : {}),
         ...(pagination?.status ? { status: pagination.status } : {}),
-        ...paginationToParams(pagination),
+        ...resourceListParams(pagination),
       }),
     search: (q: string, filters?: { project?: string; status?: string }) => get<Plan[]>('/plans/search', {
       q, ...(filters?.project ? { project: filters.project } : {}), ...(filters?.status ? { status: filters.status } : {}),
@@ -988,8 +997,8 @@ export const api = {
   },
   jobs: {
     forGraph: (type: string) => get<Paginated<GraphJob>>(`/jobs/graph/${encodeURIComponent(type)}`),
-    list: (pagination?: PaginationParams) =>
-      get<Paginated<Job>>('/jobs', paginationToParams(pagination)),
+    list: (params?: ResourceListParams & { schedule_enabled?: boolean }) =>
+      get<Paginated<Job>>('/jobs', { ...resourceListParams(params), ...(params?.schedule_enabled !== undefined ? { schedule_enabled: String(params.schedule_enabled) } : {}) }),
     get: (id: number) => get<Job>(`/jobs/${id}`),
     create: (body: { name: string; schedule_config: Record<string, number>; input_params?: Record<string, unknown>; description?: string | null; device_scope?: 'all_devices' | 'this_device' }) =>
       post<Job>('/jobs', body),
@@ -1012,8 +1021,8 @@ export const api = {
     },
   },
   proposals: {
-    list: (status?: string, pagination?: PaginationParams) => {
-      const params = paginationToParams(pagination);
+    list: (status?: string, pagination?: ResourceListParams) => {
+      const params = resourceListParams(pagination);
       if (status) params.status = status;
       return get<Paginated<Proposal>>('/proposals', params);
     },
@@ -1026,7 +1035,7 @@ export const api = {
   },
   audit: {
     list: (filters?: AuditFilters, pagination?: PaginationParams) => {
-      const params = paginationToParams(pagination);
+      const params = { ...resourceListParams(filters), ...paginationToParams(pagination) };
       if (filters?.agent) params.agent = filters.agent;
       if (filters?.tool_name) params.tool_name = filters.tool_name;
       if (filters?.session_id) params.session_id = filters.session_id;
@@ -1038,7 +1047,7 @@ export const api = {
     get: (id: number) => get<AuditEvent>(`/audit/events/${id}`),
   },
   chat: {
-    list: () => get<Paginated<ChatRoom>>('/chat'),
+    list: (params?: ResourceListParams & { status?: 'open' | 'closed' }) => get<Paginated<ChatRoom>>('/chat', { ...resourceListParams(params), ...(params?.status ? { status: params.status } : {}) }),
     create: (body: { topic: string; context?: string }) => post<ChatRoom>('/chat', body),
     update: (id: number, body: { topic: string; context?: string }) =>
       patch<ChatRoom>(`/chat/${id}`, body),

@@ -66,6 +66,65 @@ afterEach(() => {
 });
 
 describe('ChatPage', () => {
+  it('keeps search, status and sort available while loading, empty and failed', async () => {
+    vi.mocked(api.chat.list).mockRejectedValueOnce(new Error('private server diagnostic'));
+    renderWithProviders(<ChatPage />);
+    expect(screen.getByRole('textbox', { name: 'Search rooms' })).toBeVisible();
+    expect(screen.getByRole('combobox', { name: 'Room status' })).toHaveValue('all');
+    expect(screen.getByRole('combobox', { name: 'Sort rooms' })).toHaveValue('updated');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load rooms.');
+    expect(screen.queryByText('private server diagnostic')).not.toBeInTheDocument();
+    vi.mocked(api.chat.list).mockResolvedValue({ items: [], total: 0 });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await screen.findByText('No rooms yet.');
+    expect(screen.getByRole('combobox', { name: 'Room status' })).toBeVisible();
+  });
+
+  it('debounces room search and combines status and sort before paging without replacing the selected room', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.mocked(api.chat.list).mockResolvedValue({ items: [room], total: 25 });
+    renderWithProviders(<ChatPage />);
+    await screen.findByText(detail.messages[0].body);
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Keep my current draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(api.chat.list).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 })));
+    const otherRoom = { ...room, id: 43, topic: 'Another result', state: 'closed' as const };
+    vi.mocked(api.chat.list).mockResolvedValue({ items: [otherRoom], total: 1 }).mockClear();
+    const input = screen.getByRole('textbox', { name: 'Search rooms' });
+    input.focus();
+    fireEvent.change(input, { target: { value: ' cache ' } });
+    await act(async () => { vi.advanceTimersByTime(299); });
+    expect(api.chat.list).not.toHaveBeenCalled();
+    await act(async () => { vi.advanceTimersByTime(1); });
+    expect(api.chat.list).toHaveBeenCalledTimes(1);
+    expect(api.chat.list).toHaveBeenCalledWith({ limit: 10, offset: 0, q: 'cache', status: undefined, sort: 'updated' });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Room status' }), { target: { value: 'closed' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort rooms' }), { target: { value: 'name' } });
+    await waitFor(() => expect(api.chat.list).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'cache', status: 'closed', sort: 'name' }));
+    expect(screen.getByRole('heading', { name: room.topic })).toBeInTheDocument();
+    expect(screen.getByLabelText('Message')).toHaveValue('Keep my current draft');
+    expect(await screen.findByText('The selected room is outside the current results.')).toBeInTheDocument();
+    expect(input).toHaveFocus();
+  });
+
+  it('ignores a stale room list response after newer search results arrive', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderWithProviders(<ChatPage />);
+    await screen.findByText(detail.messages[0].body);
+    let finish!: (result: { items: ChatRoom[]; total: number }) => void;
+    vi.mocked(api.chat.list).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search rooms' }), { target: { value: 'old' } });
+    await act(async () => { vi.advanceTimersByTime(300); });
+    const current = { ...room, id: 43, topic: 'Current room result' };
+    vi.mocked(api.chat.list).mockResolvedValue({ items: [current], total: 1 });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search rooms' }), { target: { value: 'current' } });
+    await act(async () => { vi.advanceTimersByTime(300); });
+    await screen.findByRole('button', { name: /Current room result/ });
+    await act(async () => { finish({ items: [{ ...room, id: 44, topic: 'Stale room result' }], total: 1 }); });
+    expect(screen.queryByRole('button', { name: /Stale room result/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: room.topic })).toBeInTheDocument();
+  });
+
   it('loads rooms and the selected transcript', async () => {
     renderWithProviders(<ChatPage />);
 
@@ -213,14 +272,17 @@ describe('ChatPage', () => {
 
   it('deletes a room after one confirmed action', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
-    vi.mocked(api.chat.remove).mockResolvedValue(undefined);
+    vi.mocked(api.chat.remove).mockImplementation(async () => {
+      vi.mocked(api.chat.list).mockResolvedValue({ items: [], total: 0 });
+      return undefined;
+    });
     renderWithProviders(<ChatPage />);
 
     await screen.findByText('Extend the existing cache interface.');
     fireEvent.click(screen.getByText('Delete'));
 
     await waitFor(() => expect(api.chat.remove).toHaveBeenCalledWith(42));
-    expect(screen.queryByText('Choose a cache strategy')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('Choose a cache strategy')).not.toBeInTheDocument());
   });
 
   it('polls without issuing overlapping state machinery', async () => {
@@ -235,6 +297,46 @@ describe('ChatPage', () => {
 
     expect(api.chat.list).toHaveBeenCalledTimes(1);
     expect(api.chat.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('polls the current room list criteria while retaining the selected transcript cursor', async () => {
+    vi.useFakeTimers();
+    await act(async () => { renderWithProviders(<ChatPage />); });
+    await act(async () => {
+      fireEvent.change(screen.getByRole('textbox', { name: 'Search rooms' }), { target: { value: 'cache' } });
+      fireEvent.change(screen.getByRole('combobox', { name: 'Room status' }), { target: { value: 'open' } });
+      fireEvent.change(screen.getByRole('combobox', { name: 'Sort rooms' }), { target: { value: 'name' } });
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    vi.mocked(api.chat.list).mockClear();
+    vi.mocked(api.chat.get).mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    expect(api.chat.list).toHaveBeenCalledTimes(1);
+    expect(api.chat.list).toHaveBeenCalledWith({ limit: 10, offset: 0, q: 'cache', status: 'open', sort: 'name' });
+    expect(api.chat.get).toHaveBeenCalledWith(42, 7);
+  });
+
+  it.each(['update', 'stop'] as const)('ignores a delayed room %s after selecting another room', async action => {
+    const otherRoom = { ...room, id: 43, topic: 'Another room' };
+    let finish!: (value: ChatRoom) => void;
+    vi.mocked(api.chat.list).mockResolvedValue({ items: [room, otherRoom], total: 2 });
+    vi.mocked(api.chat.get).mockImplementation(async id => id === 42 ? detail
+      : { ...detail, room: otherRoom, messages: [message(20, 43)], last_message_id: 20 });
+    vi.mocked(api.chat[action]).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderWithProviders(<ChatPage />);
+    await screen.findByText(detail.messages[0].body);
+    if (action === 'update') {
+      fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+      fireEvent.change(screen.getByLabelText('Topic'), { target: { value: 'Old room updated' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    } else fireEvent.click(screen.getByRole('button', { name: 'Stop Agent Access' }));
+    fireEvent.click(screen.getByRole('button', { name: /Another room/ }));
+    await screen.findByText('Message 20');
+    await act(async () => { finish({ ...room, topic: 'Old room updated', state: action === 'stop' ? 'closed' : 'open' }); });
+    expect(screen.getByRole('heading', { name: otherRoom.topic })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Old room updated' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Message')).toBeEnabled();
   });
 
   it('continues beyond the first page without skipping replies after a local send', async () => {

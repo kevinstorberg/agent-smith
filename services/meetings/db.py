@@ -12,6 +12,9 @@ from psycopg2.extras import Json, RealDictCursor
 from services.db import get_connection
 from services.meetings.config import SourceConfig
 from services.meetings.types import MeetingSummary
+from services.api.models.shared.listing import sort_clause
+
+MEETING_SORTS = {"newest": "COALESCE(meeting_start, provider_created_at) DESC, id", "oldest": "COALESCE(meeting_start, provider_created_at), id", "title": "lower(title), id"}
 
 
 class ClaimLostError(RuntimeError):
@@ -311,7 +314,9 @@ def list_summaries(
     source: str | None = None, project: str | None = None, query: str | None = None,
     after: str | None = None, before: str | None = None, limit: int = 20, offset: int = 0,
     labels: list[str] | None = None,
+    sort: str = "newest",
 ) -> dict:
+    order = sort_clause(sort, MEETING_SORTS)
     if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
         raise ValueError("Meeting limit must be 1-100 and offset must be nonnegative")
     clauses, params = ["available = true"], []
@@ -346,7 +351,7 @@ def list_summaries(
         total = cur.fetchone()["count"]
         cur.execute(
             f"""SELECT * FROM meeting_summaries WHERE {where}
-                ORDER BY COALESCE(meeting_start, provider_created_at) DESC, id LIMIT %s OFFSET %s""",
+                ORDER BY {order} LIMIT %s OFFSET %s""",
             (*params, limit, offset),
         )
         return {"items": [_serialize(row) for row in cur.fetchall()], "total": total}

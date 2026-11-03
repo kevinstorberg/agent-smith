@@ -9,6 +9,9 @@ from psycopg2.extras import RealDictCursor
 from scripts.shared.agents import AGENT_TARGETS
 from services.chat.participants import find_participant
 from services.db import get_connection
+from services.api.models.shared.listing import search_pattern, sort_clause
+
+CHAT_SORTS = {"updated": "updated_at DESC, id DESC", "newest": "created_at DESC, id DESC", "name": "lower(topic), id"}
 
 MAX_TOPIC_LENGTH = 200
 MAX_CONTEXT_LENGTH = 20_000
@@ -82,21 +85,32 @@ def create_room(topic: str, context: str = "") -> dict[str, Any]:
     return _room_view(dict(room))
 
 
-def list_rooms(limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
+def list_rooms(limit: int = 50, offset: int = 0, *, q: str | None = None, status: str | None = None, sort: str = "updated") -> tuple[list[dict[str, Any]], int]:
     if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
         raise ValueError("limit must be an integer between 1 and 100")
     _non_negative_id(offset, "offset")
+    if status not in (None, "", "open", "closed"):
+        raise ValueError("Chat status must be open, closed, or empty")
+    clauses, params = [], []
+    pattern = search_pattern(q)
+    if pattern is not None:
+        clauses.append("(topic ILIKE %s OR context ILIKE %s)")
+        params.extend([pattern, pattern])
+    if status:
+        clauses.append("closed_at IS " + ("NULL" if status == "open" else "NOT NULL"))
+    where = "WHERE " + " AND ".join(clauses) if clauses else ""
+    order = sort_clause(sort, CHAT_SORTS)
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT COUNT(*) AS count FROM chat_rooms")
+            cur.execute(f"SELECT COUNT(*) AS count FROM chat_rooms {where}", params)
             total = cur.fetchone()["count"]
             cur.execute(
-                """
-                SELECT * FROM chat_rooms
-                ORDER BY updated_at DESC, id DESC
+                f"""
+                SELECT * FROM chat_rooms {where}
+                ORDER BY {order}
                 LIMIT %s OFFSET %s
                 """,
-                (limit, offset),
+                (*params, limit, offset),
             )
             rooms = [_room_view(dict(row)) for row in cur.fetchall()]
     return rooms, total

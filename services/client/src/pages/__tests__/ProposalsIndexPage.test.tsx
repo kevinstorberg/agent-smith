@@ -124,7 +124,7 @@ describe('ProposalsIndexPage', () => {
 
     await waitFor(() => expect(mockApprove).toHaveBeenCalledWith(1));
     expect(mockNavigate).not.toHaveBeenCalled();
-    expect(mockSetItems).toHaveBeenCalled();
+    expect(mockRefresh).toHaveBeenCalledWith({ showLoading: false });
     await waitFor(() =>
       expect(mockNotify).toHaveBeenCalledWith(expect.stringMatching(/applied/), 'success'),
     );

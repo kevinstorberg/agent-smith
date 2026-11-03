@@ -17,21 +17,16 @@ export function PlansIndexPage() {
   const [projectInput, setProjectInput] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sort, setSort] = useState('updated');
   const projectFilter = useDebouncedValue(projectInput.trim());
   const debouncedSearch = useDebouncedValue(searchQuery.trim());
   const searchTerm = searchQuery.trim() ? debouncedSearch : '';
   const navigate = useNavigate();
 
   const { items, total, loading, error, limit, offset, setLimit, setOffset, refresh } = usePagination<Plan>(
-    async (limit, offset) => {
-      const filters = { project: projectFilter || undefined, status: statusFilter === 'all' ? undefined : statusFilter };
-      if (searchTerm) {
-        const matches = await api.plans.search(searchTerm, filters);
-        return { items: matches.slice(offset, offset + limit), total: matches.length };
-      }
-      return api.plans.list({ limit, offset, ...filters });
-    },
-    [searchTerm, projectFilter, statusFilter],
+    (limit, offset) => api.plans.list({ limit, offset, q: searchTerm || undefined,
+      project: projectFilter || undefined, status: statusFilter === 'all' ? undefined : statusFilter, sort }),
+    [searchTerm, projectFilter, statusFilter, sort],
   );
   usePolling(() => refresh({ showLoading: false }));
 
@@ -49,8 +44,15 @@ export function PlansIndexPage() {
         projectValue={projectInput}
         onNameChange={setSearchQuery}
         onProjectChange={setProjectInput}
+        nameLabel="Search plans"
         namePlaceholder="Search by title..."
-      />
+      >
+        <label><span className="form-label">Sort plans</span>
+          <select className="input" value={sort} onChange={event => setSort(event.target.value)}>
+            <option value="updated">Recently updated</option><option value="newest">Newest first</option><option value="title">Title A–Z</option>
+          </select>
+        </label>
+      </FilterBar>
 
       <div className="filters">
           {STATUSES.map(status => (

@@ -182,3 +182,17 @@ describe('usePagination', () => {
     expect(result.current.items).toEqual(['current']);
   });
 });
+
+it('distinguishes a failed refresh from failed criteria so acknowledged rows remain usable', async () => {
+  const fetcher = vi.fn().mockResolvedValue({ items: ['initial'], total: 1 });
+  const { result, rerender } = renderHook(({ query }) => usePagination(() => fetcher(query), [query]), { initialProps: { query: '' } });
+  await waitFor(() => expect(result.current.dataCurrent).toBe(true));
+  act(() => result.current.setItems(['acknowledged']));
+  fetcher.mockRejectedValue(new Error('Unavailable'));
+  await act(async () => result.current.refresh({ showLoading: false }));
+  expect(result.current.dataCurrent).toBe(true);
+  expect(result.current.items).toEqual(['acknowledged']);
+  rerender({ query: 'changed' });
+  await waitFor(() => expect(fetcher).toHaveBeenLastCalledWith('changed'));
+  expect(result.current.dataCurrent).toBe(false);
+});

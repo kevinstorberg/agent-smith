@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { HarnessIndexPage } from '../HarnessIndexPage';
 
@@ -66,6 +66,77 @@ afterEach(() => {
 });
 
 describe('HarnessIndexPage', () => {
+  it.each(['enabled', 'clone_as_skill'] as const)('refreshes server order after changing %s using the current filter and page', async field => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const items = [makeItem(), makeItem({ id: 2, name: 'another_rule' })];
+    mockList.mockResolvedValue({ items, total: 25 });
+    let finish!: (value: unknown) => void;
+    mockUpdateMetadata.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    renderWithProviders(<HarnessIndexPage type="rule" />);
+    await screen.findByText('test_rule');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), { target: { value: 'updated' } });
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith('rule', expect.objectContaining({ sort: 'updated' })));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith('rule', expect.objectContaining({ offset: 10 })));
+    const row = screen.getByRole('button', { name: /another_rule/ });
+    fireEvent.click(within(row).getAllByRole('checkbox')[field === 'enabled' ? 0 : 1]);
+    expect(mockUpdateMetadata).toHaveBeenCalledWith('rule', 2, { [field]: field === 'clone_as_skill' });
+    fireEvent.change(screen.getByPlaceholderText('Filter by project...'), { target: { value: 'current-project' } });
+    await act(async () => { vi.advanceTimersByTime(300); });
+    expect(mockList).toHaveBeenLastCalledWith('rule', expect.objectContaining({ offset: 0, project: 'current-project' }));
+    mockList.mockResolvedValue({ items: [items[1], items[0]], total: 2 }).mockClear();
+    await act(async () => { finish({}); });
+    expect(mockList).toHaveBeenCalledTimes(1);
+    expect(mockList).toHaveBeenCalledWith('rule', expect.objectContaining({ offset: 0, project: 'current-project', sort: 'updated' }));
+    const rows = within(screen.getByTestId('harness-drop-zone')).getAllByRole('button');
+    expect(rows[0]).toHaveTextContent('another_rule');
+    expect(rows[1]).toHaveTextContent('test_rule');
+  });
+
+  it('keeps search, project filter and sort available while loading and with no resources', async () => {
+    mockList.mockResolvedValue({ items: [], total: 0 });
+    renderWithProviders(<HarnessIndexPage type="rule" />);
+    for (const name of ['Search', 'Project scope']) expect(screen.getByRole('textbox', { name })).toBeVisible();
+    expect(screen.getByRole('combobox', { name: 'Sort' })).toHaveValue('manual');
+    await screen.findByText('No rules found');
+    expect(screen.getByRole('combobox', { name: 'Sort' })).toBeVisible();
+    expect(mockList).toHaveBeenCalledWith('rule', expect.objectContaining({ sort: 'manual' }));
+  });
+
+  it('applies sort on the server from page zero and keeps partial manual lists non-draggable', async () => {
+    mockList.mockResolvedValue({ items: [makeItem()], total: 25 });
+    renderWithProviders(<HarnessIndexPage type="rule" />);
+    await screen.findByText('test_rule');
+    expect(screen.getByTestId('harness-drop-zone')).toHaveAttribute('data-disabled', 'true');
+    await act(async () => { await drag.end({ source: { index: 0 }, destination: { index: 1 } }); });
+    expect(mockReorder).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith('rule', expect.objectContaining({ offset: 10 })));
+    mockList.mockClear();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), { target: { value: 'name' } });
+    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
+    expect(mockList).toHaveBeenCalledWith('rule', expect.objectContaining({ offset: 0, sort: 'name' }));
+    expect(screen.getByTestId('harness-drop-zone')).toHaveAttribute('data-disabled', 'true');
+  });
+
+  it('rejects a saved manual drag callback after sorting changes and restores full-list manual dragging', async () => {
+    const items = [makeItem(), makeItem({ id: 2, name: 'another_rule' })];
+    mockList.mockResolvedValue({ items, total: 2 });
+    renderWithProviders(<HarnessIndexPage type="rule" />);
+    await screen.findByText('test_rule');
+    expect(screen.getByTestId('harness-drop-zone')).toHaveAttribute('data-disabled', 'false');
+    const manualDrop = drag.end;
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), { target: { value: 'updated' } });
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith('rule', expect.objectContaining({ sort: 'updated' })));
+    await act(async () => { await manualDrop({ source: { index: 0 }, destination: { index: 1 } }); });
+    expect(mockReorder).not.toHaveBeenCalled();
+    expect(screen.getByTestId('harness-drop-zone')).toHaveAttribute('data-disabled', 'true');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), { target: { value: 'manual' } });
+    await waitFor(() => expect(screen.getByTestId('harness-drop-zone')).toHaveAttribute('data-disabled', 'false'));
+    await act(async () => { await drag.end({ source: { index: 0 }, destination: { index: 1 } }); });
+    expect(mockReorder).toHaveBeenCalledWith('rule', [2, 1]);
+  });
+
   it('hides a filtered subset and blocks stale reorder callbacks while clearing the filter refetches all rows', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     renderWithProviders(<HarnessIndexPage type="rule" />);

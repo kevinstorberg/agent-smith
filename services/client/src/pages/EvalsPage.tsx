@@ -1,12 +1,17 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { api } from '../api';
 import type { EvalRun, ChartPoint, AverageChartPoint } from '../api';
 import { ScoreChart } from '../components/ScoreChart';
 import { Pagination } from '../components/Pagination';
+import { FilterBar } from '../components/FilterBar';
+import { useApiRead } from '../hooks/useApiRead';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { usePagination } from '../hooks/usePagination';
 import { makeRowClickable } from '../utils/a11y';
 
 type ChartMode = 'average' | 'breakdown';
+type ChartData = { mode: 'average'; points: AverageChartPoint[] } | { mode: 'breakdown'; points: ChartPoint[] };
 
 export function EvalsPage() {
   const navigate = useNavigate();
@@ -16,98 +21,90 @@ export function EvalsPage() {
   const subcategory = searchParams.get('subcategory') || '';
   const scenario = searchParams.get('scenario') || '';
   const model = searchParams.get('model') || '';
+  const query = searchParams.get('q') || '';
+  const sort = searchParams.get('sort') || 'newest';
+  const debouncedQuery = useDebouncedValue(query);
 
   const setFilter = useCallback((key: string, value: string, clearKeys?: string[]) => {
     setSearchParams(prev => {
-      if (value) prev.set(key, value);
-      else prev.delete(key);
-      for (const k of clearKeys || []) prev.delete(k);
-      return prev;
-    });
+      const next = new URLSearchParams(prev);
+      if (value) next.set(key, value);
+      else next.delete(key);
+      for (const k of clearKeys || []) next.delete(k);
+      return next;
+    }, { replace: key === 'q' });
   }, [setSearchParams]);
 
-  const [categories, setCategories] = useState<string[]>([]);
-  const [subcategories, setSubcategories] = useState<string[]>([]);
-
   const [chartMode, setChartMode] = useState<ChartMode>('average');
-  const [chartData, setChartData] = useState<ChartPoint[]>([]);
-  const [averageData, setAverageData] = useState<AverageChartPoint[]>([]);
-
-  const [runs, setRuns] = useState<EvalRun[]>([]);
-  const [total, setTotal] = useState(0);
-  const [limit, setLimit] = useState(10);
-  const [offset, setOffset] = useState(0);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    api.evals.categories().then(setCategories).catch(() => setCategories([]));
-  }, []);
-
-  useEffect(() => {
-    const params: Record<string, string> = {};
-    if (category) params.eval_type = category;
-    api.evals.subcategories(params).then(setSubcategories).catch(() => setSubcategories([]));
-  }, [category]);
-
-  const buildParams = useCallback((): Record<string, string> => {
+  const params = useMemo((): Record<string, string> => {
     const params: Record<string, string> = {};
     if (category) params.eval_type = category;
     if (subcategory) params.subcategory = subcategory;
     if (scenario) params.scenario = scenario;
     if (model) params.model = model;
+    if (debouncedQuery) params.q = debouncedQuery;
     return params;
-  }, [category, subcategory, scenario, model]);
-
-  const loadData = useCallback(() => {
-    setLoading(true);
-    const params = buildParams();
-
-    const listParams = { ...params, limit: String(limit), offset: String(offset) };
-    api.evals.list(listParams).then(res => {
-      setRuns(res.items);
-      setTotal(res.total);
-    }).finally(() => setLoading(false));
-
-    if (chartMode === 'average') {
-      api.evals.chartAverage(params).then(setAverageData);
-    } else {
-      api.evals.chart(params).then(setChartData);
-    }
-  }, [buildParams, chartMode, limit, offset]);
-
-  useEffect(() => { loadData(); }, [loadData]);
-
-  useEffect(() => {
-    setOffset(0);
-  }, [scenario, model]);
-
-  const scenarios = [...new Set(runs.map(r => r.scenario))];
-  const models = [...new Set(runs.map(r => r.test_model))];
+  }, [category, subcategory, scenario, model, debouncedQuery]);
+  const { items: runs, total, loading, error, limit, offset, setLimit, setOffset, refresh } = usePagination<EvalRun>(
+    (l, o) => api.evals.list({ ...params, sort, limit: String(l), offset: String(o) }),
+    [category, subcategory, scenario, model, debouncedQuery, sort],
+  );
+  const categories = useApiRead(useCallback(() => api.evals.categories(), []));
+  const subcategories = useApiRead(useCallback(() => api.evals.subcategories(category ? { eval_type: category } : {}), [category]));
+  const facetParams = useMemo(() => {
+    const values = { ...params };
+    delete values.scenario;
+    delete values.model;
+    return values;
+  }, [params]);
+  const facets = useApiRead(useCallback(() => api.evals.facets(facetParams), [facetParams]));
+  const chart = useApiRead<ChartData>(useCallback(async (): Promise<ChartData> => chartMode === 'average'
+    ? { mode: 'average', points: await api.evals.chartAverage(params) }
+    : { mode: 'breakdown', points: await api.evals.chart(params) }, [chartMode, params]));
+  const scenarios = [...new Set([...(facets.data?.scenarios || []), ...(scenario ? [scenario] : [])])];
+  const models = [...new Set([...(facets.data?.models || []), ...(model ? [model] : [])])];
 
   return (
     <div>
       <h2 className="page-title" style={{ marginBottom: 16 }}>Results</h2>
 
-      <div className="filters">
+      <FilterBar nameValue={query} onNameChange={value => setFilter('q', value)} namePlaceholder="Search results...">
+        <label><span className="form-label">Category</span>
         <select
+          aria-label="Result category"
           value={category}
           onChange={e => setFilter('category', e.target.value, ['subcategory', 'scenario', 'model'])}
         >
-          {categories.map(c => <option key={c} value={c}>{c}</option>)}
+          {[...new Set([...(categories.data || []), category])].map(c => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select value={subcategory} onChange={e => setFilter('subcategory', e.target.value)}>
+        </label>
+        <label><span className="form-label">Subcategory</span>
+        <select aria-label="Result subcategory" value={subcategory} onChange={e => setFilter('subcategory', e.target.value, ['scenario', 'model'])}>
           <option value="">All subcategories</option>
-          {subcategories.map(s => <option key={s} value={s}>{s}</option>)}
+          {[...new Set([...(subcategories.data || []), ...(subcategory ? [subcategory] : [])])].map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={scenario} onChange={e => setFilter('scenario', e.target.value)}>
+        </label>
+        <label><span className="form-label">Scenario</span>
+        <select aria-label="Result scenario" value={scenario} onChange={e => setFilter('scenario', e.target.value)}>
           <option value="">All scenarios</option>
           {scenarios.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={model} onChange={e => setFilter('model', e.target.value)}>
+        </label>
+        <label><span className="form-label">Model</span>
+        <select aria-label="Result model" value={model} onChange={e => setFilter('model', e.target.value)}>
           <option value="">All models</option>
           {models.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
-      </div>
+        </label>
+        <label><span className="form-label">Sort results</span>
+        <select aria-label="Sort results" value={sort} onChange={e => setFilter('sort', e.target.value)}>
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="score">Highest score</option>
+        </select>
+        </label>
+      </FilterBar>
+      {(categories.error || subcategories.error || facets.error) && <p role="alert">Could not load result filter options.</p>}
 
       <div className="sub-tabs">
         <button
@@ -126,15 +123,18 @@ export function EvalsPage() {
         )}
       </div>
 
-      <ScoreChart
+      {chart.error && <p role="alert">Could not load the chart. <button className="btn btn-sm" onClick={() => chart.refresh()}>Retry chart</button></p>}
+      {chart.loading && <div className="loading" role="status">Loading chart...</div>}
+      {!chart.loading && !chart.error && <ScoreChart
         mode={chartMode}
-        data={chartData}
-        averageData={averageData}
-      />
+        data={chart.data?.mode === 'breakdown' ? chart.data.points : []}
+        averageData={chart.data?.mode === 'average' ? chart.data.points : []}
+      />}
 
+      {error && <p role="alert">Could not load results. <button className="btn btn-sm" onClick={() => refresh()}>Retry</button></p>}
       {loading && <div className="loading">Loading...</div>}
 
-      {!loading && (
+      {!loading && !error && (
         <>
           <table className="table">
             <thead>
@@ -164,21 +164,16 @@ export function EvalsPage() {
                   </td>
                 </tr>
               ))}
-              {runs.length === 0 && (
+              {!error && runs.length === 0 && (
                 <tr><td colSpan={6} className="loading">No eval runs found</td></tr>
               )}
             </tbody>
           </table>
 
-          <Pagination
-            total={total}
-            limit={limit}
-            offset={offset}
-            onPageChange={setOffset}
-            onLimitChange={newLimit => { setLimit(newLimit); setOffset(0); }}
-          />
         </>
       )}
+      {!error && <Pagination total={total} limit={limit} offset={offset} onPageChange={setOffset}
+        onLimitChange={newLimit => { setLimit(newLimit); setOffset(0); }} disabled={loading} />}
     </div>
   );
 }

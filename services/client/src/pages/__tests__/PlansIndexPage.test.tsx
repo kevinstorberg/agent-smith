@@ -15,7 +15,10 @@ const plans = [
 ];
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(api.plans.list).mockResolvedValue({ items: plans, total: 25 } as never);
+  vi.mocked(api.plans.list).mockImplementation(async params => ({
+    items: params?.q ? [{ ...plans[0], id: 3, title: 'Found plan' }] : plans,
+    total: params?.q ? 1 : 25,
+  } as never));
   vi.mocked(api.plans.search).mockResolvedValue([{ ...plans[0], id: 3, title: 'Found plan' }] as never);
 });
 afterEach(() => vi.useRealTimers());
@@ -42,6 +45,8 @@ describe('PlansIndexPage', () => {
     renderWithProviders(<PlansIndexPage />);
     expect(screen.getByText('Loading...')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Search by title...')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Sort plans' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Project scope' })).toBeVisible();
     expect(await screen.findByText('No plans found')).toBeInTheDocument();
   });
 
@@ -51,15 +56,17 @@ describe('PlansIndexPage', () => {
     await act(async () => { await Promise.resolve(); });
     expect(screen.getByText('Plan Alpha')).toBeInTheDocument();
     const input = screen.getByPlaceholderText('Search by title...');
+    vi.mocked(api.plans.list).mockClear();
     input.focus();
     fireEvent.change(input, { target: { value: 'Fo' } });
     await act(async () => { vi.advanceTimersByTime(200); });
     fireEvent.change(input, { target: { value: 'Found' } });
     await act(async () => { vi.advanceTimersByTime(299); });
-    expect(api.plans.search).not.toHaveBeenCalled();
+    expect(api.plans.list).not.toHaveBeenCalled();
     await act(async () => { vi.advanceTimersByTime(1); });
-    expect(api.plans.search).toHaveBeenCalledTimes(1);
-    expect(api.plans.search).toHaveBeenCalledWith('Found', { project: undefined, status: undefined });
+    expect(api.plans.list).toHaveBeenCalledTimes(1);
+    expect(api.plans.list).toHaveBeenCalledWith({ limit: 10, offset: 0, q: 'Found', project: undefined, status: undefined, sort: 'updated' });
+    expect(api.plans.search).not.toHaveBeenCalled();
     expect(input).toHaveFocus();
     expect(screen.getByText('Found plan')).toBeInTheDocument();
   });
@@ -74,18 +81,20 @@ describe('PlansIndexPage', () => {
     fireEvent.change(screen.getByPlaceholderText('Filter by project...'), { target: { value: 'proj-a' } });
     await act(async () => { vi.advanceTimersByTime(300); });
     expect(api.plans.list).toHaveBeenCalledTimes(1);
-    expect(api.plans.list).toHaveBeenCalledWith({ limit: 10, offset: 0, project: 'proj-a', status: undefined });
+    expect(api.plans.list).toHaveBeenCalledWith({ limit: 10, offset: 0, q: undefined, project: 'proj-a', status: undefined, sort: 'updated' });
     await typeSearch('Found');
     fireEvent.click(screen.getByRole('button', { name: 'draft' }));
-    await waitFor(() => expect(api.plans.search).toHaveBeenLastCalledWith('Found', { project: 'proj-a', status: 'draft' }));
+    await waitFor(() => expect(api.plans.list).toHaveBeenLastCalledWith(expect.objectContaining({ q: 'Found', project: 'proj-a', status: 'draft' })));
   });
 
   it('ignores late search responses after clearing and preserves the current list', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     let complete!: (items: never[]) => void;
-    vi.mocked(api.plans.search).mockReturnValueOnce(new Promise(resolve => { complete = resolve; }));
     renderWithProviders(<PlansIndexPage />);
     await screen.findByText('Plan Alpha');
+    vi.mocked(api.plans.list).mockReturnValueOnce(new Promise(resolve => {
+      complete = items => resolve({ items, total: items.length });
+    }));
     await typeSearch('Old');
     fireEvent.change(screen.getByPlaceholderText('Search by title...'), { target: { value: '' } });
     await screen.findByText('Plan Alpha');
@@ -100,6 +109,7 @@ describe('PlansIndexPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load plans.');
     expect(screen.queryByText('private diagnostic')).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText('Search by title...')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Sort plans' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Plan Alpha')).toBeInTheDocument();
   });
@@ -112,11 +122,25 @@ describe('PlansIndexPage', () => {
     vi.mocked(api.plans.search).mockClear();
     vi.mocked(api.plans.list).mockClear();
     await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS); });
-    expect(api.plans.search).toHaveBeenCalledWith('Found', { project: undefined, status: undefined });
-    expect(api.plans.list).not.toHaveBeenCalled();
+    expect(api.plans.list).toHaveBeenCalledWith(expect.objectContaining({ q: 'Found', sort: 'updated' }));
+    expect(api.plans.search).not.toHaveBeenCalled();
     unmount();
     vi.mocked(api.plans.search).mockClear();
+    vi.mocked(api.plans.list).mockClear();
     await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS); });
+    expect(api.plans.search).not.toHaveBeenCalled();
+    expect(api.plans.list).not.toHaveBeenCalled();
+  });
+
+  it('sorts server-side before paging and resets the current page', async () => {
+    renderWithProviders(<PlansIndexPage />);
+    await screen.findByText('Plan Alpha');
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(api.plans.list).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 })));
+    vi.mocked(api.plans.list).mockClear();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort plans' }), { target: { value: 'title' } });
+    await waitFor(() => expect(api.plans.list).toHaveBeenCalledTimes(1));
+    expect(api.plans.list).toHaveBeenCalledWith(expect.objectContaining({ offset: 0, sort: 'title' }));
     expect(api.plans.search).not.toHaveBeenCalled();
   });
 });

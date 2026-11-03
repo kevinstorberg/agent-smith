@@ -31,6 +31,28 @@ beforeEach(() => {
 });
 
 describe('MeetingsIndexPage', () => {
+  it('keeps search, labels and sort controls available during loading and empty results', async () => {
+    mockList.mockResolvedValue({ items: [], total: 0 });
+    renderWithProviders(<MeetingsIndexPage />);
+    expect(screen.getByRole('textbox', { name: 'Search meetings' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Filter meetings by labels' })).toBeVisible();
+    expect(screen.getByRole('combobox', { name: 'Sort meetings' })).toHaveValue('newest');
+    await screen.findByText('No meeting summaries saved yet. Run your meeting import job from Jobs.');
+    expect(screen.getByRole('combobox', { name: 'Sort meetings' })).toBeVisible();
+  });
+
+  it('requests a new server sort from the first page', async () => {
+    mockList.mockResolvedValue({ items: meetings, total: 25 });
+    renderWithProviders(<MeetingsIndexPage />);
+    await screen.findByText('Product planning');
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 })));
+    mockList.mockClear();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort meetings' }), { target: { value: 'oldest' } });
+    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
+    expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ offset: 0, sort: 'oldest' }));
+  });
+
   it('opens Vocabulary from its URL and preserves unrelated query parameters when switching views', async () => {
     vi.mocked(api.meetings.vocabulary.list).mockResolvedValue({ items: [term], total: 1 });
     renderWithProviders(<><MeetingsIndexPage /><Location /></>, { initialEntries: ['/meetings?tab=vocabulary&source=work'] });
@@ -49,9 +71,9 @@ describe('MeetingsIndexPage', () => {
     renderWithProviders(<MeetingsIndexPage />);
     await screen.findByText('Product planning');
     fireEvent.change(screen.getByRole('textbox', { name: 'Search meetings' }), { target: { value: 'release' } });
-    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'release' }));
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'release', sort: 'newest' }));
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: 'release' }));
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: 'release', sort: 'newest' }));
     const listReads = mockList.mock.calls.length;
     fireEvent.click(screen.getByRole('link', { name: 'Vocabulary' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Edit LTV' }));
@@ -70,7 +92,7 @@ describe('MeetingsIndexPage', () => {
     renderWithProviders(<MeetingsIndexPage />);
     expect(await screen.findByText('roadmapping')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Filter meetings by labels'), { target: { value: 'product, roadmapping' } });
-    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: undefined, labels: ['product', 'roadmapping'] }));
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: undefined, labels: ['product', 'roadmapping'], sort: 'newest' }));
   });
   it('shows summaries from multiple connections without a source or device filter', async () => {
     renderWithProviders(<MeetingsIndexPage />);
@@ -79,7 +101,7 @@ describe('MeetingsIndexPage', () => {
     expect(screen.getByText('Team retrospective')).toBeInTheDocument();
     expect(screen.getByText('personal')).toBeInTheDocument();
     expect(screen.getByText('team')).toBeInTheDocument();
-    expect(mockList).toHaveBeenCalledWith({ limit: 10, offset: 0, q: undefined });
+    expect(mockList).toHaveBeenCalledWith({ limit: 10, offset: 0, q: undefined, sort: 'newest' });
   });
 
   it('opens the selected summary with keyboard navigation', async () => {
@@ -95,13 +117,13 @@ describe('MeetingsIndexPage', () => {
     renderWithProviders(<MeetingsIndexPage />);
     await screen.findByText('Product planning');
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: undefined }));
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: undefined, sort: 'newest' }));
 
     fireEvent.change(screen.getByLabelText('Search meetings'), { target: { value: ' release ' } });
-    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'release' }));
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'release', sort: 'newest' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
-    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: undefined }));
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: undefined, sort: 'newest' }));
   });
 
   it('distinguishes loading, empty imports and search results', async () => {

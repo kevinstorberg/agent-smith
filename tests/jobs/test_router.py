@@ -111,6 +111,30 @@ def test_list_returns_total():
     assert any(j["name"] == "JOBTEST R List 1" for j in result["items"])
 
 
+def test_jobs_search_and_schedule_filter_apply_before_pagination():
+    from services.jobs.models.job import set_schedule_enabled
+
+    for index in range(12):
+        _create(f"JOBTEST R Controls filler {index:02}")
+    matching = _create("JOBTEST R Controls Zebra")
+    set_schedule_enabled(matching["id"], False)
+    result = list_all(limit=1, offset=0, q="Controls", schedule_enabled=False, sort="name")
+    assert result["total"] == 1
+    assert [row["id"] for row in result["items"]] == [matching["id"]]
+    names = [row["name"] for row in list_all(limit=100, offset=0, q="JOBTEST R Controls", sort="name")["items"]]
+    assert names == sorted(names, key=str.lower)
+
+
+def test_jobs_query_rejects_invalid_sort_and_treats_like_characters_literally():
+    _create("JOBTEST R Literal 100%_done")
+    _create("JOBTEST R Literal 100otherdone")
+    result = list_all(limit=10, offset=0, q="100%_done")
+    assert result["total"] == 1
+    with pytest.raises(HTTPException) as error:
+        list_all(limit=10, offset=0, sort="updated_at; DROP TABLE background_jobs")
+    assert error.value.status_code == 422
+
+
 def test_get_one_missing_raises_404():
     with pytest.raises(HTTPException) as exc:
         get_one(999_999)

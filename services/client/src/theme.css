@@ -1524,3 +1524,10 @@ pre {
 .job-run-controls { margin-bottom: 16px; }
 .job-run-actions { margin-left: auto; }
 .job-paused-notice { margin: -4px 0 16px; }
+
+.resource-controls { align-items: end; }
+.resource-controls > label { min-width: 0; max-width: 100%; }
+.resource-controls label input,
+.resource-controls label select { max-width: 100%; }
+.chat-room-list .pagination-controls { flex-wrap: wrap; min-width: 0; }
+.chat-page > .resource-controls { flex-shrink: 0; }

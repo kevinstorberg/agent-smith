@@ -27,6 +27,37 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('MeetingVocabulary', () => {
+  it('keeps search, definition filter and sort available with no terms and during errors', async () => {
+    vi.mocked(vocabulary.list).mockRejectedValueOnce(new Error('Unavailable'));
+    open();
+    expect(screen.getByRole('textbox', { name: 'Search vocabulary' })).toBeVisible();
+    expect(screen.getByRole('combobox', { name: 'Definition' })).toHaveValue('all');
+    expect(screen.getByRole('combobox', { name: 'Sort vocabulary' })).toHaveValue('term');
+    await screen.findByText('Could not load vocabulary.');
+    expect(screen.getByRole('combobox', { name: 'Sort vocabulary' })).toBeVisible();
+    vi.mocked(vocabulary.list).mockResolvedValue({ items: [], total: 0 });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await screen.findByText('No vocabulary terms yet.');
+    expect(screen.getByRole('combobox', { name: 'Definition' })).toBeVisible();
+  });
+
+  it('filters definitions and sorts on the server before paging while retaining an edit', async () => {
+    vi.mocked(vocabulary.list).mockResolvedValue({ items: [term], total: 25 });
+    open();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit LTV' }));
+    fireEvent.change(screen.getByLabelText('Meaning / definition (optional)'), { target: { value: 'Retained draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(vocabulary.list).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 })));
+    vi.mocked(vocabulary.list).mockClear();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Definition' }), { target: { value: 'undefined' } });
+    await waitFor(() => expect(vocabulary.list).toHaveBeenCalledTimes(1));
+    expect(vocabulary.list).toHaveBeenCalledWith(expect.objectContaining({ offset: 0, definition: 'undefined', sort: 'term' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort vocabulary' }), { target: { value: 'updated' } });
+    await waitFor(() => expect(vocabulary.list).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 0, definition: 'undefined', sort: 'updated' })));
+    expect(screen.getByLabelText('Meaning / definition (optional)')).toHaveValue('Retained draft');
+    expect(vocabulary.update).not.toHaveBeenCalled();
+  });
+
   it('shows the vocabulary directly with its primary add action', async () => {
     renderWithProviders(<MeetingVocabulary />);
     expect(screen.getByRole('region', { name: 'Meeting vocabulary' }).querySelector('details')).toBeNull();
@@ -129,7 +160,7 @@ describe('MeetingVocabulary', () => {
     expect(buttons.map(button => button.textContent)).toEqual(['Edit', 'Delete']);
     expect(buttons[0].parentElement).toBe(buttons[1].parentElement);
     expect(buttons[0].parentElement).toHaveClass('vocabulary-actions');
-    expect(vocabulary.list).toHaveBeenCalledWith({ limit: 10, offset: 0, q: '' });
+    expect(vocabulary.list).toHaveBeenCalledWith({ limit: 10, offset: 0, q: '', definition: undefined, sort: 'term' });
   });
 
   it('debounces typing while retaining search focus and ignores stale results', async () => {
@@ -144,7 +175,7 @@ describe('MeetingVocabulary', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(299); });
     expect(vocabulary.list).toHaveBeenCalledTimes(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
-    expect(vocabulary.list).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'old' });
+    expect(vocabulary.list).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'old', definition: undefined, sort: 'term' });
     vi.mocked(vocabulary.list).mockResolvedValue({ items: [{ ...term, definition: 'Newest response' }], total: 1 });
     fireEvent.change(input, { target: { value: 'new' } });
     await act(async () => { await vi.advanceTimersByTimeAsync(300); });
@@ -158,25 +189,25 @@ describe('MeetingVocabulary', () => {
     vi.mocked(vocabulary.list).mockResolvedValue({ items: [term], total: 11 });
     open();
     fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
-    await waitFor(() => expect(vocabulary.list).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: '' }));
+    await waitFor(() => expect(vocabulary.list).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: '', definition: undefined, sort: 'term' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Edit LTV' }));
     fireEvent.change(screen.getByLabelText('Meaning / definition (optional)'), { target: { value: 'My preserved draft' } });
     fireEvent.change(screen.getByLabelText('Search vocabulary'), { target: { value: 'unmatched' } });
     vi.mocked(vocabulary.list).mockResolvedValue({ items: [], total: 0 });
-    await waitFor(() => expect(vocabulary.list).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'unmatched' }));
+    await waitFor(() => expect(vocabulary.list).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'unmatched', definition: undefined, sort: 'term' }));
     expect(screen.getByLabelText('Meaning / definition (optional)')).toHaveValue('My preserved draft');
-    expect(vocabulary.list).not.toHaveBeenCalledWith({ limit: 10, offset: 10, q: 'unmatched' });
+    expect(vocabulary.list).not.toHaveBeenCalledWith({ limit: 10, offset: 10, q: 'unmatched', definition: undefined, sort: 'term' });
   });
 
   it('clamps to the previous valid page after deleting the last item', async () => {
     vi.mocked(vocabulary.list).mockResolvedValue({ items: [term], total: 11 });
     open();
     fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
-    await waitFor(() => expect(vocabulary.list).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: '' }));
+    await waitFor(() => expect(vocabulary.list).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: '', definition: undefined, sort: 'term' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Delete LTV' }));
     vi.mocked(vocabulary.list).mockResolvedValueOnce({ items: [], total: 10 }).mockResolvedValue({ items: [term], total: 10 });
     fireEvent.click(screen.getByRole('button', { name: 'Confirm delete' }));
-    await waitFor(() => expect(vocabulary.list).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: '' }));
+    await waitFor(() => expect(vocabulary.list).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: '', definition: undefined, sort: 'term' }));
     expect(await screen.findByText('Lifetime value')).toBeVisible();
   });
 
@@ -216,15 +247,15 @@ describe('MeetingVocabulary', () => {
     vi.mocked(vocabulary.update).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
     open();
     fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
-    await waitFor(() => expect(vocabulary.list).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: '' }));
+    await waitFor(() => expect(vocabulary.list).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: '', definition: undefined, sort: 'term' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Edit LTV' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save term' }));
     vi.mocked(vocabulary.list).mockResolvedValue({ items: [term], total: 1 });
     fireEvent.change(screen.getByLabelText('Search vocabulary'), { target: { value: 'LTV' } });
-    await waitFor(() => expect(vocabulary.list).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'LTV' }));
+    await waitFor(() => expect(vocabulary.list).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'LTV', definition: undefined, sort: 'term' }));
     await act(async () => { finish(term); });
-    expect(vocabulary.list).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'LTV' });
-    expect(vocabulary.list).not.toHaveBeenCalledWith({ limit: 10, offset: 10, q: 'LTV' });
+    expect(vocabulary.list).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'LTV', definition: undefined, sort: 'term' });
+    expect(vocabulary.list).not.toHaveBeenCalledWith({ limit: 10, offset: 10, q: 'LTV', definition: undefined, sort: 'term' });
   });
 
   it('retains a removed conflict draft and clears a pending delete when search changes', async () => {

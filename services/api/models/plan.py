@@ -7,6 +7,9 @@ from psycopg2.extras import RealDictCursor
 from scripts.shared.validation import assert_not_empty
 from services.db import get_connection
 from services.api.models.base import BaseModel
+from services.api.models.shared.listing import search_pattern, sort_clause
+
+PLAN_SORTS = {"updated": "updated_at DESC, id DESC", "newest": "created_at DESC, id DESC", "title": "lower(title), id"}
 
 _METADATA_FIELDS = ("id", "title", "project", "status", "created_at", "updated_at")
 SEARCH_EXCERPT_LENGTH = 600
@@ -79,12 +82,17 @@ class PlanModel(BaseModel):
         status: str | None = None,
         limit: int = 10,
         offset: int = 0,
+        *, q: str | None = None, sort: str = "updated",
     ) -> tuple[list[dict], int]:
         clauses, params = _scope_filters(project, status)
+        pattern = search_pattern(q)
+        if pattern is not None:
+            clauses.append("title ILIKE %s")
+            params.append(pattern)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         return super().list(
             columns=", ".join(_METADATA_FIELDS),
-            where=where, params=tuple(params), limit=limit, offset=offset,
+            where=where, params=tuple(params), limit=limit, offset=offset, order_by=sort_clause(sort, PLAN_SORTS),
         )
 
     @classmethod

@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
+from services.api.models.shared.listing import sort_pattern
 
 from services.api.models.shared.harness import (
-    list_items, list_items_summary, get_item_by_id,
+    HARNESS_SORTS, list_items, list_items_summary, get_item_by_id,
     create_item, update_content, update_metadata,
     reorder_items, get_version_history_summary, delete_item,
 )
 from services.api.models.harness_config import (
     batch_list_configs, list_configs, create_config, update_config, delete_config,
 )
-from services.api.routers.base import require_found, list_response, delete_response, empty_to_none, update_fields, resolve_project, paginate
+from services.api.routers.base import require_found, list_response, delete_response, empty_to_none, update_fields, resolve_project, paginate, query_result
 from services.api.routers.shared.validators import (
     CreateRequest, ContentUpdate, MetadataUpdate, ReorderRequest,
     ConfigCreate, ConfigUpdate,
@@ -54,11 +56,13 @@ class BaseHarnessRouter:
         self,
         project: str = Query(""),
         agent: str = Query(""),
-        name: str = Query(""),
+        name: str = Query("", max_length=1000),
         limit: int = Query(10, ge=1, le=100),
         offset: int = Query(0, ge=0),
+        sort: Annotated[str, Query(pattern=sort_pattern(HARNESS_SORTS))] = "manual",
+        enabled: bool | None = None,
     ):
-        all_items = list_items_summary(self.item_type, project=empty_to_none(project), agent=empty_to_none(agent))
+        all_items = query_result(list_items_summary, self.item_type, project=empty_to_none(project), agent=empty_to_none(agent), sort=sort, enabled=enabled)
         if name:
             name_lower = name.lower()
             all_items = [i for i in all_items if name_lower in i["name"].lower()]

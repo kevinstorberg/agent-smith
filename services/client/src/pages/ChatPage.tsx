@@ -4,6 +4,10 @@ import { ChatTranscript } from '../components/ChatTranscript';
 import { CopyButton } from '../components/CopyButton';
 import { useNotification } from '../context/useNotification';
 import { usePolling } from '../hooks/usePolling';
+import { usePagination } from '../hooks/usePagination';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { FilterBar } from '../components/FilterBar';
+import { Pagination } from '../components/Pagination';
 
 const CHAT_POLL_INTERVAL_MS = 2_000;
 
@@ -29,10 +33,15 @@ function mergeMessages(detail: ChatRoomDetail, incoming: ChatMessage[]): ChatRoo
 }
 
 export function ChatPage() {
-  const [rooms, setRooms] = useState<ChatRoom[]>([]);
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<'all' | 'open' | 'closed'>('all');
+  const [sort, setSort] = useState('updated');
+  const query = useDebouncedValue(search.trim());
+  const list = usePagination<ChatRoom>((limit, offset) => api.chat.list({ limit, offset,
+    q: query || undefined, status: status === 'all' ? undefined : status, sort }), [query, status, sort]);
+  const { items: rooms, setItems: setRooms, refresh, setOffset } = list;
   const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null);
   const [detail, setDetail] = useState<ChatRoomDetail | null>(null);
-  const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [topic, setTopic] = useState('');
   const [context, setContext] = useState('');
@@ -44,6 +53,8 @@ export function ChatPage() {
   const [editContext, setEditContext] = useState('');
   const [lastSent, setLastSent] = useState<{ roomId: number; messageId: number } | null>(null);
   const roomSession = useRef<RoomSession | null>(null);
+  const latestRoomsRefresh = useRef(refresh);
+  useEffect(() => { latestRoomsRefresh.current = refresh; }, [refresh]);
   const { notify } = useNotification();
 
   useEffect(() => {
@@ -52,17 +63,12 @@ export function ChatPage() {
       .catch(error => notify(error instanceof Error ? error.message : String(error), 'error'));
   }, [notify]);
 
-  const loadRooms = useCallback(async (showError = true) => {
-    try {
-      const result = await api.chat.list();
-      setRooms(result.items);
-      setSelectedRoomId(current => current ?? result.items[0]?.id ?? null);
-    } catch (error) {
-      if (showError) notify(error instanceof Error ? error.message : String(error), 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [notify]);
+  useEffect(() => {
+    if (!list.loading && !list.error) setSelectedRoomId(current => current ?? rooms[0]?.id ?? null);
+  }, [list.loading, list.error, rooms]);
+  const lastOffset = list.total > 0 ? Math.floor((list.total - 1) / list.limit) * list.limit : 0;
+  const clamping = !list.loading && !list.error && list.offset > lastOffset;
+  useEffect(() => { if (clamping) setOffset(lastOffset); }, [clamping, lastOffset, setOffset]);
 
   const loadSelectedRoom = useCallback(async (showError = true) => {
     const session = roomSession.current;
@@ -88,10 +94,6 @@ export function ChatPage() {
   }, [notify, selectedRoomId]);
 
   useEffect(() => {
-    loadRooms();
-  }, [loadRooms]);
-
-  useEffect(() => {
     const session = selectedRoomId === null ? null : { roomId: selectedRoomId, cursor: 0, inFlight: false };
     roomSession.current = session;
     setDetail(null);
@@ -103,7 +105,7 @@ export function ChatPage() {
   }, [loadSelectedRoom, selectedRoomId]);
 
   usePolling(async () => {
-    await Promise.all([loadRooms(false), loadSelectedRoom(false)]);
+    await Promise.all([refresh({ showLoading: false }), loadSelectedRoom(false)]);
   }, { intervalMs: CHAT_POLL_INTERVAL_MS });
 
   async function createRoom(event: FormEvent) {
@@ -112,12 +114,12 @@ export function ChatPage() {
     setSaving(true);
     try {
       const room = await api.chat.create({ topic, context });
-      setRooms(current => [room, ...current.filter(existing => existing.id !== room.id)]);
       setSelectedRoomId(room.id);
       setDetail({ room, messages: [], last_message_id: 0, has_more: false });
       setTopic('');
       setContext('');
       setShowCreate(false);
+      await latestRoomsRefresh.current({ showLoading: false });
     } catch (error) {
       notify(error instanceof Error ? error.message : String(error), 'error');
     } finally {
@@ -137,7 +139,7 @@ export function ChatPage() {
       setDetail(current => current?.room.id === roomId ? mergeMessages(current, [message]) : current);
       setLastSent({ roomId, messageId: message.id });
       setDraft('');
-      await loadRooms(false);
+      await latestRoomsRefresh.current({ showLoading: false });
     } catch (error) {
       if (roomSession.current === session) notify(error instanceof Error ? error.message : String(error), 'error');
     } finally {
@@ -155,14 +157,16 @@ export function ChatPage() {
   async function saveRoomEdit(event: FormEvent) {
     event.preventDefault();
     if (!detail || !editTopic.trim()) return;
+    const session = roomSession.current;
     setSaving(true);
     try {
       const room = await api.chat.update(detail.room.id, { topic: editTopic, context: editContext });
-      setDetail(current => current ? { ...current, room } : current);
-      setRooms(current => current.map(existing => existing.id === room.id ? room : existing));
+      if (roomSession.current !== session) return;
+      setDetail(current => current?.room.id === room.id ? { ...current, room } : current);
       setEditing(false);
+      await latestRoomsRefresh.current({ showLoading: false });
     } catch (error) {
-      notify(error instanceof Error ? error.message : String(error), 'error');
+      if (roomSession.current === session) notify(error instanceof Error ? error.message : String(error), 'error');
     } finally {
       setSaving(false);
     }
@@ -171,14 +175,18 @@ export function ChatPage() {
   async function deleteRoom() {
     if (!detail) return;
     if (!confirm('Delete this room and its entire transcript? This cannot be undone.')) return;
+    const session = roomSession.current;
+    const roomId = detail.room.id;
     setSaving(true);
     try {
-      await api.chat.remove(detail.room.id);
-      const remaining = rooms.filter(existing => existing.id !== detail.room.id);
-      setRooms(remaining);
-      setSelectedRoomId(remaining[0]?.id ?? null);
-      setDetail(null);
+      await api.chat.remove(roomId);
+      setRooms(current => current.filter(existing => existing.id !== roomId));
+      if (roomSession.current === session) {
+        setSelectedRoomId(rooms.find(existing => existing.id !== roomId)?.id ?? null);
+        setDetail(null);
+      }
       notify('Room deleted', 'success');
+      await latestRoomsRefresh.current({ showLoading: false });
     } catch (error) {
       notify(error instanceof Error ? error.message : String(error), 'error');
     } finally {
@@ -189,20 +197,20 @@ export function ChatPage() {
   async function stopAgentAccess() {
     if (!detail || detail.room.state === 'closed') return;
     if (!confirm('Stop agent access to this room? This cannot be undone.')) return;
+    const session = roomSession.current;
     setSaving(true);
     try {
       const room = await api.chat.stop(detail.room.id);
-      setDetail(current => current ? { ...current, room } : current);
-      setRooms(current => current.map(existing => existing.id === room.id ? room : existing));
+      if (roomSession.current !== session) return;
+      setDetail(current => current?.room.id === room.id ? { ...current, room } : current);
       notify('Agent access stopped', 'success');
+      await latestRoomsRefresh.current({ showLoading: false });
     } catch (error) {
-      notify(error instanceof Error ? error.message : String(error), 'error');
+      if (roomSession.current === session) notify(error instanceof Error ? error.message : String(error), 'error');
     } finally {
       setSaving(false);
     }
   }
-
-  if (loading) return <div className="loading">Loading...</div>;
 
   return (
     <div className="chat-page">
@@ -215,6 +223,22 @@ export function ChatPage() {
           {showCreate ? 'Cancel' : '+ New Room'}
         </button>
       </div>
+
+      <FilterBar nameValue={search} onNameChange={setSearch} nameLabel="Search rooms" namePlaceholder="Search topics or context...">
+        <label><span className="form-label">Room status</span>
+          <select className="input" value={status} onChange={event => {
+            const value = event.target.value;
+            if (value === 'all' || value === 'open' || value === 'closed') setStatus(value);
+          }}>
+            <option value="all">All rooms</option><option value="open">Open</option><option value="closed">Closed</option>
+          </select>
+        </label>
+        <label><span className="form-label">Sort rooms</span>
+          <select className="input" value={sort} onChange={event => setSort(event.target.value)}>
+            <option value="updated">Recently updated</option><option value="newest">Newest first</option><option value="name">Topic A–Z</option>
+          </select>
+        </label>
+      </FilterBar>
 
       {showCreate && (
         <form className="card chat-create" onSubmit={createRoom}>
@@ -245,7 +269,9 @@ export function ChatPage() {
 
       <div className="chat-layout">
         <aside className="chat-room-list" aria-label="Chat rooms">
-          {rooms.map(room => (
+          {(list.loading || clamping) && <div className="loading">Loading rooms...</div>}
+          {list.error && <div role="alert">Could not load rooms. <button className="btn" onClick={() => refresh()}>Retry</button></div>}
+          {!list.loading && !clamping && !list.error && rooms.map(room => (
             <button
               key={room.id}
               className={`chat-room-button${selectedRoomId === room.id ? ' active' : ''}`}
@@ -257,7 +283,11 @@ export function ChatPage() {
               </span>
             </button>
           ))}
-          {rooms.length === 0 && <div className="chat-empty">No rooms yet.</div>}
+          {!list.loading && !clamping && !list.error && rooms.length === 0 && <div className="chat-empty">{query || status !== 'all' ? 'No rooms match these filters.' : 'No rooms yet.'}</div>}
+          {!list.loading && !clamping && !list.error && selectedRoomId !== null && !rooms.some(room => room.id === selectedRoomId)
+            && <p className="text-muted-sm">The selected room is outside the current results.</p>}
+          {!list.error && !clamping && <Pagination total={list.total} limit={list.limit} offset={list.offset} disabled={list.loading}
+            onPageChange={list.setOffset} onLimitChange={value => { list.setLimit(value); list.setOffset(0); }} />}
         </aside>
 
         <section className="chat-room" aria-live="polite">

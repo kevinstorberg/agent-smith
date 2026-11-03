@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+from typing import Annotated
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
 from scripts.shared.validation import MAX_NAME_LENGTH, MAX_BODY_LENGTH
 
 from services.api.models.evals import (
+    SUITE_SORTS,
     list_suites, get_suite, create_suite, update_suite, delete_suite,
     list_scenarios, get_scenario, create_scenario, update_scenario, delete_scenario,
 )
-from services.api.routers.base import require_found, list_response, delete_response, update_fields
+from services.api.routers.base import require_found, list_response, delete_response, update_fields, query_result
+from services.api.models.shared.listing import sort_pattern
 
 router = APIRouter()
 
@@ -53,8 +56,11 @@ def list_suites_endpoint(
     enabled_only: bool = Query(True),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    q: Annotated[str, Query(max_length=1000)] = "",
+    enabled: bool | None = None,
+    sort: Annotated[str, Query(pattern=sort_pattern(SUITE_SORTS))] = "name",
 ):
-    items, total = list_suites(enabled_only=enabled_only, limit=limit, offset=offset)
+    items, total = query_result(list_suites, enabled_only=enabled_only, limit=limit, offset=offset, q=q, enabled=enabled, sort=sort)
     return list_response(items, total)
 
 
