@@ -13,10 +13,11 @@ const term = { id: 'term-1', term: 'LTV', definition: 'Lifetime value', revision
 const vocabulary = api.meetings.vocabulary;
 
 function open() {
-  renderWithProviders(<MeetingVocabulary />);
+  renderWithProviders(<MeetingVocabulary />, { initialEntries: ['/meetings?tab=vocabulary'] });
 }
 
 beforeEach(() => {
+  document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.resetAllMocks();
   vi.mocked(vocabulary.list).mockResolvedValue({ items: [term], total: 1 });
   vi.mocked(vocabulary.get).mockResolvedValue({ ...term, revision: 2, definition: 'Changed elsewhere' });
@@ -59,7 +60,7 @@ describe('MeetingVocabulary', () => {
   });
 
   it('shows the vocabulary directly with its primary add action', async () => {
-    renderWithProviders(<MeetingVocabulary />);
+    renderWithProviders(<MeetingVocabulary />, { initialEntries: ['/meetings?tab=vocabulary'] });
     expect(screen.getByRole('region', { name: 'Meeting vocabulary' }).querySelector('details')).toBeNull();
     expect(screen.getByRole('heading', { name: 'Vocabulary' })).toBeVisible();
     expect(await screen.findByText('Lifetime value')).toBeInTheDocument();
