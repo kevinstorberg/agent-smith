@@ -16,10 +16,12 @@ from collections.abc import Iterable
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from scripts.shared.database_safety import production_database_url, validate_certificate, validate_database_target, validate_memory_target
+from scripts.shared.database_safety import database_identity, production_database_url, validate_certificate, validate_database_target, validate_memory_target
 from scripts.shared.env import environment
 from scripts.shared.local_postgres import temporary_postgres
-from scripts.shared.processes import instance_lock, supervise, wait_for_lock_release
+from scripts.shared.processes import InstanceRunningError, instance_lock, supervise, wait_for_lock_release
+from scripts.shared.native_startup import Checkout, StartupError, StartupLease, prepare_startup, probe_database, stage, startup_preparing
+from scripts.shared.port_processes import assert_port_clear
 from scripts.shared.automated_tests import AUTOMATED_TESTS_ENV, require_model_calls_allowed
 
 CLIENT = ROOT / "services/client"
@@ -121,9 +123,13 @@ def stop_instance(mode: str, pid: int) -> None:
 
 
 def control_instance(mode: str, stop: bool = False) -> int:
+    preparing = startup_preparing(ROOT)
+    log_hint = f"inspect {ROOT / '.runtime'} for production.log or development.log"
+    if preparing and stop:
+        raise RuntimeError(f"Startup preparing in this checkout; no stop signal was sent; {log_hint}")
     pid = running_instance(mode)
     if pid is None:
-        print(f"{MODES[mode]} is not running")
+        print(f"Startup preparing in this checkout; {log_hint}" if preparing else f"{MODES[mode]} is not running")
     elif stop:
         stop_instance(mode, pid)
     else:
@@ -138,49 +144,111 @@ def replace_running_instance(mode: str) -> None:
         stop_instance(mode, pid)
 
 
+def validate_startup_instances(mode: str) -> None:
+    active_mode = MODES[mode]
+    for candidate in ("production", "development"):
+        pid = running_instance(candidate)
+        try:
+            with instance_lock(ROOT, candidate):
+                locked = False
+        except InstanceRunningError:
+            locked = True
+        if candidate != active_mode and (pid is not None or locked):
+            raise StartupError("PREFLIGHT", f"{candidate} is active in this checkout; stop it explicitly or use another checkout")
+        if candidate == active_mode and locked and pid is None:
+            raise StartupError("PREFLIGHT", f"{candidate} startup is already preparing; wait for its process record")
+
+
+def launch_command(args: argparse.Namespace, python: str, token: str, revision: str, descriptor: int, *, detach: bool = False) -> list[str]:
+    command = [python, str(Path(__file__).resolve()), "run", args.mode,
+               "--launch-token", token, "--startup-revision", revision, "--startup-lock-fd", str(descriptor)]
+    if args.rebuild:
+        command.append("--rebuild")
+    if detach:
+        command.append("--detach")
+    return command
+
+
 def run_application(args: argparse.Namespace) -> int:
     if args.stop or args.status:
         return control_instance(args.mode, stop=args.stop)
-    env = selected_environment(args.mode)
-    port = int(env.get("DASHBOARD_PORT", "7654"))
-    if not 1 <= port <= 65535:
-        raise ValueError("DASHBOARD_PORT must be between 1 and 65535")
+    inherited = dict(os.environ)
+    try:
+        env = selected_environment(args.mode)
+        port = int(env.get("DASHBOARD_PORT", "7654"))
+        if not 1 <= port <= 65535:
+            raise ValueError("DASHBOARD_PORT must be between 1 and 65535")
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise StartupError("PREFLIGHT" if not args.launch_token else "REEXECUTING", str(exc)) from None
+    python = python_executable()
     if not args.launch_token:
-        # Only the user-facing invocation replaces a running instance, and only after the
-        # new launch's configuration validated, so a bad config never takes down a working server.
-        replace_running_instance(args.mode)
+        lock = ROOT / ".runtime/startup.lock"
+        if lock.is_symlink():
+            raise StartupError("PREFLIGHT", "the startup lock must not be a symbolic link")
+        with instance_lock(ROOT, "startup", inherit=True) as descriptor:
+            revision = prepare_startup(ROOT, python, port, inherited,
+                                       validate_instances=lambda: validate_startup_instances(args.mode),
+                                       validate_database=lambda: probe_database(python, env),
+                                       stop_managed=lambda: replace_running_instance(args.mode))
+            stage("REEXECUTING", port)
+            os.execve(python, launch_command(args, python, uuid.uuid4().hex, revision, descriptor, detach=args.detach), inherited)
+        raise StartupError("REEXECUTING", "the updated launcher did not replace the original process")
+
+    descriptor = getattr(args, "startup_lock_fd", None)
+    revision = getattr(args, "startup_revision", None)
+    if descriptor is None or revision is None:
+        raise StartupError("REEXECUTING", "an internal launch requires its prepared revision and startup lock")
+    lease = StartupLease(ROOT, descriptor)
+    try:
+        Checkout(ROOT, inherited=inherited).require_clean_main(stage="REEXECUTING", expected=revision)
+        validate_startup_instances(args.mode)
+        return launch_prepared_application(args, env, inherited, python, port, revision, lease)
+    finally:
+        lease.close()
+
+
+def launch_prepared_application(args: argparse.Namespace, env: dict[str, str], inherited: dict[str, str],
+                                python: str, port: int, revision: str, lease: StartupLease) -> int:
     runtime = ROOT / ".runtime"
     runtime.mkdir(mode=0o700, exist_ok=True)
     if args.detach:
         log_path = runtime / f"{MODES[args.mode]}.log"
         with log_path.open("a") as log:
             log_path.chmod(0o600)
-            command = [sys.executable, str(Path(__file__).resolve()), "run", args.mode,
-                       "--launch-token", uuid.uuid4().hex]
-            if args.rebuild:
-                command.append("--rebuild")
-            process = subprocess.Popen(command, env=env, stdout=log, stderr=log, start_new_session=True)
+            command = launch_command(args, python, args.launch_token, revision, lease.fileno())
+            process = subprocess.Popen(command, env=inherited, stdout=log, stderr=log,
+                                       start_new_session=True, pass_fds=(lease.fileno(),))
         time.sleep(0.5)
         if process.poll() is not None:
             raise RuntimeError(f"Background launch failed; inspect {log_path}")
         print(f"Launch started (pid={process.pid}); log: {log_path}. Use ./run.sh {args.mode} --status or --stop.")
         return 0
-    if not args.launch_token:
-        os.execve(sys.executable, [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:],
-                                  "--launch-token", uuid.uuid4().hex], env)
     with instance_lock(ROOT, MODES[args.mode]):
-        python = python_executable()
+        assert_port_clear(port)
+        if MODES[args.mode] == "production":
+            stage("MIGRATING", port)
+            try:
+                name = database_identity(env["DATABASE_URL_PRODUCTION"])[2]
+                apply_database_upgrade(env, name)
+            except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError):
+                raise StartupError("MIGRATING", "the database upgrade failed; inspect the database state and rerun; no downgrade was attempted") from None
+        stage("BUILDING", port)
         commands = [([python, "-m", "uvicorn", "services.api.app:app", "--workers", "1", "--host", env.get("DASHBOARD_HOST", "127.0.0.1"), "--port", str(port)], ROOT)]
-        if MODES[args.mode] == "development":
-            npm = install_frontend()
-            commands[0][0].extend(["--reload", "--reload-dir", "services", "--reload-dir", "scripts"])
-            commands.append(([npm, "run", "dev", "--", "--strictPort"], CLIENT))
-        else:
-            build_frontend(env, force=args.rebuild)
+        try:
+            if MODES[args.mode] == "development":
+                npm = install_frontend()
+                commands[0][0].extend(["--reload", "--reload-dir", "services", "--reload-dir", "scripts"])
+                commands.append(([npm, "run", "dev", "--", "--strictPort"], CLIENT))
+            else:
+                build_frontend(env, force=args.rebuild)
+        except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError):
+            raise StartupError("BUILDING", "frontend preparation failed; correct dependencies or build errors, then rerun ./run.sh") from None
         record = runtime / f"{MODES[args.mode]}.json"
         record.write_text(json.dumps({"pid": os.getpid(), "token": args.launch_token}))
         record.chmod(0o600)
         try:
+            lease.close()
+            stage("STARTING", port)
             return supervise(commands, env, frontend_env=frontend_environment(env))
         finally:
             record.unlink(missing_ok=True)
@@ -205,10 +273,13 @@ def audit(args: argparse.Namespace, extra: list[str]) -> None:
                 checked([npm, "run", task], env=frontend_environment(dict(os.environ)), cwd=CLIENT)
 
 
+def apply_database_upgrade(env: dict[str, str], confirm_database: str | None) -> None:
+    approved = {**env, "AGENT_SMITH_CONFIRM_DATABASE": confirm_database or ""}
+    checked([python_executable(), str(ROOT / "scripts/upgrade_database.py")], env=approved)
+
+
 def upgrade_database(args: argparse.Namespace) -> None:
-    env = selected_environment(args.mode)
-    env["AGENT_SMITH_CONFIRM_DATABASE"] = args.confirm_database or ""
-    checked([python_executable(), str(ROOT / "scripts/upgrade_database.py")], env=env)
+    apply_database_upgrade(selected_environment(args.mode), args.confirm_database)
 
 
 def main() -> int:
@@ -221,6 +292,8 @@ def main() -> int:
     run.add_argument("--stop", action="store_true")
     run.add_argument("--status", action="store_true")
     run.add_argument("--launch-token", help=argparse.SUPPRESS)
+    run.add_argument("--startup-revision", help=argparse.SUPPRESS)
+    run.add_argument("--startup-lock-fd", type=int, help=argparse.SUPPRESS)
     audit_parser = commands.add_parser("audit")
     audit_parser.add_argument("--backend-only", action="store_true")
     for command in ("evals", "sync", "erd", "upgrade"):

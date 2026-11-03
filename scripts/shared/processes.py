@@ -16,15 +16,16 @@ class InstanceRunningError(RuntimeError):
 
 
 @contextmanager
-def instance_lock(root: Path, app_env: str) -> Iterator[None]:
+def instance_lock(root: Path, app_env: str, *, inherit: bool = False) -> Iterator[int]:
     runtime = root / ".runtime"
     runtime.mkdir(mode=0o700, exist_ok=True)
     with (runtime / f"{app_env}.lock").open("a") as lock:
+        os.set_inheritable(lock.fileno(), inherit)
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise InstanceRunningError(f"{app_env} is already running in this checkout; use a separate checkout or stop it first") from None
-        yield
+        yield lock.fileno()
 
 
 def wait_for_lock_release(root: Path, app_env: str, timeout: float) -> None:

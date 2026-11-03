@@ -12,12 +12,25 @@ One source of truth, synced everywhere.
 ./run.sh
 ```
 
-Requires Python 3.13 and Node 22.12 or newer. `./setup.sh` installs into `.venv`
+Requires Python 3.13, Node 22.12 or newer, Git, `lsof`, and `ps`. `./setup.sh` installs into `.venv`
 and `services/client/node_modules`; subsequent launches reuse those dependencies.
-`./run.sh` starts production: it builds the frontend only when source inputs change,
-then serves the dashboard + API + MCP on port 7654. If this checkout's instance of the
-same mode is already running, `./run.sh` gracefully stops it first and relaunches; a
-launch whose configuration fails validation leaves the running instance untouched.
+`./run.sh` starts production from a clean `main` checkout: it activates the virtual
+environment, validates configuration and tools, fetches `origin/main`, and verifies
+that the checkout can fast-forward before stopping anything. It then stops this
+checkout's same-mode launcher and captured listeners on the selected API port,
+fast-forwards to the fetched commit, and re-executes the updated launcher. The actual
+launch child upgrades the configured production database through the existing
+confirmed Alembic entry point, builds the frontend when inputs changed, and supervises
+the dashboard + API + MCP on port 7654. Running this production start command therefore
+authorizes forward migrations against its validated configured database.
+
+Feature branches, detached HEADs, dirty checkouts, and local commits ahead of or
+diverged from `origin/main` fail before service shutdown; nothing is stashed, reset,
+or switched automatically. Another active mode in the same checkout also blocks
+startup. Initial preflight failures leave the current service untouched; failures
+after shutdown require correction and a rerun. There is no automatic schema downgrade.
+Preflight also makes a bounded read-only `SELECT 1` connection to the validated
+database target, so unreachable databases or rejected credentials fail before shutdown.
 Generate the ERD separately with `./erd.sh` (requires native Graphviz).
 
 ```sh
@@ -27,7 +40,14 @@ Generate the ERD separately with `./erd.sh` (requires native Graphviz).
 ./run.sh --stop              # graceful shutdown of this checkout's production process
 ./run.sh dev --stop          # stop development
 ./run.sh -nc                 # force frontend rebuild; also accepts --rebuild
+./run.sh --help              # help without activation, Git, or startup requirements
 ```
+
+Activation defaults to this checkout's `.venv/bin/activate`, which resolves to
+`/Users/paralign/projects/agent-smith/.venv/bin/activate` in the canonical checkout.
+Override it with `AGENT_SMITH_VENV_ACTIVATE`; paths containing spaces are supported.
+Explicit `AGENT_SMITH_PYTHON` and `LAUNCH_PYTHON` interpreter overrides remain supported.
+Help, status, and stop bypass activation and Git/update prerequisites.
 
 Launch modes select `.env.development` and `.env.production` respectively. Override
 ports with `DASHBOARD_PORT` and `DEV_FRONTEND_PORT`. Servers bind to loopback by
@@ -35,6 +55,47 @@ default; set `DASHBOARD_HOST` explicitly for remote access. Background launch re
 that startup has begun; inspect `.runtime/<environment>.log` for readiness/failures.
 Use separate checkouts for active development and production so dependency refreshes
 and frontend builds cannot alter the deployed checkout.
+
+### Startup recovery
+
+Startup reports `PREFLIGHT`, `STOPPING`, `UPDATING`, `REEXECUTING`, `MIGRATING`,
+`BUILDING`, and `STARTING` stages with the API port. `STARTING` hands off to supervision;
+background launch still reports that startup began, not that application readiness
+has been proved. Inspect `.runtime/<environment>.log` after a detached start.
+During detached migration/build, `--status` reports startup preparation when no mode
+process record exists and points to the runtime logs. `--stop` refuses to race active
+preparation and sends no extra signals; inspect the log or wait for preparation to finish.
+
+The fetched commit and listener process identities are snapshots. Each process is
+rechecked immediately before SIGTERM and, after a bounded wait, SIGKILL; only those
+captured PIDs still listening on the exact port can be signaled. Observed replacement
+or PID reuse aborts cleanup before signaling that identity; POSIX PID signaling still
+has a small non-atomic observation/signal boundary. Ownership and inspection failures stop startup. Hidden listeners
+on wildcard or loopback hosts are detected by bind probes when `lsof` returns no
+listeners; other specific-interface listeners require visible `lsof` ownership.
+No process-group-wide port cleanup or privilege escalation is used.
+
+Updated code reloads defaults and validates configuration using the original explicit
+environment, so values from the old checkout are not frozen into the new launch.
+A checkout-wide startup lock remains inherited across re-exec and detached handoff
+until migration/build and process-record preparation complete; another start fails
+instead of preparing the same checkout concurrently. The normal mode lock continues
+protecting the running service. Do not delete lock files to bypass an active startup.
+
+- `PREFLIGHT`: correct the branch/local changes, activation path, tools, Git access,
+  or configuration, then rerun; the service has not been stopped.
+- `STOPPING`: inspect the reported port/PID and the existing launcher log; resolve
+  ownership or a replacement listener explicitly before retrying.
+- `UPDATING` or `REEXECUTING`: the previous service may be stopped; inspect `git status`
+  and the updated configuration, correct the reported issue without discarding work,
+  and rerun from clean `main`.
+- `MIGRATING`: inspect database migration state and backups; correct forward rather
+  than automatically downgrading or restoring old source against a changed schema.
+- `BUILDING`: correct dependencies/build errors and rerun; the source and database
+  may already be updated. A rerun rechecks the fetched commit and Alembic head.
+
+Development starts retain Uvicorn reload and Vite HMR; development migrations remain
+in application startup rather than running twice through the production launcher path.
 
 Typed resource searches and text filters request automatically after a 300ms pause,
 including Rules, Plans, Meetings, Profiles, Memory and person pickers. Select and checkbox
@@ -688,10 +749,12 @@ environment's `.env.*` file.
 
 Postgres stores harness items, eval configs, eval results, plans, meeting context, and—when
 `MEMORY_BACKEND=pgvector`—memory content, metadata, and embeddings.
-Schema is managed by Alembic. Development/test migrations run on startup. Production
-startup only reads the migration revision and refuses incompatible schemas. Production
+Schema is managed by Alembic. Development/test migrations run on application startup.
+An explicit production `./run.sh` invocation now applies forward upgrades before its
+frontend build and server start; the application itself still only checks schema
+compatibility. Production
 database creation and direct production Alembic commands (including downgrade) are
-blocked. Forward upgrades require explicit database-name confirmation after review:
+blocked. Standalone forward-upgrade commands require explicit database-name confirmation after review:
 
 ```sh
 ./db.sh development
@@ -710,8 +773,11 @@ already runs elsewhere; its native server binaries are required for isolated aud
 
 Application guards do not restrict arbitrary SQL clients. Use a production runtime
 role that does not own schemas/tables and lacks database/schema creation permissions;
-use separate credentials for reviewed migrations. This change does not alter existing
-roles, grants, schemas, or production data.
+use separate credentials for reviewed migrations. Automatic `./run.sh` upgrades use
+the selected connection, so that connection needs migration privileges when revisions
+are pending. A restricted runtime role can start only after the required head was
+applied separately with reviewed migration credentials. No separate credential API is
+introduced, and existing roles or grants are not changed automatically.
 
 ## Environment
 
