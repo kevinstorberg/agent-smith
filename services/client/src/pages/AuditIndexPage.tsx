@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { api } from '../api';
 import type { AuditEvent, AuditCounts } from '../api';
 import { Pagination } from '../components/Pagination';
@@ -24,7 +24,7 @@ export function AuditIndexPage() {
   const [counts, setCounts] = useState<AuditCounts | null>(null);
   const navigate = useNavigate();
 
-  const { items, total, loading, error, limit, offset, setLimit, setOffset, refresh } = usePagination<AuditEvent>(
+  const { items, total, loading, error, dataCurrent, limit, offset, setLimit, setOffset, refresh } = usePagination<AuditEvent>(
     (l, o) => api.audit.list({ agent: agent || undefined, status: status || undefined,
       q: debouncedQuery || undefined, project: debouncedProject || undefined, sort }, { limit: l, offset: o }),
     [agent, status, debouncedQuery, debouncedProject, sort],
@@ -49,92 +49,77 @@ export function AuditIndexPage() {
   });
 
   const showCounts = !query && !debouncedQuery && !project && !debouncedProject && !status;
+  const hasFilters = Boolean(query || project || agent || status);
+  const updating = loading || (!error && !dataCurrent) || query !== debouncedQuery || project !== debouncedProject;
+  const accepted = !error && !updating;
 
   return (
-    <div>
+    <div className="audit-page">
       <div className="page-header">
         <h2 className="page-title">Audit Trail</h2>
       </div>
 
-      <FilterBar nameValue={query} onNameChange={value => preferences.setField('q', value)} namePlaceholder="Search audit events..."
-        projectValue={project} onProjectChange={value => preferences.setField('project', value)} onReset={preferences.reset}>
-        <label><span className="form-label">Sort audit events</span>
-        <select aria-label="Sort audit events" value={sort} onChange={event => preferences.setField('sort', parseViewField('audit', 'sort', event.target.value))}>
-          {AUDIT_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
+      <FilterBar className="audit-toolbar" nameValue={query} onNameChange={value => preferences.setField('q', value)} namePlaceholder="Search audit events..."
+        projectLabel="Project" projectValue={project} onProjectChange={value => preferences.setField('project', value)} onReset={preferences.reset}>
+        <label className="audit-agent-filter"><span className="form-label">Agent</span>
+          <select value={agent} onChange={event => preferences.setField('agent', parseViewField('audit', 'agent', event.target.value))}>
+            <option value="">All agents</option>
+            {ALL_AGENTS.map(option => <option key={option} value={option}>{option}{showCounts && counts ? ` (${counts[option]})` : ''}</option>)}
+          </select>
+        </label>
+        <label className="audit-status-filter"><span className="form-label">Status</span>
+          <select value={status} onChange={event => preferences.setField('status', parseViewField('audit', 'status', event.target.value))}>
+            <option value="">Any status</option>
+            {AUDIT_STATUSES.map(option => <option key={option} value={option}>{option}</option>)}
+          </select>
+        </label>
+        <label className="audit-sort-filter"><span className="form-label">Sort</span>
+          <select value={sort} onChange={event => preferences.setField('sort', parseViewField('audit', 'sort', event.target.value))}>
+            {AUDIT_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
         </label>
       </FilterBar>
-      <div className="filters">
-        <button
-          className={`btn${agent === '' ? ' btn-primary' : ''}`}
-          onClick={() => preferences.setField('agent', '')}
-        >
-          all agents
-        </button>
-        {ALL_AGENTS.map(a => (
-          <button
-            key={a}
-            className={`btn${agent === a ? ' btn-primary' : ''}`}
-            onClick={() => preferences.setField('agent', a)}
-          >
-            {a}{showCounts && counts ? ` (${counts[a]})` : ''}
-          </button>
-        ))}
-      </div>
 
-      <div className="filters">
-        <button
-          className={`btn${status === '' ? ' btn-primary' : ''}`}
-          onClick={() => preferences.setField('status', '')}
-        >
-          any status
-        </button>
-        {AUDIT_STATUSES.map(s => (
-          <button
-            key={s}
-            className={`btn${status === s ? ' btn-primary' : ''}`}
-            onClick={() => preferences.setField('status', s)}
-          >
-            {s}
-          </button>
-        ))}
+      <div className="audit-results-summary" role="status">
+        {updating ? 'Updating…' : !error && `${total.toLocaleString()} ${hasFilters ? 'matching ' : ''}tool call${total === 1 ? '' : 's'}`}
       </div>
-
-      {error && <p role="alert">Could not load audit events. <button className="btn btn-sm" onClick={() => refresh()}>Retry</button></p>}
-      {loading && <div className="loading" role="status">Loading...</div>}
-      <ScrollableTable label="Audit events" className="audit-list-table" empty={items.length === 0}>
+      <div className="audit-results" aria-busy={updating}>
+      {error && <p role="alert">Could not load audit events. <button className="btn btn-sm" disabled={updating} onClick={() => refresh()}>Retry</button></p>}
+      {accepted && items.length === 0 && <section className="audit-empty" role="region" aria-label="Audit events">
+        <h3>{hasFilters ? 'No matching tool calls' : 'No tool calls yet'}</h3>
+        <p>{hasFilters ? 'Try a different search or reset this view.' : 'Activity will appear here when an agent runs a tool.'}</p>
+      </section>}
+      {accepted && items.length > 0 && <ScrollableTable label="Audit events" className="audit-list-table">
         <thead>
           <tr>
-            <th>Time</th>
-            <th>Agent</th>
             <th>Tool</th>
             <th>Status</th>
-            <th>Duration</th>
+            <th>Agent</th>
+            <th aria-sort={sort === 'duration' ? 'descending' : undefined}>Duration</th>
             <th>Project</th>
+            <th aria-sort={sort === 'newest' ? 'descending' : sort === 'oldest' ? 'ascending' : undefined}>Time</th>
           </tr>
         </thead>
         <tbody>
-          {!loading && !error && items.map(event => (
+          {items.map(event => (
             <tr
               key={event.id}
               {...makeRowClickable(() => navigate(`/audit/${event.id}`))}
               style={{ cursor: 'pointer' }}
             >
-              <td><DateCell date={event.created_at} /></td>
-              <td><span className="tag">{event.agent}</span></td>
-              <td>{event.tool_name}</td>
+              <td><Link className="audit-tool-link" to={`/audit/${event.id}`} onClick={event => event.stopPropagation()}>{event.tool_name}</Link></td>
               <td><StatusBadge status={event.status} kind="audit" /></td>
-              <td>{formatDuration(event.duration_ms)}</td>
+              <td>{event.agent}</td>
+              <td className="audit-duration">{formatDuration(event.duration_ms)}</td>
               <td><ProjectCell project={event.project} /></td>
+              <td className="audit-time"><DateCell date={event.created_at} /></td>
             </tr>
           ))}
-          {!loading && !error && items.length === 0 && (
-            <tr><td colSpan={6} className="loading">No tool-call events</td></tr>
-          )}
         </tbody>
-      </ScrollableTable>
+      </ScrollableTable>}
+      </div>
 
-      {!error && <Pagination
+      {accepted && <Pagination
         total={total}
         limit={limit}
         offset={offset}

@@ -96,17 +96,17 @@ describe('Maintenance page server controls', () => {
     const list = vi.mocked(api.audit.list);
     renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
     await settle();
-    expect(screen.getByRole('button', { name: 'claude (25)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'claude (25)' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await settle();
     fireEvent.change(screen.getByPlaceholderText('Search audit events...'), { target: { value: 'Bash' } });
     fireEvent.change(screen.getByPlaceholderText('Filter by project...'), { target: { value: 'agent-smith' } });
-    expect(screen.queryByRole('button', { name: 'claude (25)' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'claude (25)' })).not.toBeInTheDocument();
     await advance();
     expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ q: 'Bash', project: 'agent-smith' }), { limit: 10, offset: 0 });
-    fireEvent.click(screen.getByRole('button', { name: 'claude' }));
-    fireEvent.click(screen.getByRole('button', { name: 'error' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'Sort audit events' }), { target: { value: 'duration' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Agent' }), { target: { value: 'claude' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), { target: { value: 'error' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), { target: { value: 'duration' } });
     await settle();
     expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ q: 'Bash', project: 'agent-smith', agent: 'claude', status: 'error', sort: 'duration' }), { limit: 10, offset: 0 });
   });
@@ -130,11 +130,11 @@ describe('Maintenance page server controls', () => {
   it('hides global audit counts while a status is selected', async () => {
     renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
     await settle();
-    expect(screen.getByRole('button', { name: 'claude (25)' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'error' }));
+    expect(screen.getByRole('option', { name: 'claude (25)' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), { target: { value: 'error' } });
     await settle();
-    expect(screen.queryByRole('button', { name: 'claude (25)' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'claude' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'claude (25)' })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'claude' })).toBeInTheDocument();
   });
 
   it('refreshes the latest proposal criteria when an earlier review finishes', async () => {
