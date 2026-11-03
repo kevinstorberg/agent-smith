@@ -77,7 +77,7 @@ function MeetingDetail({ id }: { id?: string }) {
   const transcriptActive = visible && view === 'transcript';
   return <div className="meeting-detail">
     <div className="card meeting-summary">
-      <DetailPageHeader backTo={{ label: 'meetings', path: '/meetings' }} editing={false} saving={false} showActions={false} onNavigateBack={() => navigate('/meetings')} />
+      <DetailPageHeader backTo={{ label: 'meetings', path: '/meetings' }} editing={false} saving={false} showActions={false} />
       <h2 className="page-title">{meeting ? meeting.title || 'Untitled meeting' : 'Meeting'}</h2>
       {meeting && <>
         <div className="meeting-summary-meta text-muted-sm"><DateCell date={meeting.meeting_start || meeting.provider_created_at} format="long" /><span>{meeting.source_name}</span>{meeting.project && <span className="tag tag-project">{meeting.project}</span>}

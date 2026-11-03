@@ -1,7 +1,22 @@
-export const ALL_AGENTS = ['claude', 'codex', 'gemini'];
+export const ALL_AGENTS = ['claude', 'codex', 'gemini'] as const;
 export const POLL_INTERVAL_MS = 60_000;
 export const PAGE_LIMITS = [10, 25, 50] as const;
 export type PageLimit = typeof PAGE_LIMITS[number];
+export const HARNESS_SORT_OPTIONS = [
+  { value: 'manual', label: 'Manual order' }, { value: 'name', label: 'Name A–Z' },
+  { value: 'newest', label: 'Newest first' }, { value: 'updated', label: 'Recently updated' },
+] as const;
+export const AUDIT_STATUSES = ['pending', 'success', 'error'] as const;
+export const PROPOSAL_STATUSES = ['pending', 'approved', 'rejected'] as const;
+export const AUDIT_SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest first' }, { value: 'oldest', label: 'Oldest first' }, { value: 'duration', label: 'Longest duration' },
+] as const;
+export const PROPOSAL_SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest first' }, { value: 'oldest', label: 'Oldest first' }, { value: 'title', label: 'Title' },
+] as const;
+export const EVAL_SUITE_SORT_OPTIONS = [
+  { value: 'name', label: 'Name' }, { value: 'updated', label: 'Recently updated' }, { value: 'newest', label: 'Newest first' },
+] as const;
 
 export const ACTION_ITEM_STATUSES = [['open', 'Open'], ['completed', 'Completed'], ['all', 'All']] as const;
 export type ActionItemStatus = typeof ACTION_ITEM_STATUSES[number][0];

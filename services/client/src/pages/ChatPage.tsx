@@ -296,7 +296,7 @@ export function ChatPage() {
               <header className="chat-room-header">
                 <div>
                   <h3>{detail.room.topic}</h3>
-                  {detail.room.context && <p>{detail.room.context}</p>}
+                  {detail.room.context && <p className="chat-room-context" role="region" aria-label="Room context" tabIndex={0}>{detail.room.context}</p>}
                 </div>
                 <div className="chat-room-actions">
                   <button className="btn" disabled={saving} onClick={startRoomEdit}>

@@ -60,7 +60,7 @@ afterEach(() => vi.useRealTimers());
 describe('Maintenance page server controls', () => {
   it('filters and sorts eval suites through guarded pagination', async () => {
     const list = vi.mocked(api.evalConfigs.suites.list);
-    renderWithProviders(<EvalSuitesPage />);
+    renderWithProviders(<EvalSuitesPage />, { initialEntries: ['/eval-configs'] });
     await settle();
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await settle();
@@ -85,7 +85,7 @@ describe('Maintenance page server controls', () => {
 
   it('keeps suite controls mounted when loading fails', async () => {
     vi.mocked(api.evalConfigs.suites.list).mockRejectedValue(new Error('Unavailable'));
-    renderWithProviders(<EvalSuitesPage />);
+    renderWithProviders(<EvalSuitesPage />, { initialEntries: ['/eval-configs'] });
     const input = screen.getByPlaceholderText('Search eval suites...');
     await settle();
     expect(screen.getByRole('alert')).toHaveTextContent('Could not load eval suites');
@@ -94,7 +94,7 @@ describe('Maintenance page server controls', () => {
 
   it('combines audit search, project, agent, status, and sort while hiding global counts', async () => {
     const list = vi.mocked(api.audit.list);
-    renderWithProviders(<AuditIndexPage />);
+    renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
     await settle();
     expect(screen.getByRole('button', { name: 'claude (25)' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
@@ -113,7 +113,7 @@ describe('Maintenance page server controls', () => {
 
   it('combines proposal search, all statuses, and sort without global counts', async () => {
     const list = vi.mocked(api.proposals.list);
-    renderWithProviders(<ProposalsIndexPage />);
+    renderWithProviders(<ProposalsIndexPage />, { initialEntries: ['/proposals'] });
     await settle();
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await settle();
@@ -128,7 +128,7 @@ describe('Maintenance page server controls', () => {
   });
 
   it('hides global audit counts while a status is selected', async () => {
-    renderWithProviders(<AuditIndexPage />);
+    renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
     await settle();
     expect(screen.getByRole('button', { name: 'claude (25)' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'error' }));
@@ -142,7 +142,7 @@ describe('Maintenance page server controls', () => {
     vi.mocked(api.proposals.approve).mockImplementationOnce(() => new Promise(resolve => { finishReview = resolve; }));
     const list = vi.mocked(api.proposals.list);
     list.mockImplementation(async status => ({ items: [proposal(status === 'approved' ? 'Approved current' : 'Current proposal', status === 'approved' ? 'approved' : 'pending')], total: 25 }));
-    renderWithProviders(<ProposalsIndexPage />);
+    renderWithProviders(<ProposalsIndexPage />, { initialEntries: ['/proposals'] });
     await settle();
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await settle();
