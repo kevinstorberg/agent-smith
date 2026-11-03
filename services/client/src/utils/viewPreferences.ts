@@ -1,4 +1,4 @@
-import { PAGE_LIMITS, MEMORY_LIST_SORT_OPTIONS, MEMORY_SEARCH_SORT_OPTIONS, MEETING_SORT_OPTIONS, VOCABULARY_DEFINITIONS, VOCABULARY_SORT_OPTIONS } from '../constants';
+import { ALL_AGENTS, AUDIT_SORT_OPTIONS, AUDIT_STATUSES, EVAL_SUITE_SORT_OPTIONS, HARNESS_SORT_OPTIONS, MEMORY_LIST_SORT_OPTIONS, MEMORY_SEARCH_SORT_OPTIONS, MEETING_SORT_OPTIONS, PAGE_LIMITS, PROPOSAL_SORT_OPTIONS, PROPOSAL_STATUSES, VOCABULARY_DEFINITIONS, VOCABULARY_SORT_OPTIONS } from '../constants';
 import type { PageLimit } from '../constants';
 
 export const VIEW_COOKIE_NAME = 'agent-smith.ui.v1';
@@ -16,9 +16,14 @@ export const SCHEDULING_OPTIONS = [
   { value: '', label: 'All scheduling states' }, { value: 'true', label: 'Automatic runs enabled' }, { value: 'false', label: 'Automatic runs paused' },
 ] as const;
 
-export interface ViewSettings {
+type HarnessViewKey = 'harness.rule' | 'harness.skill' | 'harness.tool' | 'harness.hook' | 'harness.agent';
+interface HarnessViewSettings { name: string; project: string; sort: typeof HARNESS_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number }
+export interface ViewSettings extends Record<HarnessViewKey, HarnessViewSettings> {
   jobs: { q: string; schedule_enabled: typeof SCHEDULING_OPTIONS[number]['value']; sort: typeof JOB_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
   plans: { q: string; project: string; status: typeof PLAN_STATUSES[number]; sort: typeof PLAN_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
+  audit: { q: string; project: string; agent: '' | typeof ALL_AGENTS[number]; status: '' | typeof AUDIT_STATUSES[number]; sort: typeof AUDIT_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
+  proposals: { q: string; status: '' | typeof PROPOSAL_STATUSES[number]; sort: typeof PROPOSAL_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
+  evalSuites: { q: string; enabled: typeof SCHEDULING_OPTIONS[number]['value']; sort: typeof EVAL_SUITE_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
   memory: { q: string; repo: string; tags: string; meeting_only: boolean; listSort: typeof MEMORY_LIST_SORT_OPTIONS[number]['value']; searchSort: typeof MEMORY_SEARCH_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
   meetings: { q: string; labels: string; sort: typeof MEETING_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
   vocabulary: { q: string; definition: typeof VOCABULARY_DEFINITIONS[number]['value']; sort: typeof VOCABULARY_SORT_OPTIONS[number]['value']; limit: PageLimit; offset: number };
@@ -43,7 +48,17 @@ function numeric(value: unknown): number | undefined {
   return typeof value === 'string' && /^(0|[1-9]\d*)$/.test(value) ? Number(value) : undefined;
 }
 
+function harnessSpec(pathname: string): ViewSpec<HarnessViewSettings> {
+  return { pathname, defaults: { name: '', project: '', sort: 'manual', limit: 10, offset: 0 },
+    fields: { name: text, project: text, sort: choice(HARNESS_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset } };
+}
+
 const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
+  'harness.rule': harnessSpec('/harness/rules'),
+  'harness.skill': harnessSpec('/harness/skills'),
+  'harness.tool': harnessSpec('/harness/tools'),
+  'harness.hook': harnessSpec('/harness/hooks'),
+  'harness.agent': harnessSpec('/harness/agents'),
   jobs: {
     pathname: '/jobs', defaults: { q: '', schedule_enabled: '', sort: 'updated', limit: 10, offset: 0 },
     fields: { q: text, schedule_enabled: choice(SCHEDULING_OPTIONS.map(option => option.value)), sort: choice(JOB_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
@@ -51,6 +66,18 @@ const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
   plans: {
     pathname: '/plans', defaults: { q: '', project: '', status: 'all', sort: 'updated', limit: 10, offset: 0 },
     fields: { q: text, project: text, status: choice(PLAN_STATUSES), sort: choice(PLAN_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
+  },
+  audit: {
+    pathname: '/audit', defaults: { q: '', project: '', agent: '', status: '', sort: 'newest', limit: 10, offset: 0 },
+    fields: { q: text, project: text, agent: choice(['', ...ALL_AGENTS]), status: choice(['', ...AUDIT_STATUSES]), sort: choice(AUDIT_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
+  },
+  proposals: {
+    pathname: '/proposals', defaults: { q: '', status: 'pending', sort: 'newest', limit: 10, offset: 0 },
+    fields: { q: text, status: choice(['', ...PROPOSAL_STATUSES]), sort: choice(PROPOSAL_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
+  },
+  evalSuites: {
+    pathname: '/eval-configs', defaults: { q: '', enabled: '', sort: 'name', limit: 10, offset: 0 },
+    fields: { q: text, enabled: choice(SCHEDULING_OPTIONS.map(option => option.value)), sort: choice(EVAL_SUITE_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
   },
   memory: {
     pathname: '/memory', defaults: { q: '', repo: '', tags: '', meeting_only: false, listSort: 'created_at_desc', searchSort: 'relevance', limit: 10, offset: 0 },
@@ -65,6 +92,12 @@ const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
     fields: { q: text, definition: choice(VOCABULARY_DEFINITIONS.map(option => option.value)), sort: choice(VOCABULARY_SORT_OPTIONS.map(option => option.value)), limit: pageLimit, offset: pageOffset },
   },
 };
+
+export function harnessViewKey(type: string): HarnessViewKey {
+  const key = `harness.${type}`;
+  if (!isViewKey(key) || !key.startsWith('harness.')) throw new Error(`Unsupported Harness preference type: ${type}`);
+  return key as HarnessViewKey;
+}
 
 function specFor<K extends ViewKey>(key: K): ViewSpec<ViewSettings[K]> {
   return SPECS[key];

@@ -1,6 +1,6 @@
 # Screen preferences
 
-Jobs, Plans, Memory, Meetings and Vocabulary share the typed codec in `services/client/src/utils/viewPreferences.ts` and the browser/router adapter `useViewPreferences`.
+Jobs, Plans, the five Harness lists, Audit, Proposals, Eval suites, Memory, Meetings and Vocabulary share the typed codec in `services/client/src/utils/viewPreferences.ts` and the browser/router adapter `useViewPreferences`.
 Further screens should extend that registry and reuse the adapter, rather than adding cookies or persistence effects.
 
 The host-only `agent-smith.ui.v1` cookie uses `Path=/`, `SameSite=Lax`, a 30-day lifetime and `Secure` on HTTPS.

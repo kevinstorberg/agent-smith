@@ -312,20 +312,21 @@ export function HarnessDetailPage() {
         onSave={save}
         onCancel={cancelEdit}
         onDelete={!previewVersion ? handleDelete : undefined}
-        onNavigateBack={() => navigate(backPath)}
         deleteConfirmMessage={`Delete ${type} "${displayItem.name}"?`}
         showActions={!previewVersion}
       />
 
       {editing ? (
         <div style={{ marginBottom: 12 }}>
+          <label className="form-label" htmlFor="harness-edit-name">Name</label>
           <input
-            style={{ ...styles.input, borderColor: editValues.name && nameError(editValues.name) ? 'var(--highlight)' : undefined }}
+            id="harness-edit-name" className="input detail-title-input" aria-invalid={Boolean(editValues.name && nameError(editValues.name))}
+            aria-describedby={editValues.name && nameError(editValues.name) ? "harness-edit-name-error" : undefined}
             value={editValues.name ?? ''}
             onChange={e => setEditValue('name', e.target.value)}
             maxLength={MAX_NAME_LENGTH}
           />
-          <FieldError error={editValues.name ? nameError(editValues.name) : null} maxLength={MAX_NAME_LENGTH} currentLength={editValues.name?.length ?? 0} />
+          <FieldError id="harness-edit-name-error" error={editValues.name ? nameError(editValues.name) : null} maxLength={MAX_NAME_LENGTH} currentLength={editValues.name?.length ?? 0} />
         </div>
       ) : (
         <h2 className="page-title" style={{ marginBottom: 8 }}>
@@ -361,26 +362,26 @@ export function HarnessDetailPage() {
 
       {editing && (
         <>
-          <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
+          <div className="form-grid" style={{ marginBottom: 16 }}>
             <div>
-              <label className="form-label">
+              <label className="form-label" htmlFor="harness-edit-project">
                 Project
               </label>
               <input
-                style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', padding: '6px 10px', fontSize: 13, fontFamily: 'var(--font)', width: 220 }}
+                id="harness-edit-project" className="input"
                 value={editValues.project ?? ''}
                 onChange={e => setEditValue('project', e.target.value)}
                 placeholder="Empty = shared/global"
               />
             </div>
             <div>
-              <label className="form-label">
+              <label className="form-label" htmlFor="harness-edit-sort">
                 Sort Order
               </label>
               <input
                 type="number"
                 min={0}
-                style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', padding: '6px 10px', fontSize: 13, fontFamily: 'var(--mono)', width: 120 }}
+                id="harness-edit-sort" className="input"
                 value={editValues.sort_key ?? ''}
                 onChange={e => setEditValue('sort_key', e.target.value)}
                 placeholder="e.g. 5"
@@ -391,9 +392,9 @@ export function HarnessDetailPage() {
             <label style={styles.checkboxLabel}>
               <input
                 type="checkbox"
+                className="form-checkbox"
                 checked={editValues.enabled ?? true}
                 onChange={() => setEditValue('enabled', !(editValues.enabled ?? true))}
-                style={{ accentColor: 'var(--success)', width: 16, height: 16 }}
               />
               Enabled
             </label>
@@ -401,29 +402,27 @@ export function HarnessDetailPage() {
               <label style={styles.checkboxLabel}>
                 <input
                   type="checkbox"
+                className="form-checkbox"
                   checked={editValues.clone_as_skill ?? false}
                   onChange={() => setEditValue('clone_as_skill', !(editValues.clone_as_skill ?? false))}
-                  style={{ accentColor: 'var(--highlight)', width: 16, height: 16 }}
                 />
                 Clone as Skill
               </label>
             )}
-            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>|</span>
-            <AgentCheckboxes
-              selected={editValues.agents ?? []}
-              onToggle={toggleAgent}
-              labelStyle={styles.checkboxLabel}
-              checkboxStyle={{ accentColor: 'var(--highlight)', width: 16, height: 16 }}
-            />
           </div>
+          <fieldset className="form-group"><legend className="form-label">Agents</legend>
+            <div style={styles.checkboxRow}><AgentCheckboxes selected={editValues.agents ?? []} onToggle={toggleAgent} /></div>
+          </fieldset>
         </>
       )}
 
       <div className="card" style={{ marginBottom: 24 }}>
+        {editing && <label className="form-label" htmlFor="harness-edit-body">{isMarkdownType(type) ? "Body" : "Configuration (JSON)"}</label>}
         {editing ? (
           isMarkdownType(type) ? (
             <div data-color-mode="dark">
               <MDEditor
+                textareaProps={{ id: "harness-edit-body" }}
                 value={editValues.body ?? ''}
                 onChange={val => setEditValue('body', val || '')}
                 height={400}
@@ -431,7 +430,7 @@ export function HarnessDetailPage() {
             </div>
           ) : (
             <textarea
-              style={styles.textarea}
+              id="harness-edit-body" style={styles.textarea}
               value={editValues.body ?? ''}
               onChange={e => setEditValue('body', e.target.value)}
               spellCheck={false}
@@ -513,11 +512,11 @@ export function HarnessDetailPage() {
                 ))}
                 {cfg.subagents && cfg.subagents.length > 0 && (
                   <>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)', margin: '0 4px' }}>|</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Subagents:</span>
+                    <span style={{ fontSize: 'var(--font-xs)', color: 'var(--text-muted)', margin: '0 4px' }}>|</span>
+                    <span style={{ fontSize: 'var(--font-xs)', color: 'var(--text-muted)' }}>Subagents:</span>
                     {cfg.subagents.map(s => (
                       <span key={s} style={{
-                        fontSize: 11,
+                        fontSize: 'var(--font-xs)',
                         padding: '2px 6px',
                         background: 'var(--warning)',
                         color: 'var(--bg)',
@@ -530,7 +529,7 @@ export function HarnessDetailPage() {
                 )}
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, color: cfg.enabled ? 'var(--success)' : 'var(--text-muted)' }}>
+                <span style={{ fontSize: 'var(--font-xs)', color: cfg.enabled ? 'var(--success)' : 'var(--text-muted)' }}>
                   {cfg.enabled ? 'Enabled' : 'Disabled'}
                 </span>
                 {!previewVersion && (
@@ -583,7 +582,7 @@ export function HarnessDetailPage() {
             <div>
               <span style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>v{h.version}</span>
               {h.id === item.id && (
-                <span style={{ fontSize: 11, color: 'var(--success)', marginLeft: 8 }}>current</span>
+                <span style={{ fontSize: 'var(--font-xs)', color: 'var(--success)', marginLeft: 8 }}>current</span>
               )}
             </div>
             <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>

@@ -211,7 +211,7 @@ def test_promote_requires_pending():
     upsert_item("rule", "propsvc_twice", content=RULE_CONTENT, agents=ALL_AGENTS)
     proposal_id = file_proposal(rule_update_proposal("propsvc_twice"))
     promote_proposal(proposal_id)
-    with pytest.raises(ValueError, match="not pending"):
+    with pytest.raises(ProposalConflictError, match="not pending"):
         promote_proposal(proposal_id)
 
 

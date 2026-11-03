@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { ConfigForm } from '../ConfigForm';
 
 vi.mock('../../hooks/useAssignableAgents', () => ({
@@ -31,6 +32,24 @@ function defaultProps(overrides = {}) {
 }
 
 describe('ConfigForm', () => {
+  it('keeps deployment mode choices independent across two configurations', () => {
+    function Configuration({ title }: { title: string }) {
+      const [exclude, setExclude] = useState(false);
+      return <ConfigForm {...defaultProps({ title, exclude, onExcludeChange: setExclude })} />;
+    }
+    render(<><Configuration title="First configuration" /><Configuration title="Second configuration" /></>);
+    const first = within(screen.getByRole('group', { name: 'First configuration' }));
+    const second = within(screen.getByRole('group', { name: 'Second configuration' }));
+    fireEvent.click(second.getByRole('radio', { name: 'Exclude' }));
+    expect(first.getByRole('radio', { name: 'Include' })).toBeChecked();
+    expect(second.getByRole('radio', { name: 'Exclude' })).toBeChecked();
+  });
+
+  it('connects the repository label and validation message to its input', () => {
+    render(<ConfigForm {...defaultProps({ repo: 'bad/path' })} />);
+    expect(screen.getByRole('textbox', { name: 'Repository' })).toHaveAccessibleDescription('Must be * or an absolute path');
+  });
+
   it('renders title when provided', () => {
     render(<ConfigForm {...defaultProps({ title: 'Edit Config' })} />);
     expect(screen.getByText('Edit Config')).toBeInTheDocument();

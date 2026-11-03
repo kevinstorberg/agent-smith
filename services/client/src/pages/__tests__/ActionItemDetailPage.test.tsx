@@ -232,7 +232,7 @@ describe('ActionItemDetailPage', () => {
     await screen.findByText(/Could not refresh this action item/);
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Back to action items/ })).toBeEnabled();
+    expect(screen.getByRole('link', { name: /Back to action items/ })).toHaveAttribute('href', '/action-items');
   });
 
   it('uses desired completion/reopen states with the displayed revisions', async () => {
