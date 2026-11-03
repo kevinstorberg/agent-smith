@@ -13,9 +13,9 @@ export interface ActionItemQueueSource {
 }
 interface DragSnapshot { items: ActionItemRow[]; view: string }
 
-export function useActionItemQueue({ source, filters, criteria, viewKey, reorderableView, active = true, disabled = false, editing = false, noun = 'action item' }: {
+export function useActionItemQueue({ source, filters, criteria, viewKey, reorderableView, criteriaPending = false, active = true, disabled = false, editing = false, noun = 'action item' }: {
   source: ActionItemQueueSource; filters: ActionItemFilters; criteria: string; viewKey: string; reorderableView: boolean;
-  active?: boolean; disabled?: boolean; editing?: boolean; noun?: string;
+  criteriaPending?: boolean; active?: boolean; disabled?: boolean; editing?: boolean; noun?: string;
 }) {
   const [snapshot, setSnapshot] = useState<DragSnapshot | null>(null);
   const drag = useRef<DragSnapshot | null>(null);
@@ -44,7 +44,7 @@ export function useActionItemQueue({ source, filters, criteria, viewKey, reorder
     if (handle?.isConnected && !handle.disabled && document.activeElement === document.body) handle.focus({ preventScroll: true });
   }, [busy, snapshot]);
   // Retain SDK handle identity through its post-drop focus lookup.
-  const dragSurfaceEnabled = reorderableView && !loading && !error && active && !disabled && !editing;
+  const dragSurfaceEnabled = reorderableView && !criteriaPending && list.dataCurrent && !loading && !error && active && !disabled && !editing;
   const canDrag = dragSurfaceEnabled && !busy;
   const canDragRef = useRef(canDrag);
   useLayoutEffect(() => { canDragRef.current = canDrag; }, [canDrag]);
@@ -112,11 +112,9 @@ export function useActionItemQueue({ source, filters, criteria, viewKey, reorder
     const anchor: ActionItemMove = next
       ? { expected_revision: moved.revision, before_id: next.id }
       : { expected_revision: moved.revision, after_id: reordered[index - 1].id };
-    const optimistic = reordered.map((item, position) => ({ ...item, priority: captured.items[position].priority }));
     writing.current = true;
     setSavingOrder(true);
-    setSnapshot({ ...captured, items: optimistic });
-    setItems(optimistic);
+    setSnapshot({ ...captured, items: reordered });
     try {
       await source.move(moved.id, anchor);
     } catch (failure) {
