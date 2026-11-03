@@ -109,8 +109,7 @@ function ActionItemDetail({ id }: { id?: string }) {
       disabled={saving || (!editing && (Boolean(read.error) || !rereadAccepted))} saveDisabled={!rereadAccepted}
       onEdit={startEditing} onSave={save} onCancel={() => { form.cancelEditing(); setNotice(null); setConflictAfter(null); }}
       onDelete={item ? () => { void remove.mutate(); } : undefined}
-      deleteConfirmMessage={item ? `Delete action item “${item.title}”?` : undefined}
-      onNavigateBack={() => navigate('/action-items')} />
+      deleteConfirmMessage={item ? `Delete action item “${item.title}”?` : undefined} />
     {notice && <div className="card" role="alert">{notice}</div>}
     {!isNew && read.error && <div className="card" role="alert">Could not refresh this action item. Your draft is retained.
       <button className="btn" onClick={() => read.refresh({ showLoading: false })}>Retry refresh</button>
