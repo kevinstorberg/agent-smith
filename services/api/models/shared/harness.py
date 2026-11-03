@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
+
+from psycopg2.errors import LockNotAvailable, QueryCanceled
 from psycopg2.extensions import connection as Connection
 from psycopg2.extras import Json, RealDictCursor
 
@@ -38,6 +42,24 @@ _LATEST_VERSION_CLAUSE = """
 def _table(item_type: str) -> str:
     assert item_type in VALID_TABLES, f"Invalid type: {item_type}. Must be one of {set(VALID_TABLES)}."
     return VALID_TABLES[item_type]
+
+
+class HarnessWriteConflict(RuntimeError):
+    pass
+
+
+@contextmanager
+def harness_write(item_type: str, conn: Connection | None = None) -> Iterator[Connection]:
+    _table(item_type)
+    try:
+        with (get_connection() if conn is None else nullcontext(conn)) as connection:
+            with connection.cursor() as cur:
+                cur.execute("SET LOCAL lock_timeout = '3s'")
+                cur.execute("SET LOCAL statement_timeout = '5s'")
+                cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"agent-smith:harness-write:{item_type}",))
+            yield connection
+    except (LockNotAvailable, QueryCanceled):
+        raise HarnessWriteConflict("Harness items are busy. Refresh the list before trying again.") from None
 
 
 def _sort_optional_list(value: list[str] | None) -> list[str] | None:
@@ -228,7 +250,7 @@ def create_item(
     assert_not_empty(name, "name")
     assert isinstance(content, dict) and "body" in content, "content must be a dict with a 'body' key."
     _table(item_type)
-    with get_connection() as conn:
+    with harness_write(item_type) as conn:
         return _insert_version(conn, item_type, {
             "name": name, "project": project, "agents": _sort_optional_list(agents) or [],
             "subagents": _sort_optional_list(subagents) or [], "content": content,
@@ -241,7 +263,7 @@ def update_content(item_type: str, item_id: int, content: dict) -> int:
     assert isinstance(content, dict) and "body" in content, "content must be a dict with a 'body' key."
     table = _table(item_type)
 
-    with get_connection() as conn:
+    with harness_write(item_type) as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(f"SELECT * FROM {table} WHERE id = %s FOR UPDATE", (item_id,))
             source = cur.fetchone()
@@ -280,15 +302,15 @@ def update_metadata(
     if project != "UNSET":
         fields["project"] = project or None
 
-    model = _get_model(item_type)
-    model.dynamic_update(item_id, fields)
+    with harness_write(item_type) as conn:
+        _get_model(item_type).dynamic_update(item_id, fields, conn=conn)
 
 
 def reorder_items(item_type: str, ids: list[int]) -> None:
     assert_not_empty(ids, "ids")
     table = _table(item_type)
 
-    with get_connection() as conn:
+    with harness_write(item_type) as conn:
         with conn.cursor() as cur:
             for i, item_id in enumerate(ids):
                 cur.execute(
@@ -369,7 +391,7 @@ def upsert_item(
     agents = _sort_optional_list(agents)
     subagents = _sort_optional_list(subagents)
 
-    with get_connection() as conn:
+    with harness_write(item_type) as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             existing = _get_scoped_item(cur, item_type, name, project, for_update=True)
         if existing:
@@ -382,14 +404,14 @@ def upsert_item(
             new_version = 1
         return _insert_version(conn, item_type, {
             "name": name, "project": project, "agents": agents or [], "subagents": subagents or [],
-            "content": content, "sort_key": sort_key if sort_key is not None else 0,
+            "content": content, "sort_key": sort_key if sort_key is not None else existing["sort_key"] if existing else 0,
             "enabled": enabled, "version": new_version,
         }, existing, device=device, repo=repo)
 
 
 def delete_item(item_type: str, item_id: int) -> None:
     table = _table(item_type)
-    with get_connection() as conn:
+    with harness_write(item_type) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "DELETE FROM harness_configs WHERE item_id = %s AND item_type = %s",
