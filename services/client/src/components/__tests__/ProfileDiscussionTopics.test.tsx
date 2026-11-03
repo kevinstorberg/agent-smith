@@ -54,6 +54,24 @@ describe('ProfileDiscussionTopics', () => {
     expect(api.actionItems.list).not.toHaveBeenCalled();
   });
 
+  it('keeps filtered open topics draggable after the matching results arrive', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderTopics();
+    await screen.findByRole('button', { name: 'Task 1' });
+    const pending = deferred<ProfileDiscussionTopicPage>();
+    topics.list.mockReturnValueOnce(pending.promise);
+    fireEvent.change(screen.getByLabelText('Search discussion topics'), { target: { value: 'Task' } });
+    fireEvent.change(screen.getByLabelText('Filter tags'), { target: { value: 'security' } });
+    expect(screen.getByRole('button', { name: 'Reorder Task 1' })).toBeDisabled();
+    await act(async () => { vi.advanceTimersByTime(300); });
+    expect(screen.getByRole('button', { name: 'Reorder Task 1' })).toBeDisabled();
+    await act(async () => { pending.resolve(page(topic(1), topic(3), topic(5))); });
+    expect(screen.getByRole('button', { name: 'Reorder Task 5' })).toBeEnabled();
+    expect(topics.list).toHaveBeenLastCalledWith(PID, expect.objectContaining({ q: 'Task', tags: ['security'] }));
+    fireEvent.change(screen.getByLabelText('Sort'), { target: { value: 'title' } });
+    expect(screen.queryByRole('button', { name: /^Reorder/ })).not.toBeInTheDocument();
+  });
+
   it('completes and reopens using displayed item revisions and a discussion-topic confirmation', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderTopics();

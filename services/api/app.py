@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from services.config import DB_POOL_MAX
 from services.api.access_logging import MCPProbeContextMiddleware, configure_mcp_access_logging
+from services.api.mcp_transport import MCPSSECompletionMiddleware
 from services.db import init_db, init_pool, close_pool
 from services.db.seed import seed_all
 from services.api.routers import harness_router
@@ -109,6 +110,7 @@ for _srv in MCP_SERVERS:
     _srv.settings.stateless_http = True
     _app = _srv.streamable_http_app()
     _app.router.lifespan_context = None
+    _app.add_middleware(MCPSSECompletionMiddleware)
     _mount_path = f"/mcp/{_srv.name.split(' - ')[0]}"
     app.mount(_mount_path, _app)
     _mcp_authenticated_mounts[_mount_path] = _srv.settings.auth is not None

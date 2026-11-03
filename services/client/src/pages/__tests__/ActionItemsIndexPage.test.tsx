@@ -103,7 +103,7 @@ describe('ActionItemsIndexPage', () => {
     expect(api.actionItems.list).toHaveBeenCalledTimes(1);
     expect(api.actionItems.list).toHaveBeenCalledWith(expect.objectContaining({ q: 'Roadmap', offset: 0 }));
     expect(search).toHaveFocus();
-    expect(screen.getByTestId('action-items-drop-zone')).toHaveAttribute('data-disabled', 'true');
+    expect(screen.getByTestId('action-items-drop-zone')).toHaveAttribute('data-disabled', 'false');
   });
 
   it('sends combined project/tags filters to the server and applies select changes immediately', async () => {
@@ -190,12 +190,36 @@ describe('ActionItemsIndexPage', () => {
     act(() => { ended = drag.end!(drop(0, 9, 11)); });
     expect(api.actionItems.move).toHaveBeenCalledWith(11, { expected_revision: 1, after_id: 20 });
     expect(titles().at(-1)).toBe('Task 11');
-    expect(screen.getByRole('button', { name: 'Task 11' }).closest('tr')).toHaveTextContent('20');
-    expect(screen.getByRole('button', { name: 'Task 12' }).closest('tr')?.querySelector('.action-item-priority')).toHaveTextContent('11');
+    expect(screen.getAllByLabelText('Priority updating')).toHaveLength(10);
     expect(screen.getByLabelText('Search action items')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Complete Task 12' })).toBeDisabled();
     await act(async () => { saving.resolve(actionItem(11, { revision: 2 })); await ended; });
+  });
+
+  it('reorders a searched and filtered subset using visible anchors without inventing global priorities', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await renderReady();
+    const subset = [actionItem(1), actionItem(3), actionItem(5)];
+    vi.mocked(api.actionItems.list).mockResolvedValue({ items: subset, total: 3 });
+    fireEvent.change(screen.getByLabelText('Search action items'), { target: { value: 'Task' } });
+    fireEvent.change(screen.getByLabelText('Project'), { target: { value: 'Work' } });
+    fireEvent.change(screen.getByLabelText('Tags'), { target: { value: 'security' } });
+    expect(screen.getByRole('button', { name: 'Reorder Task 1' })).toBeDisabled();
+    await act(async () => { vi.advanceTimersByTime(300); });
+    await screen.findByRole('button', { name: 'Task 5' });
+    expect(screen.getByRole('button', { name: 'Reorder Task 1' })).toBeEnabled();
+    const saving = deferred<ReturnType<typeof actionItem>>();
+    vi.mocked(api.actionItems.move).mockReturnValueOnce(saving.promise);
+    act(() => { drag.start!(); });
+    let ended!: Promise<void>;
+    act(() => { ended = drag.end!(drop(0, 2, 1)); });
+    expect(api.actionItems.move).toHaveBeenCalledWith(1, { expected_revision: 1, after_id: 5 });
+    expect(titles()).toEqual(['Task 3', 'Task 5', 'Task 1']);
+    expect(screen.getAllByLabelText('Priority updating')).toHaveLength(3);
+    vi.mocked(api.actionItems.list).mockResolvedValue({ items: [actionItem(3, { priority: 2 }), actionItem(5, { priority: 4 }), actionItem(1, { revision: 2, priority: 5 })], total: 3 });
+    await act(async () => { saving.resolve(actionItem(1, { revision: 2, priority: 5 })); await ended; });
+    expect([...screen.getByRole('table').querySelectorAll('.action-item-priority')].map(cell => cell.textContent)).toEqual(['2', '4', '5']);
   });
 
   it('moves upward before the next visible neighbor instead of replacing the whole queue', async () => {
@@ -253,7 +277,7 @@ describe('ActionItemsIndexPage', () => {
     act(() => drag.start!());
     await act(async () => { await drag.end!(drop()); });
     expect(screen.getByRole('table')).toBe(table);
-    expect(titles()).toEqual(['Task 2', 'Task 3', 'Task 1']);
+    expect(titles()).toEqual(['Task 1', 'Task 2', 'Task 3']);
     expect(screen.getByRole('alert')).toHaveTextContent('The current list is kept.');
     expect(screen.getAllByRole('button', { name: /^Reorder / })).toHaveLength(3);
     expect(screen.getByRole('button', { name: 'Complete Task 1' })).toBeDisabled();
@@ -376,16 +400,17 @@ describe('ActionItemsIndexPage', () => {
     expect(api.actionItems.list).toHaveBeenCalledTimes(2);
   });
 
-  it('blocks captured drag callbacks after filtering and never sends a filtered reorder', async () => {
+  it('blocks captured drag callbacks while filters are pending', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await renderReady();
     const oldStart = drag.start!; const oldEnd = drag.end!;
     fireEvent.change(screen.getByLabelText('Search action items'), { target: { value: 'filtered' } });
-    await act(async () => { vi.advanceTimersByTime(300); });
     act(() => { oldStart(); });
     await act(async () => { await oldEnd(drop()); });
     expect(api.actionItems.move).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: 'Reorder Task 1' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reorder Task 1' })).toBeDisabled();
+    await act(async () => { vi.advanceTimersByTime(300); });
+    expect(screen.getByRole('button', { name: 'Reorder Task 1' })).toBeEnabled();
   });
 
   it('keeps displayed rows frozen and cancels a drag if an already-started read changes membership', async () => {
