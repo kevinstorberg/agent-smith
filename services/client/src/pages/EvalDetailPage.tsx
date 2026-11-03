@@ -77,13 +77,13 @@ export function EvalDetailPage() {
       </div>
 
       <div className="sub-tabs" style={{ marginBottom: 24 }}>
-        <button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>
+        <button className={tab === 'overview' ? 'active' : ''} aria-pressed={tab === 'overview'} onClick={() => setTab('overview')}>
           Overview
         </button>
-        <button className={tab === 'output' ? 'active' : ''} onClick={() => setTab('output')}>
+        <button className={tab === 'output' ? 'active' : ''} aria-pressed={tab === 'output'} onClick={() => setTab('output')}>
           Agent Output
         </button>
-        <button className={tab === 'raw' ? 'active' : ''} onClick={() => setTab('raw')}>
+        <button className={tab === 'raw' ? 'active' : ''} aria-pressed={tab === 'raw'} onClick={() => setTab('raw')}>
           Raw JSON
         </button>
       </div>

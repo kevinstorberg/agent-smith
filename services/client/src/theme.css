@@ -1041,6 +1041,7 @@ pre {
 
 .sub-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 16px;
 }
@@ -1054,18 +1055,55 @@ pre {
   cursor: pointer;
   font-size: 13px;
   font-family: var(--font);
+  font-weight: 500;
   transition: all 0.15s;
 }
 
-.sub-tabs button:hover {
+.sub-tabs button:hover:not(:disabled) {
   color: var(--text);
 }
 
-.sub-tabs button.active {
+.sub-tabs button.active,
+.sub-tabs button.active:hover:not(:disabled) {
   background: var(--accent);
   color: var(--text);
-  border-color: var(--control-border);
-  box-shadow: inset 0 -2px 0 var(--accent-text);
+  border-color: var(--text-muted);
+  box-shadow: none;
+}
+
+.sub-tabs button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+@media (forced-colors: active) {
+  .sub-tabs button {
+    background: ButtonFace;
+    color: ButtonText;
+    border-color: ButtonText;
+    transition: none;
+  }
+
+  .sub-tabs button.active,
+  .sub-tabs button.active:hover:not(:disabled) {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+    border-color: HighlightText;
+  }
+
+  .sub-tabs button:disabled {
+    opacity: 1;
+  }
+
+  .sub-tabs button:disabled:not(.active) {
+    color: GrayText;
+    border-color: GrayText;
+  }
+
+  .sub-tabs button:focus-visible {
+    outline-color: Highlight;
+  }
 }
 
 .btn {
@@ -1208,6 +1246,8 @@ pre {
   gap: 4px;
 }
 
+.pagination-page-size { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-muted); font-size: var(--font-sm); }
+
 .pagination-btn {
   background: var(--surface);
   border: 1px solid var(--control-border);
@@ -1330,7 +1370,6 @@ pre {
 .detail-back { display: inline-flex; align-items: center; min-height: 36px; padding: 4px 0; border: 0; background: none; color: var(--text-muted); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .detail-back:hover { color: var(--text); }
 .not-found-recovery { display: grid; gap: 16px; justify-items: start; }
-.pagination-page-size { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-muted); font-size: var(--font-sm); }
 .memory-controls > label:not(.checkbox-label) { flex: 1 1 200px; min-width: 0; }
 .memory-controls > label > input:not([type="checkbox"]):not([type="radio"]),
 .memory-controls > label > select { width: 100%; min-height: 38px; }
