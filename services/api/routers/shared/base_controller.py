@@ -1,22 +1,37 @@
 from __future__ import annotations
 
-from typing import Annotated
-from fastapi import APIRouter, HTTPException, Query
+from typing import Annotated, Any, Callable, Coroutine
+from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi.routing import APIRoute
 from services.api.models.shared.listing import sort_pattern
 
 from services.api.models.shared.harness import (
-    HARNESS_SORTS, list_items, list_items_summary, get_item_by_id,
+    HARNESS_SORTS, HarnessWriteConflict, list_items, list_items_summary, get_item_by_id,
     create_item, update_content, update_metadata,
     reorder_items, get_version_history_summary, delete_item,
 )
+from services.api.models.shared.harness_ordering import move_item
 from services.api.models.harness_config import (
     batch_list_configs, list_configs, create_config, update_config, delete_config,
 )
 from services.api.routers.base import require_found, list_response, delete_response, empty_to_none, update_fields, resolve_project, paginate, query_result
 from services.api.routers.shared.validators import (
     CreateRequest, ContentUpdate, MetadataUpdate, ReorderRequest,
-    ConfigCreate, ConfigUpdate,
+    ConfigCreate, ConfigUpdate, HarnessMoveRequest,
 )
+
+
+class HarnessRoute(APIRoute):
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        handler = super().get_route_handler()
+
+        async def map_write_conflict(request: Request) -> Response:
+            try:
+                return await handler(request)
+            except HarnessWriteConflict as error:
+                raise HTTPException(409, str(error)) from None
+
+        return map_write_conflict
 
 
 class BaseHarnessRouter:
@@ -24,7 +39,7 @@ class BaseHarnessRouter:
     convenience_path: str | None = None
 
     def __init__(self):
-        self.router = APIRouter()
+        self.router = APIRouter(route_class=HarnessRoute)
         self._register_routes()
 
     def _register_routes(self):
@@ -36,6 +51,7 @@ class BaseHarnessRouter:
         self.router.add_api_route(f"/items/{t}/{{item_id}}", self.get_item, methods=["GET"])
         self.router.add_api_route(f"/items/{t}", self.create_item, methods=["POST"], status_code=201)
         self.router.add_api_route(f"/items/{t}/{{item_id}}/content", self.update_content, methods=["PUT"])
+        self.router.add_api_route(f"/items/{t}/{{item_id}}/move", self.move, methods=["POST"])
         self.router.add_api_route(f"/items/{t}/{{item_id}}", self.patch_metadata, methods=["PATCH"])
         self.router.add_api_route(f"/items/{t}/{{item_id}}/history", self.get_history, methods=["GET"])
         self.router.add_api_route(f"/items/{t}/{{item_id}}", self.delete_item, methods=["DELETE"])
@@ -86,7 +102,7 @@ class BaseHarnessRouter:
                 configs = list_configs(item_id, self.item_type)
                 if configs:
                     update_config(configs[0]["id"], device=body.device, repo=body.repo)
-        except HTTPException:
+        except (HTTPException, HarnessWriteConflict):
             raise
         except Exception as e:
             raise HTTPException(409, str(e)) from e
@@ -117,6 +133,9 @@ class BaseHarnessRouter:
     def reorder(self, body: ReorderRequest):
         reorder_items(self.item_type, body.ids)
         return {"reordered": True, "count": len(body.ids)}
+
+    def move(self, item_id: int, body: HarnessMoveRequest):
+        return query_result(move_item, self.item_type, item_id, **body.model_dump())
 
     def add_config(self, item_id: int, body: ConfigCreate):
         require_found(get_item_by_id(self.item_type, item_id), self.item_type, item_id)

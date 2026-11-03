@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from scripts.shared.validation import (
     MAX_NAME_LENGTH, validate_item_name, validate_repo_format, validate_agents_list,
@@ -84,6 +84,21 @@ class ReorderRequest(BaseModel):
         if any(i <= 0 for i in v):
             raise ValueError("all ids must be positive")
         return v
+
+
+class HarnessMoveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_updated_at: AwareDatetime
+    expected_anchor_updated_at: AwareDatetime
+    before_id: int | None = Field(default=None, strict=True, gt=0)
+    after_id: int | None = Field(default=None, strict=True, gt=0)
+
+    @model_validator(mode="after")
+    def exactly_one_anchor(self):
+        if (self.before_id is None) == (self.after_id is None):
+            raise ValueError("Provide exactly one before_id or after_id")
+        return self
 
 
 class ConfigCreate(BaseModel):
