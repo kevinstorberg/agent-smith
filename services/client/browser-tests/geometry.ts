@@ -25,13 +25,14 @@ export async function expectMainContained(page: Page) {
 
 export async function expectControlContained(control: Locator, container: Locator) {
   await expect(control).toBeVisible();
-  const bounds = await control.boundingBox();
-  const parent = await container.boundingBox();
-  expect(bounds, 'Control must have rendered bounds').not.toBeNull();
-  expect(parent, 'Control container must have rendered bounds').not.toBeNull();
-  expect(bounds!.x, 'Control must remain inside its container’s left edge').toBeGreaterThanOrEqual(parent!.x - 1);
-  expect(bounds!.x + bounds!.width, 'Control must remain inside its container’s right edge')
-    .toBeLessThanOrEqual(parent!.x + parent!.width + 1);
+  await expect(async () => {
+    const [bounds, parent] = await Promise.all([control.boundingBox(), container.boundingBox()]);
+    expect(bounds, 'Control must have rendered bounds').not.toBeNull();
+    expect(parent, 'Control container must have rendered bounds').not.toBeNull();
+    expect(bounds!.x, 'Control must remain inside its container’s left edge').toBeGreaterThanOrEqual(parent!.x - 1);
+    expect(bounds!.x + bounds!.width, 'Control must remain inside its container’s right edge')
+      .toBeLessThanOrEqual(parent!.x + parent!.width + 1);
+  }).toPass({ timeout: 5_000, intervals: [25, 50, 100] });
 }
 
 export async function expectControlLabel(control: Locator, name: string) {
