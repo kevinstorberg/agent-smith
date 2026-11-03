@@ -752,6 +752,17 @@ body {
   border: 1px solid var(--border);
 }
 
+.harness-list-scroll { max-width: 100%; overflow-x: auto; }
+.harness-list-scroll:focus-visible { outline: 2px solid var(--info); outline-offset: -2px; }
+.harness-list-table { min-width: 1100px; }
+.harness-list-header,
+.harness-list-row { display: grid; grid-template-columns: var(--harness-columns); gap: 8px; padding: 12px 16px; align-items: center; border-bottom: 1px solid var(--border); }
+.harness-list-header { background: var(--surface); font-size: var(--font-xs); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.harness-list-row { cursor: pointer; transition: background var(--transition); }
+.harness-list-header > div,
+.harness-list-row > div { min-width: 0; overflow-wrap: anywhere; }
+.harness-list-row .tag { max-width: 100%; overflow-wrap: anywhere; }
+
 .table {
   width: 100%;
   border-collapse: collapse;
