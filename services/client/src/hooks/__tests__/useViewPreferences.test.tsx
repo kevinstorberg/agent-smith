@@ -26,10 +26,11 @@ describe('view preference browser adapter', () => {
     const oldSetField = result.current.setField;
     const oldPageChange = result.current.pagination.onPageChange!;
     const oldReset = result.current.reset;
+    const oldSetFields = result.current.setFields;
     rerender({ scope: '2' });
     const currentCookie = storage.read();
     vi.mocked(storage.store.write).mockClear();
-    act(() => { oldSetField('q', 'wrong scope'); oldPageChange({ limit: 50, offset: 100 }); oldReset(); });
+    act(() => { oldSetField('q', 'wrong scope'); oldPageChange({ limit: 50, offset: 100 }); oldReset(); oldSetFields({ q: 'wrong atomic scope', sort: 'name' }); });
     expect(result.current.values).toMatchObject({ q: 'two', limit: 10, offset: 20 });
     expect(storage.read()).toBe(currentCookie);
     expect(storage.store.write).not.toHaveBeenCalled();
@@ -55,6 +56,28 @@ describe('view preference browser adapter', () => {
     const { result } = renderHook(() => useViewPreferences('jobs', { active, cookieStore: storage.store }), { wrapper: router([path]) });
     act(() => result.current.setField('q', 'ignored'));
     expect(storage.store.write).not.toHaveBeenCalled();
+  });
+
+  it('keeps live, URL and saved dependent settings identical when a status-only patch changes valid sorts', () => {
+    const storage = cookieStore();
+    const { result } = renderHook(() => ({ preferences: useViewPreferences('actionItems', { cookieStore: storage.store }), search: useLocation().search }), {
+      wrapper: router(['/action-items']),
+    });
+    act(() => result.current.preferences.setFields({ status: 'completed' }));
+    expect(result.current.preferences.values).toMatchObject({ status: 'completed', sort: 'completed' });
+    expect(Object.fromEntries(new URLSearchParams(result.current.search))).toMatchObject({ status: 'completed', sort: 'completed' });
+    expect(resolveView('actionItems', storage.read(), new URLSearchParams())).toEqual(result.current.preferences.values);
+  });
+
+  it('updates dependent filters atomically while preserving unrelated URL parameters and resetting the page', () => {
+    const storage = cookieStore();
+    const { result } = renderHook(() => ({ preferences: useViewPreferences('actionItems', { cookieStore: storage.store }), search: useLocation().search }), {
+      wrapper: router(['/action-items?keep=1&limit=25&offset=50']),
+    });
+    act(() => result.current.preferences.setFields({ status: 'completed', sort: 'completed' }));
+    expect(result.current.preferences.values).toMatchObject({ status: 'completed', sort: 'completed', limit: 25, offset: 0 });
+    expect(Object.fromEntries(new URLSearchParams(result.current.search))).toMatchObject({ keep: '1', status: 'completed', sort: 'completed', limit: '25', offset: '0' });
+    expect(readViewCookie(storage.read())[0].values).toMatchObject({ status: 'completed', sort: 'completed', limit: 25 });
   });
 
   it('buffers rapid URL updates without dropping fields or unrelated parameters', () => {

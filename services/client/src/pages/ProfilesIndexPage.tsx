@@ -13,24 +13,19 @@ import { useApiMutation } from '../hooks/useApiMutation';
 import { PROFILE_SCOPE_LABELS } from '../utils/profiles';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { PersonaJob } from '../components/PersonaJob';
-
-const SORT_OPTIONS = [
-  ['starred_name_asc', 'Starred first · Name A–Z'],
-  ['created_at_desc', 'Newest profiles'], ['created_at_asc', 'Oldest profiles'],
-  ['name_asc', 'Name A–Z'], ['name_desc', 'Name Z–A'],
-  ['updated_at_desc', 'Recently updated'], ['updated_at_asc', 'Least recently updated'],
-];
+import { PROFILE_SORT_OPTIONS } from '../constants';
+import { useViewPreferences } from '../hooks/useViewPreferences';
+import { parseViewField } from '../utils/viewPreferences';
+import { ResetViewButton } from '../components/ResetViewButton';
 
 export function ProfilesIndexPage() {
   const navigate = useNavigate();
-  const [searchText, setSearchText] = useState('');
+  const preferences = useViewPreferences('profiles');
+  const { q: searchText, tags: tagText, starred: starredOnly, sort } = preferences.values;
   const debouncedQuery = useDebouncedValue(searchText.trim());
   const query = searchText.trim() ? debouncedQuery : '';
-  const [tagText, setTagText] = useState('');
   const debouncedTags = useDebouncedValue(tagText);
   const tags = useMemo(() => parseTags(debouncedTags), [debouncedTags]);
-  const [starredOnly, setStarredOnly] = useState(false);
-  const [sort, setSort] = useState('starred_name_asc');
   const [notice, setNotice] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -45,7 +40,7 @@ export function ProfilesIndexPage() {
   const { items, total, loading, error, limit, offset, setLimit, setOffset, refresh } = usePagination<ProfileSummary>(
     (pageLimit, pageOffset) => api.profiles.list({ limit: pageLimit, offset: pageOffset, q: query || undefined,
       sort, ...(tags.length ? { tags } : {}), ...(starredOnly ? { starred: true } : {}) }),
-    [query, tags, starredOnly, sort],
+    [query, tags, starredOnly, sort], 10, { ...preferences.pagination, enabled: query === searchText.trim() && debouncedTags === tagText },
   );
   const star = useApiMutation({
     mutationFn: (profile: ProfileSummary) => api.profiles.update(profile.id, { expected_revision: profile.revision, starred: !profile.starred }),
@@ -89,18 +84,19 @@ export function ProfilesIndexPage() {
       <div className="profile-filters">
         <div><label className="form-label" htmlFor="profile-query">Search profiles</label>
           <div className="profile-search-input"><input id="profile-query" className="input" placeholder="Name, nickname or email" maxLength={1000}
-            value={searchText} onChange={event => setSearchText(event.target.value)} />
-            {searchText && <button className="btn" type="button" onClick={() => setSearchText('')}>Clear</button>}</div>
+            value={searchText} onChange={event => preferences.setField('q', event.target.value)} />
+            {searchText && <button className="btn" type="button" onClick={() => preferences.setField('q', '')}>Clear</button>}</div>
         </div>
         <div><label className="form-label" htmlFor="profile-filter-tags">Filter by tags</label>
-          <input id="profile-filter-tags" className="input" placeholder="Comma-separated tags" value={tagText} onChange={event => setTagText(event.target.value)} />
+          <input id="profile-filter-tags" className="input" placeholder="Comma-separated tags" value={tagText} onChange={event => preferences.setField('tags', event.target.value)} />
         </div>
         <div><label className="form-label" htmlFor="profile-sort">Sort</label>
-          <select id="profile-sort" className="input" value={sort} onChange={event => { setSort(event.target.value); setOffset(0); }}>
-            {SORT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          <select id="profile-sort" className="input" value={sort} onChange={event => preferences.setField('sort', parseViewField('profiles', 'sort', event.target.value))}>
+            {PROFILE_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </div>
-        <label className="checkbox-label profile-starred-filter"><input className="form-checkbox" type="checkbox" checked={starredOnly} onChange={event => { setStarredOnly(event.target.checked); setOffset(0); }} /> Starred only</label>
+        <label className="checkbox-label profile-starred-filter"><input className="form-checkbox" type="checkbox" checked={starredOnly} onChange={event => preferences.setField('starred', event.target.checked)} /> Starred only</label>
+        <ResetViewButton onReset={preferences.reset} />
       </div>
       {tags.length > 0 && <p className="text-muted-sm">Matches all tags: {tags.join(', ')}</p>}
       {notice && <p role="alert" className="card">{notice}</p>}

@@ -349,7 +349,7 @@ function JobDetail({ id }: { id?: string }) {
             </select>
           </div>
           {Object.keys(editValues.schedule_config ?? {}).length > 1 && (
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+            <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-muted)', marginTop: 4 }}>
               This job uses multiple time units; editing here collapses it to the single unit above.
             </div>
           )}

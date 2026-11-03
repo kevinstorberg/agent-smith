@@ -40,6 +40,7 @@ const fakeMemories = [
 ];
 
 beforeEach(() => {
+  document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.clearAllMocks();
   mockList.mockResolvedValue({ items: fakeMemories, total: 2 });
   mockSearch.mockResolvedValue({ items: [], total: 0 });
@@ -54,7 +55,7 @@ afterEach(() => {
 describe('MemoryPage', () => {
   it('shows inherited meeting topics once without copying them into the editable memory tags', async () => {
     mockList.mockResolvedValue({ items: [{ ...fakeMemories[0], context_tags: ['security', 'architecture'], from_meeting: true }], total: 1 });
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
     expect(await screen.findByText('security')).toHaveAttribute('title', 'Meeting topic');
     expect(screen.getAllByText('architecture')).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
@@ -67,7 +68,7 @@ describe('MemoryPage', () => {
   it('applies the meeting filter before paging and preserves the search, repo, tags, and sort options', async () => {
     mockList.mockResolvedValue({ items: fakeMemories, total: 40 });
     mockSearch.mockResolvedValue({ items: fakeMemories, total: 40 });
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
     await screen.findByText('First memory content');
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() => expect(mockList).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 })));
@@ -80,7 +81,7 @@ describe('MemoryPage', () => {
     }));
     fireEvent.change(screen.getByPlaceholderText('Semantic search...'), { target: { value: 'release plans' } });
     await waitFor(() => expect(mockSearch).toHaveBeenLastCalledWith('release plans', expect.objectContaining({ meeting_only: true, offset: 0, repo: 'agent-smith', tags: ['decision', 'release'], sort: 'relevance' })));
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
     await waitFor(() => expect(mockSearch).toHaveBeenLastCalledWith('release plans', expect.objectContaining({ offset: 10, meeting_only: true })));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Meetings only' }));
     await waitFor(() => expect(mockSearch).toHaveBeenLastCalledWith('release plans', expect.objectContaining({ offset: 0, meeting_only: false, sort: 'relevance' })));
@@ -89,7 +90,7 @@ describe('MemoryPage', () => {
   it('shows meeting provenance and links to the source without hiding general memories', async () => {
     const meetingId = '54853e29-12dc-4d19-8987-ec0311f9d82e';
     mockList.mockResolvedValue({ items: [{ ...fakeMemories[0], from_meeting: true, source_id: meetingId }, fakeMemories[1]], total: 2 });
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
     expect(await screen.findByText('Meeting')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Source meeting' })).toHaveAttribute('href', `/meetings/${meetingId}`);
     expect(screen.getByText('Second memory content')).toBeInTheDocument();
@@ -97,7 +98,7 @@ describe('MemoryPage', () => {
 
   it('shows a retryable read error instead of a false empty state', async () => {
     mockList.mockRejectedValueOnce(new Error('private backend diagnostic'));
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load memories.');
     expect(screen.queryByText('No memories yet')).not.toBeInTheDocument();
     expect(screen.queryByText('private backend diagnostic')).not.toBeInTheDocument();
@@ -109,7 +110,7 @@ describe('MemoryPage', () => {
     let resolveOld!: (value: { items: typeof fakeMemories; total: number }) => void;
     mockList.mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve; }));
     mockList.mockResolvedValueOnce({ items: [{ ...fakeMemories[0], content: 'Current meeting memory' }], total: 1 });
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Meetings only' }));
     expect(await screen.findByText('Current meeting memory')).toBeInTheDocument();
     await act(async () => { resolveOld({ items: fakeMemories, total: 2 }); });
@@ -118,7 +119,7 @@ describe('MemoryPage', () => {
   });
 
   it('loads and displays memory items in list mode', async () => {
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
     await waitFor(() => {
       expect(screen.getByText('First memory content')).toBeInTheDocument();
@@ -133,7 +134,7 @@ describe('MemoryPage', () => {
   it('shows empty state when no memories exist', async () => {
     mockList.mockResolvedValue({ items: [], total: 0 });
 
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
     await waitFor(() => {
       expect(screen.getByText('No memories yet')).toBeInTheDocument();
@@ -142,7 +143,7 @@ describe('MemoryPage', () => {
 
   it('polls the current memory list every 60 seconds and stops after unmount', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    const { unmount } = renderWithProviders(<MemoryPage />);
+    const { unmount } = renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
     await waitFor(() => expect(screen.getByText('First memory content')).toBeInTheDocument());
     mockList.mockClear();
@@ -166,7 +167,7 @@ describe('MemoryPage', () => {
 
   it('does not poll while inline editing a memory', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
     await waitFor(() => expect(screen.getByText('First memory content')).toBeInTheDocument());
     fireEvent.click(screen.getAllByText('Edit')[0]);
@@ -183,7 +184,7 @@ describe('MemoryPage', () => {
   it('shows filter-specific empty state when filters return zero', async () => {
     mockList.mockResolvedValue({ items: [], total: 0 });
 
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
     const repoInput = await screen.findByPlaceholderText('Filter by repo');
     fireEvent.change(repoInput, { target: { value: 'no-such-repo' } });
@@ -197,7 +198,7 @@ describe('MemoryPage', () => {
   it('performs search and shows search empty state', async () => {
     mockSearch.mockResolvedValue({ items: [], total: 0 });
 
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
     await waitFor(() => {
       expect(screen.getByText('First memory content')).toBeInTheDocument();
@@ -214,7 +215,7 @@ describe('MemoryPage', () => {
   });
 
   it('renders repo, tags, and sort controls', async () => {
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
     await waitFor(() => {
       expect(screen.getByText('First memory content')).toBeInTheDocument();
@@ -226,7 +227,7 @@ describe('MemoryPage', () => {
   });
 
   it('typing in tags input refetches with tags param', async () => {
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
     await waitFor(() => {
       expect(screen.getByText('First memory content')).toBeInTheDocument();
@@ -241,7 +242,7 @@ describe('MemoryPage', () => {
   });
 
   it('changing sort dropdown refetches with sort and resets offset', async () => {
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
     await waitFor(() => {
       expect(screen.getByText('First memory content')).toBeInTheDocument();
@@ -256,7 +257,7 @@ describe('MemoryPage', () => {
   });
 
   it('shows Relevance sort option only in search mode', async () => {
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
     await waitFor(() => {
       expect(screen.getByText('First memory content')).toBeInTheDocument();
@@ -278,7 +279,7 @@ describe('MemoryPage', () => {
   it('searches while typing without pressing Enter or a button', async () => {
     mockSearch.mockResolvedValue({ items: [fakeMemories[0]], total: 1 });
 
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
     await waitFor(() => {
       expect(screen.getByText('First memory content')).toBeInTheDocument();
@@ -295,7 +296,7 @@ describe('MemoryPage', () => {
   it('clears search and returns to list mode', async () => {
     mockSearch.mockResolvedValue({ items: [fakeMemories[0]], total: 1 });
 
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
     await waitFor(() => {
       expect(screen.getByText('First memory content')).toBeInTheDocument();
@@ -318,7 +319,7 @@ describe('MemoryPage', () => {
   });
 
   it('opens inline edit with pre-filled values', async () => {
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
     await waitFor(() => {
       expect(screen.getByText('First memory content')).toBeInTheDocument();
@@ -341,7 +342,7 @@ describe('MemoryPage', () => {
     mockList.mockResolvedValue({ items: fakeMemories, total: 2 });
     mockUpdate.mockResolvedValue({ ...fakeMemories[0], content: 'Updated content' });
 
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
     await waitFor(() => {
       expect(screen.getByText('First memory content')).toBeInTheDocument();
@@ -368,7 +369,7 @@ describe('MemoryPage', () => {
   });
 
   it('cancels edit without saving', async () => {
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
     await waitFor(() => {
       expect(screen.getByText('First memory content')).toBeInTheDocument();
@@ -386,7 +387,7 @@ describe('MemoryPage', () => {
   });
 
   it('uses two-step delete confirmation', async () => {
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
     await waitFor(() => {
       expect(screen.getByText('First memory content')).toBeInTheDocument();
@@ -409,7 +410,7 @@ describe('MemoryPage', () => {
   });
 
   it('cancels two-step delete when No is clicked', async () => {
-    renderWithProviders(<MemoryPage />);
+    renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
     await waitFor(() => {
       expect(screen.getByText('First memory content')).toBeInTheDocument();

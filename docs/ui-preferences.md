@@ -1,6 +1,6 @@
 # Screen preferences
 
-Jobs, Plans, the five Harness lists, Audit, Proposals and Eval suites share the typed codec in `services/client/src/utils/viewPreferences.ts` and the browser/router adapter `useViewPreferences`.
+All sixteen resource indexes and nested Vocabulary share the typed codec in `services/client/src/utils/viewPreferences.ts` and the browser/router adapter `useViewPreferences`.
 Further screens should extend that registry and reuse the adapter, rather than adding cookies or persistence effects.
 
 The host-only `agent-smith.ui.v1` cookie uses `Path=/`, `SameSite=Lax`, a 30-day lifetime and `Secure` on HTTPS.
@@ -27,8 +27,16 @@ Invalid external values resolve to validated defaults rather than resurrecting a
 A URL criteria override without an offset starts at page zero, and offsets align to the validated page size.
 Unrelated query parameters survive control changes; Back/Forward and external navigation restore the URL's effective view.
 Hidden or unmatched views never write preferences.
+Meetings and Vocabulary retain separate entries; their tab links strip only known view fields to restore the destination's preferences.
+Memory saves the applied semantic query after its existing 300ms debounce while keeping unapplied keystrokes local.
+Its list and semantic-search sort modes remain independent, with native boolean validation for the meeting-only filter.
 
 The adapter initializes synchronously before the first list request and supplies controlled pagination.
 User criteria/page-size changes reset the page atomically; pending debounced criteria pause reads.
 Stale offsets clamp only inside `usePagination`'s accepted response gate using that request's criteria, limit and offset.
 Older totals, failed requests and stale responses cannot change a newer view's page.
+
+Action item status and its default sort change atomically; incompatible sorts normalize before fetching and during live updates.
+Queue controls, including Reset view, remain frozen during reordering.
+Profile creation drafts, selected chat rooms, room edits, unsent messages, and result chart modes remain local.
+Result category and subcategory changes clear dependent filters in one update.

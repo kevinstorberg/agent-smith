@@ -105,8 +105,7 @@ describe('EvalSuitesPage', () => {
       expect(screen.getByText('Code Quality Suite')).toBeInTheDocument();
     });
 
-    const checkboxes = screen.getAllByRole('checkbox');
-    fireEvent.click(checkboxes[0]);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Enable Code Quality Suite' }));
 
     await waitFor(() => {
       expect(mockSuiteUpdate).toHaveBeenCalledWith(1, { enabled: false });
@@ -120,8 +119,7 @@ describe('EvalSuitesPage', () => {
       expect(screen.getByText('Safety Suite')).toBeInTheDocument();
     });
 
-    const checkboxes = screen.getAllByRole('checkbox');
-    fireEvent.click(checkboxes[1]);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Enable Safety Suite' }));
 
     await waitFor(() => {
       expect(mockSuiteUpdate).toHaveBeenCalledWith(2, { enabled: true });

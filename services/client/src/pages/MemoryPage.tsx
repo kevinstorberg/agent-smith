@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api';
 import type { MemoryItem } from '../api';
@@ -9,27 +9,26 @@ import { usePolling } from '../hooks/usePolling';
 import { usePagination } from '../hooks/usePagination';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { parseTags } from '../utils/tags';
-
-const LIST_SORT_OPTIONS = [
-  { value: 'created_at_desc', label: 'Newest first' },
-  { value: 'created_at_asc', label: 'Oldest first' },
-  { value: 'updated_at_desc', label: 'Recently updated' },
-  { value: 'updated_at_asc', label: 'Least recently updated' },
-];
-
-const SEARCH_SORT_OPTIONS = [
-  { value: 'relevance', label: 'Relevance' },
-  ...LIST_SORT_OPTIONS,
-];
+import { MEMORY_LIST_SORT_OPTIONS, MEMORY_SEARCH_SORT_OPTIONS } from '../constants';
+import { useViewPreferences } from '../hooks/useViewPreferences';
+import { parseViewField } from '../utils/viewPreferences';
+import { ResetViewButton } from '../components/ResetViewButton';
 
 export function MemoryPage() {
   const { notify } = useNotification();
-  const [query, setQuery] = useState('');
-  const [filterRepo, setFilterRepo] = useState('');
-  const [filterTags, setFilterTags] = useState('');
-  const [listSort, setListSort] = useState('created_at_desc');
-  const [searchSort, setSearchSort] = useState('relevance');
-  const [meetingsOnly, setMeetingsOnly] = useState(false);
+  const preferences = useViewPreferences('memory');
+  const setPreferenceField = preferences.setField;
+  const { q: appliedQuery, repo: filterRepo, tags: filterTags, listSort, searchSort, meeting_only: meetingsOnly } = preferences.values;
+  const [queryDraft, setQueryDraft] = useState({ applied: appliedQuery, restoredAt: preferences.restoreKey, input: appliedQuery });
+  if (queryDraft.applied !== appliedQuery || queryDraft.restoredAt !== preferences.restoreKey) setQueryDraft({
+    applied: appliedQuery, restoredAt: preferences.restoreKey,
+    input: queryDraft.restoredAt === preferences.restoreKey && queryDraft.input.trim() === appliedQuery.trim() ? queryDraft.input : appliedQuery,
+  });
+  const query = queryDraft.input;
+  const setQuery = (input: string) => {
+    setQueryDraft(previous => ({ ...previous, input }));
+    if (!input.trim()) preferences.setField('q', '');
+  };
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [editRepo, setEditRepo] = useState('');
@@ -38,13 +37,16 @@ export function MemoryPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const debouncedQuery = useDebouncedValue(query.trim());
-  const searchTerm = query.trim() ? debouncedQuery : '';
+  useEffect(() => {
+    if (debouncedQuery === query.trim() && debouncedQuery !== appliedQuery.trim()) setPreferenceField('q', debouncedQuery);
+  }, [debouncedQuery, query, appliedQuery, setPreferenceField]);
+  const searchTerm = appliedQuery.trim();
   const repo = useDebouncedValue(filterRepo.trim());
   const tagText = useDebouncedValue(filterTags);
   const tagsArray = useMemo(() => parseTags(tagText), [tagText]);
   const mode = searchTerm ? 'search' : 'list';
   const sort = mode === 'search' ? searchSort : listSort;
-  const sortOptions = mode === 'search' ? SEARCH_SORT_OPTIONS : LIST_SORT_OPTIONS;
+  const sortOptions = mode === 'search' ? MEMORY_SEARCH_SORT_OPTIONS : MEMORY_LIST_SORT_OPTIONS;
 
   const { items, total, loading, error, refresh, limit, offset, setLimit, setOffset } = usePagination<MemoryItem>((limit, offset) => {
     const opts = {
@@ -58,14 +60,18 @@ export function MemoryPage() {
     return searchTerm
       ? api.memory.search(searchTerm, opts)
       : api.memory.list(opts);
-  }, [searchTerm, meetingsOnly, repo, tagsArray, sort]);
+  }, [searchTerm, meetingsOnly, repo, tagsArray, sort], 10, { ...preferences.pagination, enabled: repo === filterRepo.trim() && tagText === filterTags });
 
   usePolling(
     () => refresh({ showLoading: false }),
     { enabled: !editingId && !saving && !confirmDeleteId },
   );
 
-  const onSortChange = (value: string) => { if (mode === 'search') setSearchSort(value); else setListSort(value); };
+  const onSortChange = (value: string) => {
+    if (mode === 'search') preferences.setField('searchSort', parseViewField('memory', 'searchSort', value));
+    else preferences.setField('listSort', parseViewField('memory', 'listSort', value));
+  };
+  const resetView = () => { setQueryDraft({ applied: '', restoredAt: preferences.restoreKey, input: '' }); preferences.reset(); };
 
   const startEdit = (item: MemoryItem) => {
     setEditingId(item.id);
@@ -127,20 +133,20 @@ export function MemoryPage() {
 
       <div className="search-bar memory-controls">
         <label className="checkbox-label">
-          <input className="form-checkbox" type="checkbox" checked={meetingsOnly} onChange={event => { setMeetingsOnly(event.target.checked); setOffset(0); }} />
+          <input className="form-checkbox" type="checkbox" checked={meetingsOnly} onChange={event => preferences.setField('meeting_only', event.target.checked)} />
           Meetings only
         </label>
         <label><span className="form-label">Repository</span><input
           className="input"
           placeholder="Filter by repo"
           value={filterRepo}
-          onChange={e => setFilterRepo(e.target.value)}
+          onChange={e => preferences.setField('repo', e.target.value)}
         /></label>
         <label><span className="form-label">Tags</span><input
           className="input"
           placeholder="Filter by tags (comma-separated)"
           value={filterTags}
-          onChange={e => setFilterTags(e.target.value)}
+          onChange={e => preferences.setField('tags', e.target.value)}
         /></label>
         <label><span className="form-label">Sort</span>
         <select
@@ -155,6 +161,7 @@ export function MemoryPage() {
           ))}
         </select>
         </label>
+        <ResetViewButton onReset={resetView} />
       </div>
 
       {tagsArray.length > 0 && (
