@@ -1,5 +1,6 @@
-import type { HarnessItem, MemoryItem, Plan } from '../src/api';
+import type { MemoryItem, Plan } from '../src/api';
 import { MAX_NAME_LENGTH, MAX_TITLE_LENGTH } from '../src/constants';
+import { harnessFixture } from './harnessFixture';
 import { actionItem } from '../src/pages/__tests__/actionItemFixture';
 import { profileFixture } from '../src/pages/__tests__/profileFixture';
 import { test, expect } from './fixtures';
@@ -15,6 +16,10 @@ test('Memory checkbox remains labeled, operable, and contained beside text contr
   await expect(page.getByText(longText, { exact: true })).toBeVisible();
   const checkbox = page.getByRole('checkbox', { name: 'Meetings only' });
   await expectControlLabel(checkbox, 'Meetings only');
+  const bounds = await checkbox.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(Math.abs(bounds!.width - bounds!.height), 'Checkbox must remain square beside text fields').toBeLessThanOrEqual(1);
+  expect((await checkbox.locator('..').boundingBox())!.height, 'The label keeps a comfortable pointer target').toBeGreaterThanOrEqual(24);
   await expectControlContained(checkbox, page.locator('.memory-controls').nth(1));
   await expect(checkbox).not.toBeChecked();
   await page.getByText('Meetings only', { exact: true }).click();
@@ -23,6 +28,7 @@ test('Memory checkbox remains labeled, operable, and contained beside text contr
   await checkbox.focus();
   await page.keyboard.press('Space');
   await expect(checkbox).not.toBeChecked();
+  await expect(checkbox).toHaveCSS('outline-style', 'solid');
   await testInfo.attach('checkbox-geometry.json', { body: JSON.stringify(await checkbox.boundingBox()), contentType: 'application/json' });
   await expectDocumentContained(page);
   await expectMainContained(page);
@@ -42,9 +48,8 @@ test('Plans keep long titles and pagination inside the page', async ({ page, fix
 });
 
 test('Harness detail contains long Markdown without changing its padding', async ({ page, fixtureAPI }) => {
-  const item: HarnessItem = { id: 1, name: 'release_'.padEnd(MAX_NAME_LENGTH, 'x'), project: 'browser-fixture', agents: ['claude'],
-    content: { body: `## Release review\n\n${longText}\n\n${longText}`, metadata: {} }, sort_key: 1, enabled: true,
-    version: 1, created_at: stamp, updated_at: stamp, configs: [] };
+  const item = harnessFixture({ name: 'release_'.padEnd(MAX_NAME_LENGTH, 'x'),
+    content: { body: `## Release review\n\n${longText}\n\n${longText}`, metadata: {} } });
   fixtureAPI.get('/api/harness/items/rule/1', item);
   fixtureAPI.get('/api/harness/items/rule/1/history', []);
   await page.goto('/harness/rule/1');

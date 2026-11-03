@@ -12,6 +12,7 @@ const job = (name: string): Job => ({ id: 1, name, schedule_enabled: true, sched
   input_params: {}, description: null, version: 1, created_at: '', updated_at: '' });
 
 beforeEach(() => {
+  document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.clearAllMocks();
   vi.useFakeTimers();
   list.mockResolvedValue({ items: [job('Current job')], total: 25 });
@@ -21,7 +22,7 @@ afterEach(() => vi.useRealTimers());
 
 describe('Jobs filters with real pagination', () => {
   it('debounces search and sends every changed criterion at offset zero', async () => {
-    renderWithProviders(<JobsIndexPage />);
+    renderWithProviders(<JobsIndexPage />, { initialEntries: ['/jobs'] });
     await act(async () => {});
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await act(async () => {});
@@ -53,7 +54,7 @@ describe('Jobs filters with real pagination', () => {
   it('keeps controls mounted and ignores an old response after criteria change', async () => {
     let finishOld!: (result: Paginated<Job>) => void;
     list.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));
-    renderWithProviders(<JobsIndexPage />);
+    renderWithProviders(<JobsIndexPage />, { initialEntries: ['/jobs'] });
     const input = screen.getByPlaceholderText('Search jobs...');
     fireEvent.change(input, { target: { value: 'current' } });
     await act(async () => { vi.advanceTimersByTime(300); });
@@ -65,7 +66,7 @@ describe('Jobs filters with real pagination', () => {
   });
 
   it('hides previous matches and paging when changed criteria fail', async () => {
-    renderWithProviders(<JobsIndexPage />);
+    renderWithProviders(<JobsIndexPage />, { initialEntries: ['/jobs'] });
     await act(async () => {});
     expect(screen.getByText('Current job')).toBeInTheDocument();
     list.mockRejectedValueOnce(new Error('Unavailable'));

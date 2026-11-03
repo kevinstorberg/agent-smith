@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { PAGE_LIMITS } from '../constants';
 
 interface PaginationProps {
   total: number;
@@ -8,8 +9,6 @@ interface PaginationProps {
   onLimitChange?: (limit: number) => void;
   disabled?: boolean;
 }
-
-const LIMIT_OPTIONS = [10, 25, 50];
 
 function buildPageNumbers(current: number, total: number): (number | 'ellipsis')[] {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
@@ -89,7 +88,7 @@ export function Pagination({ total, limit, offset, onPageChange, onLimitChange, 
           disabled={disabled}
           onChange={e => onLimitChange(Number(e.target.value))}
         >
-          {LIMIT_OPTIONS.map(n => (
+          {PAGE_LIMITS.map(n => (
             <option key={n} value={n}>{n} / page</option>
           ))}
         </select></label>}
