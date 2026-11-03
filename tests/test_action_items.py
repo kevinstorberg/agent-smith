@@ -143,3 +143,28 @@ def test_action_items_stale_writes_and_rollback(monkeypatch):
         db.update(first["id"], {"expected_revision": changed["revision"], "title": "Rolled back"})
     monkeypatch.setattr(db, "_read", original)
     assert db.get(first["id"]) == changed
+
+
+@pytest.mark.parametrize("side,source_index,anchor_index,expected", [
+    ("after_id", 0, 1, [0, 1, 2, 3, 4, 6, 7, 5, 8, 9, 10, 11]),
+    ("before_id", 1, 0, [0, 1, 2, 3, 4, 7, 5, 6, 8, 9, 10, 11]),
+])
+def test_action_items_filtered_page_move_preserves_every_unmoved_row(client, side, source_index, anchor_index, expected):
+    created = [db.create({"title": f"{'Selected' if index % 2 else 'Hidden'} task {index}",
+                          "project": "Work" if index % 2 else "Other", "tags": ["security"] if index % 2 else []})
+               for index in range(12)]
+    params = {"q": "Selected", "project": "Work", "tags": "security", "status": "open", "sort": "manual", "limit": 2, "offset": 2}
+    page = client.get("/api/action-items", params=params).json()
+    assert page["total"] == 6
+    assert [row["id"] for row in page["items"]] == [created[index]["id"] for index in (5, 7)]
+    source, anchor = page["items"][source_index], page["items"][anchor_index]
+    before = db.list_items({"limit": 100})["items"]
+    response = client.post(f"/api/action-items/{source['id']}/move", json={"expected_revision": source["revision"], side: anchor["id"]})
+    assert response.status_code == 200
+    after = db.list_items({"limit": 100})["items"]
+    assert [row["id"] for row in after] == [created[index]["id"] for index in expected]
+    assert [{key: value for key, value in row.items() if key != "priority"} for row in before if row["id"] != source["id"]] == [
+        {key: value for key, value in row.items() if key != "priority"} for row in after if row["id"] != source["id"]]
+    refreshed = client.get("/api/action-items", params=params).json()
+    expected_visible = [anchor["id"], source["id"]] if side == "after_id" else [source["id"], anchor["id"]]
+    assert [row["id"] for row in refreshed["items"]] == expected_visible

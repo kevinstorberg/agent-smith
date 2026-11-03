@@ -8,12 +8,12 @@ const NAV_SECTIONS = [{ id: 'external', label: 'Workspace', links: [
   { path: '/action-items', label: 'Action items' },
   { path: '/chat', label: 'Chat' },
   { path: '/meetings', label: 'Meetings' },
-  { path: '/memory', label: 'Memory' },
   { path: '/plans', label: 'Plans' },
   { path: '/profiles', label: 'Profiles' },
-] }, { id: 'harness', label: 'Agent setup', links: [
+] }, { id: 'harness', label: 'Harness', links: [
   { path: '/harness/agents', label: 'Agents' },
   { path: '/harness/hooks', label: 'Hooks' },
+  { path: '/memory', label: 'Memory' },
   { path: '/harness/rules', label: 'Rules' },
   { path: '/harness/skills', label: 'Skills' },
   { path: '/harness/tools', label: 'Tools' },

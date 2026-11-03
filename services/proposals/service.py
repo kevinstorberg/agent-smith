@@ -20,7 +20,7 @@ import psycopg2
 from psycopg2.extras import Json, RealDictCursor
 
 from services.api.models.proposal import ProposalModel, existing_fingerprints, get_proposal
-from services.api.models.shared.harness import VALID_TABLES, _copy_configs, get_item, get_item_by_id
+from services.api.models.shared.harness import VALID_TABLES, _copy_configs, _get_model, get_item, get_item_by_id, inherited_version_metadata
 from services.db import get_connection
 from services.jobs.models.job import get_job, get_job_by_name
 from services.jobs.schedule import parse_interval
@@ -261,7 +261,7 @@ def persist_proposal(staged: dict) -> int:
         ) from exc
 
 
-def _latest_active_row(cur, kind: str, name: str, project: str | None) -> dict | None:
+def _latest_active_row(cur, kind: str, name: str, project: str | None, *, for_update: bool = False) -> dict | None:
     table = VALID_TABLES[kind]
     cur.execute(
         f"""
@@ -271,7 +271,7 @@ def _latest_active_row(cur, kind: str, name: str, project: str | None) -> dict |
               SELECT MAX(v.version) FROM {table} v
               WHERE v.name = %s AND v.project IS NOT DISTINCT FROM %s AND v.state = 'active'
           )
-        """,
+        """ + (" FOR UPDATE" if for_update else ""),
         (name, project, name, project),
     )
     row = cur.fetchone()
@@ -289,7 +289,7 @@ def _promote_harness(cur, proposal: dict) -> dict:
     if not row or row["state"] != "proposed":
         raise ProposalConflictError("the proposed row no longer exists or was already resolved")
 
-    current = _latest_active_row(cur, kind, name, project)
+    current = _latest_active_row(cur, kind, name, project, for_update=True)
     if proposal["action"] == "update":
         if current is None:
             raise ProposalConflictError(f"{kind} '{name}' was deleted after this proposal was filed")
@@ -304,10 +304,10 @@ def _promote_harness(cur, proposal: dict) -> dict:
             raise ProposalConflictError(f"a {kind} named '{name}' was created after this proposal was filed")
         new_version = 1
 
-    cur.execute(
-        f"UPDATE {table} SET state = 'active', version = %s, updated_at = now() WHERE id = %s",
-        (new_version, proposed_id),
-    )
+    _get_model(kind).dynamic_update(proposed_id, {
+        "state": "active", "version": new_version,
+        **inherited_version_metadata(kind, current if proposal["action"] == "update" else None),
+    }, conn=cur.connection)
     if proposal["action"] == "update":
         _copy_configs(cur, current["id"], proposed_id, kind)
     else:

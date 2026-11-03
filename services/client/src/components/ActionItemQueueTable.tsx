@@ -43,7 +43,7 @@ export function ActionItemQueueTable({ queue, onEdit, noun = 'action item', plur
                       style={{ ...row.draggableProps.style, display: state.isDragging ? 'table' : undefined, tableLayout: state.isDragging ? 'fixed' : undefined, background: state.isDragging ? 'var(--surface-hover)' : undefined }}>
                       <td><div className="flex-row">{reorderableView && <button type="button" className="btn btn-sm action-item-drag" {...row.dragHandleProps} disabled={!canDrag}
                         aria-label={`Reorder ${item.title}`} title="Drag to reorder; press Space to use the keyboard">⠿</button>}
-                        <span className="action-item-priority" aria-label={item.priority === null ? 'No open queue priority' : `Priority ${item.priority}`}>{item.priority ?? '—'}</span>
+                        <span className="action-item-priority" aria-label={savingOrder ? 'Priority updating' : item.priority === null ? 'No open queue priority' : `Priority ${item.priority}`}>{savingOrder ? '…' : item.priority ?? '—'}</span>
                       </div></td>
                       <td><button type="button" id={`action-title-${item.id}`} className="inline-clear action-item-title" aria-label={item.title}
                         aria-expanded={expandedId === item.id} aria-controls={`action-description-${item.id}`} disabled={busy || freezeControls}

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
+
+from psycopg2.extensions import connection as Connection
 from psycopg2.extras import Json, RealDictCursor
 
 from services.db import get_connection
@@ -29,20 +32,15 @@ class BaseModel:
         return result
 
     @classmethod
-    def create(cls, conn=None, **fields) -> int:
+    def create(cls, conn: Connection | None = None, **fields) -> int:
         jf = cls.json_fields
         cols = list(fields.keys())
         vals = [Json(v) if c in jf else v for c, v in fields.items()]
         placeholders = ", ".join(["%s"] * len(cols))
         col_names = ", ".join(cols)
         sql = f"INSERT INTO {cls.table} ({col_names}) VALUES ({placeholders}) RETURNING id"
-        if conn is not None:
-            # Caller-supplied connection: participate in their transaction (no commit here).
-            with conn.cursor() as cur:
-                cur.execute(sql, vals)
-                return cur.fetchone()[0]
-        with get_connection() as own_conn:
-            with own_conn.cursor() as cur:
+        with (get_connection() if conn is None else nullcontext(conn)) as connection:
+            with connection.cursor() as cur:
                 cur.execute(sql, vals)
                 return cur.fetchone()[0]
 
@@ -98,6 +96,8 @@ class BaseModel:
         row_id: int,
         fields: dict,
         json_fields: set[str] | None = None,
+        *,
+        conn: Connection | None = None,
     ) -> None:
         cls._validate_id(row_id)
         jf = json_fields or cls.json_fields
@@ -111,8 +111,8 @@ class BaseModel:
         sets.append("updated_at = now()")
         params.append(row_id)
 
-        with get_connection() as conn:
-            with conn.cursor() as cur:
+        with (get_connection() if conn is None else nullcontext(conn)) as connection:
+            with connection.cursor() as cur:
                 cur.execute(
                     f"UPDATE {cls.table} SET {', '.join(sets)} WHERE id = %s",
                     params,

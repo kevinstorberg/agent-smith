@@ -16,6 +16,7 @@ from mcp.types import LATEST_PROTOCOL_VERSION
 from starlette.routing import Mount
 
 from services.api.app import MCP_SERVERS, app
+from services.api.mcp_transport import MCPSSECompletionMiddleware
 
 SESSION_ID_FROM_PREVIOUS_PROCESS = "0123456789abcdef0123456789abcdef"
 MCP_HEADERS = {
@@ -35,6 +36,16 @@ def _mcp_mount_paths() -> list[str]:
     paths = [route.path for route in app.routes if isinstance(route, Mount) and route.path.startswith("/mcp/")]
     assert len(paths) == len(MCP_SERVERS), f"expected one mount per MCP server, found {paths}"
     return paths
+
+
+def test_sse_completion_is_installed_on_every_mcp_mount_only():
+    mounts = [route for route in app.routes if isinstance(route, Mount) and route.path.startswith("/mcp/")]
+    assert len(mounts) == len(MCP_SERVERS)
+    assert all(
+        sum(middleware.cls is MCPSSECompletionMiddleware for middleware in mount.app.user_middleware) == 1
+        for mount in mounts
+    )
+    assert all(middleware.cls is not MCPSSECompletionMiddleware for middleware in app.user_middleware)
 
 
 def _json_rpc_payload(response: httpx.Response) -> dict:

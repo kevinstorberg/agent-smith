@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { render } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router';
 import App from '../App';
@@ -92,6 +92,16 @@ function renderApp(initialEntries: string[]) {
 }
 
 describe('App', () => {
+  it.each(['/missing', '/settings/unknown?tab=anything#section'])('provides a working recovery link for %s', async path => {
+    renderApp([path]);
+    expect(screen.getByRole('heading', { name: 'Page not found' })).toBeVisible();
+    expect(screen.getByTestId('sidebar')).toBeVisible();
+    fireEvent.click(screen.getByRole('link', { name: 'Open action items' }));
+    await screen.findByTestId('action-items-page');
+    expect(screen.queryByRole('heading', { name: 'Page not found' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/action-items');
+  });
+
   it('renders sidebar and notification bar', () => {
     renderApp(['/harness/rules']);
     expect(screen.getByTestId('sidebar')).toBeInTheDocument();

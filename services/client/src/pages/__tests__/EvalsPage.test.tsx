@@ -78,6 +78,27 @@ beforeEach(() => {
 });
 
 describe('EvalsPage', () => {
+  it('requests all result categories by default across the table, facets and chart', async () => {
+    renderWithProviders(<EvalsPage />, { initialEntries: ['/evals'] });
+    await waitFor(() => expect(mockList).toHaveBeenCalled());
+    expect(screen.getByLabelText('Result category')).toHaveValue('');
+    expect(mockList).toHaveBeenCalledWith({ sort: 'newest', limit: '10', offset: '0' });
+    expect(mockSubcategories).toHaveBeenCalledWith({});
+    expect(mockFacets).toHaveBeenCalledWith({});
+    expect(mockChartAverage).toHaveBeenCalledWith({});
+  });
+
+  it('can return from an explicit category to all categories and clear dependent filters', async () => {
+    renderWithProviders(<EvalsPage />, { initialEntries: ['/evals?category=rules&subcategory=core&scenario=test_scenario&model=gpt-4&q=check'] });
+    await waitFor(() => expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ eval_type: 'rules', q: 'check' })));
+    fireEvent.change(screen.getByLabelText('Result category'), { target: { value: '' } });
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ q: 'check', sort: 'newest', limit: '10', offset: '0' }));
+    expect(screen.getByLabelText('Result subcategory')).toHaveValue('');
+    expect(screen.getByLabelText('Result scenario')).toHaveValue('');
+    expect(screen.getByLabelText('Result model')).toHaveValue('');
+    expect(mockChartAverage).toHaveBeenLastCalledWith({ q: 'check' });
+  });
+
   it('loads and displays categories in the filter dropdown', async () => {
     renderWithProviders(<EvalsPage />, { initialEntries: ['/evals'] });
 

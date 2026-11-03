@@ -385,11 +385,10 @@ async def test_summary_memory_input_is_independent_of_canonical_rename_during_co
     management_db.update_participants(ready, 0, [{"name": "Nickname", "profile_id": person["id"], "speaker_key": speaker_key(segments[0]["speaker"])}])
     memory_db.retry_memories(ready)
     monkeypatch.setattr(enrichment, "WINDOW_CHARS", 15)
-    monkeypatch.setattr(enrichment, "AGENT_SECONDS", 0.15)
 
     async def pause(snapshot, window, previous, *, deadline):
         if previous:
-            await asyncio.Event().wait()
+            raise analysis.AnalysisBudgetExpired("Synthetic pause after the first saved summary window")
         return await agents.analyze(snapshot, window, previous, deadline=deadline)
 
     monkeypatch.setattr(analysis, "analyze_memories", pause)
@@ -406,7 +405,7 @@ async def test_summary_memory_input_is_independent_of_canonical_rename_during_co
         async with enrichment.DigestionRun(source.name) as run:
             await run.prepare()
             await run.generate_memories()
-            assert run.memory_report["outcome"] == "done"
+            assert run.memory_report["outcome"] == "done", run.memory_report
         assert [call[1][0]["id"] for call in agents.analyses] == ["summary-0", "summary-1"]
         assert all(call[0]["memory_source"] == "summary" and call[0]["summary_text"] == summary for call in agents.analyses)
         assert all("effective_speaker" not in section for call in agents.analyses for section in call[1])
