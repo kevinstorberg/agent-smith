@@ -143,10 +143,10 @@ export function ProfileDiscussionTopics({ profileId, active, disabled, onBusyCha
       remove: (id: number, revision: number) => api.profiles.topics.remove(profileId, id, revision),
     };
   }, [profileId]);
-  const filtered = Boolean(queryInput.trim() || tagsInput.trim() || query || tags);
+  const criteriaPending = queryInput.trim() !== query || tagsInput.trim() !== tags;
   const queue = useActionItemQueue({ source: resource, filters: { status, sort, q: query || undefined, tags: actionItemTags(tags) },
     criteria: JSON.stringify([profileId, status, sort, query, tags]), viewKey: JSON.stringify([profileId, status, sort, queryInput, tagsInput]),
-    reorderableView: status === 'open' && sort === 'manual' && !filtered, active, disabled: disabled || identityChanged, editing: Boolean(edit), noun: 'discussion topic' });
+    reorderableView: status === 'open' && sort === 'manual', criteriaPending, active, disabled: disabled || identityChanged, editing: Boolean(edit), noun: 'discussion topic' });
   const busy = Boolean(edit) || queue.busy || Boolean(queue.snapshot);
   useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
   useEffect(() => () => onBusyChange(false), [onBusyChange]);
@@ -175,7 +175,7 @@ export function ProfileDiscussionTopics({ profileId, active, disabled, onBusyCha
           <option value="newest">Newest</option><option value="updated">Recently updated</option><option value="title">Title A–Z</option>
         </select></label>
       </div>
-      {!queue.reorderableView && <p className="text-muted-sm">To drag topics into order, use Open with Manual order and clear the filters.</p>}
+      {!queue.reorderableView && <p className="text-muted-sm">To drag topics into order, use Open with Manual order; search and filters can stay applied.</p>}
       {identityChanged ? <p className="card" role="alert">This profile identity changed. Reload the profile to continue. <button className="btn" onClick={onReload}>Reload profile</button></p>
         : <ActionItemQueueTable queue={queue} status={status} scope={`profile-topics-${profileId}`} noun="discussion topic" plural="discussion topics" showProject={false} onEdit={item => open(item)} />}
     </section>}

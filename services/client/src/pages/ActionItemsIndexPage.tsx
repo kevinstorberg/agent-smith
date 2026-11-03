@@ -20,12 +20,12 @@ export function ActionItemsIndexPage() {
   const query = useDebouncedValue(queryInput.trim());
   const project = useDebouncedValue(projectInput.trim());
   const tags = useDebouncedValue(tagsInput.trim());
-  const filtered = Boolean(queryInput.trim() || projectInput.trim() || tagsInput.trim() || query || project || tags);
+  const criteriaPending = queryInput.trim() !== query || projectInput.trim() !== project || tagsInput.trim() !== tags;
   const queue = useActionItemQueue({ source: api.actionItems,
     filters: { status, sort, q: query || undefined, project: project || undefined, tags: actionItemTags(tags) },
     criteria: JSON.stringify([status, sort, query, project, tags]),
     viewKey: JSON.stringify([status, sort, queryInput, projectInput, tagsInput]),
-    reorderableView: status === 'open' && sort === 'manual' && !filtered,
+    reorderableView: status === 'open' && sort === 'manual', criteriaPending,
   });
   const { freezeControls } = queue;
   return <div>
@@ -52,7 +52,7 @@ export function ActionItemsIndexPage() {
         <option value="newest">Newest</option><option value="updated">Recently updated</option><option value="title">Title A–Z</option>
       </select></label>
     </div>
-    {(filtered || status !== 'open' || sort !== 'manual') && <p className="text-muted-sm">To drag items into order, use Open with Manual order and clear the filters.</p>}
+    {(status !== 'open' || sort !== 'manual') && <p className="text-muted-sm">To drag items into order, use Open with Manual order; search and filters can stay applied.</p>}
     <ActionItemQueueTable queue={queue} status={status} onEdit={item => navigate(`/action-items/${item.id}?edit=1`)} />
   </div>;
 }
