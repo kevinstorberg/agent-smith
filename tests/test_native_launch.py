@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from types import SimpleNamespace
 from urllib.parse import urlsplit, urlunsplit
 
@@ -252,14 +253,24 @@ def test_only_the_user_facing_launch_replaces_a_running_instance(monkeypatch):
         raise Launched
 
     replaced = []
+    @contextmanager
+    def lock(*args, **kwargs):
+        yield 99
+
     monkeypatch.setattr(manage, "selected_environment", lambda mode: {})
+    monkeypatch.setattr(manage, "python_executable", lambda: sys.executable)
     monkeypatch.setattr(manage, "replace_running_instance", replaced.append)
+    monkeypatch.setattr(manage, "prepare_startup", lambda *args, **kwargs: kwargs["stop_managed"]() or "a" * 40)
     monkeypatch.setattr(manage.os, "execve", launch)
-    monkeypatch.setattr(manage, "instance_lock", launch)
+    monkeypatch.setattr(manage, "instance_lock", lock)
+    monkeypatch.setattr(manage, "StartupLease", lambda *args: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(manage, "Checkout", lambda *args, **kwargs: SimpleNamespace(require_clean_main=lambda **kwargs: None))
+    monkeypatch.setattr(manage, "validate_startup_instances", lambda mode: None)
+    monkeypatch.setattr(manage, "launch_prepared_application", launch)
     args = argparse.Namespace(mode="production", stop=False, status=False, detach=False, rebuild=False, launch_token=None)
     with pytest.raises(Launched):
         manage.run_application(args)
     assert replaced == ["production"]
     with pytest.raises(Launched):
-        manage.run_application(argparse.Namespace(**{**vars(args), "launch_token": "child"}))
+        manage.run_application(argparse.Namespace(**{**vars(args), "launch_token": "child", "startup_revision": "a" * 40, "startup_lock_fd": 99}))
     assert replaced == ["production"]
