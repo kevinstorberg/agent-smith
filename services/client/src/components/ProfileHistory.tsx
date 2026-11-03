@@ -47,7 +47,7 @@ export function ProfileHistory({ profileId, revision, onViewEvidence, evidenceHr
         {detail.error && <p role="alert">Could not load this change. <button className="btn btn-sm" onClick={() => detail.refresh()}>Retry change</button></p>}
         {!detail.loading && !detail.error && detail.data?.id === selectedId && <>
           {detail.data.source_restricted && <p className="text-muted-sm">Some generated content is hidden because its source evidence or participant attribution changed.</p>}
-          <div className="sub-tabs">{(['changes', 'before', 'after'] as const).map(value => <button key={value} className={mode === value ? 'active' : ''} onClick={() => setMode(value)}>{value === 'changes' ? 'Changes' : value === 'before' ? 'Before' : 'After'}</button>)}</div>
+          <div className="sub-tabs">{(['changes', 'before', 'after'] as const).map(value => <button key={value} className={mode === value ? 'active' : ''} aria-pressed={mode === value} onClick={() => setMode(value)}>{value === 'changes' ? 'Changes' : value === 'before' ? 'Before' : 'After'}</button>)}</div>
           {changes?.fields.map(field => <section key={field.key} style={{ marginTop: 12 }}>
             <h4 style={{ marginBottom: 8 }}>{field.label}</h4>
             {mode === 'changes' ? <ContentDiff before={field.before} after={field.after} /> : <pre style={CODE_BOX}>{field[mode] || 'Empty'}</pre>}

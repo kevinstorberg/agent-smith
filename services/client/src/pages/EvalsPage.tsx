@@ -96,6 +96,7 @@ export function EvalsPage() {
       <div className="sub-tabs">
         <button
           className={chartMode === 'average' ? 'active' : ''}
+          aria-pressed={chartMode === 'average'}
           onClick={() => setChartMode('average')}
         >
           Average
@@ -103,6 +104,7 @@ export function EvalsPage() {
         {runs.some(r => (r.score_count ?? 0) > 1) && (
           <button
             className={chartMode === 'breakdown' ? 'active' : ''}
+            aria-pressed={chartMode === 'breakdown'}
             onClick={() => setChartMode('breakdown')}
           >
             Breakdown
