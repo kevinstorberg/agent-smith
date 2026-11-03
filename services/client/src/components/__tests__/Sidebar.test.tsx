@@ -60,13 +60,13 @@ describe('Sidebar', () => {
     expect(screen.getByRole('link', { name: 'Meetings' })).not.toHaveClass('active');
   });
 
-  it('orders named groups by workspace, agent setup and operations, retaining all 16 alphabetized links', () => {
+  it('orders named groups by workspace, harness and operations, retaining all 16 alphabetized links', () => {
     renderSidebar();
-    expect(screen.getAllByRole('heading', { level: 2 }).map(heading => heading.textContent?.replace('›', ''))).toEqual(['Workspace', 'Agent setup', 'Operations']);
+    expect(screen.getAllByRole('heading', { level: 2 }).map(heading => heading.textContent?.replace('›', ''))).toEqual(['Workspace', 'Harness', 'Operations']);
     const sections = screen.getAllByRole('region').map(section => within(section).queryAllByRole('link').map(link => link.textContent));
     expect(sections).toEqual([
-      ['Action items', 'Chat', 'Meetings', 'Memory', 'Plans', 'Profiles'],
-      ['Agents', 'Hooks', 'Rules', 'Skills', 'Tools'],
+      ['Action items', 'Chat', 'Meetings', 'Plans', 'Profiles'],
+      ['Agents', 'Hooks', 'Memory', 'Rules', 'Skills', 'Tools'],
       ['Audit', 'Evals', 'Jobs', 'Proposals', 'Results'],
     ]);
     expect(screen.getAllByRole('link')).toHaveLength(16);
@@ -75,7 +75,7 @@ describe('Sidebar', () => {
   it('supports mouse, Enter and Space disclosure while removing collapsed links from keyboard navigation', async () => {
     const user = userEvent.setup();
     renderSidebar();
-    const toggle = screen.getByRole('button', { name: 'Agent setup' });
+    const toggle = screen.getByRole('button', { name: 'Harness' });
     const panel = document.getElementById(toggle.getAttribute('aria-controls')!);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await user.click(toggle);
@@ -101,14 +101,15 @@ describe('Sidebar', () => {
     expect(screen.getByRole('link', { name: 'Profiles' })).toHaveAttribute('aria-current', 'page');
   });
 
-  it('opens an initially collapsed destination without forcing other groups open', () => {
+  it.each([['/harness/rule/83', 'Rules'], ['/memory', 'Memory']])('opens initially collapsed destination %s without forcing other groups open', (path, label) => {
     window.localStorage.setItem('agent-smith.sidebar.v1', JSON.stringify({ version: 1, collapsed: ['external', 'harness', 'maintenance'] }));
-    renderSidebar('/harness/rule/83');
-    expect(screen.getByRole('button', { name: 'Agent setup' })).toHaveAttribute('aria-expanded', 'true');
+    renderSidebar(path);
+    expect(screen.getByRole('button', { name: 'Harness' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('button', { name: 'Workspace' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByRole('button', { name: 'Operations' })).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByRole('link', { name: 'Rules' })).toHaveClass('active');
-    expect(screen.getByRole('link', { name: 'Rules' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: label })).toHaveClass('active');
+    expect(screen.getByRole('link', { name: label })).toHaveAttribute('aria-current', 'page');
+    expect(JSON.parse(window.localStorage.getItem('agent-smith.sidebar.v1')!)).toEqual({ version: 1, collapsed: ['external', 'maintenance'] });
   });
 
   it('opens route destinations and allows the active group to be collapsed manually afterwards', () => {
@@ -116,17 +117,21 @@ describe('Sidebar', () => {
       const navigate = useNavigate();
       return <><button onClick={() => navigate('/harness/rule/83')}>Open rule</button>
         <button onClick={() => navigate('/harness/hook/new')}>New hook</button>
+        <button onClick={() => navigate('/memory')}>Open memory</button>
         <button onClick={() => navigate('/jobs/1')}>Open job</button></>;
     }
     render(<MemoryRouter initialEntries={['/profiles/profile-id']}><Sidebar /><RouteControls /></MemoryRouter>);
-    fireEvent.click(screen.getByRole('button', { name: 'Agent setup' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Harness' }));
     fireEvent.click(screen.getByRole('button', { name: 'Operations' }));
     fireEvent.click(screen.getByRole('button', { name: 'Open rule' }));
     expect(screen.getByRole('link', { name: 'Rules' })).toHaveAttribute('aria-current', 'page');
-    fireEvent.click(screen.getByRole('button', { name: 'Agent setup' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Harness' }));
     expect(screen.queryByRole('link', { name: 'Rules' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'New hook' }));
     expect(screen.getByRole('link', { name: 'Hooks' })).toHaveAttribute('aria-current', 'page');
+    fireEvent.click(screen.getByRole('button', { name: 'Harness' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open memory' }));
+    expect(screen.getByRole('link', { name: 'Memory' })).toHaveAttribute('aria-current', 'page');
     fireEvent.click(screen.getByRole('button', { name: 'Open job' }));
     expect(screen.getByRole('link', { name: 'Jobs' })).toHaveAttribute('aria-current', 'page');
   });
@@ -135,7 +140,7 @@ describe('Sidebar', () => {
     'ignores malformed or incompatible stored preferences: %s', stored => {
       window.localStorage.setItem('agent-smith.sidebar.v1', stored);
       renderSidebar();
-      for (const name of ['Workspace', 'Agent setup', 'Operations']) {
+      for (const name of ['Workspace', 'Harness', 'Operations']) {
         expect(screen.getByRole('button', { name })).toHaveAttribute('aria-expanded', 'true');
       }
     },
