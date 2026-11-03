@@ -1,6 +1,6 @@
 # Screen preferences
 
-Jobs, Plans, the five Harness lists, Audit, Proposals, Eval suites, Memory, Meetings and Vocabulary share the typed codec in `services/client/src/utils/viewPreferences.ts` and the browser/router adapter `useViewPreferences`.
+All sixteen resource indexes and nested Vocabulary share the typed codec in `services/client/src/utils/viewPreferences.ts` and the browser/router adapter `useViewPreferences`.
 Further screens should extend that registry and reuse the adapter, rather than adding cookies or persistence effects.
 
 The host-only `agent-smith.ui.v1` cookie uses `Path=/`, `SameSite=Lax`, a 30-day lifetime and `Secure` on HTTPS.
@@ -35,3 +35,8 @@ The adapter initializes synchronously before the first list request and supplies
 User criteria/page-size changes reset the page atomically; pending debounced criteria pause reads.
 Stale offsets clamp only inside `usePagination`'s accepted response gate using that request's criteria, limit and offset.
 Older totals, failed requests and stale responses cannot change a newer view's page.
+
+Action item status and its default sort change atomically; incompatible sorts normalize before fetching and during live updates.
+Queue controls, including Reset view, remain frozen during reordering.
+Profile creation drafts, selected chat rooms, room edits, unsent messages, and result chart modes remain local.
+Result category and subcategory changes clear dependent filters in one update.

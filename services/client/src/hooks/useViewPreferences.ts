@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigationType, useSearchParams } from 'react-router';
-import { defaultView, mergeViewCookie, parseViewField, resolveView, viewPath } from '../utils/viewPreferences';
+import { defaultView, mergeViewCookie, normalizeViewRelations, parseViewField, resolveView, viewPath } from '../utils/viewPreferences';
 import type { ViewKey, ViewSettings } from '../utils/viewPreferences';
 import type { PaginationOptions, PaginationState } from './usePagination';
 
@@ -62,17 +62,20 @@ export function useViewPreferences<K extends ViewKey>(key: K, { scope, active = 
     const latestView = latest.current;
     if (!latestView.matched || latestView.snapshot.identity !== identity) return;
     const previous = latestView.snapshot;
-    const values = { ...previous.values, ...patch, ...(resetOffset ? { offset: 0 } : {}) };
+    const values = normalizeViewRelations(key, { ...previous.values, ...patch, ...(resetOffset ? { offset: 0 } : {}) });
     const search = new URLSearchParams(previous.pending.at(-1) ?? previous.search);
-    for (const field of Object.keys(patch) as (keyof ViewSettings[K])[]) search.set(String(field), String(values[field]));
+    for (const field of Object.keys(values) as (keyof ViewSettings[K])[]) {
+      if (Object.hasOwn(patch, field) || values[field] !== previous.values[field]) search.set(String(field), String(values[field]));
+    }
     if (resetOffset) search.set('offset', '0');
     const target = search.size ? `?${search}` : '';
     const next = { ...previous, values, pending: [...previous.pending, target].slice(-32) };
     latest.current = { ...latestView, snapshot: next };
     setSaved(next);
     setSearchParams(search, { replace: true });
-  }, [identity, setSearchParams]);
+  }, [identity, key, setSearchParams]);
 
+  const setFields = useCallback((patch: Partial<ViewSettings[K]>) => update(patch, true), [update]);
   const setField = useCallback(<F extends keyof ViewSettings[K]>(field: F, value: ViewSettings[K][F]) => {
     const patch: Partial<ViewSettings[K]> = {};
     patch[field] = value;
@@ -85,5 +88,5 @@ export function useViewPreferences<K extends ViewKey>(key: K, { scope, active = 
   const pagination = useMemo<PaginationOptions>(() => ({
     page: { limit: current.values.limit, offset: current.values.offset }, onPageChange, clampOffset: true,
   }), [current.values.limit, current.values.offset, onPageChange]);
-  return { values: current.values, restoreKey: current.restoreKey, setField, reset, pagination };
+  return { values: current.values, restoreKey: current.restoreKey, setField, setFields, reset, pagination };
 }

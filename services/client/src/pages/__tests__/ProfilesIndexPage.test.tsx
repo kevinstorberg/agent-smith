@@ -1,3 +1,4 @@
+import { defaultView, mergeViewCookie, readViewCookie } from '../../utils/viewPreferences';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '../../test-utils';
@@ -25,6 +26,7 @@ const profiles: ProfileSummary[] = [
 ];
 
 beforeEach(() => {
+  document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.clearAllMocks();
   read.mockResolvedValue({ items: profiles, total: 2 });
   vi.mocked(api.profiles.update).mockResolvedValue(profileFixture);
@@ -34,13 +36,38 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('ProfilesIndexPage', () => {
+  it('restores boolean stars, tags, sorting and paging before the first profile request', async () => {
+    document.cookie = mergeViewCookie('', 'profiles', { ...defaultView('profiles'), q: 'Alex', tags: 'team, urgent', starred: true, sort: 'updated_at_asc', limit: 25, offset: 50 });
+    read.mockResolvedValue({ items: profiles, total: 100 });
+    renderWithProviders(<ProfilesIndexPage />, { initialEntries: ['/profiles'] });
+    await screen.findByText('Alex');
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledWith({ q: 'Alex', tags: ['team', 'urgent'], starred: true, sort: 'updated_at_asc', limit: 25, offset: 50 });
+    expect(screen.getByLabelText('Starred only')).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'New profile' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Unsaved person' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset view' }));
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith({ q: undefined, sort: 'starred_name_asc', limit: 10, offset: 0 }));
+    expect(screen.getByLabelText('Name')).toHaveValue('Unsaved person');
+    expect(readViewCookie(document.cookie)).toEqual([]);
+  });
+
+  it('uses explicit URL query and false star values instead of saved filters on its first request', async () => {
+    document.cookie = mergeViewCookie('', 'profiles', { ...defaultView('profiles'), q: 'old', starred: true, tags: 'old', sort: 'name_desc', offset: 20 });
+    renderWithProviders(<ProfilesIndexPage />, { initialEntries: ['/profiles?q=&tags=&starred=&sort=invalid'] });
+    await screen.findByText('Alex');
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledWith({ q: undefined, sort: 'starred_name_asc', limit: 10, offset: 0 });
+    expect(screen.getByLabelText('Starred only')).not.toBeChecked();
+  });
+
   it('refreshes the current filters and page when a persona run finishes after the user changes the search', async () => {
     vi.mocked(api.jobs.forGraph).mockResolvedValue({ items: [{ id: 42, name: 'Persona review', input_params: { graph_type: 'persona' },
       schedule_config: { minutes: 15 }, runs_on_device: true, configs: [] }], total: 1 } as never);
     let complete!: (value: never) => void;
     vi.mocked(api.jobs.runNow).mockReturnValueOnce(new Promise(resolve => { complete = resolve; }));
     read.mockResolvedValue({ items: profiles, total: 25 });
-    renderWithProviders(<ProfilesIndexPage />);
+    renderWithProviders(<ProfilesIndexPage />, { initialEntries: ['/profiles'] });
     await screen.findByText('Alex');
     await waitFor(() => expect(screen.getByRole('button', { name: 'Run personas' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
@@ -61,7 +88,7 @@ describe('ProfilesIndexPage', () => {
   });
 
   it('creates a profile by trimmed name without requiring an email or meeting', async () => {
-    renderWithProviders(<ProfilesIndexPage />);
+    renderWithProviders(<ProfilesIndexPage />, { initialEntries: ['/profiles'] });
     fireEvent.click(screen.getByRole('button', { name: 'New profile' }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: ' Jordan Rivera ' } });
     fireEvent.submit(screen.getByRole('form', { name: 'New profile' }));
@@ -71,7 +98,7 @@ describe('ProfilesIndexPage', () => {
 
   it('preserves the creation draft on an email conflict and supports explicit retry', async () => {
     vi.mocked(api.profiles.create).mockRejectedValueOnce(new ApiError('This email already belongs to a profile. Open or merge the existing profile.', 409));
-    renderWithProviders(<ProfilesIndexPage />);
+    renderWithProviders(<ProfilesIndexPage />, { initialEntries: ['/profiles'] });
     fireEvent.click(screen.getByRole('button', { name: 'New profile' }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Jordan Rivera' } });
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'jordan@example.test' } });
@@ -86,7 +113,7 @@ describe('ProfilesIndexPage', () => {
   });
 
   it('validates a blank name and cancels the create form without a request', async () => {
-    renderWithProviders(<ProfilesIndexPage />);
+    renderWithProviders(<ProfilesIndexPage />, { initialEntries: ['/profiles'] });
     await screen.findByText('Alex');
     fireEvent.click(screen.getByRole('button', { name: 'New profile' }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: '  ' } });
@@ -99,12 +126,12 @@ describe('ProfilesIndexPage', () => {
 
   it('labels a manually created global identity distinctly from a meeting-only identity', async () => {
     read.mockResolvedValue({ items: [{ ...profiles[0], identity_scope: 'manual' }], total: 1 });
-    renderWithProviders(<ProfilesIndexPage />);
+    renderWithProviders(<ProfilesIndexPage />, { initialEntries: ['/profiles'] });
     expect(await screen.findByText('Manual')).toBeInTheDocument();
     expect(screen.queryByText('Meeting only')).not.toBeInTheDocument();
   });
   it('shows cumulative profiles across identity scopes without filtering by meetings or devices', async () => {
-    renderWithProviders(<ProfilesIndexPage />);
+    renderWithProviders(<ProfilesIndexPage />, { initialEntries: ['/profiles'] });
     expect(await screen.findByText('Alex')).toBeInTheDocument();
     expect(screen.getByText('alex@example.test')).toBeInTheDocument();
     expect(screen.getByText('Speaker 1')).toBeInTheDocument();
@@ -115,7 +142,7 @@ describe('ProfilesIndexPage', () => {
   });
 
   it('opens the canonical detail from click or keyboard', async () => {
-    renderWithProviders(<ProfilesIndexPage />);
+    renderWithProviders(<ProfilesIndexPage />, { initialEntries: ['/profiles'] });
     const name = await screen.findByText('Alex');
     const row = name.closest('tr')!;
     expect(screen.queryByRole('link', { name: 'Alex' })).not.toBeInTheDocument();
@@ -133,7 +160,7 @@ describe('ProfilesIndexPage', () => {
 
   it('searches, pages and clears on the server while resetting the page', async () => {
     read.mockResolvedValue({ items: profiles, total: 25 });
-    renderWithProviders(<ProfilesIndexPage />);
+    renderWithProviders(<ProfilesIndexPage />, { initialEntries: ['/profiles'] });
     await screen.findByText('Alex');
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 10, q: undefined, sort: 'starred_name_asc' }));
@@ -145,7 +172,7 @@ describe('ProfilesIndexPage', () => {
 
   it('distinguishes loading, empty profiles, and empty search results', async () => {
     read.mockResolvedValue({ items: [], total: 0 });
-    renderWithProviders(<ProfilesIndexPage />);
+    renderWithProviders(<ProfilesIndexPage />, { initialEntries: ['/profiles'] });
     expect(screen.getByText('Loading profiles...')).toBeInTheDocument();
     expect(await screen.findByText(/No profiles saved yet/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Search profiles'), { target: { value: 'Nobody' } });
@@ -154,7 +181,7 @@ describe('ProfilesIndexPage', () => {
 
   it('shows reader failures separately from an empty list and supports retry', async () => {
     read.mockRejectedValueOnce(new Error('PRIVATE_BACKEND_DETAIL'));
-    renderWithProviders(<ProfilesIndexPage />);
+    renderWithProviders(<ProfilesIndexPage />, { initialEntries: ['/profiles'] });
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load profiles. Try again.');
     expect(screen.queryByText(/PRIVATE_BACKEND_DETAIL/)).not.toBeInTheDocument();
     expect(screen.queryByText(/No profiles saved yet/)).not.toBeInTheDocument();
@@ -165,7 +192,7 @@ describe('ProfilesIndexPage', () => {
   it('polls the current filtered page', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     read.mockResolvedValue({ items: profiles, total: 25 });
-    renderWithProviders(<ProfilesIndexPage />);
+    renderWithProviders(<ProfilesIndexPage />, { initialEntries: ['/profiles'] });
     await screen.findByText('Alex');
     fireEvent.change(screen.getByLabelText('Search profiles'), { target: { value: 'alex' } });
     await waitFor(() => expect(read).toHaveBeenLastCalledWith({ limit: 10, offset: 0, q: 'alex', sort: 'starred_name_asc' }));
@@ -179,7 +206,7 @@ describe('ProfilesIndexPage', () => {
 
   it('filters by all tags and stars, sorts, and resets paging', async () => {
     read.mockResolvedValue({ items: profiles, total: 25 });
-    renderWithProviders(<ProfilesIndexPage />);
+    renderWithProviders(<ProfilesIndexPage />, { initialEntries: ['/profiles'] });
     await screen.findByText('Alex');
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() => expect(read).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 })));
@@ -191,7 +218,7 @@ describe('ProfilesIndexPage', () => {
   });
 
   it('stars a profile using its revision without activating row navigation', async () => {
-    renderWithProviders(<ProfilesIndexPage />);
+    renderWithProviders(<ProfilesIndexPage />, { initialEntries: ['/profiles'] });
     const button = await screen.findByRole('button', { name: 'Star Alex' });
     fireEvent.keyDown(button, { key: 'Enter' });
     fireEvent.keyDown(button, { key: ' ' });

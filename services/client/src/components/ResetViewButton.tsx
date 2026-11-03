@@ -1,3 +1,3 @@
-export function ResetViewButton({ onReset }: { onReset: () => void }) {
-  return <button className="btn" type="button" onClick={onReset}>Reset view</button>;
+export function ResetViewButton({ onReset, disabled = false }: { onReset: () => void; disabled?: boolean }) {
+  return <button className="btn" type="button" disabled={disabled} onClick={onReset}>Reset view</button>;
 }
