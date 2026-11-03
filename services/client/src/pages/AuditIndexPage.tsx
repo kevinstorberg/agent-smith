@@ -5,6 +5,7 @@ import type { AuditEvent, AuditCounts } from '../api';
 import { Pagination } from '../components/Pagination';
 import { FilterBar } from '../components/FilterBar';
 import { StatusBadge } from '../components/StatusBadge';
+import { ScrollableTable } from '../components/ScrollableTable';
 import { DateCell, ProjectCell } from '../components/table';
 import { usePagination } from '../hooks/usePagination';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
@@ -105,7 +106,7 @@ export function AuditIndexPage() {
 
       {error && <p role="alert">Could not load audit events. <button className="btn btn-sm" onClick={() => refresh()}>Retry</button></p>}
       {loading && <div className="loading" role="status">Loading...</div>}
-      <table className="table">
+      <ScrollableTable label="Audit events" className="audit-list-table" empty={items.length === 0}>
         <thead>
           <tr>
             <th>Time</th>
@@ -135,7 +136,7 @@ export function AuditIndexPage() {
             <tr><td colSpan={6} className="loading">No tool-call events</td></tr>
           )}
         </tbody>
-      </table>
+      </ScrollableTable>
 
       {!error && <Pagination
         total={total}

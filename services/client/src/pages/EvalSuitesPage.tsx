@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { api } from '../api';
 import type { EvalSuite } from '../api';
 import { EnabledToggleCell, DateCell } from '../components/table';
+import { ScrollableTable } from '../components/ScrollableTable';
 import { FilterBar } from '../components/FilterBar';
 import { Pagination } from '../components/Pagination';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
@@ -66,7 +67,7 @@ export function EvalSuitesPage() {
       {loading && <div className="loading">Loading...</div>}
 
       {!loading && !error && (
-        <table className="table">
+        <ScrollableTable label="Eval suites" className="suites-list-table" empty={suites.length === 0}>
           <thead>
             <tr>
               <th>Name</th>
@@ -96,13 +97,13 @@ export function EvalSuitesPage() {
                   />
                 </td>
                 <td><DateCell date={suite.updated_at} /></td>
-                <td onClick={e => e.stopPropagation()}>
-                  <a
-                    onClick={() => navigate(`/evals?category=${suite.eval_type}&subcategory=${suite.subcategory}`)}
+                <td onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+                  <Link
+                    to={`/evals?category=${encodeURIComponent(suite.eval_type)}&subcategory=${encodeURIComponent(suite.subcategory)}`}
                     style={{ color: 'var(--info)', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}
                   >
                     Results &rarr;
-                  </a>
+                  </Link>
                 </td>
               </tr>
             ))}
@@ -114,7 +115,7 @@ export function EvalSuitesPage() {
               </tr>
             )}
           </tbody>
-        </table>
+        </ScrollableTable>
       )}
 
       {!error && <Pagination total={total} limit={limit} offset={offset} onPageChange={setOffset}

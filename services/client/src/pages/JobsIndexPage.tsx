@@ -59,7 +59,7 @@ export function JobsIndexPage() {
       </FilterBar>
       {error && <p role="alert">Could not refresh jobs. <button className="btn btn-sm" onClick={() => refresh({ showLoading: false })}>Retry</button></p>}
       {loading && <div className="loading" role="status">Loading...</div>}
-      <div className="jobs-table" role="region" aria-label="Jobs list" aria-busy={loading} tabIndex={0}><table className="table">
+      <div className="jobs-table" role="region" aria-label="Jobs list" aria-busy={loading} tabIndex={0}><table className={`table${items.length === 0 ? ' table-empty' : ''}`}>
         <thead>
           <tr>
             <th>Name</th>

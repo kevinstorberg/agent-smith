@@ -1611,6 +1611,35 @@ pre {
 .jobs-table { max-width: 100%; overflow-x: auto; }
 .jobs-table .table { min-width: 620px; }
 .jobs-table td:last-child, .jobs-table th:last-child { width: 180px; text-align: right; }
+.jobs-table .table-empty { min-width: 0; table-layout: fixed; }
+.jobs-table .table-empty th { width: auto; overflow-wrap: anywhere; }
+.jobs-table td.loading[colspan] { width: auto; text-align: center; padding: 32px 24px; }
+.scrollable-table { max-width: 100%; overflow-x: auto; }
+.scrollable-table:focus-visible { outline: 2px solid var(--info); outline-offset: -2px; }
+.scrollable-table .table { min-width: 800px; table-layout: fixed; }
+.scrollable-table th, .scrollable-table td { overflow-wrap: anywhere; }
+.scrollable-table .table-empty { min-width: 0; }
+.scrollable-table td.loading[colspan] { text-align: center; padding: 32px 24px; }
+.proposals-list-table th:first-child, .suites-list-table th:first-child { width: 28%; }
+.proposals-list-table th:last-child { width: 180px; }
+.results-list-table th:nth-child(3) { width: 28%; }
+.audit-list-table th:nth-child(3), .audit-list-table th:last-child { width: 24%; }
+.suite-scenarios-table th:first-child { width: 24%; }
+.suite-scenarios-table th:nth-child(2) { width: 48%; }
+.suite-scenarios-table th:nth-child(3), .suite-scenarios-table th:last-child { width: 14%; }
+.scrollable-table .table.table-empty th { width: auto; }
+.scrollable-table .table-empty thead, .jobs-table .table-empty thead { display: none; }
+.audit-detail-row { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 8px; padding: 4px 0; }
+.audit-detail-row > span { min-width: 0; overflow-wrap: anywhere; }
+.operations-content-pane { flex: 1 1 280px; min-width: 0; max-width: 100%; }
+.audit-detail-page, .proposal-detail-page, .eval-suite-detail { min-width: 0; overflow-wrap: anywhere; }
+.eval-suite-fields { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
+.eval-suite-fields > div { flex: 1 1 180px; min-width: 0; }
+.eval-suite-detail pre { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.eval-scenarios-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+@media (max-width: 600px) {
+  .audit-detail-row { grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 8px 0; }
+}
 .job-schedule-action { display: inline-grid; gap: 6px; justify-items: end; }
 .job-run-controls, .job-run-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .job-run-controls { margin-bottom: 16px; }

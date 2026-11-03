@@ -12,8 +12,8 @@ const orDash = (value: string | null) =>
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', gap: 8, padding: '4px 0' }}>
-      <span style={{ minWidth: 130, color: 'var(--text-muted)' }}>{label}</span>
+    <div className="audit-detail-row">
+      <span className="text-muted">{label}</span>
       <span>{children}</span>
     </div>
   );
@@ -21,7 +21,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 function JsonPane({ title, value }: { title: string; value: unknown }) {
   return (
-    <div style={{ flex: 1, minWidth: 280 }}>
+    <div className="operations-content-pane">
       <div className="form-label">{title}</div>
       <pre style={CODE_BOX}>{JSON.stringify(value ?? null, null, 2)}</pre>
     </div>
@@ -49,7 +49,7 @@ export function AuditDetailPage() {
   if (!event) return <div className="loading">Loading...</div>;
 
   return (
-    <div>
+    <div className="audit-detail-page">
       <div className="page-header">
         <h2 className="page-title">
           {event.agent} · {event.tool_name}
