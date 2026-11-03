@@ -93,6 +93,7 @@ export function EvalSuitesPage() {
                 <td>
                   <EnabledToggleCell
                     enabled={suite.enabled}
+                    ariaLabel={`Enable ${suite.name}`}
                     onChange={() => toggleEnabled(suite)}
                   />
                 </td>

@@ -171,11 +171,13 @@ export function HarnessIndexPage({ type }: { type: string }) {
                         <ProjectCell project={item.project} />
                         <EnabledToggleCell
                           enabled={item.enabled}
+                          ariaLabel={`Enable ${item.name}`}
                           onChange={() => toggleEnabled(item)}
                         />
                         {type === 'rule' && (
                           <EnabledToggleCell
                             enabled={!!item.clone_as_skill}
+                            ariaLabel={`Clone ${item.name} as a skill`}
                             onChange={() => toggleCloneAsSkill(item)}
                             accentColor="var(--highlight)"
                           />
