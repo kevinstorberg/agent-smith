@@ -153,16 +153,17 @@ describe('EvalSuitesPage', () => {
     });
   });
 
-  it('navigates to eval results on Results link click', async () => {
+  it('links to eval results without activating suite row navigation', async () => {
     renderWithProviders(<EvalSuitesPage />);
 
     await waitFor(() => {
       expect(screen.getByText('Code Quality Suite')).toBeInTheDocument();
     });
 
-    const resultsLinks = screen.getAllByText(/Results/);
+    const resultsLinks = screen.getAllByRole('link', { name: 'Results →' });
+    expect(resultsLinks[0]).toHaveAttribute('href', '/evals?category=code&subcategory=quality');
     fireEvent.click(resultsLinks[0]);
 
-    expect(mockNavigate).toHaveBeenCalledWith('/evals?category=code&subcategory=quality');
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
