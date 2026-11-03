@@ -9,7 +9,7 @@ describe('Pagination', () => {
     expect(screen.getByRole('button', { name: '2' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('button', { name: '1' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('combobox', { name: 'Rows per page' })).toHaveValue('10');
-    expect(screen.getByText('Rows per page', { selector: 'label' })).toBeVisible();
+    expect(screen.getByText('Rows per page')).toBeVisible();
   });
 
   it('keeps independently rendered page-size labels connected to unique selectors', () => {
@@ -34,6 +34,44 @@ describe('Pagination', () => {
       <Pagination total={0} limit={10} offset={0} onPageChange={vi.fn()} onLimitChange={vi.fn()} />
     );
     expect(container.innerHTML).toBe('');
+  });
+
+  it('keeps the range and size setting without redundant single-page navigation', () => {
+    const change = vi.fn();
+    render(<Pagination total={5} limit={10} offset={0} onPageChange={vi.fn()} onLimitChange={change} />);
+    expect(screen.getByText('Showing 1–5 of 5')).toBeVisible();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Rows per page' }), { target: { value: '25' } });
+    expect(change).toHaveBeenCalledWith(25);
+  });
+
+  it('keeps only the range for a fixed-size single page', () => {
+    render(<Pagination total={5} limit={20} offset={0} onPageChange={vi.fn()} />);
+    expect(screen.getByText('Showing 1–5 of 5')).toBeVisible();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+  });
+
+  it('preserves first, nearby, and last page targets for long result sets', () => {
+    const change = vi.fn();
+    render(<Pagination total={1000} limit={10} offset={490} onPageChange={change} />);
+    expect(screen.getByText('Page 50 of 100')).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '50' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getAllByText('…')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: '100' }));
+    expect(change).toHaveBeenCalledWith(990);
+    fireEvent.click(screen.getByRole('button', { name: '1' }));
+    expect(change).toHaveBeenLastCalledWith(0);
+  });
+
+  it('locks both size and navigation while retaining the current range', () => {
+    const change = vi.fn();
+    render(<Pagination total={25} limit={10} offset={10} onPageChange={change} onLimitChange={change} disabled />);
+    expect(screen.getByText('Showing 11–20 of 25')).toBeVisible();
+    expect(screen.getByRole('combobox', { name: 'Rows per page' })).toBeDisabled();
+    for (const button of screen.getAllByRole('button')) expect(button).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(change).not.toHaveBeenCalled();
   });
 
   it('shows correct range text', () => {

@@ -45,53 +45,63 @@ export function Pagination({ total, limit, offset, onPageChange, onLimitChange, 
 
   return (
     <nav className="pagination" aria-label="Pagination">
-      <span className="pagination-info">
-        Showing {showStart}&ndash;{showEnd} of {total}
-      </span>
-      <div className="pagination-controls">
-        <button
-          className="pagination-btn"
-          type="button"
-          disabled={disabled || currentPage <= 1}
-          onClick={() => goToPage(currentPage - 1)}
-        >
-          Previous
-        </button>
-        {pages.map((p, i) =>
-          p === 'ellipsis' ? (
-            <span key={`e${i}`} className="pagination-ellipsis">&hellip;</span>
-          ) : (
-            <button
-              key={p}
-              className={`pagination-btn${p === currentPage ? ' active' : ''}`}
-              type="button"
-              aria-current={p === currentPage ? 'page' : undefined}
+      <div className="pagination-layout">
+        <div className="pagination-summary">
+          <span className="pagination-info">
+            Showing {showStart}&ndash;{showEnd} of {total}
+          </span>
+          {onLimitChange && <label className="pagination-page-size" htmlFor={limitId}>
+            <span>Rows per page</span>
+            <select
+              id={limitId}
+              className="pagination-select"
+              value={limit}
               disabled={disabled}
-              onClick={() => goToPage(p)}
+              onChange={e => onLimitChange(Number(e.target.value))}
             >
-              {p}
-            </button>
-          )
-        )}
-        <button
-          className="pagination-btn"
-          type="button"
-          disabled={disabled || currentPage >= totalPages}
-          onClick={() => goToPage(currentPage + 1)}
-        >
-          Next
-        </button>
-        {onLimitChange && <label className="pagination-page-size" htmlFor={limitId}>Rows per page<select
-          id={limitId}
-          className="pagination-select"
-          value={limit}
-          disabled={disabled}
-          onChange={e => onLimitChange(Number(e.target.value))}
-        >
-          {PAGE_LIMITS.map(n => (
-            <option key={n} value={n}>{n} / page</option>
-          ))}
-        </select></label>}
+              {PAGE_LIMITS.map(n => (
+                <option key={n} value={n}>{n} / page</option>
+              ))}
+            </select>
+          </label>}
+        </div>
+        {totalPages > 1 && <div className="pagination-controls">
+          <span className="pagination-position" aria-current="page">Page {currentPage} of {totalPages}</span>
+          <button
+            className="pagination-btn"
+            type="button"
+            disabled={disabled || currentPage <= 1}
+            onClick={() => goToPage(currentPage - 1)}
+          >
+            Previous
+          </button>
+          <div className="pagination-pages">
+            {pages.map((p, i) =>
+              p === 'ellipsis' ? (
+                <span key={`e${i}`} className="pagination-ellipsis">&hellip;</span>
+              ) : (
+                <button
+                  key={p}
+                  className={`pagination-btn${p === currentPage ? ' active' : ''}`}
+                  type="button"
+                  aria-current={p === currentPage ? 'page' : undefined}
+                  disabled={disabled}
+                  onClick={() => goToPage(p)}
+                >
+                  {p}
+                </button>
+              )
+            )}
+          </div>
+          <button
+            className="pagination-btn"
+            type="button"
+            disabled={disabled || currentPage >= totalPages}
+            onClick={() => goToPage(currentPage + 1)}
+          >
+            Next
+          </button>
+        </div>}
       </div>
     </nav>
   );
