@@ -4,10 +4,14 @@
   --surface-hover: #1a2745;
   --surface-elevated: #1c2a4a;
   --border: #1e3a5f;
+  --control-border: #617c9f;
   --text: #f0f0f5;
   --text-muted: #9aa4b6;
   --accent: #1e3a5f;
   --highlight: #e94560;
+  --accent-text: #ff8fa3;
+  --danger-text: var(--accent-text);
+  --info-text: #9ebdff;
   --button-primary: #c72f4b;
   --button-primary-hover: #ae2942;
   --success: #4ecca3;
@@ -177,7 +181,7 @@ body {
 }
 
 .sidebar-link.active {
-  color: var(--highlight);
+  color: var(--accent-text);
   background: rgba(233, 69, 96, 0.08);
   border-right: 3px solid var(--highlight);
 }
@@ -222,7 +226,7 @@ body {
 .sidebar-btn-danger {
   background: rgba(233, 69, 96, 0.12);
   border-color: rgba(233, 69, 96, 0.3);
-  color: #e94560;
+  color: var(--danger-text);
 }
 
 .sidebar-btn-danger:hover:not(:disabled) {
@@ -267,7 +271,7 @@ body {
 .notification-error {
   background: rgba(233, 69, 96, 0.15);
   border: 1px solid rgba(233, 69, 96, 0.3);
-  color: var(--highlight);
+  color: var(--accent-text);
 }
 
 .notification-warning {
@@ -279,7 +283,7 @@ body {
 .notification-info {
   background: rgba(91, 141, 239, 0.15);
   border: 1px solid rgba(91, 141, 239, 0.3);
-  color: var(--info);
+  color: var(--info-text);
 }
 
 .notification-message {
@@ -633,7 +637,7 @@ body {
 .search-bar input:not([type="checkbox"]):not([type="radio"]),
 .search-bar select {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius);
   color: var(--text);
   padding: 8px 12px;
@@ -667,13 +671,13 @@ body {
 
 .tag-project {
   background: rgba(91, 141, 239, 0.15);
-  color: var(--info);
+  color: var(--info-text);
   border-color: rgba(91, 141, 239, 0.3);
 }
 
 .tag-info {
   background: rgba(91, 141, 239, 0.15);
-  color: var(--info);
+  color: var(--info-text);
   border-color: rgba(91, 141, 239, 0.3);
 }
 
@@ -689,7 +693,7 @@ body {
 
 .tag-danger {
   background: rgba(255, 100, 100, 0.15);
-  color: var(--highlight);
+  color: var(--danger-text);
 }
 
 .tag-sm {
@@ -697,8 +701,10 @@ body {
 }
 
 .page-title {
-  font-size: 18px;
+  font-size: var(--font-2xl);
   font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
 }
 
 .score {
@@ -707,7 +713,7 @@ body {
 }
 
 .score.pass { color: var(--success); }
-.score.fail { color: var(--highlight); }
+.score.fail { color: var(--danger-text); }
 
 .score-badge {
   display: inline-block;
@@ -725,7 +731,7 @@ body {
 
 .score-badge.fail {
   background: rgba(233, 69, 96, 0.15);
-  color: var(--highlight);
+  color: var(--danger-text);
 }
 
 .chart-container {
@@ -942,7 +948,7 @@ pre {
 .filters select,
 .filters input:not([type="checkbox"]):not([type="radio"]) {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius);
   color: var(--text);
   min-height: 38px;
@@ -961,11 +967,10 @@ pre {
 }
 
 .section-title {
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: var(--text);
+  line-height: 1.4;
   margin-bottom: 12px;
 }
 
@@ -986,7 +991,7 @@ pre {
 
 .sub-tabs button {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius);
   color: var(--text-muted);
   padding: 6px 14px;
@@ -1003,7 +1008,8 @@ pre {
 .sub-tabs button.active {
   background: var(--accent);
   color: var(--text);
-  border-color: var(--accent);
+  border-color: var(--control-border);
+  box-shadow: inset 0 -2px 0 var(--accent-text);
 }
 
 .btn {
@@ -1012,7 +1018,7 @@ pre {
   gap: 6px;
   background: var(--accent);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius);
   min-height: 38px;
   justify-content: center;
@@ -1077,14 +1083,14 @@ pre {
 }
 
 .btn-danger {
-  background: var(--button-primary);
-  border-color: var(--button-primary);
-  color: #fff;
+  background: transparent;
+  border-color: var(--danger-text);
+  color: var(--danger-text);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: var(--button-primary-hover);
-  border-color: var(--button-primary-hover);
+  background: rgba(233, 69, 96, 0.15);
+  border-color: var(--danger-text);
 }
 
 .btn-danger:focus-visible {
@@ -1093,7 +1099,7 @@ pre {
 
 .input {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius);
   color: var(--text);
   padding: 8px 12px;
@@ -1148,7 +1154,7 @@ pre {
 
 .pagination-btn {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius);
   color: var(--text-muted);
   min-height: 36px;
@@ -1185,7 +1191,7 @@ pre {
 
 .pagination-select {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius);
   color: var(--text);
   padding: 5px 8px;
@@ -1287,7 +1293,7 @@ pre {
 /* Text utilities */
 .text-muted { color: var(--text-muted); font-size: 13px; }
 .text-muted-sm { color: var(--text-muted); font-size: 12px; }
-.text-mono { font-family: var(--mono); font-size: 12px; }
+.text-mono { font-family: var(--mono); font-size: var(--font-xs); font-variant-numeric: tabular-nums; }
 
 .text-link,
 .text-link:visited {

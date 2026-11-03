@@ -1,5 +1,6 @@
-import type { HarnessItem, MemoryItem, Plan } from '../src/api';
+import type { MemoryItem, Plan } from '../src/api';
 import { MAX_NAME_LENGTH, MAX_TITLE_LENGTH } from '../src/constants';
+import { harnessFixture } from './harnessFixture';
 import { actionItem } from '../src/pages/__tests__/actionItemFixture';
 import { profileFixture } from '../src/pages/__tests__/profileFixture';
 import { test, expect } from './fixtures';
@@ -42,9 +43,8 @@ test('Plans keep long titles and pagination inside the page', async ({ page, fix
 });
 
 test('Harness detail contains long Markdown without changing its padding', async ({ page, fixtureAPI }) => {
-  const item: HarnessItem = { id: 1, name: 'release_'.padEnd(MAX_NAME_LENGTH, 'x'), project: 'browser-fixture', agents: ['claude'],
-    content: { body: `## Release review\n\n${longText}\n\n${longText}`, metadata: {} }, sort_key: 1, enabled: true,
-    version: 1, created_at: stamp, updated_at: stamp, configs: [] };
+  const item = harnessFixture({ name: 'release_'.padEnd(MAX_NAME_LENGTH, 'x'),
+    content: { body: `## Release review\n\n${longText}\n\n${longText}`, metadata: {} } });
   fixtureAPI.get('/api/harness/items/rule/1', item);
   fixtureAPI.get('/api/harness/items/rule/1/history', []);
   await page.goto('/harness/rule/1');
