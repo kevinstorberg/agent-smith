@@ -238,7 +238,6 @@ export function EvalSuiteDetailPage() {
         onSave={save}
         onCancel={cancelEdit}
         onDelete={!isNew ? handleDelete : undefined}
-        onNavigateBack={() => navigate('/eval-configs')}
         deleteConfirmMessage={`Delete suite "${suite.name}" and all its scenarios?`}
       />
 

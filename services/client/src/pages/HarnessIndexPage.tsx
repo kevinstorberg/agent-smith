@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react';
+import type { CSSProperties } from 'react';
 import { useNavigate } from 'react-router';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { api } from '../api';
@@ -9,6 +9,9 @@ import { ProjectCell, EnabledToggleCell, BadgeCell, DateCell, VersionCell } from
 import { usePagination } from '../hooks/usePagination';
 import { makeKeyboardClickable } from '../utils/a11y';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { HARNESS_SORT_OPTIONS } from '../constants';
+import { harnessViewKey, parseViewField } from '../utils/viewPreferences';
+import { useViewPreferences } from '../hooks/useViewPreferences';
 import { useHarnessListActions } from '../hooks/useHarnessListActions';
 
 const TYPE_LABELS: Record<string, string> = {
@@ -19,17 +22,10 @@ const TYPE_LABELS: Record<string, string> = {
   agent: 'Agents',
 };
 
-const SORT_OPTIONS = [
-  { value: 'manual', label: 'Manual order' },
-  { value: 'name', label: 'Name A–Z' },
-  { value: 'newest', label: 'Newest first' },
-  { value: 'updated', label: 'Recently updated' },
-] as const;
-
 export function HarnessIndexPage({ type }: { type: string }) {
-  const [nameInput, setNameInput] = useState('');
-  const [projectInput, setProjectInput] = useState('');
-  const [sort, setSort] = useState<typeof SORT_OPTIONS[number]['value']>('manual');
+  const preferenceKey = harnessViewKey(type);
+  const preferences = useViewPreferences(preferenceKey);
+  const { name: nameInput, project: projectInput, sort } = preferences.values;
   const nameFilter = useDebouncedValue(nameInput);
   const projectFilter = useDebouncedValue(projectInput);
   const navigate = useNavigate();
@@ -44,14 +40,8 @@ export function HarnessIndexPage({ type }: { type: string }) {
       sort,
     }),
     [type, nameFilter, projectFilter, sort],
-    10, { enabled: !criteriaPending, clampOffset: true },
+    10, { ...preferences.pagination, enabled: !criteriaPending },
   );
-
-  useEffect(() => {
-    setNameInput('');
-    setProjectInput('');
-    setSort('manual');
-  }, [type]);
 
   const manual = sort === 'manual';
   const readable = !criteriaPending && dataCurrent && !loading && !error;
@@ -74,13 +64,14 @@ export function HarnessIndexPage({ type }: { type: string }) {
       <FilterBar
         nameValue={nameInput}
         projectValue={projectInput}
-        onNameChange={setNameInput}
-        onProjectChange={setProjectInput}
+        onNameChange={value => preferences.setField('name', value)}
+        onProjectChange={value => preferences.setField('project', value)}
+        onReset={preferences.reset}
         disabled={actions.freezeControls}
       >
         <label><span className="form-label">Sort</span>
-          <select className="input" disabled={actions.freezeControls} value={sort} onChange={event => { if (!actions.freezeControls) setSort(event.target.value as typeof sort); }}>
-            {SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          <select className="input" disabled={actions.freezeControls} value={sort} onChange={event => { if (!actions.freezeControls) preferences.setField('sort', parseViewField(preferenceKey, 'sort', event.target.value)); }}>
+            {HARNESS_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
       </FilterBar>

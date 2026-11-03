@@ -42,7 +42,7 @@ export function JobsIndexPage() {
         </button>
       </div>
 
-      <FilterBar nameValue={query} onNameChange={value => preferences.setField('q', value)} namePlaceholder="Search jobs...">
+      <FilterBar nameValue={query} onNameChange={value => preferences.setField('q', value)} namePlaceholder="Search jobs..." onReset={preferences.reset}>
         <label><span className="form-label">Scheduling</span>
         <select aria-label="Scheduling" value={scheduling} onChange={event => preferences.setField('schedule_enabled', parseViewField('jobs', 'schedule_enabled', event.target.value))}>
           {SCHEDULING_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -53,7 +53,6 @@ export function JobsIndexPage() {
           {JOB_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
         </label>
-        <button className="btn" type="button" onClick={preferences.reset}>Reset view</button>
       </FilterBar>
       {error && <p role="alert">Could not refresh jobs. <button className="btn btn-sm" onClick={() => refresh({ showLoading: false })}>Retry</button></p>}
       {loading && <div className="loading" role="status">Loading...</div>}

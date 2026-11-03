@@ -45,7 +45,7 @@ export function DetailPageHeader({
         <div className="detail-page-actions">
           {!editing && (
             <>
-              <button type="button" className="btn" onClick={onEdit} disabled={disabled}>
+              <button type="button" className="btn btn-primary" onClick={onEdit} disabled={disabled}>
                 Edit
               </button>
               {onDelete && (

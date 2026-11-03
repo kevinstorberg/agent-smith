@@ -59,6 +59,7 @@ const fakeEvents = [
 ];
 
 beforeEach(() => {
+  document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.clearAllMocks();
   mockUsePagination.mockReturnValue({
     items: fakeEvents,
@@ -76,7 +77,7 @@ beforeEach(() => {
 
 describe('AuditIndexPage', () => {
   it('renders events with tool, status, and duration', async () => {
-    renderWithProviders(<AuditIndexPage />);
+    renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
 
     expect(screen.getByText('Audit Trail')).toBeInTheDocument();
     expect(screen.getByText('Bash')).toBeInTheDocument();
@@ -89,15 +90,15 @@ describe('AuditIndexPage', () => {
   });
 
   it('filters by agent and resets paging', async () => {
-    renderWithProviders(<AuditIndexPage />);
+    renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
 
     fireEvent.click(await screen.findByText(/claude \(1\)/)); // wait for counts to load
 
-    expect(mockSetOffset).toHaveBeenCalledWith(0);
+    expect(mockUsePagination.mock.calls.at(-1)?.[3].page.offset).toBe(0);
   });
 
   it('navigates to detail on row click', () => {
-    renderWithProviders(<AuditIndexPage />);
+    renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
 
     fireEvent.click(screen.getByText('Bash'));
 
@@ -106,7 +107,7 @@ describe('AuditIndexPage', () => {
 
   it('polls audit events and counts every 60 seconds', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    renderWithProviders(<AuditIndexPage />);
+    renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
     await waitFor(() => expect(mockCounts).toHaveBeenCalledTimes(1));
 
     mockCounts.mockClear();
