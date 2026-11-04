@@ -1,19 +1,9 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
+from scripts.shared.file_ownership import check_publication, publish_files
 from scripts.shared.path_safety import contained_path
-
-
-def _remove_stale(dest_dir: Path, keep: set[str], *, match_dirs: bool = False) -> None:
-    iterator = dest_dir.iterdir() if match_dirs else dest_dir.glob("*.md")
-    for stale in iterator:
-        if match_dirs and not stale.is_dir():
-            continue
-        if stale.name not in keep:
-            shutil.rmtree(stale) if stale.is_dir() else stale.unlink()
-            print(f"  removed:   {stale}")
 
 
 def compose_strings(items: list[tuple[str, str]], transform=None) -> str:
@@ -45,7 +35,11 @@ def atomic_write(path: Path | str, content: str) -> tuple[bool, str]:
 
 
 def _sync_rules_to_target(
-    items: list[tuple[str, str]], cfg: dict, dry_run: bool
+    items: list[tuple[str, str]],
+    cfg: dict,
+    dry_run: bool,
+    *,
+    owner: str = "agent-smith",
 ) -> None:
     rules_file = Path(cfg["rules_file"]).expanduser()
     rules_dir = Path(cfg["rules_dir"]).expanduser() if "rules_dir" in cfg else None
@@ -59,14 +53,22 @@ def _sync_rules_to_target(
 
     content = compose_strings(items, transform=transform)
 
-    if dry_run:
-        print(f"  would compose {len(items)} file(s) -> {rules_file}")
-    else:
-        _, msg = atomic_write(rules_file, content)
-        print(f"  {msg}")
-
+    check_publication(
+        rules_file.parent, f"{owner}:rules-file", {rules_file.name: content}
+    )
     if rules_dir:
-        _sync_rules_dir(items, rules_dir, dry_run)
+        check_publication(
+            rules_dir, f"{owner}:rules", {f"{name}.md": body for name, body in items}
+        )
+    publish_files(
+        rules_file.parent,
+        f"{owner}:rules-file",
+        {rules_file.name: content},
+        dry_run=dry_run,
+        write=atomic_write,
+    )
+    if rules_dir:
+        _sync_rules_dir(items, rules_dir, dry_run, owner=owner)
 
 
 def _resolve_and_partition(
@@ -126,30 +128,29 @@ def sync_rules(agent: str, dry_run: bool, device_name: str = "") -> None:
     global_rows, repo_rows = _resolve_and_partition("rule", agent, device_name)
 
     global_items = [(r["name"], r["content"]["body"]) for r in global_rows]
-    _sync_rules_to_target(global_items, cfg, dry_run)
+    _sync_rules_to_target(global_items, cfg, dry_run, owner=agent)
 
     def _repo_sync(rows, rcfg, dr):
         items = [(r["name"], r["content"]["body"]) for r in rows]
-        _sync_rules_to_target(items, rcfg, dr)
+        _sync_rules_to_target(items, rcfg, dr, owner=agent)
 
     _sync_to_repo_targets(repo_rows, agent, "rules_file", _repo_sync, dry_run)
 
 
 def _sync_rules_dir(
-    items: list[tuple[str, str]], dest_dir: Path, dry_run: bool
+    items: list[tuple[str, str]],
+    dest_dir: Path,
+    dry_run: bool,
+    *,
+    owner: str = "agent-smith",
 ) -> None:
-    if dry_run:
-        print(f"  would copy {len(items)} file(s) -> {dest_dir}")
-        return
-
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    source_names = {f"{name}.md" for name, _ in items}
-
-    for name, body in items:
-        _, msg = atomic_write(dest_dir / f"{name}.md", body)
-        print(f"  {msg}")
-
-    _remove_stale(dest_dir, source_names)
+    publish_files(
+        dest_dir,
+        f"{owner}:rules",
+        {f"{name}.md": body for name, body in items},
+        dry_run=dry_run,
+        write=atomic_write,
+    )
 
 
 def _skill_outputs(
@@ -178,20 +179,22 @@ def _skill_outputs(
 
 
 def _sync_skills_to_target(
-    skills: dict[str, dict], dest_dir: Path, dry_run: bool
+    skills: dict[str, dict],
+    dest_dir: Path,
+    dry_run: bool,
+    *,
+    owner: str = "agent-smith",
 ) -> None:
     outputs = _skill_outputs(skills, dest_dir)
-    if dry_run:
-        print(f"  would sync {len(skills)} skill(s) -> {dest_dir}")
-        return
-
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    for _, files in sorted(outputs.items()):
-        for destination, content in files:
-            _, msg = atomic_write(destination, content)
-            print(f"  {msg}")
-
-    _remove_stale(dest_dir, set(skills.keys()), match_dirs=True)
+    root = dest_dir.expanduser().resolve()
+    rendered = {
+        str(destination.relative_to(root)): content
+        for files in outputs.values()
+        for destination, content in files
+    }
+    publish_files(
+        root, f"{owner}:skills", rendered, dry_run=dry_run, write=atomic_write
+    )
 
 
 def _collect_skill_clones(
@@ -231,7 +234,9 @@ def sync_skills(agent: str, dry_run: bool, device_name: str = "") -> None:
         return result
 
     global_skills = {**global_clones, **rows_to_skills(global_rows)}
-    _sync_skills_to_target(global_skills, Path(cfg["skills_dir"]).expanduser(), dry_run)
+    _sync_skills_to_target(
+        global_skills, Path(cfg["skills_dir"]).expanduser(), dry_run, owner=agent
+    )
 
     from scripts.shared.agents import repo_config as _repo_config
 
@@ -245,7 +250,9 @@ def sync_skills(agent: str, dry_run: bool, device_name: str = "") -> None:
             continue
         clones = repo_clones.get(repo_path, {})
         real = rows_to_skills(repo_rows.get(repo_path, []))
-        _sync_skills_to_target({**clones, **real}, Path(rcfg["skills_dir"]), dry_run)
+        _sync_skills_to_target(
+            {**clones, **real}, Path(rcfg["skills_dir"]), dry_run, owner=agent
+        )
 
 
 def _compose_agent_file(
@@ -277,25 +284,17 @@ def sync_agents(agent: str, dry_run: bool, device_name: str = "") -> None:
     dest_dir = Path(agents_dir).expanduser()
     agent_defs = collect_agents_from_db(agent)
 
-    if dry_run:
-        print(f"  would sync {len(agent_defs)} agent(s) -> {dest_dir}")
-        return
-
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    source_names = set()
-
+    outputs = {}
     for name, data in sorted(agent_defs.items()):
         filename = f"{name}.md"
-        source_names.add(filename)
-        content = _compose_agent_file(
+        outputs[filename] = _compose_agent_file(
             data["body"],
             data["metadata"],
             data.get("scoped_rules"),
         )
-        _, msg = atomic_write(dest_dir / filename, content)
-        print(f"  {msg}")
-
-    _remove_stale(dest_dir, source_names)
+    publish_files(
+        dest_dir, f"{agent}:agents", outputs, dry_run=dry_run, write=atomic_write
+    )
 
 
 def sync_item(item_type: str, item_id: int, device_name: str = "") -> dict:

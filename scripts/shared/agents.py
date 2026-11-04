@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import time
 import tomllib
 from pathlib import Path
@@ -129,11 +128,19 @@ class ConfigUnreadableError(RuntimeError):
 
 # Parse failures that a re-read can resolve: a torn read yields invalid JSON/TOML,
 # or invalid UTF-8 if caught mid multi-byte write.
-_TRANSIENT_PARSE_ERRORS = (json.JSONDecodeError, tomllib.TOMLDecodeError, UnicodeDecodeError)
+_TRANSIENT_PARSE_ERRORS = (
+    json.JSONDecodeError,
+    tomllib.TOMLDecodeError,
+    UnicodeDecodeError,
+)
 
 
 def read_with_retry(
-    path: Path, fmt: str, *, max_attempts: int | None = None, backoff: float | None = None
+    path: Path,
+    fmt: str,
+    *,
+    max_attempts: int | None = None,
+    backoff: float | None = None,
 ) -> dict:
     """Read+parse a live config file, retrying torn reads before giving up.
 
@@ -179,26 +186,15 @@ def _write_config(path: Path, data: dict, fmt: str) -> None:
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
-def _remove_path(cfg_value: str, removed: list[str], *, tree: bool = False) -> None:
-    p = Path(cfg_value).expanduser()
-    if not p.exists():
-        return
-    shutil.rmtree(p) if tree else p.unlink()
-    removed.append(str(p))
-
-
 def unsync_agent(agent: str) -> list[str]:
-    if agent not in AGENT_TARGETS:
-        raise ValueError(f"Unknown agent: {agent!r}. Must be one of {set(AGENT_TARGETS)}")
-    cfg = AGENT_TARGETS[agent]
-    removed: list[str] = []
+    from scripts.shared.file_ownership import retire_config_files
 
-    _remove_path(cfg["rules_file"], removed)
-    if "rules_dir" in cfg:
-        _remove_path(cfg["rules_dir"], removed, tree=True)
-    _remove_path(cfg["skills_dir"], removed, tree=True)
-    if "agents_dir" in cfg:
-        _remove_path(cfg["agents_dir"], removed, tree=True)
+    if agent not in AGENT_TARGETS:
+        raise ValueError(
+            f"Unknown agent: {agent!r}. Must be one of {set(AGENT_TARGETS)}"
+        )
+    cfg = AGENT_TARGETS[agent]
+    removed = retire_config_files(cfg, agent)
 
     mcp_file = Path(cfg["mcp_file"]).expanduser()
     if mcp_file.exists():
@@ -214,10 +210,13 @@ def unsync_agent(agent: str) -> list[str]:
 
 
 def _unsync_repo_targets(agent: str) -> list[str]:
+    from scripts.shared.file_ownership import retire_config_files
+
     removed: list[str] = []
     try:
         from services.db import get_connection
         from psycopg2.extras import RealDictCursor
+
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
@@ -232,17 +231,7 @@ def _unsync_repo_targets(agent: str) -> list[str]:
         if not Path(repo_path).is_dir():
             continue
         rcfg = repo_config(agent, repo_path)
-        for key in ("rules_file", "rules_dir", "skills_dir", "agents_dir"):
-            path = rcfg.get(key)
-            if not path:
-                continue
-            p = Path(path)
-            if p.is_file():
-                p.unlink()
-                removed.append(str(p))
-            elif p.is_dir():
-                shutil.rmtree(p)
-                removed.append(str(p))
+        removed.extend(retire_config_files(rcfg, agent))
 
     return removed
 
