@@ -1,0 +1,8 @@
+.action-items-table-deletable {
+  --action-controls-width: 240px;
+  min-width: 930px;
+}
+
+.action-items-table-deletable .action-item-actions {
+  flex-wrap: wrap;
+}
