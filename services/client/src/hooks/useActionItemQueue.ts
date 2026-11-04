@@ -159,7 +159,11 @@ export function useActionItemQueue({
     }
   }
 
-  async function changeStatus(item: ActionItemRow) {
+  async function runRowWrite(
+    item: ActionItemRow,
+    write: () => Promise<unknown>,
+    fallbackMessage: string,
+  ) {
     if (
       writing.current ||
       drag.current ||
@@ -173,21 +177,28 @@ export function useActionItemQueue({
     writing.current = true;
     setPendingId(item.id);
     try {
-      await source.update(item.id, {
-        expected_revision: item.revision,
-        status: item.status === 'open' ? 'completed' : 'open',
-      });
+      await write();
     } catch (failure) {
       if (mounted.current)
         notify(
-          failure instanceof Error
-            ? failure.message
-            : `Could not update this ${noun}.`,
+          failure instanceof Error ? failure.message : fallbackMessage,
           'error',
         );
     } finally {
       await finishWrite();
     }
+  }
+
+  async function changeStatus(item: ActionItemRow) {
+    await runRowWrite(
+      item,
+      () =>
+        source.update(item.id, {
+          expected_revision: item.revision,
+          status: item.status === 'open' ? 'completed' : 'open',
+        }),
+      `Could not update this ${noun}.`,
+    );
   }
 
   function startDrag() {
