@@ -834,6 +834,32 @@ grouping minor/patch updates without automatic merges. Version updates activate
 when the configuration reaches the default branch. Native vulnerability alerts
 and security updates are repository settings, separate from the workflow jobs.
 
+### Style and workflow quality
+
+The Quality workflow reports Python formatting, frontend formatting, workflow
+lint, and shell lint separately. Ruff and Prettier check whole changed files,
+allowing gradual adoption across existing code without a bulk formatting change.
+Generated frontend outputs are excluded; npm's generated lockfile uses the
+matching `json-stringify` format and remains checked.
+
+Formatting uses the event's frozen base/head commits and an explicit merge-base
+check. Manual dispatch requires a full base SHA. Native fixture tests verify
+that malformed files and missing tools fail, unusual filenames work, unrelated
+history is rejected, and the checks leave source unchanged. Formatter tools use
+the isolated CI environment, including patched pre-commit dependencies.
+
+To check committed changes locally:
+
+```sh
+python3.13 scripts/ci_python.py setup-tools --directory .ci-tools-venv
+(cd services/client && npm ci --ignore-scripts --no-audit --no-fund)
+git merge-base origin/main HEAD >/dev/null
+PATH="$PWD/.ci-tools-venv/bin:$PATH" .ci-tools-venv/bin/python -m pre_commit run --from-ref origin/main --to-ref HEAD
+```
+
+Workflow lint uses actionlint; shell lint checks every tracked shell script with
+ShellCheck. All added checks use public-repository guards and standard runners.
+
 For direct `pytest tests/` invocations, set `APP_ENV=test` and `DATABASE_URL_TEST`
 to a dedicated loopback database ending in `_test`. Remote targets and targets
 matching configured production are rejected before connecting. Prefer `./audit.sh`
