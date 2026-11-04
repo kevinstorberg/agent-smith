@@ -1,0 +1,13 @@
+repos:
+  - repo: local
+    hooks:
+      - id: python-format
+        name: Python formatting
+        language: unsupported
+        entry: python -m ruff format --check --
+        files: \.(py|pyi)$
+      - id: frontend-format
+        name: Frontend formatting
+        language: unsupported
+        entry: services/client/node_modules/.bin/prettier --check --ignore-path services/client/.prettierignore --
+        files: ^services/client/.*\.(?:[cm]?[jt]sx?|json|css|html|md|ya?ml)$
