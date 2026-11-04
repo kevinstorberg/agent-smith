@@ -11,26 +11,44 @@ export class ApiError extends Error {
 }
 
 async function parseError(res: Response): Promise<never> {
-  const body = await res.json().catch(error => { if (isAborted(error)) throw error; return null; });
+  const body = await res.json().catch((error) => {
+    if (isAborted(error)) throw error;
+    return null;
+  });
   const detail = body?.detail;
-  const message = typeof detail === 'string'
-    ? detail
-    : Array.isArray(detail)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ? detail.map((e: any) => `${e.loc?.slice(-1)[0] ?? 'field'}: ${e.msg}`).join('; ')
-      : `${res.status} ${res.statusText}`;
+  const message =
+    typeof detail === 'string'
+      ? detail
+      : Array.isArray(detail)
+        ? detail
+            .map(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (e: any) => `${e.loc?.slice(-1)[0] ?? 'field'}: ${e.msg}`,
+            )
+            .join('; ')
+        : `${res.status} ${res.statusText}`;
   throw new ApiError(message, res.status);
 }
 
 function isAborted(error: unknown): boolean {
-  const name = error && typeof error === 'object' && 'name' in error ? error.name : null;
-  return typeof name === 'string' && ['TimeoutError', 'AbortError'].includes(name);
+  const name =
+    error && typeof error === 'object' && 'name' in error ? error.name : null;
+  return (
+    typeof name === 'string' && ['TimeoutError', 'AbortError'].includes(name)
+  );
 }
 
-async function request<T>(input: string, options?: RequestInit, timeoutMs?: number, allowEmpty = false): Promise<T> {
+async function request<T>(
+  input: string,
+  options?: RequestInit,
+  timeoutMs?: number,
+  allowEmpty = false,
+): Promise<T> {
   try {
     const res = await (timeoutMs === undefined
-      ? options === undefined ? fetch(input) : fetch(input, options)
+      ? options === undefined
+        ? fetch(input)
+        : fetch(input, options)
       : fetch(input, { ...options, signal: AbortSignal.timeout(timeoutMs) }));
     if (!res.ok) await parseError(res);
     if (allowEmpty) {
@@ -40,19 +58,25 @@ async function request<T>(input: string, options?: RequestInit, timeoutMs?: numb
     return await res.json();
   } catch (error) {
     if (timeoutMs !== undefined && isAborted(error)) {
-      throw new Error('The request timed out. Refresh to check whether your change was saved before trying again.');
+      throw new Error(
+        'The request timed out. Refresh to check whether your change was saved before trying again.',
+      );
     }
     throw error;
   }
 }
 
-async function get<T>(path: string, params?: Record<string, string | string[]>, timeoutMs?: number): Promise<T> {
+async function get<T>(
+  path: string,
+  params?: Record<string, string | string[]>,
+  timeoutMs?: number,
+): Promise<T> {
   const url = new URL(path, window.location.origin);
   url.pathname = BASE + path;
   if (params) {
     Object.entries(params).forEach(([k, v]) => {
       if (Array.isArray(v)) {
-        v.filter(Boolean).forEach(item => url.searchParams.append(k, item));
+        v.filter(Boolean).forEach((item) => url.searchParams.append(k, item));
       } else if (v) {
         url.searchParams.set(k, v);
       }
@@ -61,12 +85,20 @@ async function get<T>(path: string, params?: Record<string, string | string[]>, 
   return request<T>(url.toString(), undefined, timeoutMs);
 }
 
-async function post<T>(path: string, body: unknown, timeoutMs?: number): Promise<T> {
-  return request<T>(BASE + path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }, timeoutMs);
+async function post<T>(
+  path: string,
+  body: unknown,
+  timeoutMs?: number,
+): Promise<T> {
+  return request<T>(
+    BASE + path,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    timeoutMs,
+  );
 }
 
 async function put<T>(path: string, body: unknown): Promise<T> {
@@ -77,19 +109,41 @@ async function put<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
-async function patch<T>(path: string, body: unknown, timeoutMs?: number): Promise<T> {
-  return request<T>(BASE + path, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }, timeoutMs);
+async function patch<T>(
+  path: string,
+  body: unknown,
+  timeoutMs?: number,
+): Promise<T> {
+  return request<T>(
+    BASE + path,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    timeoutMs,
+  );
 }
 
-async function del<T = void>(path: string, body?: unknown, timeoutMs?: number): Promise<T> {
-  return request<T>(BASE + path, {
-    method: 'DELETE',
-    ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-  }, timeoutMs, true);
+async function del<T = void>(
+  path: string,
+  body?: unknown,
+  timeoutMs?: number,
+): Promise<T> {
+  return request<T>(
+    BASE + path,
+    {
+      method: 'DELETE',
+      ...(body === undefined
+        ? {}
+        : {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          }),
+    },
+    timeoutMs,
+    true,
+  );
 }
 
 export interface Paginated<T> {
@@ -108,25 +162,62 @@ export interface PaginationParams {
 }
 
 export type ActionItemStatus = 'open' | 'completed';
-export type ActionItemSort = 'manual' | 'newest' | 'updated' | 'title' | 'completed';
+export type ActionItemSort =
+  'manual' | 'newest' | 'updated' | 'title' | 'completed';
 export interface ActionItemRow {
-  id: number; title: string; project: string | null; tags: string[]; status: ActionItemStatus;
-  completed_at: string | null; revision: number; created_at: string; updated_at: string; priority: number | null;
+  id: number;
+  title: string;
+  project: string | null;
+  tags: string[];
+  status: ActionItemStatus;
+  completed_at: string | null;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+  priority: number | null;
 }
-export interface ActionItem extends ActionItemRow { description: string }
+export interface ActionItem extends ActionItemRow {
+  description: string;
+}
 export interface ActionItemFields {
-  title: string; description?: string | null; project?: string | null; tags?: string[] | null; status?: ActionItemStatus;
+  title: string;
+  description?: string | null;
+  project?: string | null;
+  tags?: string[] | null;
+  status?: ActionItemStatus;
 }
-export interface ActionItemCreate extends Omit<ActionItemFields, 'description' | 'tags'> { description?: string; tags?: string[]; request_id: string }
-export interface ActionItemPatch extends Partial<ActionItemFields> { expected_revision: number }
-export type ActionItemMove = { expected_revision: number } & ({ before_id: number; after_id?: never } | { after_id: number; before_id?: never });
+export interface ActionItemCreate extends Omit<
+  ActionItemFields,
+  'description' | 'tags'
+> {
+  description?: string;
+  tags?: string[];
+  request_id: string;
+}
+export interface ActionItemPatch extends Partial<ActionItemFields> {
+  expected_revision: number;
+}
+export type ActionItemMove = { expected_revision: number } & (
+  | { before_id: number; after_id?: never }
+  | { after_id: number; before_id?: never }
+);
 export interface ActionItemFilters extends PaginationParams {
-  q?: string; project?: string; tags?: string[]; status?: ActionItemStatus | 'all'; sort?: ActionItemSort;
+  q?: string;
+  project?: string;
+  tags?: string[];
+  status?: ActionItemStatus | 'all';
+  sort?: ActionItemSort;
 }
 
-export interface ProfileDiscussionTopicRow extends ActionItemRow { readonly profile_id: string }
-export interface ProfileDiscussionTopic extends ProfileDiscussionTopicRow { description: string }
-export interface ProfileDiscussionTopicPage extends Paginated<ProfileDiscussionTopicRow> { readonly profile_id: string }
+export interface ProfileDiscussionTopicRow extends ActionItemRow {
+  readonly profile_id: string;
+}
+export interface ProfileDiscussionTopic extends ProfileDiscussionTopicRow {
+  description: string;
+}
+export interface ProfileDiscussionTopicPage extends Paginated<ProfileDiscussionTopicRow> {
+  readonly profile_id: string;
+}
 export type ProfileDiscussionTopicCreate = Omit<ActionItemCreate, 'project'>;
 export type ProfileDiscussionTopicPatch = Omit<ActionItemPatch, 'project'>;
 export type ProfileDiscussionTopicFilters = Omit<ActionItemFilters, 'project'>;
@@ -167,7 +258,10 @@ export interface HarnessItem {
 export type HarnessMove = {
   expected_updated_at: string;
   expected_anchor_updated_at: string;
-} & ({ before_id: number; after_id?: never } | { after_id: number; before_id?: never });
+} & (
+  | { before_id: number; after_id?: never }
+  | { after_id: number; before_id?: never }
+);
 
 export interface Rule {
   name: string;
@@ -261,11 +355,24 @@ export interface EffectiveSpeaker {
   profile_id: string | null;
   display_name: string;
   email: string | null;
-  source: 'manual_assignment' | 'automatic_statement' | 'speaker_email' | 'attendee_match' | 'speaker_label';
+  source:
+    | 'manual_assignment'
+    | 'automatic_statement'
+    | 'speaker_email'
+    | 'attendee_match'
+    | 'speaker_label';
 }
 
 export interface MeetingTranscript extends Paginated<TranscriptSegment> {
-  status: 'not_imported' | 'pending' | 'capturing' | 'ready' | 'unsupported' | 'unavailable' | 'failed' | 'deleted';
+  status:
+    | 'not_imported'
+    | 'pending'
+    | 'capturing'
+    | 'ready'
+    | 'unsupported'
+    | 'unavailable'
+    | 'failed'
+    | 'deleted';
   offset: number;
   limit: number;
   error_type: string | null;
@@ -278,67 +385,129 @@ export interface MeetingMemory {
   content: string;
   source?: 'summary' | 'transcript';
   tags?: string[];
-  kind: 'fact' | 'decision' | 'commitment' | 'constraint' | 'preference' | 'lesson' | 'question';
+  kind:
+    | 'fact'
+    | 'decision'
+    | 'commitment'
+    | 'constraint'
+    | 'preference'
+    | 'lesson'
+    | 'question';
   evidence: { segment_id: string; quote: string }[];
 }
 
 export interface MeetingGeneration {
-  status: 'not_imported' | 'pending' | 'running' | 'done' | 'failed' | 'blocked';
+  status:
+    'not_imported' | 'pending' | 'running' | 'done' | 'failed' | 'blocked';
   reason: string | null;
   error_type: string | null;
   progress?: {
-    processed_units: number; total_units: number | null; staged_count: number; saved_count: number;
-    attempts: number; next_attempt_at: string | null;
+    processed_units: number;
+    total_units: number | null;
+    staged_count: number;
+    saved_count: number;
+    attempts: number;
+    next_attempt_at: string | null;
   };
 }
 
 export type MeetingAnalysisScope = 'profiles' | 'memories' | 'both';
 export interface MeetingAnalysisExpected {
-  provider: string; account_key: string; source_name: string; meeting_revision: number;
-  transcript_hash: string | null; participants_revision: number; speaker_updated_at: string | null;
-  profile_updated_at: string | null; memory_updated_at: string | null;
+  provider: string;
+  account_key: string;
+  source_name: string;
+  meeting_revision: number;
+  transcript_hash: string | null;
+  participants_revision: number;
+  speaker_updated_at: string | null;
+  profile_updated_at: string | null;
+  memory_updated_at: string | null;
 }
 export interface MeetingAnalysisCandidate {
-  id: string; title: string; source_name: string; meeting_start: string | null; labels: string[];
-  match_reasons: string[]; attribution_ready: boolean; expected: MeetingAnalysisExpected;
-  stages: Record<'profile' | 'memory', {
-    status: string; can_reanalyze: boolean; blocked_reason: string | null;
-    progress: NonNullable<MeetingGeneration['progress']>; job_id: number | null; job_name: string | null;
-  }>;
+  id: string;
+  title: string;
+  source_name: string;
+  meeting_start: string | null;
+  labels: string[];
+  match_reasons: string[];
+  attribution_ready: boolean;
+  expected: MeetingAnalysisExpected;
+  stages: Record<
+    'profile' | 'memory',
+    {
+      status: string;
+      can_reanalyze: boolean;
+      blocked_reason: string | null;
+      progress: NonNullable<MeetingGeneration['progress']>;
+      job_id: number | null;
+      job_name: string | null;
+    }
+  >;
 }
 export interface MeetingAnalysisCandidates extends Paginated<MeetingAnalysisCandidate> {
   profile: { id: string; revision: number; display_name: string } | null;
 }
 export interface MeetingAnalysisInput {
-  request_id: string; confirmed: true; scope: MeetingAnalysisScope;
+  request_id: string;
+  confirmed: true;
+  scope: MeetingAnalysisScope;
   target_profile?: { id: string; expected_revision: number };
   meetings: { id: string; expected: MeetingAnalysisExpected }[];
 }
 export interface MeetingAnalysisReceipt {
-  request_id: string; scope: MeetingAnalysisScope; target_profile_id: string | null;
-  created_at: string; updated_at: string;
+  request_id: string;
+  scope: MeetingAnalysisScope;
+  target_profile_id: string | null;
+  created_at: string;
+  updated_at: string;
   status: 'queued' | 'running' | 'continued' | 'done' | 'failed';
-  items: { meeting_id: string; title: string; stages: Partial<Record<'profile' | 'memory', {
-    status: MeetingAnalysisReceipt['status']; error_type: string | null;
-    progress: NonNullable<MeetingGeneration['progress']>; job_id: number; job_name: string;
-    waiting_for?: 'job';
-  }>> }[];
+  items: {
+    meeting_id: string;
+    title: string;
+    stages: Partial<
+      Record<
+        'profile' | 'memory',
+        {
+          status: MeetingAnalysisReceipt['status'];
+          error_type: string | null;
+          progress: NonNullable<MeetingGeneration['progress']>;
+          job_id: number;
+          job_name: string;
+          waiting_for?: 'job';
+        }
+      >
+    >;
+  }[];
 }
 export interface MeetingAnalysisCandidateParams extends PaginationParams {
-  profile_id?: string; meeting_id?: string; related?: boolean; q?: string; search_transcript?: boolean;
-  source?: string; after?: string; before?: string;
+  profile_id?: string;
+  meeting_id?: string;
+  related?: boolean;
+  q?: string;
+  search_transcript?: boolean;
+  source?: string;
+  after?: string;
+  before?: string;
 }
 
 export interface MeetingProcessingState {
-  transcript: Pick<MeetingTranscript, 'status' | 'total' | 'error_type' | 'captured_at'>;
+  transcript: Pick<
+    MeetingTranscript,
+    'status' | 'total' | 'error_type' | 'captured_at'
+  >;
   speakers: NonNullable<MeetingParticipants['attribution']>;
   memories: MeetingGeneration;
   profiles: MeetingGeneration;
   edit_lock_reason: MeetingParticipants['edit_lock_reason'];
 }
 export interface MeetingPerson {
-  key: string; profile_id: string | null; display_name: string; emails: string[]; names?: string[];
-  sources: ('provider' | 'manual')[]; assignments: MeetingParticipantInput[];
+  key: string;
+  profile_id: string | null;
+  display_name: string;
+  emails: string[];
+  names?: string[];
+  sources: ('provider' | 'manual')[];
+  assignments: MeetingParticipantInput[];
 }
 
 export interface MeetingMemories extends MeetingGeneration {
@@ -367,12 +536,23 @@ export interface MeetingParticipantInput {
 
 export interface MeetingParticipants {
   people?: MeetingPerson[];
-  unlinked_attendees?: { source: 'provider' | 'manual'; participant: MeetingParticipantInput }[];
+  unlinked_attendees?: {
+    source: 'provider' | 'manual';
+    participant: MeetingParticipantInput;
+  }[];
   revision: number;
   items: MeetingParticipantInput[];
   provider_participants: { name?: string; email?: string }[];
-  speakers: { key: string; label: string; segment_count: number; source?: string | null; attribution?: string | null;
-    sample?: string; assignment?: MeetingParticipantInput | null; effective_speaker?: EffectiveSpeaker | null }[];
+  speakers: {
+    key: string;
+    label: string;
+    segment_count: number;
+    source?: string | null;
+    attribution?: string | null;
+    sample?: string;
+    assignment?: MeetingParticipantInput | null;
+    effective_speaker?: EffectiveSpeaker | null;
+  }[];
   running: boolean;
   enrolled: boolean;
   stale_speaker_keys?: string[];
@@ -380,9 +560,23 @@ export interface MeetingParticipants {
   edit_lock_reason?: 'capturing_transcript' | 'analyzing_personas' | null;
   transcript_hash?: string | null;
   attribution?: {
-    status: 'pending' | 'done' | 'failed' | 'legacy' | 'not_imported' | 'running' | 'disabled';
+    status:
+      | 'pending'
+      | 'done'
+      | 'failed'
+      | 'legacy'
+      | 'not_imported'
+      | 'running'
+      | 'disabled';
     error_type: string | null;
-    progress: { processed_units: number; total_units: number | null; staged_count: number; saved_count: number; attempts: number; next_attempt_at: string | null };
+    progress: {
+      processed_units: number;
+      total_units: number | null;
+      staged_count: number;
+      saved_count: number;
+      attempts: number;
+      next_attempt_at: string | null;
+    };
   };
 }
 
@@ -395,7 +589,18 @@ export interface ProfileClaimCorrection {
 
 export interface ProfileClaim {
   id: string;
-  category: 'driver' | 'priority' | 'communication' | 'decision_pattern' | 'perception' | 'interaction' | 'uncertainty' | 'strength' | 'development_area' | 'relationship' | 'role';
+  category:
+    | 'driver'
+    | 'priority'
+    | 'communication'
+    | 'decision_pattern'
+    | 'perception'
+    | 'interaction'
+    | 'uncertainty'
+    | 'strength'
+    | 'development_area'
+    | 'relationship'
+    | 'role';
   epistemic: 'self_report' | 'observed' | 'inference';
   confidence: 'low' | 'medium' | 'high';
   content: string;
@@ -418,11 +623,16 @@ export interface ParticipantProfile extends MeetingProfileSummary {
   updated_at: string;
   tags: string[];
   starred: boolean;
-  aliases: Pick<ParticipantProfile, 'id' | 'display_name' | 'email' | 'identity_scope'>[];
+  aliases: Pick<
+    ParticipantProfile,
+    'id' | 'display_name' | 'email' | 'identity_scope'
+  >[];
   emails?: string[];
   nicknames?: string[];
   metadata?: ProfileMetadataFields;
-  metadata_provenance?: Partial<Record<keyof ProfileMetadataFields, ProfileMetadataSource>>;
+  metadata_provenance?: Partial<
+    Record<keyof ProfileMetadataFields, ProfileMetadataSource>
+  >;
   section_notes?: ProfileSectionNotes;
   section_evidence?: Partial<Record<ProfileSectionKey, ProfileSectionEvidence>>;
   assessment?: ProfileAssessmentState;
@@ -435,19 +645,38 @@ export interface ParticipantProfile extends MeetingProfileSummary {
 }
 
 export interface ProfileMetadataFields {
-  gender?: string; marital_status?: string; company?: string; job_role?: string;
-  start_date?: string; supervisor?: string; other?: string;
+  gender?: string;
+  marital_status?: string;
+  company?: string;
+  job_role?: string;
+  start_date?: string;
+  supervisor?: string;
+  other?: string;
 }
 
-export type ProfileMetadataOptions = Record<'gender' | 'marital_status', string[]>;
+export type ProfileMetadataOptions = Record<
+  'gender' | 'marital_status',
+  string[]
+>;
 
-export type ProfileMetadataSource = { human: true } | {
-  human?: false; meeting_id: string; transcript_hash?: string; participants_revision?: number;
-  evidence: { segment_id: string; quote: string }[];
-  evidence_count?: number;
-};
+export type ProfileMetadataSource =
+  | { human: true }
+  | {
+      human?: false;
+      meeting_id: string;
+      transcript_hash?: string;
+      participants_revision?: number;
+      evidence: { segment_id: string; quote: string }[];
+      evidence_count?: number;
+    };
 
-export type ProfileSectionKey = 'overview' | 'drivers' | 'strengths' | 'development_areas' | 'working_style' | 'relationships';
+export type ProfileSectionKey =
+  | 'overview'
+  | 'drivers'
+  | 'strengths'
+  | 'development_areas'
+  | 'working_style'
+  | 'relationships';
 export type ProfileSectionNotes = Partial<Record<ProfileSectionKey, string>>;
 export interface ProfileSectionEvidence {
   human: boolean;
@@ -458,7 +687,8 @@ export interface ProfileSectionEvidence {
   claim_count?: number;
 }
 export interface ProfileAssessmentState {
-  status: 'pending' | 'running' | 'failed' | 'current' | 'insufficient_evidence';
+  status:
+    'pending' | 'running' | 'failed' | 'current' | 'insufficient_evidence';
   attempts: number;
   next_attempt_at: string | null;
   error: string | null;
@@ -466,22 +696,46 @@ export interface ProfileAssessmentState {
   can_generate: boolean;
 }
 export interface ProfileRevision {
-  id: number; profile_id: string; base_revision: number; new_revision: number;
-  actor: 'human' | 'agent' | 'system'; source: 'meeting' | 'assessment' | 'manual' | 'merge';
-  source_id: string | null; input_hash: string | null;
+  id: number;
+  profile_id: string;
+  base_revision: number;
+  new_revision: number;
+  actor: 'human' | 'agent' | 'system';
+  source: 'meeting' | 'assessment' | 'manual' | 'merge';
+  source_id: string | null;
+  input_hash: string | null;
   source_restricted?: boolean;
   changes: Record<string, { before: unknown; after: unknown }>;
   created_at: string;
 }
-export interface ProfileBuildResult extends JobRunResult { job_id: number; profile_id: string }
+export interface ProfileBuildResult extends JobRunResult {
+  job_id: number;
+  profile_id: string;
+}
 
 export interface ProfileRelationship {
-  id: string; subject_id: string; target_id: string | null; subject_name: string; target_name: string;
-  label: string; notes: string; revision: number; dismissed: boolean; claims: ProfileClaim[];
-  created_at: string; updated_at: string;
+  id: string;
+  subject_id: string;
+  target_id: string | null;
+  subject_name: string;
+  target_name: string;
+  label: string;
+  notes: string;
+  revision: number;
+  dismissed: boolean;
+  claims: ProfileClaim[];
+  created_at: string;
+  updated_at: string;
   claim_count?: number;
   history_count?: number;
-  analysis_evidence?: Omit<ProfileSectionEvidence, 'status' | 'generated_at'> & { status?: 'supported' | 'insufficient_evidence' | 'stale'; generated_at?: string | null; origin?: 'human' };
+  analysis_evidence?: Omit<
+    ProfileSectionEvidence,
+    'status' | 'generated_at'
+  > & {
+    status?: 'supported' | 'insufficient_evidence' | 'stale';
+    generated_at?: string | null;
+    origin?: 'human';
+  };
 }
 
 export interface ProfileClaimsParams extends PaginationParams {
@@ -502,20 +756,36 @@ export interface ProfileRelationshipUpdateInput {
 }
 
 export interface ProfileRelationshipCard {
-  id: string; name: string; profile_id: string | null; notes: string; label: string; version: string; human: boolean;
+  id: string;
+  name: string;
+  profile_id: string | null;
+  notes: string;
+  label: string;
+  version: string;
+  human: boolean;
   status: 'pending' | 'supported' | 'insufficient_evidence' | 'stale';
   coverage: { claim_count: number; meeting_count: number };
   evidence_links: { profile_id: string; target_id: string; count: number }[];
 }
 
 export interface ProfileRelationshipCardCreateInput {
-  expected_revision: number; name: string; profile_id?: string | null; target_revision?: number;
-  notes?: string; label?: string; assignment_version?: string;
+  expected_revision: number;
+  name: string;
+  profile_id?: string | null;
+  target_revision?: number;
+  notes?: string;
+  label?: string;
+  assignment_version?: string;
 }
 
 export interface ProfileRelationshipCardUpdateInput {
-  version: string; name?: string; profile_id?: string | null; target_revision?: number;
-  notes?: string; label?: string; allow_agent_notes?: boolean;
+  version: string;
+  name?: string;
+  profile_id?: string | null;
+  target_revision?: number;
+  notes?: string;
+  label?: string;
+  allow_agent_notes?: boolean;
 }
 
 export interface ProfileClaimsPage extends Paginated<ProfileClaim> {
@@ -524,10 +794,25 @@ export interface ProfileClaimsPage extends Paginated<ProfileClaim> {
 }
 
 export interface MeetingVocabulary {
-  id: string; term: string; definition: string; revision: number; created_at: string; updated_at: string;
+  id: string;
+  term: string;
+  definition: string;
+  revision: number;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface ProfileSummary extends Pick<ParticipantProfile, 'id' | 'display_name' | 'email' | 'identity_scope' | 'revision' | 'updated_at' | 'tags' | 'starred'> {
+export interface ProfileSummary extends Pick<
+  ParticipantProfile,
+  | 'id'
+  | 'display_name'
+  | 'email'
+  | 'identity_scope'
+  | 'revision'
+  | 'updated_at'
+  | 'tags'
+  | 'starred'
+> {
   created_at: string;
   claim_count: number;
   meeting_count: number;
@@ -782,15 +1067,26 @@ function paginationToParams(p?: PaginationParams): Record<string, string> {
   return params;
 }
 
-function resourceListParams(params?: ResourceListParams): Record<string, string> {
-  return { ...paginationToParams(params), ...(params?.q ? { q: params.q } : {}),
-    ...(params?.sort ? { sort: params.sort } : {}) };
+function resourceListParams(
+  params?: ResourceListParams,
+): Record<string, string> {
+  return {
+    ...paginationToParams(params),
+    ...(params?.q ? { q: params.q } : {}),
+    ...(params?.sort ? { sort: params.sort } : {}),
+  };
 }
 
-function itemFilterParams(filters: ProfileDiscussionTopicFilters): Record<string, string | string[]> {
-  return { ...paginationToParams(filters), ...(filters.q ? { q: filters.q } : {}),
-    ...(filters.tags?.length ? { tags: filters.tags } : {}), ...(filters.status ? { status: filters.status } : {}),
-    ...(filters.sort ? { sort: filters.sort } : {}) };
+function itemFilterParams(
+  filters: ProfileDiscussionTopicFilters,
+): Record<string, string | string[]> {
+  return {
+    ...paginationToParams(filters),
+    ...(filters.q ? { q: filters.q } : {}),
+    ...(filters.tags?.length ? { tags: filters.tags } : {}),
+    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.sort ? { sort: filters.sort } : {}),
+  };
 }
 function topicPath(profileId: string, id?: number): string {
   return `/profiles/${encodeURIComponent(profileId)}/discussion-topics${id === undefined ? '' : `/${id}`}`;
@@ -801,175 +1097,471 @@ export const api = {
     list: (filters: ActionItemFilters = {}) => {
       const params = itemFilterParams(filters);
       if (filters.project) params.project = filters.project;
-      return get<Paginated<ActionItemRow>>('/action-items', params, ACTION_ITEM_TIMEOUT_MS);
+      return get<Paginated<ActionItemRow>>(
+        '/action-items',
+        params,
+        ACTION_ITEM_TIMEOUT_MS,
+      );
     },
-    get: (id: number) => get<ActionItem>(`/action-items/${id}`, undefined, ACTION_ITEM_TIMEOUT_MS),
-    create: (body: ActionItemCreate) => post<ActionItem>('/action-items', body, ACTION_ITEM_TIMEOUT_MS),
-    update: (id: number, body: ActionItemPatch) => patch<ActionItem>(`/action-items/${id}`, body, ACTION_ITEM_TIMEOUT_MS),
-    remove: (id: number, expectedRevision: number) => del<{ deleted: boolean; id: number }>(`/action-items/${id}`, { expected_revision: expectedRevision }, ACTION_ITEM_TIMEOUT_MS),
-    move: (id: number, body: ActionItemMove) => post<ActionItem>(`/action-items/${id}/move`, body, ACTION_ITEM_TIMEOUT_MS),
+    get: (id: number) =>
+      get<ActionItem>(`/action-items/${id}`, undefined, ACTION_ITEM_TIMEOUT_MS),
+    create: (body: ActionItemCreate) =>
+      post<ActionItem>('/action-items', body, ACTION_ITEM_TIMEOUT_MS),
+    update: (id: number, body: ActionItemPatch) =>
+      patch<ActionItem>(`/action-items/${id}`, body, ACTION_ITEM_TIMEOUT_MS),
+    remove: (id: number, expectedRevision: number) =>
+      del<{ deleted: boolean; id: number }>(
+        `/action-items/${id}`,
+        { expected_revision: expectedRevision },
+        ACTION_ITEM_TIMEOUT_MS,
+      ),
+    move: (id: number, body: ActionItemMove) =>
+      post<ActionItem>(
+        `/action-items/${id}/move`,
+        body,
+        ACTION_ITEM_TIMEOUT_MS,
+      ),
   },
   harness: {
     assignableAgents: () => get<AssignableAgents>('/harness/agents/assignable'),
     rules: () => get<Rule[]>('/harness/rules'),
     skills: () => get<Skill[]>('/harness/skills'),
     mcp: () => get<McpServer[]>('/harness/mcp'),
-    sync: () => post<{ success: boolean; stdout: string; stderr: string }>('/harness/sync', {}),
-    unsync: () => post<{ success: boolean; removed: string[] }>('/harness/unsync', {}),
+    sync: () =>
+      post<{ success: boolean; stdout: string; stderr: string }>(
+        '/harness/sync',
+        {},
+      ),
+    unsync: () =>
+      post<{ success: boolean; removed: string[] }>('/harness/unsync', {}),
     items: {
-      list: (type: string, params?: ResourceListParams & { name?: string; project?: string }) => {
+      list: (
+        type: string,
+        params?: ResourceListParams & { name?: string; project?: string },
+      ) => {
         const query = resourceListParams(params);
         if (params?.name) query.name = params.name;
         if (params?.project) query.project = params.project;
-        return get<Paginated<HarnessItem>>(`/harness/items/${type}`, query, HARNESS_TIMEOUT_MS);
+        return get<Paginated<HarnessItem>>(
+          `/harness/items/${type}`,
+          query,
+          HARNESS_TIMEOUT_MS,
+        );
       },
-      get: (type: string, id: number) => get<HarnessItem>(`/harness/items/${type}/${id}`),
-      create: (type: string, body: unknown) => post<HarnessItem>(`/harness/items/${type}`, body),
+      get: (type: string, id: number) =>
+        get<HarnessItem>(`/harness/items/${type}/${id}`),
+      create: (type: string, body: unknown) =>
+        post<HarnessItem>(`/harness/items/${type}`, body),
       updateContent: (type: string, id: number, content: unknown) =>
         put<HarnessItem>(`/harness/items/${type}/${id}/content`, { content }),
       updateMetadata: (type: string, id: number, body: unknown) =>
-        patch<HarnessItem>(`/harness/items/${type}/${id}`, body, HARNESS_TIMEOUT_MS),
+        patch<HarnessItem>(
+          `/harness/items/${type}/${id}`,
+          body,
+          HARNESS_TIMEOUT_MS,
+        ),
       move: (type: string, id: number, body: HarnessMove) =>
-        post<Pick<HarnessItem, 'id' | 'sort_key' | 'updated_at'>>(`/harness/items/${type}/${id}/move`, body, HARNESS_TIMEOUT_MS),
-      history: (type: string, id: number) => get<HarnessItem[]>(`/harness/items/${type}/${id}/history`),
+        post<Pick<HarnessItem, 'id' | 'sort_key' | 'updated_at'>>(
+          `/harness/items/${type}/${id}/move`,
+          body,
+          HARNESS_TIMEOUT_MS,
+        ),
+      history: (type: string, id: number) =>
+        get<HarnessItem[]>(`/harness/items/${type}/${id}/history`),
       remove: (type: string, id: number) => del(`/harness/items/${type}/${id}`),
       configs: {
         add: (type: string, itemId: number, body: Partial<HarnessConfig>) =>
-          post<{ id: number }>(`/harness/items/${type}/${itemId}/configs`, body),
-        update: (type: string, itemId: number, configId: number, body: Partial<HarnessConfig>) =>
-          patch<HarnessConfig[]>(`/harness/items/${type}/${itemId}/configs/${configId}`, body),
+          post<{ id: number }>(
+            `/harness/items/${type}/${itemId}/configs`,
+            body,
+          ),
+        update: (
+          type: string,
+          itemId: number,
+          configId: number,
+          body: Partial<HarnessConfig>,
+        ) =>
+          patch<HarnessConfig[]>(
+            `/harness/items/${type}/${itemId}/configs/${configId}`,
+            body,
+          ),
         remove: (type: string, itemId: number, configId: number) =>
           del(`/harness/items/${type}/${itemId}/configs/${configId}`),
       },
-      reorder: (type: string, ids: number[]) => put<{ reordered: boolean }>(`/harness/items/${type}/reorder`, { ids }),
+      reorder: (type: string, ids: number[]) =>
+        put<{ reordered: boolean }>(`/harness/items/${type}/reorder`, { ids }),
     },
   },
   meetings: {
-    list: (params?: MeetingListParams) => get<Paginated<MeetingSummary>>('/meetings', {
-      ...resourceListParams(params),
-      ...(params?.source ? { source: params.source } : {}),
-      ...(params?.project ? { project: params.project } : {}),
-      ...(params?.after ? { after: params.after } : {}),
-      ...(params?.before ? { before: params.before } : {}),
-      ...(params?.labels?.length ? { labels: params.labels } : {}),
-    }),
-    get: (id: string) => get<MeetingSummary>(`/meetings/${encodeURIComponent(id)}`),
-    processing: (id: string) => get<MeetingProcessingState>(`/meetings/${encodeURIComponent(id)}/processing`, undefined, 30_000),
-    updateLabels: (id: string, body: { expected_revision: number; labels: string[]; expected_meeting_revision?: number }) =>
+    list: (params?: MeetingListParams) =>
+      get<Paginated<MeetingSummary>>('/meetings', {
+        ...resourceListParams(params),
+        ...(params?.source ? { source: params.source } : {}),
+        ...(params?.project ? { project: params.project } : {}),
+        ...(params?.after ? { after: params.after } : {}),
+        ...(params?.before ? { before: params.before } : {}),
+        ...(params?.labels?.length ? { labels: params.labels } : {}),
+      }),
+    get: (id: string) =>
+      get<MeetingSummary>(`/meetings/${encodeURIComponent(id)}`),
+    processing: (id: string) =>
+      get<MeetingProcessingState>(
+        `/meetings/${encodeURIComponent(id)}/processing`,
+        undefined,
+        30_000,
+      ),
+    updateLabels: (
+      id: string,
+      body: {
+        expected_revision: number;
+        labels: string[];
+        expected_meeting_revision?: number;
+      },
+    ) =>
       patch<MeetingLabels>(`/meetings/${encodeURIComponent(id)}/labels`, body),
     suggestLabels: (id: string, expected_revision: number) =>
-      post<MeetingLabelSuggestion>(`/meetings/${encodeURIComponent(id)}/labels/suggest`, { expected_revision }),
+      post<MeetingLabelSuggestion>(
+        `/meetings/${encodeURIComponent(id)}/labels/suggest`,
+        { expected_revision },
+      ),
     transcript: (id: string, params?: PaginationParams) =>
-      get<MeetingTranscript>(`/meetings/${encodeURIComponent(id)}/transcript`, paginationToParams(params)),
-    deleteTranscript: (id: string) => del<{ deleted: boolean; id: string }>(`/meetings/${encodeURIComponent(id)}/transcript`),
-    retryTranscript: (id: string) => post<{ success: boolean }>(`/meetings/${encodeURIComponent(id)}/transcript/retry`, {}),
-    memories: (id: string) => get<MeetingMemories>(`/meetings/${encodeURIComponent(id)}/memories`),
-    retryMemories: (id: string) => post<{ success: boolean }>(`/meetings/${encodeURIComponent(id)}/memories/retry`, {}),
-    profiles: (id: string) => get<MeetingProfiles>(`/meetings/${encodeURIComponent(id)}/profiles`),
-    retryProfiles: (id: string) => post<{ success: boolean }>(`/meetings/${encodeURIComponent(id)}/profiles/retry`, {}),
-    participants: (id: string) => get<MeetingParticipants>(`/meetings/${encodeURIComponent(id)}/participants`),
-    updateParticipants: (id: string, body: { expected_revision: number; participants: MeetingParticipantInput[]; expected_transcript_hash?: string | null }) =>
-      put<MeetingParticipants>(`/meetings/${encodeURIComponent(id)}/participants`, body),
-    process: (id: string) => post<{ status: 'queued' | 'running' | 'done' }>(`/meetings/${encodeURIComponent(id)}/process`, {}),
+      get<MeetingTranscript>(
+        `/meetings/${encodeURIComponent(id)}/transcript`,
+        paginationToParams(params),
+      ),
+    deleteTranscript: (id: string) =>
+      del<{ deleted: boolean; id: string }>(
+        `/meetings/${encodeURIComponent(id)}/transcript`,
+      ),
+    retryTranscript: (id: string) =>
+      post<{ success: boolean }>(
+        `/meetings/${encodeURIComponent(id)}/transcript/retry`,
+        {},
+      ),
+    memories: (id: string) =>
+      get<MeetingMemories>(`/meetings/${encodeURIComponent(id)}/memories`),
+    retryMemories: (id: string) =>
+      post<{ success: boolean }>(
+        `/meetings/${encodeURIComponent(id)}/memories/retry`,
+        {},
+      ),
+    profiles: (id: string) =>
+      get<MeetingProfiles>(`/meetings/${encodeURIComponent(id)}/profiles`),
+    retryProfiles: (id: string) =>
+      post<{ success: boolean }>(
+        `/meetings/${encodeURIComponent(id)}/profiles/retry`,
+        {},
+      ),
+    participants: (id: string) =>
+      get<MeetingParticipants>(
+        `/meetings/${encodeURIComponent(id)}/participants`,
+      ),
+    updateParticipants: (
+      id: string,
+      body: {
+        expected_revision: number;
+        participants: MeetingParticipantInput[];
+        expected_transcript_hash?: string | null;
+      },
+    ) =>
+      put<MeetingParticipants>(
+        `/meetings/${encodeURIComponent(id)}/participants`,
+        body,
+      ),
+    process: (id: string) =>
+      post<{ status: 'queued' | 'running' | 'done' }>(
+        `/meetings/${encodeURIComponent(id)}/process`,
+        {},
+      ),
     vocabulary: {
-      list: (params?: ResourceListParams & { definition?: 'defined' | 'undefined' }) => get<Paginated<MeetingVocabulary>>('/meetings/vocabulary', { ...resourceListParams(params), ...(params?.definition ? { definition: params.definition } : {}) }),
-      get: (id: string) => get<MeetingVocabulary>(`/meetings/vocabulary/${encodeURIComponent(id)}`),
-      create: (body: { term: string; definition: string }) => post<MeetingVocabulary>('/meetings/vocabulary', body),
-      update: (id: string, body: { expected_revision: number; term?: string; definition?: string }) => patch<MeetingVocabulary>(`/meetings/vocabulary/${encodeURIComponent(id)}`, body),
-      remove: (id: string, expected_revision: number) => del<{ deleted: boolean; id: string }>(`/meetings/vocabulary/${encodeURIComponent(id)}`, { expected_revision }),
+      list: (
+        params?: ResourceListParams & { definition?: 'defined' | 'undefined' },
+      ) =>
+        get<Paginated<MeetingVocabulary>>('/meetings/vocabulary', {
+          ...resourceListParams(params),
+          ...(params?.definition ? { definition: params.definition } : {}),
+        }),
+      get: (id: string) =>
+        get<MeetingVocabulary>(
+          `/meetings/vocabulary/${encodeURIComponent(id)}`,
+        ),
+      create: (body: { term: string; definition: string }) =>
+        post<MeetingVocabulary>('/meetings/vocabulary', body),
+      update: (
+        id: string,
+        body: { expected_revision: number; term?: string; definition?: string },
+      ) =>
+        patch<MeetingVocabulary>(
+          `/meetings/vocabulary/${encodeURIComponent(id)}`,
+          body,
+        ),
+      remove: (id: string, expected_revision: number) =>
+        del<{ deleted: boolean; id: string }>(
+          `/meetings/vocabulary/${encodeURIComponent(id)}`,
+          { expected_revision },
+        ),
     },
   },
   meetingAnalysis: {
-    candidates: (params: MeetingAnalysisCandidateParams) => get<MeetingAnalysisCandidates>('/meeting-analysis/candidates', {
-      ...paginationToParams(params),
-      ...(params.profile_id ? { profile_id: params.profile_id } : {}),
-      ...(params.meeting_id ? { meeting_id: params.meeting_id } : {}),
-      ...(params.related !== undefined ? { related: String(params.related) } : {}),
-      ...(params.q ? { q: params.q } : {}),
-      ...(params.search_transcript !== undefined ? { search_transcript: String(params.search_transcript) } : {}),
-      ...(params.source ? { source: params.source } : {}),
-      ...(params.after ? { after: params.after } : {}),
-      ...(params.before ? { before: params.before } : {}),
-    }, 30_000),
-    request: (body: MeetingAnalysisInput) => post<MeetingAnalysisReceipt>('/meeting-analysis/requests', body, 30_000),
-    progress: (id: string) => get<MeetingAnalysisReceipt>(`/meeting-analysis/requests/${encodeURIComponent(id)}`, undefined, 30_000),
-    resume: (id: string) => post<MeetingAnalysisReceipt>(`/meeting-analysis/requests/${encodeURIComponent(id)}/resume`, { confirmed: true }, 30_000),
+    candidates: (params: MeetingAnalysisCandidateParams) =>
+      get<MeetingAnalysisCandidates>(
+        '/meeting-analysis/candidates',
+        {
+          ...paginationToParams(params),
+          ...(params.profile_id ? { profile_id: params.profile_id } : {}),
+          ...(params.meeting_id ? { meeting_id: params.meeting_id } : {}),
+          ...(params.related !== undefined
+            ? { related: String(params.related) }
+            : {}),
+          ...(params.q ? { q: params.q } : {}),
+          ...(params.search_transcript !== undefined
+            ? { search_transcript: String(params.search_transcript) }
+            : {}),
+          ...(params.source ? { source: params.source } : {}),
+          ...(params.after ? { after: params.after } : {}),
+          ...(params.before ? { before: params.before } : {}),
+        },
+        30_000,
+      ),
+    request: (body: MeetingAnalysisInput) =>
+      post<MeetingAnalysisReceipt>('/meeting-analysis/requests', body, 30_000),
+    progress: (id: string) =>
+      get<MeetingAnalysisReceipt>(
+        `/meeting-analysis/requests/${encodeURIComponent(id)}`,
+        undefined,
+        30_000,
+      ),
+    resume: (id: string) =>
+      post<MeetingAnalysisReceipt>(
+        `/meeting-analysis/requests/${encodeURIComponent(id)}/resume`,
+        { confirmed: true },
+        30_000,
+      ),
   },
   profiles: {
     topics: {
-      list: (profileId: string, filters: ProfileDiscussionTopicFilters = {}) => get<ProfileDiscussionTopicPage>(topicPath(profileId), itemFilterParams(filters), ACTION_ITEM_TIMEOUT_MS),
-      get: (profileId: string, id: number) => get<ProfileDiscussionTopic>(topicPath(profileId, id), undefined, ACTION_ITEM_TIMEOUT_MS),
-      create: (profileId: string, body: ProfileDiscussionTopicCreate) => post<ProfileDiscussionTopic>(topicPath(profileId), body, ACTION_ITEM_TIMEOUT_MS),
-      update: (profileId: string, id: number, body: ProfileDiscussionTopicPatch) => patch<ProfileDiscussionTopic>(topicPath(profileId, id), body, ACTION_ITEM_TIMEOUT_MS),
-      remove: (profileId: string, id: number, expectedRevision: number) => del<{ deleted: boolean; id: number }>(topicPath(profileId, id), { expected_revision: expectedRevision }, ACTION_ITEM_TIMEOUT_MS),
-      move: (profileId: string, id: number, body: ActionItemMove) => post<ProfileDiscussionTopic>(`${topicPath(profileId, id)}/move`, body, ACTION_ITEM_TIMEOUT_MS),
+      list: (profileId: string, filters: ProfileDiscussionTopicFilters = {}) =>
+        get<ProfileDiscussionTopicPage>(
+          topicPath(profileId),
+          itemFilterParams(filters),
+          ACTION_ITEM_TIMEOUT_MS,
+        ),
+      get: (profileId: string, id: number) =>
+        get<ProfileDiscussionTopic>(
+          topicPath(profileId, id),
+          undefined,
+          ACTION_ITEM_TIMEOUT_MS,
+        ),
+      create: (profileId: string, body: ProfileDiscussionTopicCreate) =>
+        post<ProfileDiscussionTopic>(
+          topicPath(profileId),
+          body,
+          ACTION_ITEM_TIMEOUT_MS,
+        ),
+      update: (
+        profileId: string,
+        id: number,
+        body: ProfileDiscussionTopicPatch,
+      ) =>
+        patch<ProfileDiscussionTopic>(
+          topicPath(profileId, id),
+          body,
+          ACTION_ITEM_TIMEOUT_MS,
+        ),
+      remove: (profileId: string, id: number, expectedRevision: number) =>
+        del<{ deleted: boolean; id: number }>(
+          topicPath(profileId, id),
+          { expected_revision: expectedRevision },
+          ACTION_ITEM_TIMEOUT_MS,
+        ),
+      move: (profileId: string, id: number, body: ActionItemMove) =>
+        post<ProfileDiscussionTopic>(
+          `${topicPath(profileId, id)}/move`,
+          body,
+          ACTION_ITEM_TIMEOUT_MS,
+        ),
     },
-    metadataOptions: () => get<ProfileMetadataOptions>('/profiles/metadata-options'),
-    create: (body: { display_name: string; email?: string }) => post<ParticipantProfile>('/profiles?include_evidence=false', body),
-    list: (params?: PaginationParams & { q?: string; tags?: string[]; starred?: boolean; sort?: string }) => get<Paginated<ProfileSummary>>('/profiles', {
-      ...paginationToParams(params),
-      ...(params?.q ? { q: params.q } : {}),
-      ...(params?.tags?.length ? { tags: params.tags } : {}),
-      ...(params?.starred !== undefined ? { starred: String(params.starred) } : {}),
-      ...(params?.sort ? { sort: params.sort } : {}),
-    }),
-    get: (id: string) => get<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}`, { include_evidence: 'false' }),
-    claims: (id: string, params?: ProfileClaimsParams) => get<ProfileClaimsPage>(`/profiles/${encodeURIComponent(id)}/claims`, {
-      ...paginationToParams(params),
-      ...(params?.q ? { q: params.q } : {}),
-      ...(params?.epistemic ? { epistemic: params.epistemic } : {}),
-      ...(params?.category ? { category: params.category } : {}),
-      ...(params?.confidence ? { confidence: params.confidence } : {}),
-      ...(params?.status ? { status: params.status } : {}),
-      ...(params?.target_id ? { target_id: params.target_id } : {}),
-      ...(params?.sort ? { sort: params.sort } : {}),
-    }),
-    update: (id: string, body: ProfileUpdateInput) => patch<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}?include_evidence=false`, body),
-    rebuild: (id: string, expected_revision: number) => post<ProfileBuildResult>(`/profiles/${encodeURIComponent(id)}/rebuild`, { expected_revision }),
-    history: (id: string, params?: PaginationParams) => get<Paginated<ProfileRevision>>(`/profiles/${encodeURIComponent(id)}/history`, paginationToParams(params)),
-    historyOne: (id: string, revisionId: number) => get<ProfileRevision>(`/profiles/${encodeURIComponent(id)}/history/${revisionId}`),
-    merge: (id: string, body: { target_id: string; expected_revision: number; target_revision: number }) =>
-      post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/merge?include_evidence=false`, body),
-    linkEmail: (id: string, body: { email: string; expected_revision: number }) =>
-      post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/aliases?include_evidence=false`, body),
-    createRelationship: (id: string, body: { target_id: string; target_revision: number; expected_revision: number; label: string; notes?: string }) =>
-      post<ProfileRelationship>(`/profiles/${encodeURIComponent(id)}/relationships?include_evidence=false`, body),
-    updateRelationship: (id: string, relationshipId: string, body: ProfileRelationshipUpdateInput) =>
-      patch<ProfileRelationship>(`/profiles/${encodeURIComponent(id)}/relationships/${encodeURIComponent(relationshipId)}?include_evidence=false`, body),
-    removeRelationship: (id: string, relationshipId: string, expected_revision: number) =>
-      del<{ deleted: boolean; id: string }>(`/profiles/${encodeURIComponent(id)}/relationships/${encodeURIComponent(relationshipId)}`, { expected_revision }),
-    createRelationshipCard: (id: string, body: ProfileRelationshipCardCreateInput) =>
-      post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/relationship-cards`, body),
-    updateRelationshipCard: (id: string, cardId: string, body: ProfileRelationshipCardUpdateInput) =>
-      patch<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/relationship-cards/${encodeURIComponent(cardId)}`, body),
+    metadataOptions: () =>
+      get<ProfileMetadataOptions>('/profiles/metadata-options'),
+    create: (body: { display_name: string; email?: string }) =>
+      post<ParticipantProfile>('/profiles?include_evidence=false', body),
+    list: (
+      params?: PaginationParams & {
+        q?: string;
+        tags?: string[];
+        starred?: boolean;
+        sort?: string;
+      },
+    ) =>
+      get<Paginated<ProfileSummary>>('/profiles', {
+        ...paginationToParams(params),
+        ...(params?.q ? { q: params.q } : {}),
+        ...(params?.tags?.length ? { tags: params.tags } : {}),
+        ...(params?.starred !== undefined
+          ? { starred: String(params.starred) }
+          : {}),
+        ...(params?.sort ? { sort: params.sort } : {}),
+      }),
+    get: (id: string) =>
+      get<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}`, {
+        include_evidence: 'false',
+      }),
+    claims: (id: string, params?: ProfileClaimsParams) =>
+      get<ProfileClaimsPage>(`/profiles/${encodeURIComponent(id)}/claims`, {
+        ...paginationToParams(params),
+        ...(params?.q ? { q: params.q } : {}),
+        ...(params?.epistemic ? { epistemic: params.epistemic } : {}),
+        ...(params?.category ? { category: params.category } : {}),
+        ...(params?.confidence ? { confidence: params.confidence } : {}),
+        ...(params?.status ? { status: params.status } : {}),
+        ...(params?.target_id ? { target_id: params.target_id } : {}),
+        ...(params?.sort ? { sort: params.sort } : {}),
+      }),
+    update: (id: string, body: ProfileUpdateInput) =>
+      patch<ParticipantProfile>(
+        `/profiles/${encodeURIComponent(id)}?include_evidence=false`,
+        body,
+      ),
+    rebuild: (id: string, expected_revision: number) =>
+      post<ProfileBuildResult>(`/profiles/${encodeURIComponent(id)}/rebuild`, {
+        expected_revision,
+      }),
+    history: (id: string, params?: PaginationParams) =>
+      get<Paginated<ProfileRevision>>(
+        `/profiles/${encodeURIComponent(id)}/history`,
+        paginationToParams(params),
+      ),
+    historyOne: (id: string, revisionId: number) =>
+      get<ProfileRevision>(
+        `/profiles/${encodeURIComponent(id)}/history/${revisionId}`,
+      ),
+    merge: (
+      id: string,
+      body: {
+        target_id: string;
+        expected_revision: number;
+        target_revision: number;
+      },
+    ) =>
+      post<ParticipantProfile>(
+        `/profiles/${encodeURIComponent(id)}/merge?include_evidence=false`,
+        body,
+      ),
+    linkEmail: (
+      id: string,
+      body: { email: string; expected_revision: number },
+    ) =>
+      post<ParticipantProfile>(
+        `/profiles/${encodeURIComponent(id)}/aliases?include_evidence=false`,
+        body,
+      ),
+    createRelationship: (
+      id: string,
+      body: {
+        target_id: string;
+        target_revision: number;
+        expected_revision: number;
+        label: string;
+        notes?: string;
+      },
+    ) =>
+      post<ProfileRelationship>(
+        `/profiles/${encodeURIComponent(id)}/relationships?include_evidence=false`,
+        body,
+      ),
+    updateRelationship: (
+      id: string,
+      relationshipId: string,
+      body: ProfileRelationshipUpdateInput,
+    ) =>
+      patch<ProfileRelationship>(
+        `/profiles/${encodeURIComponent(id)}/relationships/${encodeURIComponent(relationshipId)}?include_evidence=false`,
+        body,
+      ),
+    removeRelationship: (
+      id: string,
+      relationshipId: string,
+      expected_revision: number,
+    ) =>
+      del<{ deleted: boolean; id: string }>(
+        `/profiles/${encodeURIComponent(id)}/relationships/${encodeURIComponent(relationshipId)}`,
+        { expected_revision },
+      ),
+    createRelationshipCard: (
+      id: string,
+      body: ProfileRelationshipCardCreateInput,
+    ) =>
+      post<ParticipantProfile>(
+        `/profiles/${encodeURIComponent(id)}/relationship-cards`,
+        body,
+      ),
+    updateRelationshipCard: (
+      id: string,
+      cardId: string,
+      body: ProfileRelationshipCardUpdateInput,
+    ) =>
+      patch<ParticipantProfile>(
+        `/profiles/${encodeURIComponent(id)}/relationship-cards/${encodeURIComponent(cardId)}`,
+        body,
+      ),
     removeRelationshipCard: (id: string, cardId: string, version: string) =>
-      del<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/relationship-cards/${encodeURIComponent(cardId)}`, { version }),
+      del<ParticipantProfile>(
+        `/profiles/${encodeURIComponent(id)}/relationship-cards/${encodeURIComponent(cardId)}`,
+        { version },
+      ),
     correctClaim: (id: string, claimId: string, body: ClaimCorrectionInput) =>
-      post<ParticipantProfile>(`/profiles/${encodeURIComponent(id)}/claims/${encodeURIComponent(claimId)}?include_evidence=false`, body),
+      post<ParticipantProfile>(
+        `/profiles/${encodeURIComponent(id)}/claims/${encodeURIComponent(claimId)}?include_evidence=false`,
+        body,
+      ),
     remove: (id: string, expectedRevision: number) =>
-      del<{ deleted: boolean; id: string }>(`/profiles/${encodeURIComponent(id)}`, { expected_revision: expectedRevision }),
+      del<{ deleted: boolean; id: string }>(
+        `/profiles/${encodeURIComponent(id)}`,
+        { expected_revision: expectedRevision },
+      ),
   },
   memory: {
-    search: (q: string, opts?: PaginationParams & { repo?: string; tags?: string[]; sort?: string; meeting_only?: boolean }) =>
+    search: (
+      q: string,
+      opts?: PaginationParams & {
+        repo?: string;
+        tags?: string[];
+        sort?: string;
+        meeting_only?: boolean;
+      },
+    ) =>
       get<Paginated<MemoryItem>>('/memory/search', {
         q,
         ...(opts?.repo ? { repo: opts.repo } : {}),
         ...(opts?.tags && opts.tags.length ? { tags: opts.tags } : {}),
         ...(opts?.sort ? { sort: opts.sort } : {}),
-        ...(opts?.meeting_only !== undefined ? { meeting_only: String(opts.meeting_only) } : {}),
+        ...(opts?.meeting_only !== undefined
+          ? { meeting_only: String(opts.meeting_only) }
+          : {}),
         ...paginationToParams(opts),
       }),
-    list: (opts?: PaginationParams & { repo?: string; tags?: string[]; sort?: string; meeting_only?: boolean }) =>
+    list: (
+      opts?: PaginationParams & {
+        repo?: string;
+        tags?: string[];
+        sort?: string;
+        meeting_only?: boolean;
+      },
+    ) =>
       get<Paginated<MemoryItem>>('/memory/list', {
         ...(opts?.repo ? { repo: opts.repo } : {}),
         ...(opts?.tags && opts.tags.length ? { tags: opts.tags } : {}),
         ...(opts?.sort ? { sort: opts.sort } : {}),
-        ...(opts?.meeting_only !== undefined ? { meeting_only: String(opts.meeting_only) } : {}),
+        ...(opts?.meeting_only !== undefined
+          ? { meeting_only: String(opts.meeting_only) }
+          : {}),
         ...paginationToParams(opts),
       }),
     get: (id: string) => get<MemoryItem>(`/memory/${id}`),
-    update: (id: string, body: { content?: string; repo?: string; tags?: string[] }) =>
-      put<MemoryItem>(`/memory/${id}`, body),
+    update: (
+      id: string,
+      body: { content?: string; repo?: string; tags?: string[] },
+    ) => put<MemoryItem>(`/memory/${id}`, body),
     remove: (id: string) => del<{ deleted: boolean }>(`/memory/${id}`),
   },
   evals: {
@@ -980,45 +1572,75 @@ export const api = {
     chartAverage: (params?: Record<string, string>) =>
       get<AverageChartPoint[]>('/evals/chart/average', params),
     categories: () => get<string[]>('/evals/categories'),
-    facets: (params?: Record<string, string>) => get<{ scenarios: string[]; models: string[] }>('/evals/facets', params),
+    facets: (params?: Record<string, string>) =>
+      get<{ scenarios: string[]; models: string[] }>('/evals/facets', params),
     subcategories: (params?: Record<string, string>) =>
       get<string[]>('/evals/subcategories', params),
     get: (id: number) => get<EvalRunDetail>(`/evals/${id}`),
     remove: (id: number) => del<{ deleted: number }>(`/evals/${id}`),
   },
   plans: {
-    list: (pagination?: ResourceListParams & { project?: string; status?: string }) =>
+    list: (
+      pagination?: ResourceListParams & { project?: string; status?: string },
+    ) =>
       get<Paginated<Plan>>('/plans', {
         ...(pagination?.project ? { project: pagination.project } : {}),
         ...(pagination?.status ? { status: pagination.status } : {}),
         ...resourceListParams(pagination),
       }),
-    search: (q: string, filters?: { project?: string; status?: string }) => get<Plan[]>('/plans/search', {
-      q, ...(filters?.project ? { project: filters.project } : {}), ...(filters?.status ? { status: filters.status } : {}),
-    }),
+    search: (q: string, filters?: { project?: string; status?: string }) =>
+      get<Plan[]>('/plans/search', {
+        q,
+        ...(filters?.project ? { project: filters.project } : {}),
+        ...(filters?.status ? { status: filters.status } : {}),
+      }),
     get: (id: number) => get<Plan>(`/plans/${id}`),
     create: (body: { title: string; body: string; project?: string | null }) =>
       post<Plan>('/plans', body),
-    update: (id: number, body: { title?: string; body?: string; project?: string | null }) =>
-      put<Plan>(`/plans/${id}`, body),
+    update: (
+      id: number,
+      body: { title?: string; body?: string; project?: string | null },
+    ) => put<Plan>(`/plans/${id}`, body),
     remove: (id: number) => del(`/plans/${id}`),
   },
   jobs: {
-    forGraph: (type: string) => get<Paginated<GraphJob>>(`/jobs/graph/${encodeURIComponent(type)}`),
+    forGraph: (type: string) =>
+      get<Paginated<GraphJob>>(`/jobs/graph/${encodeURIComponent(type)}`),
     list: (params?: ResourceListParams & { schedule_enabled?: boolean }) =>
-      get<Paginated<Job>>('/jobs', { ...resourceListParams(params), ...(params?.schedule_enabled !== undefined ? { schedule_enabled: String(params.schedule_enabled) } : {}) }),
+      get<Paginated<Job>>('/jobs', {
+        ...resourceListParams(params),
+        ...(params?.schedule_enabled !== undefined
+          ? { schedule_enabled: String(params.schedule_enabled) }
+          : {}),
+      }),
     get: (id: number) => get<Job>(`/jobs/${id}`),
-    create: (body: { name: string; schedule_config: Record<string, number>; input_params?: Record<string, unknown>; description?: string | null; device_scope?: 'all_devices' | 'this_device' }) =>
-      post<Job>('/jobs', body),
-    update: (id: number, body: { name?: string; schedule_config?: Record<string, number>; input_params?: Record<string, unknown>; description?: string | null }) =>
-      put<Job>(`/jobs/${id}`, body),
+    create: (body: {
+      name: string;
+      schedule_config: Record<string, number>;
+      input_params?: Record<string, unknown>;
+      description?: string | null;
+      device_scope?: 'all_devices' | 'this_device';
+    }) => post<Job>('/jobs', body),
+    update: (
+      id: number,
+      body: {
+        name?: string;
+        schedule_config?: Record<string, number>;
+        input_params?: Record<string, unknown>;
+        description?: string | null;
+      },
+    ) => put<Job>(`/jobs/${id}`, body),
     setScheduling: (id: number, body: { schedule_enabled: boolean }) =>
       patch<Job>(`/jobs/${id}/scheduling`, body),
     remove: (id: number) => del(`/jobs/${id}`),
     runNow: (id: number) => post<JobRunResult>(`/jobs/${id}/run-now`, {}),
     executions: (id: number, pagination?: PaginationParams) =>
-      get<Paginated<JobExecution>>(`/jobs/${id}/executions`, paginationToParams(pagination)),
-    execution: (id: number, executionId: number) => get<JobExecution>(`/jobs/${id}/executions/${executionId}`),
+      get<Paginated<JobExecution>>(
+        `/jobs/${id}/executions`,
+        paginationToParams(pagination),
+      ),
+    execution: (id: number, executionId: number) =>
+      get<JobExecution>(`/jobs/${id}/executions/${executionId}`),
     configs: {
       add: (jobId: number, body: Partial<JobConfig>) =>
         post<JobConfig[]>(`/jobs/${jobId}/configs`, body),
@@ -1039,11 +1661,15 @@ export const api = {
     approve: (id: number) => post<Proposal>(`/proposals/${id}/approve`, {}),
     reject: (id: number) => post<Proposal>(`/proposals/${id}/reject`, {}),
     remove: (id: number) => del(`/proposals/${id}`),
-    generate: () => post<{ started: boolean; job_id: number }>('/proposals/generate', {}),
+    generate: () =>
+      post<{ started: boolean; job_id: number }>('/proposals/generate', {}),
   },
   audit: {
     list: (filters?: AuditFilters, pagination?: PaginationParams) => {
-      const params = { ...resourceListParams(filters), ...paginationToParams(pagination) };
+      const params = {
+        ...resourceListParams(filters),
+        ...paginationToParams(pagination),
+      };
       if (filters?.agent) params.agent = filters.agent;
       if (filters?.tool_name) params.tool_name = filters.tool_name;
       if (filters?.session_id) params.session_id = filters.session_id;
@@ -1055,13 +1681,20 @@ export const api = {
     get: (id: number) => get<AuditEvent>(`/audit/events/${id}`),
   },
   chat: {
-    list: (params?: ResourceListParams & { status?: 'open' | 'closed' }) => get<Paginated<ChatRoom>>('/chat', { ...resourceListParams(params), ...(params?.status ? { status: params.status } : {}) }),
-    create: (body: { topic: string; context?: string }) => post<ChatRoom>('/chat', body),
+    list: (params?: ResourceListParams & { status?: 'open' | 'closed' }) =>
+      get<Paginated<ChatRoom>>('/chat', {
+        ...resourceListParams(params),
+        ...(params?.status ? { status: params.status } : {}),
+      }),
+    create: (body: { topic: string; context?: string }) =>
+      post<ChatRoom>('/chat', body),
     update: (id: number, body: { topic: string; context?: string }) =>
       patch<ChatRoom>(`/chat/${id}`, body),
     remove: (id: number) => del(`/chat/${id}`),
     get: (id: number, afterMessageId = 0) =>
-      get<ChatRoomDetail>(`/chat/${id}`, { after_message_id: String(afterMessageId) }),
+      get<ChatRoomDetail>(`/chat/${id}`, {
+        after_message_id: String(afterMessageId),
+      }),
     postMessage: (id: number, body: string) =>
       post<ChatMessage>(`/chat/${id}/messages`, { body }),
     stop: (id: number) => post<ChatRoom>(`/chat/${id}/stop`, {}),
@@ -1072,20 +1705,29 @@ export const api = {
       list: (params?: Record<string, string>) =>
         get<Paginated<EvalSuite>>('/eval-configs/suites', params),
       get: (id: number) => get<EvalSuite>(`/eval-configs/suites/${id}`),
-      create: (body: Partial<EvalSuite>) => post<EvalSuite>('/eval-configs/suites', body),
+      create: (body: Partial<EvalSuite>) =>
+        post<EvalSuite>('/eval-configs/suites', body),
       update: (id: number, body: Partial<EvalSuite>) =>
         put<EvalSuite>(`/eval-configs/suites/${id}`, body),
-      remove: (id: number) => del<{ deleted: number }>(`/eval-configs/suites/${id}`),
+      remove: (id: number) =>
+        del<{ deleted: number }>(`/eval-configs/suites/${id}`),
     },
     scenarios: {
       list: (suiteId: number, params?: Record<string, string>) =>
-        get<EvalScenario[]>(`/eval-configs/suites/${suiteId}/scenarios`, params),
+        get<EvalScenario[]>(
+          `/eval-configs/suites/${suiteId}/scenarios`,
+          params,
+        ),
       get: (id: number) => get<EvalScenario>(`/eval-configs/scenarios/${id}`),
-      create: (suiteId: number, body: { name: string; prompt: string; enabled?: boolean }) =>
+      create: (
+        suiteId: number,
+        body: { name: string; prompt: string; enabled?: boolean },
+      ) =>
         post<EvalScenario>(`/eval-configs/suites/${suiteId}/scenarios`, body),
       update: (id: number, body: Partial<EvalScenario>) =>
         put<EvalScenario>(`/eval-configs/scenarios/${id}`, body),
-      remove: (id: number) => del<{ deleted: number }>(`/eval-configs/scenarios/${id}`),
+      remove: (id: number) =>
+        del<{ deleted: number }>(`/eval-configs/scenarios/${id}`),
     },
   },
 };
