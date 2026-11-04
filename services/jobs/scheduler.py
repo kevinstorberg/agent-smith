@@ -16,6 +16,7 @@ command (``input_params.command``) or an in-process LangGraph workflow
 (``input_params.graph_type`` + ``graph_inputs``). Jobs are gated by their
 job_configs device/repo scoping (see ``services.jobs.scoping``).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -40,7 +41,12 @@ from services.jobs.models.execution import (
 from services.jobs.models.job import list_jobs
 from services.jobs.schedule import parse_interval
 from services.jobs.scoping import job_runs_on_device
-from services.observability import billable_operation, current_trigger, trigger_context, work_decision
+from services.observability import (
+    billable_operation,
+    current_trigger,
+    trigger_context,
+    work_decision,
+)
 
 log = logging.getLogger("jobs.scheduler")
 
@@ -94,7 +100,14 @@ async def _pump(stream: asyncio.StreamReader | None, buf: bytearray) -> None:
 
 # The single home for the job_executions result contract. Any new runner must
 # record through _record_failure / _record_cancelled, not re-inline this dict.
-def _job_result(start: float, *, success: bool, output: str = "", error: str = "", exit_code: int | None = None) -> dict:
+def _job_result(
+    start: float,
+    *,
+    success: bool,
+    output: str = "",
+    error: str = "",
+    exit_code: int | None = None,
+) -> dict:
     return {
         "success": success,
         "output": output,
@@ -104,7 +117,9 @@ def _job_result(start: float, *, success: bool, output: str = "", error: str = "
     }
 
 
-async def _record_failure(exec_id: int, job_id: int, start: float, exc: Exception, kind: str) -> dict:
+async def _record_failure(
+    exec_id: int, job_id: int, start: float, exc: Exception, kind: str
+) -> dict:
     """Record the (identical across runners) generic-failure path."""
     log.exception("job %s %s raised", job_id, kind)
     result = _job_result(start, success=False, error=f"{type(exc).__name__}: {exc}")
@@ -116,7 +131,9 @@ def _record_cancelled(exec_id: int, start: float, output: str = "") -> None:
     """Record a scheduler-shutdown cancellation. Synchronous on purpose: the row
     must be finalized before the CancelledError re-propagates, and an ``await``
     here could itself be cancelled (``complete_execution`` is a sync DB write)."""
-    result = _job_result(start, success=False, output=output, error="cancelled (scheduler shutdown)")
+    result = _job_result(
+        start, success=False, output=output, error="cancelled (scheduler shutdown)"
+    )
     complete_execution(exec_id, status="interrupted", result=result)
 
 
@@ -133,32 +150,53 @@ async def execute_job(job: dict, *, automatic: bool = False) -> dict:
     params = job.get("input_params") or {}
     command = params.get("command")
     graph_type = params.get("graph_type")
-    exec_id = await asyncio.to_thread(create_execution, job_id=job_id, status="running", automatic=automatic)
+    exec_id = await asyncio.to_thread(
+        create_execution, job_id=job_id, status="running", automatic=automatic
+    )
     if exec_id is None:
-        log.info("job %s automatic start skipped", job_id)
-        return {"success": True, "skipped": True}
+        if automatic:
+            log.info("job %s automatic start skipped", job_id)
+            return {"success": True, "skipped": True}
+        log.warning("job %s manual start rejected: job is not active", job_id)
+        return {
+            **_job_result(
+                time.monotonic(),
+                success=False,
+                error=f"Job {job_id} is not active. Review its status before running it.",
+            ),
+            "skipped": True,
+        }
 
     with trigger_context(
         trigger="job.scheduled" if automatic else "job.manual",
-        origin=current_trigger().get("trigger", "unknown"), job_id=job_id, execution_id=exec_id,
+        origin=current_trigger().get("trigger", "unknown"),
+        job_id=job_id,
+        execution_id=exec_id,
     ):
         work_decision("job_started")
         # Defense in depth for rows created before validate_input_params existed.
         if bool(command) == bool(graph_type):
             result = _job_result(
-                time.monotonic(), success=False,
+                time.monotonic(),
+                success=False,
                 error="input_params requires exactly one of 'command' or 'graph_type'",
             )
-            await asyncio.to_thread(complete_execution, exec_id, status="failed", result=result)
+            await asyncio.to_thread(
+                complete_execution, exec_id, status="failed", result=result
+            )
         elif command:
             result = await _run_command_job(exec_id, job_id, command, params)
         else:
             result = await _run_graph_job(exec_id, job_id, graph_type, params)
-        work_decision("job_finished", outcome="success" if result.get("success") else "failed")
+        work_decision(
+            "job_finished", outcome="success" if result.get("success") else "failed"
+        )
     return {**result, "execution_id": exec_id}
 
 
-async def _run_command_job(exec_id: int, job_id: int, command: str, params: dict) -> dict:
+async def _run_command_job(
+    exec_id: int, job_id: int, command: str, params: dict
+) -> dict:
     start = time.monotonic()
     proc: asyncio.subprocess.Process | None = None
     out_buf, err_buf = bytearray(), bytearray()
@@ -168,14 +206,24 @@ async def _run_command_job(exec_id: int, job_id: int, command: str, params: dict
             from services.jobs.service import execution_timeout
 
             timeout = execution_timeout("", params)
-            event = operations.enter_context(billable_operation("command", "subprocess", job_id=job_id, execution_id=exec_id, stage="command_job"))
+            event = operations.enter_context(
+                billable_operation(
+                    "command",
+                    "subprocess",
+                    job_id=job_id,
+                    execution_id=exec_id,
+                    stage="command_job",
+                )
+            )
             proc = await asyncio.create_subprocess_shell(
                 command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
             )
-            pumps = asyncio.gather(_pump(proc.stdout, out_buf), _pump(proc.stderr, err_buf))
+            pumps = asyncio.gather(
+                _pump(proc.stdout, out_buf), _pump(proc.stderr, err_buf)
+            )
             try:
                 await asyncio.wait_for(proc.wait(), timeout=timeout)
                 await pumps
@@ -185,11 +233,18 @@ async def _run_command_job(exec_id: int, job_id: int, command: str, params: dict
                     await asyncio.wait_for(pumps, timeout=5)
                 error = f"timed out after {timeout}s"
                 if err_buf.strip():
-                    error += "\n--- partial stderr ---\n" + _truncate(bytes(err_buf), JOB_MAX_OUTPUT_BYTES)
+                    error += "\n--- partial stderr ---\n" + _truncate(
+                        bytes(err_buf), JOB_MAX_OUTPUT_BYTES
+                    )
                 result = _job_result(
-                    start, success=False, output=_truncate(bytes(out_buf), JOB_MAX_OUTPUT_BYTES), error=error,
+                    start,
+                    success=False,
+                    output=_truncate(bytes(out_buf), JOB_MAX_OUTPUT_BYTES),
+                    error=error,
                 )
-                await asyncio.to_thread(complete_execution, exec_id, status="timeout", result=result)
+                await asyncio.to_thread(
+                    complete_execution, exec_id, status="timeout", result=result
+                )
                 event.finish("timeout", exit_code=proc.returncode)
                 return result
 
@@ -202,14 +257,19 @@ async def _run_command_job(exec_id: int, job_id: int, command: str, params: dict
                 exit_code=exit_code,
             )
             await asyncio.to_thread(
-                complete_execution, exec_id, status="success" if exit_code == 0 else "failed", result=result
+                complete_execution,
+                exec_id,
+                status="success" if exit_code == 0 else "failed",
+                result=result,
             )
             event.finish("success" if exit_code == 0 else "failed", exit_code=exit_code)
             return result
         except asyncio.CancelledError:
             if proc is not None:
                 _kill_process_group(proc)
-            _record_cancelled(exec_id, start, output=_truncate(bytes(out_buf), JOB_MAX_OUTPUT_BYTES))
+            _record_cancelled(
+                exec_id, start, output=_truncate(bytes(out_buf), JOB_MAX_OUTPUT_BYTES)
+            )
             raise
         except Exception as exc:  # noqa: BLE001 - job failures must not crash the scheduler
             result = await _record_failure(exec_id, job_id, start, exc, "execution")
@@ -218,7 +278,9 @@ async def _run_command_job(exec_id: int, job_id: int, command: str, params: dict
             return result
 
 
-async def _run_graph_job(exec_id: int, job_id: int, graph_type: str, params: dict) -> dict:
+async def _run_graph_job(
+    exec_id: int, job_id: int, graph_type: str, params: dict
+) -> dict:
     """Run a LangGraph workflow in-process, mirroring the subprocess result contract."""
     # Lazy import: the scheduler must stay usable without the graphs/LLM stack loaded.
     from services.graphs.runtime import dispatch
@@ -230,16 +292,26 @@ async def _run_graph_job(exec_id: int, job_id: int, graph_type: str, params: dic
 
         timeout = execution_timeout(graph_type, params)
         try:
-            output = await asyncio.wait_for(dispatch(graph_type, graph_inputs), timeout=timeout)
+            output = await asyncio.wait_for(
+                dispatch(graph_type, graph_inputs), timeout=timeout
+            )
         except asyncio.TimeoutError:
-            result = _job_result(start, success=False, error=f"timed out after {timeout}s")
-            await asyncio.to_thread(complete_execution, exec_id, status="timeout", result=result)
+            result = _job_result(
+                start, success=False, error=f"timed out after {timeout}s"
+            )
+            await asyncio.to_thread(
+                complete_execution, exec_id, status="timeout", result=result
+            )
             return result
 
         result = _job_result(
-            start, success=True, output=_truncate(output.encode("utf-8"), JOB_MAX_OUTPUT_BYTES),
+            start,
+            success=True,
+            output=_truncate(output.encode("utf-8"), JOB_MAX_OUTPUT_BYTES),
         )
-        await asyncio.to_thread(complete_execution, exec_id, status="success", result=result)
+        await asyncio.to_thread(
+            complete_execution, exec_id, status="success", result=result
+        )
         return result
     except asyncio.CancelledError:
         _record_cancelled(exec_id, start)
@@ -261,7 +333,7 @@ class JobScheduler:
         self._next_run: dict[int, datetime] = {}
         self._task: asyncio.Task | None = None
         self._stopped = asyncio.Event()
-        self._running: set[int] = set()        # job ids currently executing (overlap guard)
+        self._running: set[int] = set()  # job ids currently executing (overlap guard)
         self._inflight: set[asyncio.Task] = set()  # in-flight execution tasks
         # Collapse repeated identical tick failures (e.g. a DB that is unreachable
         # every poll) into one full traceback plus time-throttled summaries, so a
@@ -275,9 +347,13 @@ class JobScheduler:
 
     async def start(self) -> None:
         self._stopped.clear()
-        interrupted = await asyncio.to_thread(reconcile_running_executions, self.device_name)
+        interrupted = await asyncio.to_thread(
+            reconcile_running_executions, self.device_name
+        )
         if interrupted:
-            log.warning("reconciled %d execution(s) left running at startup", interrupted)
+            log.warning(
+                "reconciled %d execution(s) left running at startup", interrupted
+            )
         await self._seed_schedule()
         self._task = asyncio.create_task(self._run(), name="job-scheduler")
 
@@ -296,7 +372,11 @@ class JobScheduler:
     def _eligible_jobs(self) -> list[dict]:
         # Only jobs whose job_configs scope them to this device are eligible.
         jobs, _ = list_jobs(limit=1000, offset=0)
-        return [j for j in jobs if j["schedule_enabled"] and job_runs_on_device(j["id"], self.device_name)]
+        return [
+            j
+            for j in jobs
+            if j["schedule_enabled"] and job_runs_on_device(j["id"], self.device_name)
+        ]
 
     async def _seed_schedule(self) -> None:
         # Resume from each job's last run: seeding every job at now + interval let routine
@@ -312,8 +392,12 @@ class JobScheduler:
                     job.get("schedule_config"),
                 )
                 continue
-            last_run = await asyncio.to_thread(_last_run_started, job["id"], self.device_name)
-            self._next_run[job["id"]] = max(last_run + interval, now) if last_run else now + interval
+            last_run = await asyncio.to_thread(
+                _last_run_started, job["id"], self.device_name
+            )
+            self._next_run[job["id"]] = (
+                max(last_run + interval, now) if last_run else now + interval
+            )
 
     def _dispatch(self, job: dict) -> None:
         job_id = job["id"]
@@ -321,7 +405,9 @@ class JobScheduler:
             log.warning("job %s still running; skipping this interval", job_id)
             return
         self._running.add(job_id)
-        task = asyncio.create_task(execute_job(job, automatic=True), name=f"job-{job_id}")
+        task = asyncio.create_task(
+            execute_job(job, automatic=True), name=f"job-{job_id}"
+        )
         self._inflight.add(task)
 
         def _done(t: asyncio.Task) -> None:
@@ -336,7 +422,11 @@ class JobScheduler:
         signature = f"{type(exc).__name__}: {exc}".splitlines()[0]
         if signature == self._last_tick_error:
             self._tick_error_streak += 1
-            log.warning("scheduler tick still failing (%dx): %s", self._tick_error_streak, signature)
+            log.warning(
+                "scheduler tick still failing (%dx): %s",
+                self._tick_error_streak,
+                signature,
+            )
         else:
             self._last_tick_error = signature
             self._tick_error_streak = 1
@@ -345,7 +435,9 @@ class JobScheduler:
     def _note_tick_ok(self) -> None:
         """Announce recovery after a failure streak and reset the throttle state."""
         if self._last_tick_error is not None:
-            log.info("scheduler tick recovered after %d failure(s)", self._tick_error_streak)
+            log.info(
+                "scheduler tick recovered after %d failure(s)", self._tick_error_streak
+            )
             self._last_tick_error = None
             self._tick_error_streak = 0
 
@@ -380,7 +472,11 @@ class JobScheduler:
             try:
                 requested = await asyncio.to_thread(has_requested_work, job)
             except Exception as error:
-                log.warning("job %s requested-work check failed: %s", job_id, type(error).__name__)
+                log.warning(
+                    "job %s requested-work check failed: %s",
+                    job_id,
+                    type(error).__name__,
+                )
                 requested = False
             if next_run <= now or requested:
                 self._next_run[job_id] = now + interval

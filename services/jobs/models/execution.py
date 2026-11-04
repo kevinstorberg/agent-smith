@@ -1,4 +1,5 @@
 """Job execution model for tracking execution history."""
+
 from __future__ import annotations
 
 from psycopg2.extras import Json, RealDictCursor
@@ -15,18 +16,29 @@ class JobExecutionModel(BaseModel):
     json_fields = {"result"}
 
     @classmethod
-    def create(cls, job_id: int, status: str = "running", device: str | None = None, *, automatic: bool = False) -> int | None:
+    def create(
+        cls,
+        job_id: int,
+        status: str = "running",
+        device: str | None = None,
+        *,
+        automatic: bool = False,
+    ) -> int | None:
         """Create a new job execution, tagged with the device that ran it."""
         cls._validate_id(job_id)
         with get_connection() as conn:
-            if automatic:
-                # A pause must wait until an admitted execution is visible in history.
-                with conn.cursor() as cur:
-                    cur.execute("""SELECT id FROM background_jobs
-                        WHERE id=%s AND state='active' AND schedule_enabled FOR SHARE""", (job_id,))
-                    if cur.fetchone() is None:
-                        return None
-            return super().create(conn=conn, job_id=job_id, status=status, device=device or DEVICE_NAME)
+            # Eligibility cannot change before an admitted execution is visible in history.
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT id FROM background_jobs
+                    WHERE id=%s AND state='active' AND (%s OR schedule_enabled) FOR SHARE""",
+                    (job_id, not automatic),
+                )
+                if cur.fetchone() is None:
+                    return None
+            return super().create(
+                conn=conn, job_id=job_id, status=status, device=device or DEVICE_NAME
+            )
 
     @classmethod
     def complete(

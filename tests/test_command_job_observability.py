@@ -12,7 +12,11 @@ _clean = jobs_cleanup("BILLABLECMD %")
 
 
 def records(caplog):
-    return [record.billable_event for record in caplog.records if hasattr(record, "billable_event")]
+    return [
+        record.billable_event
+        for record in caplog.records
+        if hasattr(record, "billable_event")
+    ]
 
 
 def assert_private_logs(caplog):
@@ -62,7 +66,9 @@ def ledger(monkeypatch, caplog):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("exit_code,outcome", [(0, "success"), (7, "failed")])
-async def test_command_pair_covers_spawn_pumps_and_ledger_without_logging_payload(monkeypatch, ledger, caplog, exit_code, outcome):
+async def test_command_pair_covers_spawn_pumps_and_ledger_without_logging_payload(
+    monkeypatch, ledger, caplog, exit_code, outcome
+):
     process = Process(exit_code)
     calls = []
 
@@ -73,24 +79,55 @@ async def test_command_pair_covers_spawn_pumps_and_ledger_without_logging_payloa
         return process
 
     monkeypatch.setattr(scheduler.asyncio, "create_subprocess_shell", spawn)
-    with trigger_context(trigger="http.POST", request_id="synthetic", reason="manual_request"):
-        result = await scheduler._run_command_job(42, 7, "PRIVATE_COMMAND", {"timeout": 3})
-        assert current_trigger() == {"trigger": "http.POST", "request_id": "synthetic", "reason": "manual_request"}
+    with trigger_context(
+        trigger="http.POST", request_id="synthetic", reason="manual_request"
+    ):
+        result = await scheduler._run_command_job(
+            42, 7, "PRIVATE_COMMAND", {"timeout": 3}
+        )
+        assert current_trigger() == {
+            "trigger": "http.POST",
+            "request_id": "synthetic",
+            "reason": "manual_request",
+        }
     assert result["success"] is (exit_code == 0) and result["exit_code"] == exit_code
     assert result["output"] == "PRIVATE_OUTPUT" and result["error"] == "PRIVATE_STDERR"
     assert process.stdout.drained and process.stderr.drained
-    assert calls == [("PRIVATE_COMMAND", {"stdout": asyncio.subprocess.PIPE, "stderr": asyncio.subprocess.PIPE, "start_new_session": True})]
+    assert calls == [
+        (
+            "PRIVATE_COMMAND",
+            {
+                "stdout": asyncio.subprocess.PIPE,
+                "stderr": asyncio.subprocess.PIPE,
+                "start_new_session": True,
+            },
+        )
+    ]
     assert ledger == [(42, {"status": outcome, "result": result})]
     before, after = records(caplog)
-    assert before["event_id"] == after["event_id"] and after["outcome"] == outcome and after["exit_code"] == exit_code
-    assert (before["provider"], before["operation"], before["stage"]) == ("command", "subprocess", "command_job")
-    assert (before["job_id"], before["execution_id"], before["request_id"]) == (7, 42, "synthetic")
+    assert (
+        before["event_id"] == after["event_id"]
+        and after["outcome"] == outcome
+        and after["exit_code"] == exit_code
+    )
+    assert (before["provider"], before["operation"], before["stage"]) == (
+        "command",
+        "subprocess",
+        "command_job",
+    )
+    assert (before["job_id"], before["execution_id"], before["request_id"]) == (
+        7,
+        42,
+        "synthetic",
+    )
     assert before["reason"] == "manual_request" and current_trigger() == {}
     assert_private_logs(caplog)
 
 
 @pytest.mark.asyncio
-async def test_timeout_pair_ends_after_group_kill_drain_and_original_timeout_ledger(monkeypatch, ledger, caplog):
+async def test_timeout_pair_ends_after_group_kill_drain_and_original_timeout_ledger(
+    monkeypatch, ledger, caplog
+):
     process = Process(None, TimeoutError())
 
     async def spawn(*_, **__):
@@ -103,11 +140,16 @@ async def test_timeout_pair_ends_after_group_kill_drain_and_original_timeout_led
 
     monkeypatch.setattr(scheduler.asyncio, "create_subprocess_shell", spawn)
     monkeypatch.setattr(scheduler, "_kill_process_group", kill)
-    result = await scheduler._run_command_job(42, 7, "PRIVATE_COMMAND", {"timeout": 0.5})
+    result = await scheduler._run_command_job(
+        42, 7, "PRIVATE_COMMAND", {"timeout": 0.5}
+    )
     assert process.killed and process.stdout.drained and process.stderr.drained
     assert result["success"] is False and result["exit_code"] is None
     assert result["output"] == "PRIVATE_OUTPUT"
-    assert result["error"] == "timed out after 0.5s\n--- partial stderr ---\nPRIVATE_STDERR"
+    assert (
+        result["error"]
+        == "timed out after 0.5s\n--- partial stderr ---\nPRIVATE_STDERR"
+    )
     assert ledger == [(42, {"status": "timeout", "result": result})]
     before, after = records(caplog)
     assert before["event_id"] == after["event_id"] and after["outcome"] == "timeout"
@@ -116,7 +158,9 @@ async def test_timeout_pair_ends_after_group_kill_drain_and_original_timeout_led
 
 
 @pytest.mark.asyncio
-async def test_cancel_pair_preserves_original_exception_after_kill_and_synchronous_ledger(monkeypatch, ledger, caplog):
+async def test_cancel_pair_preserves_original_exception_after_kill_and_synchronous_ledger(
+    monkeypatch, ledger, caplog
+):
     failure = asyncio.CancelledError("PRIVATE_CANCEL")
     process = Process(None, failure)
 
@@ -141,7 +185,9 @@ async def test_cancel_pair_preserves_original_exception_after_kill_and_synchrono
 
 
 @pytest.mark.asyncio
-async def test_actual_task_cancellation_still_finalizes_before_end(monkeypatch, ledger, caplog):
+async def test_actual_task_cancellation_still_finalizes_before_end(
+    monkeypatch, ledger, caplog
+):
     entered = asyncio.Event()
     process = Process(None)
 
@@ -154,7 +200,9 @@ async def test_actual_task_cancellation_still_finalizes_before_end(monkeypatch, 
 
     process.wait = wait
     monkeypatch.setattr(scheduler.asyncio, "create_subprocess_shell", spawn)
-    monkeypatch.setattr(scheduler, "_kill_process_group", lambda _: setattr(process, "killed", True))
+    monkeypatch.setattr(
+        scheduler, "_kill_process_group", lambda _: setattr(process, "killed", True)
+    )
     task = asyncio.create_task(scheduler._run_command_job(42, 7, "PRIVATE_COMMAND", {}))
     try:
         await asyncio.wait_for(entered.wait(), 2)
@@ -170,7 +218,9 @@ async def test_actual_task_cancellation_still_finalizes_before_end(monkeypatch, 
 
 
 @pytest.mark.asyncio
-async def test_spawn_failure_keeps_error_contract_and_redacts_new_events(monkeypatch, ledger, caplog):
+async def test_spawn_failure_keeps_error_contract_and_redacts_new_events(
+    monkeypatch, ledger, caplog
+):
     failure = OSError("PRIVATE_OS_FAILURE")
 
     async def spawn(*_, **__):
@@ -179,45 +229,92 @@ async def test_spawn_failure_keeps_error_contract_and_redacts_new_events(monkeyp
 
     monkeypatch.setattr(scheduler.asyncio, "create_subprocess_shell", spawn)
     result = await scheduler._run_command_job(42, 7, "PRIVATE_COMMAND", {})
-    assert result["success"] is False and result["error"] == "OSError: PRIVATE_OS_FAILURE"
+    assert (
+        result["success"] is False and result["error"] == "OSError: PRIVATE_OS_FAILURE"
+    )
     assert ledger == [(42, {"status": "failed", "result": result})]
     before, after = records(caplog)
-    assert before["event_id"] == after["event_id"] and after["outcome"] == "failed" and after["error_type"] == "OSError"
+    assert (
+        before["event_id"] == after["event_id"]
+        and after["outcome"] == "failed"
+        and after["error_type"] == "OSError"
+    )
     assert current_trigger() == {}
     assert_private_logs(caplog)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("params,admitted", [({}, True), ({"command": "PRIVATE_COMMAND", "graph_type": "echo"}, True), ({"command": "PRIVATE_COMMAND", "timeout": "bad"}, True), ({"command": "PRIVATE_COMMAND"}, False)])
-async def test_nonexecuted_or_invalid_job_does_not_claim_a_paid_operation(monkeypatch, caplog, params, admitted):
+@pytest.mark.parametrize("automatic", [False, True])
+@pytest.mark.parametrize(
+    "params,admitted",
+    [
+        ({}, True),
+        ({"command": "PRIVATE_COMMAND", "graph_type": "echo"}, True),
+        ({"command": "PRIVATE_COMMAND", "timeout": "bad"}, True),
+        ({"command": "PRIVATE_COMMAND"}, False),
+    ],
+)
+async def test_nonexecuted_or_invalid_job_does_not_claim_a_paid_operation(
+    monkeypatch, caplog, params, admitted, automatic
+):
     writes = []
-    monkeypatch.setattr(scheduler, "create_execution", lambda **_: 42 if admitted else None)
-    monkeypatch.setattr(scheduler, "complete_execution", lambda *args, **kwargs: writes.append((args, kwargs)))
+    monkeypatch.setattr(
+        scheduler, "create_execution", lambda **_: 42 if admitted else None
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "complete_execution",
+        lambda *args, **kwargs: writes.append((args, kwargs)),
+    )
 
     async def spawn(*_, **__):
         pytest.fail("Invalid job must not spawn")
 
     monkeypatch.setattr(scheduler.asyncio, "create_subprocess_shell", spawn)
-    result = await scheduler.execute_job({"id": 7, "input_params": params})
-    assert result["success"] is (not admitted)
-    assert bool(writes) is admitted and records(caplog) == [] and current_trigger() == {}
+    result = await scheduler.execute_job(
+        {"id": 7, "input_params": params}, automatic=automatic
+    )
+    assert result["success"] is (automatic and not admitted)
+    if not admitted:
+        assert result["skipped"] is True and "execution_id" not in result
+        if not automatic:
+            assert "not active" in result["error"].lower()
+    assert (
+        bool(writes) is admitted and records(caplog) == [] and current_trigger() == {}
+    )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("exit_code", [0, 3])
-async def test_real_subprocess_and_native_execution_ledger_keep_results_and_correlation(caplog, exit_code):
+async def test_real_subprocess_and_native_execution_ledger_keep_results_and_correlation(
+    caplog, exit_code
+):
     command = f"echo PRIVATE_COMMAND_OUTPUT; exit {exit_code}"
-    job_id = create_job(name="BILLABLECMD Native", schedule_config={"minutes": 5}, input_params={"command": command})
+    job_id = create_job(
+        name="BILLABLECMD Native",
+        schedule_config={"minutes": 5},
+        input_params={"command": command},
+    )
     with trigger_context(trigger="mcp", request_id="synthetic"):
-        result = await scheduler.execute_job({"id": job_id, "input_params": {"command": command}})
+        result = await scheduler.execute_job(
+            {"id": job_id, "input_params": {"command": command}}
+        )
     execution = get_execution(result["execution_id"])
     assert result["success"] is (exit_code == 0) and result["exit_code"] == exit_code
     assert result["output"] == "PRIVATE_COMMAND_OUTPUT\n"
     assert execution["status"] == ("success" if exit_code == 0 else "failed")
-    assert execution["result"] == {key: value for key, value in result.items() if key != "execution_id"}
+    assert execution["result"] == {
+        key: value for key, value in result.items() if key != "execution_id"
+    }
     before, after = records(caplog)
     assert before["event_id"] == after["event_id"] and after["exit_code"] == exit_code
-    assert before["job_id"] == job_id and before["execution_id"] == result["execution_id"]
-    assert before["trigger"] == "job.manual" and before["origin"] == "mcp" and before["request_id"] == "synthetic"
+    assert (
+        before["job_id"] == job_id and before["execution_id"] == result["execution_id"]
+    )
+    assert (
+        before["trigger"] == "job.manual"
+        and before["origin"] == "mcp"
+        and before["request_id"] == "synthetic"
+    )
     assert current_trigger() == {}
     assert_private_logs(caplog)
