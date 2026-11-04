@@ -256,7 +256,8 @@ def launch_prepared_application(args: argparse.Namespace, env: dict[str, str], i
 
 def audit(args: argparse.Namespace, extra: list[str]) -> None:
     python = python_executable()
-    checked([python, "-m", "ruff", "check", "."])
+    if not args.skip_lint:
+        checked([python, "-m", "ruff", "check", "."])
     with temporary_postgres() as url:
         env = environment(ROOT, "test", inherited={**os.environ, AUTOMATED_TESTS_ENV: "1"})
         env["DATABASE_URL_TEST"] = url
@@ -296,6 +297,7 @@ def main() -> int:
     run.add_argument("--startup-lock-fd", type=int, help=argparse.SUPPRESS)
     audit_parser = commands.add_parser("audit")
     audit_parser.add_argument("--backend-only", action="store_true")
+    audit_parser.add_argument("--skip-lint", action="store_true", help="Skip Ruff when lint runs as a separate check")
     for command in ("evals", "sync", "erd", "upgrade"):
         sub = commands.add_parser(command)
         sub.add_argument("--env" if command != "upgrade" else "mode", choices=list(MODES), default=os.environ.get("APP_ENV", "production" if command == "evals" else "development"))

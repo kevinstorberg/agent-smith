@@ -5,12 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "typecheck:app": "tsc -b",
+    "typecheck:browser": "tsc -p tsconfig.browser.json",
+    "typecheck": "npm run typecheck:app && npm run typecheck:browser",
+    "build:bundle": "vite build",
+    "build": "npm run typecheck:app && npm run build:bundle",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:browser": "npm run build && tsc -p tsconfig.browser.json && playwright test"
+    "test:browser": "npm run build && npm run typecheck:browser && playwright test"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",

@@ -20,7 +20,7 @@ alembic>=1.18.0
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 pytest>=8.0
-ruff>=0.8.0
+ruff==0.16.10
 deepeval>=2.9.3
 anthropic>=0.40.0
 openai>=1.0.0
