@@ -1,3 +1,4 @@
+import { Fragment, type ReactNode } from 'react';
 import { Routes, Route, Navigate, useLocation, useParams } from 'react-router';
 import { HarnessIndexPage } from './pages/HarnessIndexPage';
 import { HarnessDetailPage } from './pages/HarnessDetailPage';
@@ -48,6 +49,13 @@ function MeetingRoute() {
   return <MeetingDetailPage key={id} />;
 }
 
+function DetailRoute({ children }: { children: ReactNode }) {
+  const { type, id } = useParams();
+  return (
+    <Fragment key={JSON.stringify([type, id ?? 'new'])}>{children}</Fragment>
+  );
+}
+
 export default function App() {
   return (
     <NotificationProvider>
@@ -85,7 +93,14 @@ export default function App() {
             <Route path="/harness/tool/new" element={<HarnessCreatePage />} />
             <Route path="/harness/hook/new" element={<HarnessCreatePage />} />
             <Route path="/harness/agent/new" element={<HarnessCreatePage />} />
-            <Route path="/harness/:type/:id" element={<HarnessDetailPage />} />
+            <Route
+              path="/harness/:type/:id"
+              element={
+                <DetailRoute>
+                  <HarnessDetailPage />
+                </DetailRoute>
+              }
+            />
             <Route path="/memory" element={<MemoryPage />} />
             <Route path="/action-items" element={<ActionItemsIndexPage />} />
             <Route
@@ -105,20 +120,69 @@ export default function App() {
             <Route path="/profiles" element={<ProfilesIndexPage />} />
             <Route path="/profiles/:id" element={<ProfileRoute />} />
             <Route path="/evals" element={<EvalsPage />} />
-            <Route path="/evals/:id" element={<EvalDetailPage />} />
+            <Route
+              path="/evals/:id"
+              element={
+                <DetailRoute>
+                  <EvalDetailPage />
+                </DetailRoute>
+              }
+            />
             <Route path="/plans" element={<PlansIndexPage />} />
-            <Route path="/plans/new" element={<PlanDetailPage />} />
-            <Route path="/plans/:id" element={<PlanDetailPage />} />
+            <Route
+              path="/plans/new"
+              element={
+                <DetailRoute>
+                  <PlanDetailPage />
+                </DetailRoute>
+              }
+            />
+            <Route
+              path="/plans/:id"
+              element={
+                <DetailRoute>
+                  <PlanDetailPage />
+                </DetailRoute>
+              }
+            />
             <Route path="/proposals" element={<ProposalsIndexPage />} />
-            <Route path="/proposals/:id" element={<ProposalDetailPage />} />
+            <Route
+              path="/proposals/:id"
+              element={
+                <DetailRoute>
+                  <ProposalDetailPage />
+                </DetailRoute>
+              }
+            />
             <Route path="/audit" element={<AuditIndexPage />} />
-            <Route path="/audit/:id" element={<AuditDetailPage />} />
+            <Route
+              path="/audit/:id"
+              element={
+                <DetailRoute>
+                  <AuditDetailPage />
+                </DetailRoute>
+              }
+            />
             <Route path="/jobs" element={<JobsIndexPage />} />
             <Route path="/jobs/new" element={<JobDetailPage />} />
             <Route path="/jobs/:id" element={<JobDetailPage />} />
             <Route path="/eval-configs" element={<EvalSuitesPage />} />
-            <Route path="/eval-configs/new" element={<EvalSuiteDetailPage />} />
-            <Route path="/eval-configs/:id" element={<EvalSuiteDetailPage />} />
+            <Route
+              path="/eval-configs/new"
+              element={
+                <DetailRoute>
+                  <EvalSuiteDetailPage />
+                </DetailRoute>
+              }
+            />
+            <Route
+              path="/eval-configs/:id"
+              element={
+                <DetailRoute>
+                  <EvalSuiteDetailPage />
+                </DetailRoute>
+              }
+            />
             <Route path="/chat" element={<ChatPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>

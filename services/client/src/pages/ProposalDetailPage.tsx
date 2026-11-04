@@ -5,6 +5,7 @@ import type { Proposal } from '../api';
 import { useNotification } from '../context/useNotification';
 import { StatusBadge } from '../components/StatusBadge';
 import { usePolling } from '../hooks/usePolling';
+import { usePageLifetime } from '../hooks/usePageLifetime';
 import { ContentDiff } from '../components/ContentDiff';
 import { CODE_BOX } from '../components/codeBox';
 
@@ -38,6 +39,7 @@ function Pane({
 export function ProposalDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const isCurrent = usePageLifetime();
   const { notify } = useNotification();
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [busy, setBusy] = useState(false);
@@ -76,12 +78,14 @@ export function ProposalDetailPage() {
     setBusy(true);
     try {
       const updated = await api.proposals[action](Number(id));
+      if (!isCurrent()) return;
       setProposal({ ...proposal, ...updated });
       notify(
         action === 'approve' ? 'Proposal applied' : 'Proposal rejected',
         'success',
       );
     } catch (err) {
+      if (!isCurrent()) return;
       notify(
         `${action} failed: ${err instanceof Error ? err.message : String(err)}`,
         'error',
@@ -97,7 +101,7 @@ export function ProposalDetailPage() {
     setBusy(true);
     try {
       await api.proposals.remove(Number(id));
-      navigate('/proposals');
+      if (isCurrent()) navigate('/proposals');
     } finally {
       setBusy(false);
     }

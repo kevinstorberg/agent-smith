@@ -5,12 +5,14 @@ import remarkGfm from 'remark-gfm';
 import { api } from '../api';
 import type { EvalRunDetail } from '../api';
 import { CopyButton } from '../components/CopyButton';
+import { usePageLifetime } from '../hooks/usePageLifetime';
 
 type Tab = 'overview' | 'output' | 'raw';
 
 export function EvalDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const isCurrent = usePageLifetime();
   const [run, setRun] = useState<EvalRunDetail | null>(null);
   const [tab, setTab] = useState<Tab>('overview');
 
@@ -57,7 +59,9 @@ export function EvalDetailPage() {
           className="btn btn-danger"
           onClick={() => {
             if (confirm(`Delete eval run #${run.id}?`)) {
-              api.evals.remove(run.id).then(() => navigate('/evals'));
+              api.evals.remove(run.id).then(() => {
+                if (isCurrent()) navigate('/evals');
+              });
             }
           }}
         >

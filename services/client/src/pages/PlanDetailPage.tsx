@@ -10,6 +10,7 @@ import { DetailPageHeader } from '../components/DetailPageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { useDetailPageEdit } from '../hooks/useDetailPageEdit';
 import { useApiMutation } from '../hooks/useApiMutation';
+import { usePageLifetime } from '../hooks/usePageLifetime';
 import { usePolling } from '../hooks/usePolling';
 import { useNotification } from '../context/useNotification';
 import { MAX_TITLE_LENGTH } from '../constants';
@@ -18,6 +19,7 @@ import { validators } from '../utils/validation';
 export function PlanDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const isCurrent = usePageLifetime();
   const { notify } = useNotification();
   const isNew = id === 'new' || !id;
 
@@ -41,21 +43,21 @@ export function PlanDetailPage() {
   const createMutation = useApiMutation({
     mutationFn: api.plans.create,
     onSuccess: (created) => {
-      navigate(`/plans/${created.id}`, { replace: true });
+      if (isCurrent()) navigate(`/plans/${created.id}`, { replace: true });
     },
   });
 
   const updateMutation = useApiMutation({
     mutationFn: (data: Partial<Plan>) => api.plans.update(Number(id), data),
     onSuccess: async () => {
-      await loadPlan();
+      if (isCurrent()) await loadPlan();
     },
   });
 
   const deleteMutation = useApiMutation({
     mutationFn: () => api.plans.remove(Number(id)),
     onSuccess: () => {
-      navigate('/plans');
+      if (isCurrent()) navigate('/plans');
     },
   });
 

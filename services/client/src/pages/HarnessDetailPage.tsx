@@ -10,6 +10,7 @@ import { ConfigForm } from '../components/ConfigForm';
 import { DetailPageHeader } from '../components/DetailPageHeader';
 import { useDetailPageEdit } from '../hooks/useDetailPageEdit';
 import { useApiMutation } from '../hooks/useApiMutation';
+import { usePageLifetime } from '../hooks/usePageLifetime';
 import { useNotification } from '../context/useNotification';
 import {
   ALL_AGENTS,
@@ -53,6 +54,7 @@ interface HarnessEditValues {
 export function HarnessDetailPage() {
   const { type = '', id = '' } = useParams<{ type: string; id: string }>();
   const navigate = useNavigate();
+  const isCurrent = usePageLifetime();
   const { notify } = useNotification();
   const numericId = Number(id);
 
@@ -89,6 +91,7 @@ export function HarnessDetailPage() {
   const deleteMutation = useApiMutation({
     mutationFn: () => api.harness.items.remove(type, numericId),
     onSuccess: () => {
+      if (!isCurrent()) return;
       const backPath = `/harness/${TYPE_PATHS[type] || type}`;
       navigate(backPath);
     },
@@ -98,6 +101,7 @@ export function HarnessDetailPage() {
     mutationFn: (oldItem: HarnessItem) =>
       api.harness.items.updateContent(type, numericId, oldItem.content),
     onSuccess: (updated) => {
+      if (!isCurrent()) return;
       setPreviewVersion(null);
       navigate(`/harness/${type}/${updated.id}`, { replace: true });
     },
@@ -219,6 +223,7 @@ export function HarnessDetailPage() {
         });
       }
 
+      if (!isCurrent()) return;
       cancelEdit();
       if (currentId !== item.id) {
         navigate(`/harness/${type}/${currentId}`, { replace: true });
@@ -227,7 +232,7 @@ export function HarnessDetailPage() {
         await loadHistory();
       }
     } catch (err) {
-      notify(`Save failed: ${formatError(err)}`, 'error');
+      if (isCurrent()) notify(`Save failed: ${formatError(err)}`, 'error');
     } finally {
       setSaving(false);
     }
@@ -311,10 +316,12 @@ export function HarnessDetailPage() {
           exclude: cfgExclude,
         });
       }
+      if (!isCurrent()) return;
       cancelConfigForm();
       await loadItem();
     } catch (err) {
-      notify(`Config save failed: ${formatError(err)}`, 'error');
+      if (isCurrent())
+        notify(`Config save failed: ${formatError(err)}`, 'error');
     } finally {
       setCfgSaving(false);
     }
@@ -324,9 +331,10 @@ export function HarnessDetailPage() {
     if (!item) return;
     try {
       await api.harness.items.configs.remove(type, item.id, configId);
-      await loadItem();
+      if (isCurrent()) await loadItem();
     } catch (err) {
-      notify(`Config delete failed: ${formatError(err)}`, 'error');
+      if (isCurrent())
+        notify(`Config delete failed: ${formatError(err)}`, 'error');
     }
   };
 

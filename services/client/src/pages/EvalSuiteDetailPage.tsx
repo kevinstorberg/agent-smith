@@ -7,6 +7,7 @@ import { DetailPageHeader } from '../components/DetailPageHeader';
 import { ScrollableTable } from '../components/ScrollableTable';
 import { useDetailPageEdit } from '../hooks/useDetailPageEdit';
 import { useApiMutation } from '../hooks/useApiMutation';
+import { usePageLifetime } from '../hooks/usePageLifetime';
 import { useNotification } from '../context/useNotification';
 import { makeKeyboardClickable } from '../utils/a11y';
 import { validators } from '../utils/validation';
@@ -24,6 +25,7 @@ interface SuiteEditValues {
 export function EvalSuiteDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const isCurrent = usePageLifetime();
   const { notify } = useNotification();
   const isNew = id === 'new' || !id;
 
@@ -63,7 +65,8 @@ export function EvalSuiteDetailPage() {
   const createMutation = useApiMutation({
     mutationFn: api.evalConfigs.suites.create,
     onSuccess: (created) => {
-      navigate(`/eval-configs/${created.id}`, { replace: true });
+      if (isCurrent())
+        navigate(`/eval-configs/${created.id}`, { replace: true });
     },
   });
 
@@ -71,15 +74,16 @@ export function EvalSuiteDetailPage() {
     mutationFn: (body: Partial<EvalSuite>) =>
       api.evalConfigs.suites.update(Number(id), body),
     onSuccess: async () => {
+      if (!isCurrent()) return;
       const updated = await api.evalConfigs.suites.get(Number(id));
-      setSuite(updated);
+      if (isCurrent()) setSuite(updated);
     },
   });
 
   const deleteMutation = useApiMutation({
     mutationFn: () => api.evalConfigs.suites.remove(Number(id)),
     onSuccess: () => {
-      navigate('/eval-configs');
+      if (isCurrent()) navigate('/eval-configs');
     },
   });
 
