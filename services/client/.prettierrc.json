@@ -1,0 +1,12 @@
+{
+  "singleQuote": true,
+  "semi": true,
+  "overrides": [
+    {
+      "files": "package-lock.json",
+      "options": {
+        "parser": "json-stringify"
+      }
+    }
+  ]
+}

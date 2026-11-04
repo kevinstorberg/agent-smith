@@ -1,0 +1,141 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      base_sha:
+        description: Full base commit SHA to compare with the dispatched head.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  formatting:
+    name: ${{ matrix.name }}
+    if: ${{ github.event.repository.private == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Python formatting
+            hook: python-format
+            node: false
+          - name: Frontend formatting
+            hook: frontend-format
+            node: true
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate frozen formatting scope
+        id: snapshot
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || inputs.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ || ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'Formatting requires full base and head commit SHAs.\n' >&2
+            exit 1
+          fi
+          git cat-file -e "${BASE_SHA}^{commit}"
+          git cat-file -e "${HEAD_SHA}^{commit}"
+          if [[ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]]; then
+            printf 'Formatting checkout does not match the frozen head SHA.\n' >&2
+            exit 1
+          fi
+          if ! merge_base="$(git merge-base --all "$BASE_SHA" "$HEAD_SHA")"; then
+            printf 'Formatting base and head must share a merge base.\n' >&2
+            exit 1
+          fi
+          if [[ ! "$merge_base" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'Formatting requires one unambiguous merge base.\n' >&2
+            exit 1
+          fi
+          printf 'merge_base=%s\n' "$merge_base" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.13"
+
+      - uses: ./.github/actions/setup-python-tools
+        id: tools
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: matrix.node
+        with:
+          node-version: "22"
+
+      - name: Install frontend formatter
+        if: matrix.node
+        working-directory: services/client
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Verify native formatting hook boundaries
+        if: matrix.node
+        env:
+          TOOLS_PYTHON: ${{ steps.tools.outputs.python }}
+        run: '"$TOOLS_PYTHON" -m unittest discover -s tests/ci -p test_format_hooks.py -v'
+
+      - name: Check whole changed files
+        env:
+          TOOLS_PYTHON: ${{ steps.tools.outputs.python }}
+          FORMAT_HOOK: ${{ matrix.hook }}
+          FORMAT_FROM: ${{ steps.snapshot.outputs.merge_base }}
+          FORMAT_TO: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          git diff --exit-code "$FORMAT_TO" --
+          tools_bin="$(dirname "$TOOLS_PYTHON")"
+          export PATH="$tools_bin:$PATH"
+          "$TOOLS_PYTHON" -m pre_commit run "$FORMAT_HOOK" \
+            --from-ref "$FORMAT_FROM" --to-ref "$FORMAT_TO" --show-diff-on-failure
+
+  native:
+    name: ${{ matrix.name }}
+    if: ${{ github.event.repository.private == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Workflow lint
+            tool: actionlint
+            command: actionlint
+          - name: Shell lint
+            tool: shellcheck
+            command: git ls-files -z -- '*.sh' | xargs -0 shellcheck --
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-native-tools
+        with:
+          tool: ${{ matrix.tool }}
+
+      - name: Pin embedded workflow shell checks
+        if: matrix.tool == 'actionlint'
+        uses: ./.github/actions/setup-native-tools
+        with:
+          tool: shellcheck
+
+      - name: Run ${{ matrix.name }}
+        shell: bash
+        run: ${{ matrix.command }}
