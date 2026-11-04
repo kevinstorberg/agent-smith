@@ -7,11 +7,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from scripts.shared.paths import bootstrap
 bootstrap()
 
-from mcp.server.fastmcp import FastMCP
+from services.mcp_observability import ObservedMCP
 from mcp.types import ToolAnnotations
 from scripts.shared.validation import empty_to_none
 
-mcp = FastMCP("meetings - read imported meeting summaries and synchronization status")
+mcp = ObservedMCP("meetings - read imported meeting summaries and synchronization status")
 _READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False)
 
 

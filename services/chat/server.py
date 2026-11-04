@@ -8,11 +8,11 @@ from scripts.shared.paths import bootstrap  # noqa: E402
 
 bootstrap()
 
-from mcp.server.fastmcp import FastMCP  # noqa: E402
+from services.mcp_observability import ObservedMCP  # noqa: E402
 
 from services.chat.service import post_agent_message, read_agent_room  # noqa: E402
 
-mcp = FastMCP("chat - shared rooms for coding agents")
+mcp = ObservedMCP("chat - shared rooms for coding agents")
 
 
 @mcp.tool()

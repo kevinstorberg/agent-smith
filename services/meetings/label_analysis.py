@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from services.meetings.analysis import AnalysisContext, MeetingAnalysisError, run_analysis
 from services.meetings.topics import SUGGESTED_TOPICS, TOPIC_LENGTH, TOPIC_LIMIT, normalize_topics
+from services.meetings.processing import stage_metadata
+from services.observability import trigger_context, work_decision
 
 SUGGEST_SECONDS = 45
 SUMMARY_CHARACTERS = 32_000
@@ -31,6 +33,14 @@ class LabelSubmission(BaseModel):
 async def suggest_labels(snapshot: dict, *, deadline: float | None = None) -> dict:
     if not isinstance(snapshot, dict) or not isinstance(snapshot.get("summary_text"), str):
         raise ValueError("Label suggestions require a saved meeting summary")
+    fields = stage_metadata({"meeting_id": snapshot.get("id"), "snapshot": snapshot}, "memory")
+    fields["stage"] = "meeting_label_suggestion"
+    with trigger_context(**fields):
+        work_decision("labels_requested", stage_status="pending")
+        return await _suggest_labels(snapshot, deadline=deadline)
+
+
+async def _suggest_labels(snapshot: dict, *, deadline: float | None) -> dict:
     summary = snapshot["summary_text"]
     data = {"title": snapshot.get("title"), "project": snapshot.get("project"),
             "summary": summary[:SUMMARY_CHARACTERS], "summary_characters": len(summary),

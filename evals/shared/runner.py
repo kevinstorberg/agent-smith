@@ -5,6 +5,7 @@ import sys
 
 from scripts.shared.fs import compose_strings
 from scripts.shared.automated_tests import require_model_calls_allowed
+from services.observability import billable_operation
 
 EXCLUDE_RULES = {"memory"}
 
@@ -38,36 +39,39 @@ def run_agent(model: str, prompt: str, extra_context: str | None = None) -> str:
     if "claude" in model:
         import anthropic
         client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-        with client.messages.stream(
-            model=model,
-            system=system,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=16384,
-        ) as stream:
-            return _collect_stream(stream.text_stream)
+        with billable_operation("anthropic", "messages.stream", stage="evaluation_agent", model_role="eval_agent", model=model, streaming=True):
+            with client.messages.stream(
+                model=model,
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=16384,
+            ) as stream:
+                return _collect_stream(stream.text_stream)
 
     if "gpt" in model or "o4" in model or "o3" in model:
         import openai
         client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-        stream = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
-            max_tokens=16384,
-            stream=True,
-        )
-        return _collect_stream(
-            chunk.choices[0].delta.content for chunk in stream
-        )
+        with billable_operation("openai", "chat.completions.create", stage="evaluation_agent", model_role="eval_agent", model=model, streaming=True):
+            with client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=16384,
+                stream=True,
+            ) as stream:
+                return _collect_stream(
+                    chunk.choices[0].delta.content for chunk in stream
+                )
 
     if "gemini" in model:
         import google.generativeai as genai
         genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
         gmodel = genai.GenerativeModel(model, system_instruction=system)
-        return _collect_stream(
-            chunk.text for chunk in gmodel.generate_content(prompt, stream=True)
-        )
+        with billable_operation("gemini", "generate_content", stage="evaluation_agent", model_role="eval_agent", model=model, streaming=True):
+            return _collect_stream(
+                chunk.text for chunk in gmodel.generate_content(prompt, stream=True)
+            )
 
     raise ValueError(f"Unknown model: {model}")

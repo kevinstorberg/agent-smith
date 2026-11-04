@@ -7,9 +7,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from scripts.shared.paths import bootstrap  # noqa: E402
 bootstrap()
 
-from mcp.server.fastmcp import FastMCP  # noqa: E402
+from services.mcp_observability import ObservedMCP  # noqa: E402
 
-mcp = FastMCP("evals - manage evaluation suites and scenarios")
+mcp = ObservedMCP("evals - manage evaluation suites and scenarios")
 
 
 @mcp.tool()

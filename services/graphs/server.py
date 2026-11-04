@@ -9,7 +9,7 @@ bootstrap()
 
 import logging  # noqa: E402
 
-from mcp.server.fastmcp import FastMCP  # noqa: E402
+from services.mcp_observability import ObservedMCP  # noqa: E402
 
 from services.graphs.runtime import build_tool_description, dispatch, scan_library  # noqa: E402
 
@@ -22,7 +22,7 @@ logger.info(
     ", ".join(sorted(_registry)) or "none",
 )
 
-mcp = FastMCP("graphs - run hardcoded LangGraph workflows")
+mcp = ObservedMCP("graphs - run hardcoded LangGraph workflows")
 
 
 @mcp.tool(description=build_tool_description(_registry))

@@ -22,6 +22,7 @@ from services.meetings.types import (
     TranscriptPage,
     TranscriptSegment,
 )
+from services.observability import billable_operation
 
 _API_URL = "https://public-api.granola.ai/v1"
 _NOTE_ID = re.compile(r"not_[a-zA-Z0-9]{14}", re.IGNORECASE)
@@ -39,6 +40,7 @@ class GranolaProvider:
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._params = _list_params(config.provider_options)
+        self._source = config.name
         self._api_key = config.api_key
         self._client = client or httpx.AsyncClient(
             timeout=httpx.Timeout(15, connect=3), follow_redirects=False,
@@ -132,17 +134,21 @@ class GranolaProvider:
         self, path: str, *, params: dict | None = None, missing_ok: bool = False,
     ) -> dict | None:
         deadline = self._clock() + _REQUEST_BUDGET_SECONDS
+        operation = "list_notes" if path == "/notes" else "get_transcript" if path.endswith("/transcript") else "get_note"
         for attempt in range(4):
             await self._wait(max(0, self._next_request_at - self._clock()), deadline)
             self._next_request_at = self._clock() + 0.25
             response = None
             try:
-                async with asyncio.timeout(deadline - self._clock()):
-                    response = await self._client.get(
-                        f"{_API_URL}{path}", params=params,
-                        headers={"Authorization": f"Bearer {self._api_key}", "Accept": "application/json"},
-                        follow_redirects=False,
-                    )
+                with billable_operation("granola", operation, source=self._source, attempt=attempt + 1) as event:
+                    async with asyncio.timeout(deadline - self._clock()):
+                        response = await self._client.get(
+                            f"{_API_URL}{path}", params=params,
+                            headers={"Authorization": f"Bearer {self._api_key}", "Accept": "application/json"},
+                            follow_redirects=False,
+                        )
+                    accepted = response.status_code == 200 or (response.status_code == 404 and missing_ok)
+                    event.finish("success" if accepted else "failed", http_status=response.status_code)
             except TimeoutError:
                 raise MeetingProviderError("Granola request exceeded its retry budget") from None
             except httpx.TransportError:

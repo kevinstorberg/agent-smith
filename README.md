@@ -56,6 +56,37 @@ that startup has begun; inspect `.runtime/<environment>.log` for readiness/failu
 Use separate checkouts for active development and production so dependency refreshes
 and frontend builds cannot alter the deployed checkout.
 
+### Paid operation logs
+
+Potentially billable model, evaluation, Pinecone, Granola HTTP and command-job operations
+emit `BILLABLE START` before submission and `BILLABLE END` after completion, failure,
+timeout or cancellation. Both records share an `event_id`; `END` adds `outcome` and
+`duration_ms`. Graph-model and Pinecone adapters include provider usage counts when
+returned. These are operation records, not dollar charges: a logical SDK call can
+include its configured retries, and a command job may run other paid services outside this process.
+
+Logs appear in the server terminal, or `.runtime/production.log` after `./run.sh -d`:
+
+```sh
+tail -f .runtime/production.log | rg 'BILLABLE (START|END)|WORK DECISION'
+```
+
+Follow `request_id`, `graph_run_id`, `job_id` / `execution_id`, or `meeting_id` to
+identify the caller. `trigger`, `origin`, `stage`, `reason`, `attempt` and
+`parent_event_id` explain the cause when available. MCP calls include their tool
+and advertised client name; stateless clients may remain `unknown`. Old meeting
+requests without recorded cause also remain `unknown` rather than inventing a reason.
+`WORK DECISION` records show stage eligibility, starts, completion and skips;
+meeting import `processed_refs` counts provider references, not model calls.
+
+An unmatched `START` means no terminal observation was recorded; it does not prove
+success or failure. A stopped process can lose its terminal log, and an asynchronous
+Pinecone result remains pending until its consumer observes completion. Wait timeouts
+on still-running futures do not emit a false terminal failure. Model truncation or
+application validation may reject a response after a successful SDK operation.
+Events contain identifiers, counts and status codes, never prompts, meeting text,
+memory content, command strings, tool arguments, response bodies or exception text.
+
 ### Startup recovery
 
 Startup reports `PREFLIGHT`, `STOPPING`, `UPDATING`, `REEXECUTING`, `MIGRATING`,

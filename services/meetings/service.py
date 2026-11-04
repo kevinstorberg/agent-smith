@@ -16,6 +16,7 @@ from services.meetings import db
 from services.meetings.config import SourceConfig, list_source_names, load_source_config
 from services.meetings.factory import build_meeting_provider
 from services.meetings.types import InvalidCursorError, MeetingProvider, MeetingProviderError, MeetingSummary
+from services.observability import trigger_context, work_decision
 
 T = TypeVar("T")
 log = logging.getLogger(__name__)
@@ -173,6 +174,17 @@ async def sync_source(
     run_budget_seconds: float = 240,
     config: SourceConfig | None = None,
 ) -> dict:
+    with trigger_context(stage="summary_sync", source=source, source_kind="summary"):
+        return await _sync_source(source, provider=provider, run_budget_seconds=run_budget_seconds, config=config)
+
+
+async def _sync_source(
+    source: str,
+    *,
+    provider: MeetingProvider | None,
+    run_budget_seconds: float,
+    config: SourceConfig | None,
+) -> dict:
     _validate_budget(run_budget_seconds)
     config = load_source_config(source) if config is None else config
     if config.name != source:
@@ -182,6 +194,7 @@ async def sync_source(
     try:
         async with claimed_source(config) as claim:
             if claim is None:
+                work_decision("source_busy", stage_status="skipped_busy")
                 return {"source": source, "outcome": "skipped_busy"}
             scan = _resume_scan(claim.state)
             await run_db(db.save_progress, config, claim.owner, scan)
@@ -199,8 +212,9 @@ async def sync_source(
             age = (datetime.now(timezone.utc) - datetime.fromisoformat(scan["started_at"])).total_seconds()
             result = {"source": source, "scan_id": scan["id"], "outcome": claim.outcome,
                       "deep": scan["deep"], "degraded": age > 86400, **scan["counts"]}
-            log.info("meeting sync source=%s scan=%s outcome=%s listed=%s processed=%s pending=%s",
+            log.info("meeting sync source=%s scan=%s outcome=%s listed=%s processed_refs=%s pending=%s",
                      source, scan["id"], claim.outcome, result["listed"], result["processed"], result["pending"])
+            work_decision("summary_references_processed", count=result["processed"], stage_status=claim.outcome)
             return result
     finally:
         await provider.aclose()
@@ -347,6 +361,8 @@ class _SummaryScan:
         self.advance()
         result = await self.save(summary=summary)
         self.counts[result["status"]] += 1
+        work_decision("summary_saved", meeting_id=result["id"], source_kind="summary",
+                      source_revision=result["revision"], stage_status=result["status"])
         self.stored[external_id] = {
             "provider_updated_at": max(summary.provider_updated_at, old["provider_updated_at"]) if old else summary.provider_updated_at,
             "available": summary.provider_deleted_at is None, "missing_count": 0,

@@ -12,6 +12,7 @@ from services.meetings.config import list_source_names, load_source_config
 from services.meetings.factory import build_meeting_provider
 from services.meetings.service import run_db
 from services.meetings.types import InvalidCursorError, MeetingProviderError, TranscriptPage
+from services.observability import trigger_context, work_decision
 
 MAX_TRANSCRIPT_BYTES = 20_000_000
 MAX_TRANSCRIPT_SEGMENTS = 100_000
@@ -80,11 +81,22 @@ async def _capture_next(source: str | None, report: dict) -> None:
     async with claimed_meeting(list(configs)) as (owner, row):
         if row is None:
             report["outcome"] = "idle"
+            with trigger_context(stage="transcript_capture", reason="unknown"):
+                work_decision("no_eligible_work", stage_status="idle")
             return
         await capture_claimed(configs, owner, row, report)
 
 
 async def capture_claimed(configs: dict, owner: str, row: dict, report: dict) -> None:
+    from services.meetings.processing import stage_metadata
+
+    with trigger_context(**stage_metadata(row, "transcript_capture")):
+        work_decision("stage_started", stage_status=row.get("transcript_status"))
+        await _capture_claimed(configs, owner, row, report)
+        work_decision("stage_result", stage_status=report.get("outcome", "unknown"))
+
+
+async def _capture_claimed(configs: dict, owner: str, row: dict, report: dict) -> None:
     meeting_id = row["meeting_id"]
     report["meeting_id"] = meeting_id
     context = await run_db(db.get_context, meeting_id)
@@ -95,14 +107,15 @@ async def capture_claimed(configs: dict, owner: str, row: dict, report: dict) ->
     provider = None
     try:
         config = configs[(context["provider"], context["account_key"])]
-        provider = build_meeting_provider(config)
-        reader = getattr(provider, "get_transcript_page", None)
-        if reader is None:
-            await run_db(db.record_failure, meeting_id, owner, "TranscriptUnsupported", status="unsupported")
-            report["outcome"] = "unsupported"
-            return
-        segments = await _capture(provider, context, row, owner)
-        report.update(outcome="ready", segments=segments)
+        with trigger_context(source=config.name, source_revision=context.get("revision")):
+            provider = build_meeting_provider(config)
+            reader = getattr(provider, "get_transcript_page", None)
+            if reader is None:
+                await run_db(db.record_failure, meeting_id, owner, "TranscriptUnsupported", status="unsupported")
+                report["outcome"] = "unsupported"
+                return
+            segments = await _capture(provider, context, row, owner)
+            report.update(outcome="ready", segments=segments)
     except TranscriptChangedError:
         await run_db(db.reset_capture, meeting_id, owner)
         report.update(outcome="continued", error_type="TranscriptChangedError")

@@ -10,6 +10,7 @@ from services.meetings import digestion_db, memory_db, memory_pass, processing
 from services.meetings.digestion import capture_claimed, configured_sources
 from services.meetings.service import run_db
 from services.meetings.memory_pass import memory_content as memory_content
+from services.observability import trigger_context, work_decision
 
 JOB_TIMEOUT_SECONDS = processing.JOB_TIMEOUT_SECONDS
 GRAPH_WORK_SECONDS = processing.GRAPH_WORK_SECONDS
@@ -61,13 +62,20 @@ class DigestionRun(processing.ProcessingRun):
         self.record = await run_db(digestion_db.claim_manual_memory, list(self.configs), self.owner)
         if self.record:
             self.transcript_report = {"outcome": "ready", "meeting_id": self.record["meeting_id"]}
+            with trigger_context(**processing.stage_metadata(self.record, "memory")):
+                work_decision("claimed", stage_status=self.record["memory_status"])
         return self.record is not None
 
     async def prepare(self) -> None:
         claim = digestion_db.claim_digestion if self.digest else digestion_db.claim_transcript
         self.record = await run_db(claim, list(self.configs), self.owner)
         if self.record is None:
+            with trigger_context(stage="memory", reason="unknown"):
+                work_decision("no_eligible_work", stage_status="idle")
             return
+        stage = "transcript_capture" if self.record["transcript_status"] == "pending" else "memory"
+        with trigger_context(**processing.stage_metadata(self.record, stage)):
+            work_decision("claimed", stage_status=self.record["transcript_status"] if stage == "transcript_capture" else self.record["memory_status"])
         meeting_id = self.record["meeting_id"]
         self.transcript_report = {"outcome": "ready", "meeting_id": meeting_id}
         if self.record["transcript_status"] == "pending":
@@ -142,8 +150,10 @@ class DigestionRun(processing.ProcessingRun):
             if control.get("active"):
                 await validate_manual_source()
             previous = [item for item in artifact["items"][pass_start:] if item.get("source") == "summary"]
-            result = await analyze_memories(snapshot, window, previous, deadline=deadline,
-                **({"validate_context": validate_manual_source} if control.get("active") else {}))
+            with trigger_context(source_kind="summary", source_hash=artifact["input_hash"],
+                                 source_revision=snapshot.get("revision"), checkpoint=artifact["offset"]):
+                result = await analyze_memories(snapshot, window, previous, deadline=deadline,
+                    **({"validate_context": validate_manual_source} if control.get("active") else {}))
             for atom in result["items"]:
                 atom = dict(atom)
                 atom["source"] = "summary"

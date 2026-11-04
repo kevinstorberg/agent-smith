@@ -7,10 +7,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from scripts.shared.paths import bootstrap  # noqa: E402
 bootstrap()
 
-from mcp.server.fastmcp import FastMCP  # noqa: E402
+from services.mcp_observability import ObservedMCP  # noqa: E402
 from scripts.shared.validation import empty_to_none  # noqa: E402
 
-mcp = FastMCP("jobs - manage background jobs, scheduling, and execution history")
+mcp = ObservedMCP("jobs - manage background jobs, scheduling, and execution history")
 
 
 @mcp.tool()
