@@ -6,6 +6,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validat
 
 from services.meetings.profile_fields import METADATA_CHOICES
 from services.meetings.topics import MemoryKind as MemoryKind, TOPIC_LENGTH, TOPIC_LIMIT, normalize_topics
+from services.memory.content import MAX_MEMORY_WORDS, normalize_memory_content
 
 
 def _nonblank(value: str) -> str:
@@ -32,10 +33,16 @@ class Evidence(_Output):
 
 
 class MemoryItem(_Output):
-    content: _Content = Field(min_length=1, max_length=4000)
+    content: _Content = Field(min_length=1, max_length=4000,
+                             description=f"A self-contained memory of at most {MAX_MEMORY_WORDS} whitespace-separated words")
     kind: MemoryKind
     tags: list[Annotated[str, Field(min_length=1, max_length=TOPIC_LENGTH)]] = Field(min_length=1, max_length=TOPIC_LIMIT)
     evidence: list[Evidence] = Field(min_length=1, max_length=10)
+
+    @field_validator("content")
+    @classmethod
+    def bounded_memory(cls, value: str) -> str:
+        return normalize_memory_content(value)
 
     @field_validator("tags")
     @classmethod

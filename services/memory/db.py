@@ -15,6 +15,7 @@ from langchain_classic.retrievers.time_weighted_retriever import (
 from langchain_huggingface import HuggingFaceEmbeddings
 
 from services.memory.backends import TIMESTAMP_FIELDS, canonical_metadata, get_backend, metadata_datetime
+from services.memory.content import normalize_memory_content
 from services.config import MEMORY_EMBEDDING_DEVICE, MEMORY_EMBEDDING_MODEL
 
 MODEL_NAME = MEMORY_EMBEDDING_MODEL
@@ -298,7 +299,7 @@ def _memory_document(id: str, content: str, repo: str | None, tags: list[str] | 
         "created_at": created_at, "updated_at": updated_at,
     }
     metadata.update(source_type=source_type or "general", source_id=source_id or id)
-    return Document(page_content=content, metadata=metadata)
+    return Document(page_content=normalize_memory_content(content), metadata=metadata)
 
 
 def _validate_scope(repo: str | None, tags: list[str] | None) -> None:
@@ -343,9 +344,14 @@ def publish(id: str, content: str, repo: str | None = None, tags: list[str] | No
             same_time = _publication_time(existing.get("created_at")) == stamp
         except ValueError:
             same_time = False
-        if (not same_time or existing["content"] != content or existing["repo"] != (repo or None)
-                or _stored_tags(raw.get("metadata", {})) != (tags or [])
-                or (source_type is not None and (existing.get("source_type"), existing.get("source_id")) != (source_type, source_id))):
+        same_fields = (same_time and existing["repo"] == (repo or None)
+                and _stored_tags(raw.get("metadata", {})) == (tags or [])
+                and (source_type is None or (existing.get("source_type"), existing.get("source_id")) == (source_type, source_id)))
+        if same_fields and existing["content"] == content:
+            return id
+    content = normalize_memory_content(content)
+    if existing is not None:
+        if (not same_fields or existing["content"] != content):
             raise MemoryConflictError(f"Memory {id} differs from its frozen publication") from None
         return id
     doc = _memory_document(id, content, repo, tags, stamp.isoformat(), stamp.isoformat(), source_type=source_type, source_id=source_id)
@@ -373,7 +379,6 @@ def init() -> None:
 
 
 def add(content: str, repo: str | None = None, tags: list[str] | None = None) -> str:
-    assert content and content.strip(), "Memory content must not be empty."
     id = str(uuid.uuid4())
     now_dt = _utcnow()
     now_str = now_dt.isoformat()
@@ -511,6 +516,8 @@ def update(
     assert any(v is not None for v in (content, repo, tags)), (
         "Provide at least one of: content, repo, tags."
     )
+    if content is not None:
+        content = normalize_memory_content(content)
     existing = get(id, record_access=False)
     if not existing:
         raise KeyError(f"Memory not found: {id}")

@@ -29,6 +29,8 @@ def test_reviewed_artifact_compiles_model_and_grants_through_consumer(monkeypatc
     helper_prefix = helper_rule[5:-3]
     assert shlex.split(helper_prefix) == [f"{host_root}/.venv/bin/python", f"{host_root}/scripts/claude_memory_context.py"]
     assert helper_prefix in hook["prompt"]
+    assert "at most 250 whitespace-separated words" in hook["prompt"]
+    assert "Rewrite oversized drafts" in hook["prompt"] and "never pad short memories" in hook["prompt"]
     assert {rule for rule in rules if rule.startswith("mcp__")} == {
         "mcp__memory__memory_list", "mcp__memory__memory_search", "mcp__memory__memory_add",
     }

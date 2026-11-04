@@ -297,6 +297,30 @@ async def test_staging_before_search_returns_feedback_and_can_be_corrected(backe
 
 
 @pytest.mark.asyncio
+async def test_actual_memory_prompt_and_staging_apply_word_limit_without_clipping_evidence(backend, model):
+    body = " ".join(f"word{index}" for index in range(250))
+    quote = body + " EVIDENCE_TAIL_MUST_SURVIVE"
+    snapshot = {**SNAPSHOT, "summary_text": quote}
+    sections = [{"id": "summary-4", "text": quote}]
+    item = {**ITEM, "content": body + " DISCARD_BODY_TAIL",
+            "evidence": [{"segment_id": "summary-4", "quote": quote}]}
+    instance, _ = model([
+        call("search_previous_memories", query="word"),
+        call("stage_memories", items=[item]),
+        AIMessage(content="Done"),
+    ])
+    result = await analyze_memories(snapshot, sections, [])
+    assert result["items"][0]["content"] == body
+    assert result["items"][0]["evidence"] == item["evidence"]
+    system = next(message.content for message in instance.seen[0] if isinstance(message, SystemMessage))
+    assert "at most 250 whitespace-separated words" in system
+    assert "Rewrite oversized drafts" in system and "never pad" in system
+    quoted = next(message.content for message in instance.seen[0] if isinstance(message, HumanMessage))
+    assert quote in quoted
+    assert backend[2] == []
+
+
+@pytest.mark.asyncio
 async def test_failed_search_does_not_open_gate_or_leak_backend_exception(backend, model, monkeypatch, caplog):
     def failed(*args, **kwargs):
         raise RuntimeError("Private memory secret-token")

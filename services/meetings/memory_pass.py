@@ -8,6 +8,7 @@ from uuid import UUID
 
 from services.meetings.windows import WINDOW_CHARS
 from services.meetings.types import transcript_hash
+from services.memory.content import MAX_MEMORY_WORDS, memory_word_count, normalize_memory_content
 
 
 class SummaryMemoryRetryRequired(ValueError):
@@ -50,7 +51,11 @@ def summary_sections(snapshot: dict, *, max_chars: int = WINDOW_CHARS) -> list[d
 def memory_content(snapshot: dict, item: dict) -> str:
     references = ", ".join(evidence["segment_id"] for evidence in item["evidence"])
     source = "Granola summary (" + references + ")" if item.get("source") == "summary" else references
-    return f"{item['content']}\n\nMeeting source: {snapshot['source_url']}\nEvidence: {source}"
+    footer = f"\n\nMeeting source: {snapshot['source_url']}\nEvidence: {source}"
+    body_words = MAX_MEMORY_WORDS - memory_word_count(footer)
+    if body_words < 1:
+        raise ValueError("Memory source and evidence footer leaves no room for content within the word limit")
+    return normalize_memory_content(item["content"], max_words=body_words) + footer
 
 
 def publication_payload(meeting_id: str, snapshot: dict, artifact: dict, item: dict) -> dict:

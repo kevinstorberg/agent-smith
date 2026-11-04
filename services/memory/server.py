@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Annotated
+
+from pydantic import Field
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from scripts.shared.paths import bootstrap  # noqa: E402
@@ -11,12 +14,17 @@ from services.mcp_observability import ObservedMCP  # noqa: E402
 from scripts.shared.validation import empty_to_none  # noqa: E402
 
 import services.memory.db as db
+from services.memory.content import MAX_MEMORY_WORDS
+
+_CONTENT_DESCRIPTION = (f"A concise, self-contained memory of at most {MAX_MEMORY_WORDS} whitespace-separated words. "
+                        "Rewrite oversized drafts before saving; never pad short memories. "
+                        f"Storage keeps only the first {MAX_MEMORY_WORDS} words of oversized content.")
 
 mcp = ObservedMCP("memory - store and search observations, learnings, and context")
 
 
 @mcp.tool()
-def memory_add(content: str, repo: str = "", tags: list[str] | None = None) -> str:
+def memory_add(content: Annotated[str, Field(description=_CONTENT_DESCRIPTION)], repo: str = "", tags: list[str] | None = None) -> str:
     """
     Store an observation, learning, or context note.
     NOT for implementation plans or strategies — use the plans server's save tool instead.
@@ -91,7 +99,7 @@ def memory_delete(id: str) -> str:
 @mcp.tool()
 def memory_update(
     id: str,
-    content: str = "",
+    content: Annotated[str, Field(description=_CONTENT_DESCRIPTION)] = "",
     repo: str = "",
     tags: list[str] | None = None,
 ) -> str:
