@@ -19,6 +19,7 @@ import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '../../test-utils';
 import { POLL_INTERVAL_MS } from '../../constants';
 import { ActionItemsIndexPage } from '../ActionItemsIndexPage';
+import { NotificationBar } from '../../components/NotificationBar';
 import { actionItem, deferred } from './actionItemFixture';
 
 const drag = vi.hoisted(() => ({
@@ -86,6 +87,7 @@ vi.mock('../../api', async (original) => ({
       get: vi.fn(),
       update: vi.fn(),
       move: vi.fn(),
+      remove: vi.fn(),
     },
   },
 }));
@@ -123,6 +125,7 @@ beforeEach(() => {
   vi.mocked(api.actionItems.move).mockResolvedValue(
     actionItem(1, { revision: 2 }),
   );
+  vi.mocked(api.actionItems.remove).mockResolvedValue({ deleted: true, id: 1 });
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -722,7 +725,7 @@ describe('ActionItemsIndexPage', () => {
       within(actions)
         .getAllByRole('button')
         .map((button) => button.textContent),
-    ).toEqual(['Reopen', 'Edit']);
+    ).toEqual(['Reopen', 'Edit', 'Delete']);
   });
 
   it('lazily discloses descriptions with native keyboard buttons and one open row', async () => {
@@ -951,4 +954,267 @@ describe('ActionItemsIndexPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await screen.findByRole('button', { name: 'Task 1' });
   });
+});
+
+describe('Action Items list deletion', () => {
+  async function ready() {
+    const rendered = renderWithProviders(
+      <>
+        <NotificationBar />
+        <ActionItemsIndexPage />
+      </>,
+      { initialEntries: ['/action-items'] },
+    );
+    await screen.findByRole('button', { name: 'Task 1' });
+    return rendered;
+  }
+
+  it('confirms the displayed title and leaves cancellation without writes or refreshes', async () => {
+    vi.mocked(window.confirm).mockReturnValue(false);
+    await ready();
+    vi.mocked(api.actionItems.list).mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Task 1' }));
+    expect(window.confirm).toHaveBeenCalledWith('Delete action item “Task 1”?');
+    expect(api.actionItems.remove).not.toHaveBeenCalled();
+    expect(api.actionItems.list).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Task 1' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(api.actionItems.get).not.toHaveBeenCalled();
+  });
+
+  it('sends the displayed revision once and holds all row actions through reconciliation', async () => {
+    const saving = deferred<{ deleted: boolean; id: number }>();
+    const refresh = deferred<Paginated<ActionItemRow>>();
+    vi.mocked(api.actionItems.list)
+      .mockResolvedValueOnce({
+        items: [actionItem(1, { revision: 7 }), ...rows.slice(1)],
+        total: 3,
+      })
+      .mockReturnValueOnce(refresh.promise);
+    vi.mocked(api.actionItems.remove).mockReturnValueOnce(saving.promise);
+    await ready();
+    const button = screen.getByRole('button', { name: 'Delete Task 1' });
+    act(() => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+    expect(api.actionItems.remove).toHaveBeenCalledTimes(1);
+    expect(api.actionItems.remove).toHaveBeenCalledWith(1, 7);
+    expect(
+      screen.getByRole('button', { name: 'Delete Task 2' }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Complete Task 2' }),
+    ).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Edit Task 2' })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Reorder Task 2' }),
+    ).toBeDisabled();
+    await act(async () => saving.resolve({ deleted: true, id: 1 }));
+    expect(
+      screen.getByRole('button', { name: 'Delete Task 2' }),
+    ).toBeDisabled();
+    await act(async () => refresh.resolve({ items: rows.slice(1), total: 2 }));
+    expect(
+      screen.queryByRole('button', { name: 'Task 1' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete Task 2' })).toBeEnabled();
+  });
+
+  it('retains the row and requires a new confirmation and displayed revision after a409', async () => {
+    vi.mocked(api.actionItems.remove).mockRejectedValueOnce(
+      new ApiError('Action item changed', 409),
+    );
+    vi.mocked(api.actionItems.list)
+      .mockResolvedValueOnce({ items: rows, total: 3 })
+      .mockResolvedValue({
+        items: [actionItem(1, { revision: 9 }), ...rows.slice(1)],
+        total: 3,
+      });
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Task 1' }));
+    await screen.findByRole('alert');
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Delete Task 1' }),
+      ).toBeEnabled(),
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Action item changed');
+    expect(api.actionItems.remove).toHaveBeenCalledTimes(1);
+    expect(api.actionItems.remove).toHaveBeenLastCalledWith(1, 1);
+    expect(api.actionItems.get).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Task 1' }));
+    await waitFor(() =>
+      expect(api.actionItems.remove).toHaveBeenLastCalledWith(1, 9),
+    );
+    expect(window.confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports ordinary failure, retains the row and unlocks a fresh explicit attempt', async () => {
+    vi.mocked(api.actionItems.remove).mockRejectedValueOnce(
+      new Error('Could not delete synthetic item'),
+    );
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Task 1' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not delete synthetic item',
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Delete Task 1' }),
+      ).toBeEnabled(),
+    );
+    expect(screen.getByRole('button', { name: 'Task 1' })).toBeVisible();
+    expect(api.actionItems.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('clamps a last page emptied by deletion and refreshes the preceding page', async () => {
+    vi.mocked(api.actionItems.list)
+      .mockResolvedValueOnce({ items: rows, total: 11 })
+      .mockResolvedValueOnce({ items: [actionItem(11)], total: 11 })
+      .mockResolvedValueOnce({ items: [], total: 10 })
+      .mockResolvedValue({ items: rows, total: 10 });
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Delete Task 11' }),
+    );
+    await screen.findByRole('button', { name: 'Task 1' });
+    expect(api.actionItems.remove).toHaveBeenCalledWith(11, 1);
+    expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ offset: 0 }),
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Delete Task 11' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('reconciles the latest filter and offset when a captured delete finishes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const saving = deferred<{ deleted: boolean; id: number }>();
+    vi.mocked(api.actionItems.remove).mockReturnValueOnce(saving.promise);
+    vi.mocked(api.actionItems.list).mockResolvedValue({
+      items: rows,
+      total: 25,
+    });
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() =>
+      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ offset: 10 }),
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Task 1' }));
+    fireEvent.change(screen.getByLabelText('Search action items'), {
+      target: { value: 'Current filter' },
+    });
+    await act(async () => vi.advanceTimersByTime(300));
+    await waitFor(() =>
+      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ q: 'Current filter', offset: 0 }),
+      ),
+    );
+    vi.mocked(api.actionItems.list).mockClear();
+    await act(async () => saving.resolve({ deleted: true, id: 1 }));
+    expect(api.actionItems.remove).toHaveBeenCalledWith(1, 1);
+    expect(api.actionItems.list).toHaveBeenCalledTimes(1);
+    expect(api.actionItems.list).toHaveBeenCalledWith(
+      expect.objectContaining({ q: 'Current filter', offset: 0 }),
+    );
+  });
+
+  it.each(['resolve', 'reject'] as const)(
+    'does not refresh or notify after an unmounted delete %s',
+    async (outcome) => {
+      const saving = deferred<{ deleted: boolean; id: number }>();
+      vi.mocked(api.actionItems.remove).mockReturnValueOnce(saving.promise);
+      const rendered = await ready();
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Task 1' }));
+      expect(api.actionItems.remove).toHaveBeenCalledWith(1, 1);
+      rendered.rerender(<NotificationBar />);
+      vi.mocked(api.actionItems.list).mockClear();
+      await act(async () => {
+        if (outcome === 'resolve') saving.resolve({ deleted: true, id: 1 });
+        else saving.reject(new Error('Late failure'));
+      });
+      expect(api.actionItems.list).not.toHaveBeenCalled();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    },
+  );
+
+  it('blocks deletion during drag and before pending criteria have been accepted', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await ready();
+    act(() => drag.start!());
+    const button = screen.getByRole('button', { name: 'Delete Task 1' });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(api.actionItems.remove).not.toHaveBeenCalled();
+    expect(window.confirm).not.toHaveBeenCalled();
+    await act(async () =>
+      drag.end!({ ...drop(), destination: null, reason: 'CANCEL' }),
+    );
+    fireEvent.change(screen.getByLabelText('Search action items'), {
+      target: { value: 'unapplied filter' },
+    });
+    expect(
+      screen.getByRole('button', { name: 'Delete Task 1' }),
+    ).toBeDisabled();
+    await act(async () => vi.advanceTimersByTime(300));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Delete Task 1' }),
+      ).toBeEnabled(),
+    );
+  });
+
+  it('blocks deletion after a failed refresh until a successful Retry', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await ready();
+    vi.mocked(api.actionItems.list).mockRejectedValueOnce(
+      new Error('Read failed'),
+    );
+    await act(async () => vi.advanceTimersByTime(POLL_INTERVAL_MS));
+    await screen.findByRole('alert');
+    const button = screen.getByRole('button', { name: 'Delete Task 1' });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(api.actionItems.remove).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Delete Task 1' }),
+      ).toBeEnabled(),
+    );
+  });
+
+  it.each(['{Enter}', ' '])(
+    'isolates %s keyboard activation from disclosure, navigation and drag',
+    async (key) => {
+      const user = userEvent.setup();
+      const saving = deferred<{ deleted: boolean; id: number }>();
+      vi.mocked(api.actionItems.remove).mockReturnValueOnce(saving.promise);
+      await ready();
+      const bubbled = vi.fn();
+      window.addEventListener('keydown', bubbled);
+      try {
+        screen.getByRole('button', { name: 'Delete Task 1' }).focus();
+        await user.keyboard(key);
+        expect(api.actionItems.remove).toHaveBeenCalledTimes(1);
+        expect(api.actionItems.remove).toHaveBeenCalledWith(1, 1);
+        expect(bubbled).not.toHaveBeenCalled();
+        expect(screen.getByRole('button', { name: 'Task 1' })).toHaveAttribute(
+          'aria-expanded',
+          'false',
+        );
+        expect(api.actionItems.get).not.toHaveBeenCalled();
+        expect(api.actionItems.move).not.toHaveBeenCalled();
+        await act(async () => saving.resolve({ deleted: true, id: 1 }));
+      } finally {
+        window.removeEventListener('keydown', bubbled);
+      }
+    },
+  );
 });

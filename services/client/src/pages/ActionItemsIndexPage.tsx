@@ -31,6 +31,7 @@ export function ActionItemsIndexPage() {
     tagsInput.trim() !== tags;
   const queue = useActionItemQueue({
     source: api.actionItems,
+    removeRow: api.actionItems.remove,
     filters: {
       status,
       sort,

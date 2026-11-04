@@ -26,6 +26,7 @@ interface DragSnapshot {
 
 export function useActionItemQueue({
   source,
+  removeRow,
   filters,
   criteria,
   viewKey,
@@ -38,6 +39,7 @@ export function useActionItemQueue({
   pagination,
 }: {
   source: ActionItemQueueSource;
+  removeRow?: (id: number, expectedRevision: number) => Promise<unknown>;
   filters: ActionItemFilters;
   criteria: string;
   viewKey: string;
@@ -159,21 +161,24 @@ export function useActionItemQueue({
     }
   }
 
+  function canWrite() {
+    return (
+      !writing.current &&
+      !drag.current &&
+      !loading &&
+      !error &&
+      active &&
+      !disabled &&
+      !editing
+    );
+  }
+
   async function runRowWrite(
     item: ActionItemRow,
     write: () => Promise<unknown>,
     fallbackMessage: string,
   ) {
-    if (
-      writing.current ||
-      drag.current ||
-      loading ||
-      error ||
-      !active ||
-      disabled ||
-      editing
-    )
-      return;
+    if (!canWrite()) return;
     writing.current = true;
     setPendingId(item.id);
     try {
@@ -198,6 +203,28 @@ export function useActionItemQueue({
           status: item.status === 'open' ? 'completed' : 'open',
         }),
       `Could not update this ${noun}.`,
+    );
+  }
+
+  function canRemove() {
+    return (
+      Boolean(removeRow) &&
+      mounted.current &&
+      canWrite() &&
+      !criteriaPending &&
+      list.dataCurrent &&
+      current.current.view === view
+    );
+  }
+
+  async function removeItem(item: ActionItemRow) {
+    const remove = removeRow;
+    if (!remove || !canRemove()) return;
+    const { id, revision } = item;
+    await runRowWrite(
+      item,
+      () => remove(id, revision),
+      `Could not delete this ${noun}.`,
     );
   }
 
@@ -303,6 +330,9 @@ export function useActionItemQueue({
     startDrag,
     endDrag,
     changeStatus,
+    deletionEnabled: Boolean(removeRow),
+    canRemove,
+    removeItem,
     displayed: snapshot?.items ?? items,
     freezeControls: Boolean(snapshot) || savingOrder || editing || disabled,
     canAct: () =>

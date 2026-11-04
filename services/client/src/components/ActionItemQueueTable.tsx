@@ -7,6 +7,7 @@ import { useApiRead } from '../hooks/useApiRead';
 import { DateCell } from './table';
 import { Pagination } from './Pagination';
 import { ActionItemStatusButton } from './ActionItemStatusButton';
+import './actionItemQueue.css';
 
 function ActionItemDescription({
   item,
@@ -82,6 +83,9 @@ export function ActionItemQueueTable({
     busy,
     expandedId,
     changeStatus,
+    deletionEnabled,
+    canRemove,
+    removeItem,
     canAct,
     view,
     total,
@@ -131,7 +135,9 @@ export function ActionItemQueueTable({
                     className="table-container action-items-container"
                     style={{ overflowX: 'auto' }}
                   >
-                    <table className="table action-items-table">
+                    <table
+                      className={`table action-items-table${deletionEnabled ? ' action-items-table-deletable' : ''}`}
+                    >
                       <colgroup>
                         <col className="action-priority-column" />
                         <col />
@@ -248,7 +254,7 @@ export function ActionItemQueueTable({
                                     <DateCell date={item.updated_at} />
                                   </td>
                                   <td>
-                                    <div className="flex-row">
+                                    <div className="flex-row action-item-actions">
                                       <ActionItemStatusButton
                                         noun={noun}
                                         item={item}
@@ -275,6 +281,29 @@ export function ActionItemQueueTable({
                                       >
                                         Edit
                                       </button>
+                                      {deletionEnabled && (
+                                        <button
+                                          type="button"
+                                          className="btn btn-sm btn-danger"
+                                          aria-label={`Delete ${item.title}`}
+                                          disabled={!canRemove()}
+                                          onKeyDown={(event) =>
+                                            event.stopPropagation()
+                                          }
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            if (
+                                              canRemove() &&
+                                              confirm(
+                                                `Delete ${noun} “${item.title}”?`,
+                                              )
+                                            )
+                                              void removeItem(item);
+                                          }}
+                                        >
+                                          Delete
+                                        </button>
+                                      )}
                                     </div>
                                   </td>
                                 </tr>
