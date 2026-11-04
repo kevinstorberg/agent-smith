@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scripts.shared.paths import bootstrap
+
 bootstrap()
 
 
@@ -21,6 +22,7 @@ def main() -> int:
     args = parser.parse_args()
 
     from services.db import init_db
+
     init_db()
 
     device_name = os.environ.get("DEVICE_NAME", "")
@@ -33,7 +35,10 @@ def main() -> int:
             return 1
 
         from scripts.shared.fs import sync_item
-        result = sync_item(args.item_type, args.item_id, device_name)
+
+        result = sync_item(
+            args.item_type, args.item_id, device_name, dry_run=args.dry_run
+        )
 
         if result["success"]:
             print(f"\n✓ {result['message']}")
@@ -61,7 +66,9 @@ def main() -> int:
         sync_agents(agent, args.dry_run, device_name=device_name)
 
     if withheld:
-        print(f"\n✗ {len(withheld)} MCP server deployment(s) withheld; see the ERROR lines above")
+        print(
+            f"\n✗ {len(withheld)} MCP server deployment(s) withheld; see the ERROR lines above"
+        )
         return 1
     return 0
 
