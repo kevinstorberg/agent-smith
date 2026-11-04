@@ -794,6 +794,12 @@ pushes to main, and manual dispatch. They use standard public-repository runners
 and skip if the repository becomes private. The workflow does not upload
 artifacts or use cache storage; browser diagnostics remain in the job logs.
 
+The separate Database health check uses a fresh PostgreSQL 17 database to verify
+migration heads, public index usability, validated constraints, pgvector behavior,
+and the existing migration regressions. It uses the same owned-cluster guards as
+backend tests. These checks examine CI's disposable database, so no application
+database credentials or production monitoring service are needed.
+
 For direct `pytest tests/` invocations, set `APP_ENV=test` and `DATABASE_URL_TEST`
 to a dedicated loopback database ending in `_test`. Remote targets and targets
 matching configured production are rejected before connecting. Prefer `./audit.sh`
