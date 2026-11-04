@@ -27,6 +27,8 @@ jobs:
             check: lint
           - name: Backend tests
             check: tests
+          - name: Database health
+            check: health
 
     env:
       AGENT_SMITH_PYTHON: python
@@ -45,7 +47,7 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Install native PostgreSQL and pgvector
-        if: matrix.check == 'tests'
+        if: matrix.check == 'tests' || matrix.check == 'health'
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-common
@@ -60,6 +62,10 @@ jobs:
       - name: Run backend tests in a temporary native cluster
         if: matrix.check == 'tests'
         run: ./audit.sh --backend-only --skip-lint
+
+      - name: Check database health in a temporary native cluster
+        if: matrix.check == 'health'
+        run: ./audit.sh --backend-only --skip-lint -k 'database_health or memory_pgvector_schema or migration'
 
   frontend:
     name: ${{ matrix.name }}
