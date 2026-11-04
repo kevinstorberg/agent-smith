@@ -1,4 +1,5 @@
 """Background job model."""
+
 from __future__ import annotations
 
 from psycopg2.extras import RealDictCursor
@@ -8,7 +9,11 @@ from services.api.models.shared.listing import search_pattern, sort_clause
 from services.db import get_connection
 from services.jobs.schedule import parse_interval
 
-JOB_SORTS = {"updated": "updated_at DESC, id DESC", "newest": "created_at DESC, id DESC", "name": "lower(name), id"}
+JOB_SORTS = {
+    "updated": "updated_at DESC, id DESC",
+    "newest": "created_at DESC, id DESC",
+    "name": "lower(name), id",
+}
 
 
 class JobNotFoundError(LookupError):
@@ -56,8 +61,12 @@ class BackgroundJobModel(BaseModel):
         if sort is not None:
             order_by = sort_clause(sort, JOB_SORTS)
         return super().list(
-            columns=columns, where=where, params=tuple(values),
-            order_by=order_by, limit=limit, offset=offset,
+            columns=columns,
+            where=where,
+            params=tuple(values),
+            order_by=order_by,
+            limit=limit,
+            offset=offset,
         )
 
     @classmethod
@@ -85,29 +94,37 @@ class BackgroundJobModel(BaseModel):
     @classmethod
     def get_by_name(cls, name: str) -> dict | None:
         """Return the active job with this name, if any."""
-        items, _ = cls.list(where="WHERE state = 'active' AND name = %s", params=(name,), limit=1)
+        items, _ = cls.list(
+            where="WHERE state = 'active' AND name = %s", params=(name,), limit=1
+        )
         return items[0] if items else None
 
     @classmethod
     def list_for_graph(cls, graph_type: str) -> list[dict]:
         items, _ = cls.list(
             where="WHERE state = 'active' AND input_params->>'graph_type' = %s",
-            params=(graph_type,), limit=None,
+            params=(graph_type,),
+            limit=None,
         )
         return items
 
     @classmethod
     def update(cls, job_id: int, **fields) -> None:
-        """Update a background job, bumping its version for optimistic concurrency."""
+        """Update a job and its version under the same row lock."""
         clean = cls._collect_fields(**fields)
         if "schedule_config" in clean:
             parse_interval(clean["schedule_config"])
         if not clean:
             return
-        current = cls.read(job_id)
-        assert current, f"Job not found: {job_id}"
-        clean["version"] = current["version"] + 1
-        cls.dynamic_update(job_id, clean)
+        cls._validate_id(job_id)
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                f"SELECT version FROM {cls.table} WHERE id=%s FOR UPDATE", (job_id,)
+            )
+            current = cur.fetchone()
+            assert current, f"Job not found: {job_id}"
+            clean["version"] = current[0] + 1
+            cls.dynamic_update(job_id, clean, conn=conn)
 
     @classmethod
     def set_schedule_enabled(cls, job_id: int, schedule_enabled: bool) -> dict:
@@ -115,13 +132,18 @@ class BackgroundJobModel(BaseModel):
             raise ValueError("Job id must be a positive integer")
         if type(schedule_enabled) is not bool:
             raise ValueError("schedule_enabled must be a boolean")
-        with get_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(f"""UPDATE {cls.table}
+        with (
+            get_connection() as conn,
+            conn.cursor(cursor_factory=RealDictCursor) as cur,
+        ):
+            cur.execute(
+                f"""UPDATE {cls.table}
                 SET schedule_enabled=%s,
                     version=version+CASE WHEN schedule_enabled IS DISTINCT FROM %s THEN 1 ELSE 0 END,
                     updated_at=CASE WHEN schedule_enabled IS DISTINCT FROM %s THEN clock_timestamp() ELSE updated_at END
                 WHERE id=%s AND state='active' RETURNING *""",
-                        (schedule_enabled, schedule_enabled, schedule_enabled, job_id))
+                (schedule_enabled, schedule_enabled, schedule_enabled, job_id),
+            )
             row = cur.fetchone()
             if row is None:
                 raise JobNotFoundError(f"Active job not found: {job_id}")
