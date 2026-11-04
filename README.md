@@ -5,6 +5,9 @@
 A single harness for managing rules, skills, and MCP servers across multiple AI coding agents.
 One source of truth, synced everywhere.
 
+Agent context handling and copyable **DO NOT TRUNCATE** skill instructions are documented
+in [Agent context](docs/agent-context.md).
+
 ## Quick Start
 
 ```sh

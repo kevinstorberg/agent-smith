@@ -32,6 +32,7 @@ def test_opinion_with_mock_deep_agent(monkeypatch):
     from services.graphs.library import opinion
 
     captured = {}
+    rule_body = "## DRY\nUnnumbered rationale.\n1. Search existing code.\n```python\nreuse_existing()\n```\nRULE_TAIL"
 
     class _Reply:
         content = "Sound: clear scope. Risk: scope creep. Simplification: drop X. Assumption: Y holds."
@@ -47,13 +48,14 @@ def test_opinion_with_mock_deep_agent(monkeypatch):
 
     def _fake_create_rubric_agent(**kwargs):
         captured["on_evaluation"] = kwargs["on_evaluation"]
+        captured["system_prompt"] = kwargs["system_prompt"]
         return _FakeAgent()
 
     monkeypatch.setattr(
         opinion,
         "_load_selected_rules",
         lambda: [
-            ("DRY", "## DRY\n* **Your Process:**\n    1. Search existing code."),
+            ("DRY", rule_body),
         ],
     )
     monkeypatch.setattr(opinion, "create_rubric_agent", _fake_create_rubric_agent)
@@ -62,7 +64,7 @@ def test_opinion_with_mock_deep_agent(monkeypatch):
 
     assert "Sound" in result and "Risk" in result
     assert captured["payload"]["messages"][0].content == "Build a new microservice for X."
-    assert "- DRY: Search existing code" in captured["payload"]["rubric"]
+    assert rule_body in captured["payload"]["rubric"] and rule_body in captured["system_prompt"]
     assert captured["config"]["configurable"]["thread_id"].startswith("opinion-")
 
 

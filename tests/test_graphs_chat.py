@@ -7,7 +7,9 @@ real graph end-to-end through dispatch.
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import json
+from threading import Event
 
 import pytest
 
@@ -158,7 +160,7 @@ def test_oversize_reply_is_rejected_and_never_posted(harness):
     assert harness["posts"] == []
 
 
-def test_paging_spans_pages_and_caps_transcript_to_the_tail(harness):
+def test_paging_spans_pages_and_keeps_the_whole_transcript(harness):
     room = _open_room()
     first = [_message(i, "user", f"m{i}") for i in range(1, 101)]
     second = [_message(i, "user", f"m{i}") for i in range(101, 251)]
@@ -167,6 +169,110 @@ def test_paging_spans_pages_and_caps_transcript_to_the_tail(harness):
     result = json.loads(asyncio.run(dispatch("chat", {"room_id": 42, "participant": "Kimi"})))
 
     _, human = harness["model_calls"][0]
-    assert "m250" in human.content  # tail retained
-    assert "m50: " not in human.content and "user: m50" not in human.content  # head dropped
-    assert result["transcript_truncated"] is True
+    assert "user: m1\n\n" in human.content
+    assert "user: m50\n\n" in human.content
+    assert "user: m250" in human.content
+    assert "earlier messages were omitted" not in human.content
+    assert result["transcript_truncated"] is False
+
+
+def test_more_than_fifty_native_pages_and_a_concurrent_append_reach_the_model(harness, monkeypatch):
+    from services.chat.service import create_room, delete_room, get_room, post_user_message
+    from services.db import get_connection
+    from services.graphs.library import chat
+
+    room = create_room("Complete conversation", "Keep the entire conversation.")
+    first_page = Event()
+    appended = Event()
+    cursors = []
+    try:
+        with get_connection() as connection, connection.cursor() as cursor:
+            cursor.execute("""INSERT INTO chat_messages (room_id, author, body)
+                SELECT %s, 'user', 'complete-message-' || number::text
+                FROM generate_series(1, 5105) AS number""", (room["id"],))
+
+        def read_page(room_id, after_message_id=0):
+            page = get_room(room_id, after_message_id)
+            cursors.append(after_message_id)
+            if after_message_id == 0:
+                first_page.set()
+                assert appended.wait(5)
+            return page
+
+        def append_message():
+            assert first_page.wait(5)
+            try:
+                return post_user_message(room["id"], "APPENDED_AFTER_FIRST_PAGE")
+            finally:
+                appended.set()
+
+        monkeypatch.setattr(chat, "get_room", read_page)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(append_message)
+            try:
+                result = json.loads(asyncio.run(dispatch("chat", {"room_id": room["id"], "participant": "Kimi"})))
+            finally:
+                appended.set()
+            future.result(timeout=5)
+
+        assert len(harness["model_calls"]) == 1
+        _, human = harness["model_calls"][0]
+        assert human.content.count("user: complete-message-") == 5105
+        for number in (1, 200, 201, 5001, 5105):
+            assert f"user: complete-message-{number}\n\n" in human.content
+        assert human.content.endswith("user: APPENDED_AFTER_FIRST_PAGE")
+        assert len(cursors) == 52 and cursors[0] == 0
+        assert all(left < right for left, right in zip(cursors, cursors[1:]))
+        assert result["transcript_truncated"] is False
+    finally:
+        delete_room(room["id"])
+
+
+@pytest.mark.parametrize("pages", [
+    [_page(_open_room(), [], has_more=True)],
+    [_page(_open_room(), [_message(2, "user", "second"), _message(1, "user", "first")])],
+    [_page(_open_room(), [_message(1, "user", "first")], has_more=True),
+     _page(_open_room(), [_message(1, "user", "repeated")])],
+    [{**_page(_open_room(), [_message(1, "user", "first")]), "last_message_id": 2}],
+    [{**_page(_open_room(), []), "last_message_id": False}],
+    [{**_page(_open_room(), []), "has_more": "yes"}],
+    [_page(_open_room(room_id=43), [])],
+    [_page(_open_room(), [_message(1, "user", "first")], has_more=True),
+     _page({**_open_room(), "state": "closed"}, [_message(2, "user", "second")])],
+])
+def test_incomplete_or_inconsistent_transcript_never_reaches_model(harness, pages):
+    harness["pages"]["sequence"] = pages
+
+    with pytest.raises(GraphContractError):
+        asyncio.run(dispatch("chat", {"room_id": 42, "participant": "Kimi"}))
+
+    assert harness["model_calls"] == harness["model_roles"] == harness["posts"] == []
+
+
+def test_transcript_deadline_aborts_before_any_partial_model_request(harness, monkeypatch):
+    from services.graphs.library import chat
+
+    release = Event()
+    reads = []
+
+    def read_page(room_id, after_message_id=0):
+        reads.append(after_message_id)
+        if after_message_id == 0:
+            return _page(_open_room(), [_message(1, "user", "Partial source")], has_more=True)
+        assert release.wait(5)
+        return _page(_open_room(), [_message(2, "user", "Late source")])
+
+    assert chat._TRANSCRIPT_READ_SECONDS == 30
+    monkeypatch.setattr(chat, "_TRANSCRIPT_READ_SECONDS", 0.05)
+    monkeypatch.setattr(chat, "get_room", read_page)
+
+    async def run():
+        try:
+            with pytest.raises(GraphContractError, match="deadline"):
+                await dispatch("chat", {"room_id": 42, "participant": "Kimi"})
+        finally:
+            release.set()
+
+    asyncio.run(run())
+    assert reads
+    assert harness["model_calls"] == harness["model_roles"] == harness["posts"] == []

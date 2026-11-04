@@ -141,15 +141,12 @@ def test_opinion_fails_when_no_rules_assigned_to_opinion_agent(monkeypatch):
         opinion._load_selected_rules()
 
 
-def test_rubric_formatting_includes_rule_titles_and_numbered_steps():
+def test_rubric_formatting_preserves_complete_rule_bodies():
     from services.rubric import rules_to_rubric
 
-    rubric = rules_to_rubric([
-        (
-            "DRY",
-            "## DRY\n* **Your Process:**\n    1. Search for existing code.\n    2. Extend it.",
-        )
-    ])
+    body = "    Preserve indentation.\nUnnumbered rationale.\n1. Search existing code.\n```python\nexample()\n```\nTail.  \n"
+    rubric = rules_to_rubric([("DRY", body), ("Plain", "A rule without numbered steps.")])
 
-    assert "- DRY: Search for existing code" in rubric
-    assert "- DRY: Extend it" in rubric
+    assert "## DRY" in rubric
+    assert body in rubric
+    assert "A rule without numbered steps." in rubric

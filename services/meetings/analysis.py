@@ -162,17 +162,6 @@ def _safe_rows(rows: list[dict]) -> list[dict]:
              "context_tags": row.get("context_tags") or []} for row in rows]
 
 
-def recent_items(items: list[dict], max_chars: int = 32_000) -> list[dict]:
-    selected, size = [], 0
-    for item in reversed(items):
-        length = len(json.dumps(item, ensure_ascii=False, default=str))
-        if size + length > max_chars:
-            break
-        selected.append(item)
-        size += length
-    return list(reversed(selected))
-
-
 def _memory_snapshot(snapshot: dict) -> dict:
     result = {"memory_source": "summary", "summary_text": snapshot.get("summary_text")}
     text_fields = {field: snapshot[field] for field in
@@ -237,7 +226,7 @@ class AnalysisContext:
             snapshot = {key: value for key, value in snapshot.items() if key not in {"summary_text", "summary_markdown"}}
         return {
             "meeting_snapshot": snapshot, f"{self.source}_window": self.segments,
-            "earlier_staged_items": recent_items(self.previous), "earlier_staged_count": len(self.previous),
+            "earlier_staged_items": self.previous, "earlier_staged_count": len(self.previous),
         }
 
     def stage(self, items: list[BaseModel], reason: str, validate_item: Callable | None = None) -> str:

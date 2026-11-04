@@ -286,17 +286,19 @@ async def test_cancellation_drains_fresh_canonical_profile_read(backend, canonic
 
 
 @pytest.mark.asyncio
-async def test_large_prior_context_is_bounded_without_truncating_current_transcript(backend, canonical, model):
+async def test_complete_prior_context_reaches_actual_profile_request(backend, canonical, model):
     huge = {"content": "p" * 40_000}
     previous = [huge, {"content": "Recent candidate"}]
     memories = [huge, {"content": "Recent same-run memory"}]
     instance, _ = model([
         call("search_previous_memories", query="Alice"), call("stage_profiles", items=[], reason="No new claim."), AIMessage(content="Done"),
     ])
-    await analyze(previous=previous, memories=memories, profiles=[profile(PARTICIPANTS[0], claims=[huge, huge])])
+    metadata = [huge, {"content": "Earlier metadata tail"}]
+    await analyze(previous=previous, memories=memories, previous_metadata=metadata, profiles=[profile(PARTICIPANTS[0], claims=[huge])])
     prompt = next(message.content for message in instance.seen[0] if isinstance(message, HumanMessage))
     data = json.loads(prompt.split("\n", 1)[1])
     assert data["earlier_staged_count"] == data["same_run_memory_count"] == 2
-    assert data["earlier_staged_items"] == previous[-1:] and data["same_run_memories"] == memories[-1:]
-    assert data["canonical_profiles"][0]["claims_available_via"] == "get_profile"
-    assert data["transcript_window"] == SEGMENTS and len(prompt) < 4000
+    assert data["earlier_staged_items"] == previous and data["same_run_memories"] == memories
+    assert data["earlier_metadata_updates"] == metadata and data["earlier_metadata_count"] == 2
+    assert data["canonical_profiles"][0]["claims"] == [huge]
+    assert data["transcript_window"] == SEGMENTS and len(prompt) > 120_000

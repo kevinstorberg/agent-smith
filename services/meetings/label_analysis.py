@@ -10,7 +10,6 @@ from services.meetings.analysis import AnalysisContext, MeetingAnalysisError, ru
 from services.meetings.topics import SUGGESTED_TOPICS, TOPIC_LENGTH, TOPIC_LIMIT, normalize_topics
 
 SUGGEST_SECONDS = 45
-SUMMARY_CHARACTERS = 32_000
 
 
 class LabelAnalysisError(MeetingAnalysisError):
@@ -33,8 +32,7 @@ async def suggest_labels(snapshot: dict, *, deadline: float | None = None) -> di
         raise ValueError("Label suggestions require a saved meeting summary")
     summary = snapshot["summary_text"]
     data = {"title": snapshot.get("title"), "project": snapshot.get("project"),
-            "summary": summary[:SUMMARY_CHARACTERS], "summary_characters": len(summary),
-            "summary_truncated": len(summary) > SUMMARY_CHARACTERS,
+            "summary": summary, "summary_characters": len(summary),
             "current_labels": normalize_topics(snapshot.get("labels", []))}
     context = AnalysisContext({}, [], [], require_memory_search=False, require_transcript=False)
 
@@ -59,7 +57,7 @@ async def suggest_labels(snapshot: dict, *, deadline: float | None = None) -> di
             "might use security, penetration-testing and vendor-evaluation; product planning might use product and "
             f"roadmapping. Use 1-{TOPIC_LIMIT} lowercase labels of at most {TOPIC_LENGTH} characters with hyphens "
             "between words. Fact, decision and commitment are classifications, not meeting subjects. "
-            "For an unclear/truncated summary, use only supported labels; an empty list needs a concrete reason. "
+            "For an unclear summary, use only supported labels; an empty list needs a concrete reason. "
             "Call stage_labels. Final prose is ignored."
         ),
         label="Meeting labels", error_class=LabelAnalysisError,

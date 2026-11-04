@@ -39,7 +39,7 @@ def identities(rows: list[dict]) -> list[dict]:
         labels = names(raw)
         if not labels:
             continue
-        person = {"name": labels[0][:200]}
+        person = {"name": labels[0]}
         if len(labels) > 1:
             person["aliases"] = labels[1:]
         addresses = emails(raw)
@@ -93,16 +93,11 @@ def candidates(snapshot: dict, segments: Sequence[dict] = ()) -> list[dict]:
             *(speaker for segment in segments if (speaker := segment.get("speaker") or {}) and (
                 speaker.get("email") or speaker.get("name") and speaker["name"].casefold() not in {"me", "them", "unknown", "unknown speaker", "unidentified speaker"}
                 and not re.fullmatch(r"speaker[ _-]*\d+", speaker["name"], re.IGNORECASE))), *snapshot.get("identity_candidates", [])]
-    return identities(rows)[:200]
+    return identities(rows)
 
 
 def window_context(snapshot: dict, segments: list[dict], offset: int, previous: list[dict]) -> tuple[list[dict], list[dict]]:
-    opening = [{**segment, "context_source": "opening"} for segment in segments[:40]]
-    # Introductions and named address should survive a long opening with greetings.
-    labels = [label.casefold() for person in candidates(snapshot) for label in names(person)]
-    opening.sort(key=lambda segment: not (re.search(r"\b(?:i'm|i am|my name is|this is)\b", segment["text"], re.IGNORECASE)
-                                          or any(label in segment["text"].casefold() for label in labels)))
-    adjacent = [{**segment, "context_source": "adjacent"} for segment in segments[max(0, offset - 3):offset]]
+    source_statements = [{**segment, "context_source": "transcript"} for segment in segments]
     by_id = {segment["id"]: segment for segment in segments}
     positions = {segment["id"]: index for index, segment in enumerate(segments)}
     anchors, human_ids = [], set()
@@ -121,43 +116,26 @@ def window_context(snapshot: dict, segments: list[dict], offset: int, previous: 
             if segment and item.get("confidence") == "high" and segment["id"] not in human_ids:
                 anchors.append({**{key: item[key] for key in ("name", "email", "profile_id") if item.get(key)},
                                 "segment_id": segment["id"], "text": segment["text"], "source": source, "confidence": "high"})
-    return [*opening, *adjacent], anchors
+    return source_statements, anchors
 
 
 def quoted_context(snapshot: dict, targets: list[dict], context: list[dict], anchors: list[dict]) -> dict:
-    data = {"meeting": {}, "target_statements": targets, "read_only_context": [],
-            "read_only_identity_anchors": [], "candidates": [], "omitted": {}}
+    target_ids = {segment["id"] for segment in targets}
+    selected = {}
+    for row in context:
+        if row["id"] not in target_ids:
+            if row["id"] in selected and selected[row["id"]] != row:
+                raise ValueError("Speaker context contains conflicting versions of one statement")
+            selected.setdefault(row["id"], row)
+    data = {"meeting": {}, "target_statements": targets, "read_only_context": list(selected.values()),
+            "read_only_identity_anchors": anchors, "candidates": candidates(snapshot, [*targets, *context]),
+            "omitted": {"read_only_context": 0, "read_only_identity_anchors": 0, "candidates": 0}}
     owner = candidates({"metadata": {"owner": (snapshot.get("metadata") or {}).get("owner") or {}}})
     if owner:
         data["meeting"]["owner"] = owner[0]
+    for key in ("title", "summary_text"):
+        if snapshot.get(key):
+            data["meeting"][key] = snapshot[key]
     if encoded_size(data) > CONTEXT_BYTES:
-        raise SpeakerContextTooLarge("Speaker target statements exceed the quoted context budget")
-
-    def pack(key: str, rows: list[dict], limit: int, budget: int) -> None:
-        selected = []
-        for row in rows:
-            trial = [*selected, row]
-            if len(trial) > limit or encoded_size(trial) > budget:
-                continue
-            data[key] = trial
-            # Reserve room for bounded omission counts and later envelope fields.
-            if encoded_size(data) > CONTEXT_BYTES - 512:
-                data[key] = selected
-                continue
-            selected = trial
-        data["omitted"][key] = max(0, len(rows) - len(selected))
-
-    target_ids = {segment["id"] for segment in targets}
-    opening = [row for row in context if row.get("context_source") == "opening" and row["id"] not in target_ids]
-    pack("read_only_context", opening, 40, 8_000)
-    pack("read_only_identity_anchors", anchors, 24, 8_000)
-    known = candidates(snapshot, [*targets, *data["read_only_context"]])
-    pack("candidates", known, 200, 8_000)
-    for key, value in (("title", snapshot.get("title")), ("summary_excerpt", (snapshot.get("summary_text") or "")[:4000])):
-        if value and encoded_size({**data, "meeting": {**data["meeting"], key: value}}) <= CONTEXT_BYTES - 256:
-            data["meeting"][key] = value
-    adjacent = [row for row in context if row.get("context_source") != "opening" and row["id"] not in target_ids]
-    existing = data["read_only_context"]
-    pack("read_only_context", [*existing, *[row for row in adjacent if row["id"] not in {item["id"] for item in existing}]], 43, 11_000)
-    data["omitted"]["read_only_context"] = len({row["id"] for row in context} - target_ids) - len(data["read_only_context"])
+        raise SpeakerContextTooLarge("Complete speaker context exceeds the quoted context budget")
     return data

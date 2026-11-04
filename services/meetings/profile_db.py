@@ -109,7 +109,7 @@ def _compact_profile(profile: dict) -> dict:
     return result
 
 
-def _detail(cur, row: dict, *, include_evidence: bool = True) -> dict:
+def _detail(cur, row: dict, *, include_evidence: bool = True, include_history: bool = False) -> dict:
     if type(include_evidence) is not bool:
         raise ValueError("Profile include_evidence must be a boolean")
     if not include_evidence:
@@ -118,9 +118,10 @@ def _detail(cur, row: dict, *, include_evidence: bool = True) -> dict:
     aliases = [_serialize(dict(alias)) for alias in cur.fetchall()]
     from services.meetings.relationship_db import for_profiles
 
-    visible = _visible(cur, [row])[0]
+    visible = _visible(cur, [row], include_overrides=include_history)[0]
     emails = sorted({value.strip().casefold() for value in [row.get("email"), *(alias.get("email") for alias in aliases)] if value})
-    relationships = for_profiles(cur, [row], include_evidence=include_evidence)
+    relationships = for_profiles(cur, [row], include_evidence=include_evidence, include_history=include_history,
+                                 include_dismissed=include_history, include_overrides=include_history)
     from services.personas.assessment_db import describe
 
     contexts = _source_contexts(cur, [row], {claim["meeting_id"] for claim in row["claims"] if claim.get("meeting_id")})
@@ -241,14 +242,16 @@ def load_profiles(participants: list[dict]) -> list[dict]:
         from services.meetings.relationship_db import for_profiles
 
         visible = _visible(cur, result, include_overrides=True)
-        relationships = for_profiles(cur, result, include_dismissed=True, include_overrides=True)
+        relationships = for_profiles(cur, result, include_dismissed=True, include_overrides=True, include_history=True)
         return [{**row, "relationships": relationships[row["id"]]} for row in visible]
 
 
-def get_profile(profile_id: str, *, include_evidence: bool = True) -> dict | None:
+def get_profile(profile_id: str, *, include_evidence: bool = True, include_history: bool = False) -> dict | None:
+    if type(include_history) is not bool:
+        raise ValueError("Profile include_history must be a boolean")
     with _cursor() as cur:
         row = _canonical(cur, profile_id, include_history=include_evidence)
-        return _detail(cur, row, include_evidence=include_evidence) if row and not row["deleted"] else None
+        return _detail(cur, row, include_evidence=include_evidence, include_history=include_history) if row and not row["deleted"] else None
 
 
 def list_claims(profile_id: str, *, limit: int = 20, offset: int = 0, query: str | None = None,

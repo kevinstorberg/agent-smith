@@ -187,14 +187,13 @@ def test_memory_lease_allows_manual_edit_but_capture_and_persona_lock_are_explic
     digestion_db.release_profile_owner("profile-editor")
 
 
-def test_disjoint_window_skips_oversized_statement_without_reusing_ids():
+def test_disjoint_window_rejects_oversized_statement_without_advancing():
     segments = [{"id": f"segment-{index}", "text": "x" * length} for index, length in enumerate((1, 12_001, 2, 3))]
     first, offset = speaker_analysis.target_window(segments, 0)
     assert [row["id"] for row in first] == ["segment-0"] and offset == 1
-    skipped, offset = speaker_analysis.target_window(segments, offset)
-    assert skipped == [] and offset == 2
-    last, offset = speaker_analysis.target_window(segments, offset)
-    assert [row["id"] for row in last] == ["segment-2", "segment-3"] and offset == 4
+    with pytest.raises(speaker_analysis.SpeakerAnalysisError, match="complete speaker statement"):
+        speaker_analysis.target_window(segments, offset)
+    assert offset == 1 and len(segments[1]["text"]) == 12_001
 
 
 def test_stale_statement_assignment_can_be_removed_after_transcript_changes(ready):
@@ -228,11 +227,11 @@ async def test_manual_statement_snapshot_is_retained_without_becoming_memory_ana
     assert row["participant_snapshot"][0]["segment_id"] == segment_id and row["participants_revision"] == 1
 
 
-def test_real_roster_is_retained_when_directory_exceeds_candidate_budget():
+def test_real_roster_and_complete_directory_are_retained():
     roster = {"name": "Meeting person", "email": "person@example.test"}
     snapshot = {"manual_participants": [roster], "identity_candidates": [{"name": f"Directory {index}", "profile_id": str(uuid4())} for index in range(250)]}
     rows = speaker_analysis.candidates(snapshot)
-    assert len(rows) == 200 and rows[0] == roster
+    assert len(rows) == 251 and rows[0] == roster
 
 
 @pytest.mark.asyncio
@@ -288,7 +287,7 @@ async def test_scripted_identifier_reads_full_known_context_beyond_seed_director
                                         section_notes={"overview": "Coordinates careful eligibility verification."})
     segments = [TranscriptSegment("I'm Bree, and I manage eligibility at Example Clinic.", {"source": "speaker", "attribution": "them"}).to_dict(0)]
     feed.segments = (TranscriptSegment(segments[0]["text"], segments[0]["speaker"]),)
-    monkeypatch.setattr(profile_directory, "names", lambda *args, **kwargs: {"items": [], "total": 0})
+    monkeypatch.setattr(profile_directory, "names", lambda *args, **kwargs: {"items": [], "total": 0, "next_offset": None})
     monkeypatch.setattr(speaker_analysis, "identify_statements", real_identify)
     instance, roles = model([
         call("search_known_profiles", query="Bree"),
@@ -327,7 +326,8 @@ async def test_scripted_identifier_reads_full_known_context_beyond_seed_director
             cur.execute("DELETE FROM participant_profiles WHERE id=%s", (person["id"],))
 
 
-def test_known_profile_context_has_hard_envelope_budget_and_no_evidence_or_history(monkeypatch):
+@pytest.mark.parametrize("oversize", [False, True])
+def test_known_profile_context_returns_complete_identity_pages_or_explicit_oversize_error(monkeypatch, oversize):
     from services.meetings import profile_db, speaker_profiles
 
     ids = [str(uuid4()) for _ in range(3)]
@@ -336,20 +336,27 @@ def test_known_profile_context_has_hard_envelope_budget_and_no_evidence_or_histo
 
     def read(profile_id, *, include_evidence):
         seen.append(include_evidence)
-        return {"id": profile_id, "display_name": "Known person", "nicknames": ["Nickname" * 10] * 20,
+        return {"id": profile_id, "display_name": "Known person", "nicknames": ["Nickname" * 3] * 8,
                 "emails": ["known@example.test"], "metadata": {"company": "Org", "job_role": "Role"},
-                "section_notes": {"overview": "Meaningful background. " * 1000},
+                "section_notes": {"overview": "Meaningful background. " * (1000 if oversize else 80)},
                 "relationships": [{"subject_name": "Known person", "target_name": "Other", "label": "Colleague", "notes": "Human constraint", "human_confirmed": True,
-                                   "claims": [{"content": "PRIVATE_CLAIM"}], "history": ["PRIVATE_HISTORY"]}] * 20,
+                                   "claims": [{"content": "PRIVATE_CLAIM"}], "history": ["PRIVATE_HISTORY"]}] * 7,
                 "claims": [{"content": "PRIVATE_CLAIM"}], "merge_history": ["PRIVATE_HISTORY"]}
 
     monkeypatch.setattr(profile_db, "get_profile", read)
+    if oversize:
+        from services.meetings.speaker_context import SpeakerContextTooLarge
+
+        with pytest.raises(SpeakerContextTooLarge, match="complete known profile"):
+            speaker_profiles.read_contexts("Known", None, set())
+        return
     result = speaker_profiles.read_contexts("Known", None, set())
     encoded = json.dumps(result, ensure_ascii=False)
-    assert len(encoded.encode("utf-8")) <= 8000 and result["omitted"] > 0
-    assert result["matched"] == 100 and result["omitted"] == 100 - len(result["items"])
+    assert len(encoded.encode("utf-8")) <= 8000
+    assert result["matched"] == 100 and result["next_offset"] == len(result["items"]) and not result["complete"]
     assert "PRIVATE_CLAIM" not in encoded and "PRIVATE_HISTORY" not in encoded
-    assert len(result["items"][0]["overview"]) == 1500 and len(result["items"][0]["relationships"]) == 5
+    assert result["items"][0]["overview"] == "Meaningful background. " * 80
+    assert len(result["items"][0]["relationships"]) == 7 and len(result["items"][0]["nicknames"]) == 8
     assert result["items"][0]["relationships"][0]["human_confirmed"]
     assert seen and not any(seen)
 

@@ -61,10 +61,10 @@ def create_rubric_agent(
     tools: list | None = None,
 ):
     try:
-        from deepagents import RubricMiddleware
+        from services.graphs.rubric_context import FullContextRubricMiddleware
     except ImportError as exc:
         raise RuntimeError(
-            "deepagents>=0.6.5 (for RubricMiddleware) and langchain (for create_agent) "
+            "deepagents==0.7.22 (for RubricMiddleware) and langchain (for create_agent) "
             "are required for rubric-backed graph agents. Install requirements.txt."
         ) from exc
 
@@ -73,7 +73,7 @@ def create_rubric_agent(
         tools=tools,
         system_prompt=system_prompt,
         middleware=[
-            RubricMiddleware(
+            FullContextRubricMiddleware(
                 model=build_chat_model(f"{model_role}_grader", fallback_role=model_role),
                 system_prompt=grader_prompt,
                 max_iterations=max_iterations,

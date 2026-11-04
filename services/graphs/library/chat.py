@@ -1,6 +1,7 @@
 """Chat: posts one AI reply into a Chat Room as a named chat participant."""
 from __future__ import annotations
 
+import asyncio
 from typing import Any, TypedDict
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -15,8 +16,7 @@ from services.graphs.prompts import grounding_block
 
 INPUT_SCHEMA = {"room_id": "integer", "participant": "string"}
 
-_MAX_TRANSCRIPT_PAGES = 50
-_MAX_TRANSCRIPT_MESSAGES = 200
+_TRANSCRIPT_READ_SECONDS = 30
 _MAX_REPLY_CHARS = 6_000
 
 # Harness rules are deliberately NOT injected here: the rules assigned to the
@@ -30,7 +30,6 @@ class State(TypedDict):
     model_role: str
     room: dict[str, Any]
     transcript: list[dict[str, Any]]
-    transcript_truncated: bool
     draft: str
     result: dict[str, Any]
 
@@ -58,12 +57,10 @@ def _system_prompt(name: str, others: list[str]) -> str:
     )
 
 
-def _room_prompt(room: dict[str, Any], transcript: list[dict[str, Any]], truncated: bool) -> str:
+def _room_prompt(room: dict[str, Any], transcript: list[dict[str, Any]]) -> str:
     parts = [f"Topic: {room['topic']}"]
     if room.get("context"):
         parts.append(f"Context: {room['context']}")
-    if truncated:
-        parts.append("Note: earlier messages were omitted; only the most recent are shown.")
     if transcript:
         lines = "\n\n".join(f"{m['author']}: {m['body']}" for m in transcript)
         parts.append(f"Transcript:\n\n{lines}")
@@ -78,30 +75,51 @@ def _raise_contract_error(message: str) -> None:
     raise GraphContractError(message)
 
 
-def _read(state: State) -> dict[str, Any]:
+async def _read(state: State) -> dict[str, Any]:
     participant = find_participant(state["participant"])
+    room = None
+    messages = []
+    cursor = 0
+    attempt = asyncio.timeout(_TRANSCRIPT_READ_SECONDS)
+    try:
+        async with attempt:
+            while True:
+                page = await asyncio.to_thread(get_room, state["room_id"], cursor)
+                current_room = page["room"]
+                if current_room.get("id") != state["room_id"]:
+                    _raise_contract_error("Chat transcript page belongs to a different room.")
+                if current_room.get("state") != "open":
+                    _raise_contract_error(f"Chat room {state['room_id']} is closed; not generating a reply.")
+                if room is None:
+                    room = dict(current_room)
+                if not isinstance(page.get("messages"), list) or type(page.get("has_more")) is not bool:
+                    _raise_contract_error("Chat transcript page requires messages and a boolean has_more.")
+                previous = cursor
+                for message in page["messages"]:
+                    if not isinstance(message, dict):
+                        _raise_contract_error("Chat transcript messages must be objects with increasing IDs.")
+                    key = message.get("id")
+                    if type(key) is not int or key <= cursor:
+                        _raise_contract_error("Chat transcript message IDs must advance in strictly increasing order.")
+                    cursor = key
+                    messages.append(dict(message))
+                if type(page.get("last_message_id")) is not int or page["last_message_id"] != cursor:
+                    _raise_contract_error("Chat transcript cursor does not match its final message.")
+                if page["has_more"] and cursor == previous:
+                    _raise_contract_error("Chat transcript pagination made no progress.")
+                if not page["has_more"]:
+                    break
+    except TimeoutError:
+        if not attempt.expired():
+            raise
+        _raise_contract_error(f"Chat transcript read exceeded its {_TRANSCRIPT_READ_SECONDS:g}-second deadline; no reply was generated.")
 
-    page = get_room(state["room_id"])
-    room = page["room"]
-    if room["state"] == "closed":
-        _raise_contract_error(
-            f"Chat room {state['room_id']} is closed; not generating a reply."
-        )
-
-    messages = list(page["messages"])
-    pages_read = 1
-    while page["has_more"] and pages_read < _MAX_TRANSCRIPT_PAGES:
-        page = get_room(state["room_id"], page["last_message_id"])
-        messages.extend(page["messages"])
-        pages_read += 1
-
-    truncated = page["has_more"] or len(messages) > _MAX_TRANSCRIPT_MESSAGES
+    # Room metadata and the immutable message prefix are frozen before model invocation.
     return {
         "participant": participant.name,
         "model_role": participant.model_role,
         "room": room,
-        "transcript": messages[-_MAX_TRANSCRIPT_MESSAGES:],
-        "transcript_truncated": truncated,
+        "transcript": messages,
     }
 
 
@@ -112,9 +130,7 @@ async def _reply(state: State) -> dict[str, Any]:
         [
             SystemMessage(content=_system_prompt(state["participant"], others)),
             HumanMessage(
-                content=_room_prompt(
-                    state["room"], state["transcript"], state["transcript_truncated"]
-                )
+                content=_room_prompt(state["room"], state["transcript"])
             ),
         ]
     )
@@ -144,7 +160,7 @@ def _post(state: State) -> dict[str, Any]:
                 "state": state["room"]["state"],
             },
             "author": state["participant"],
-            "transcript_truncated": state["transcript_truncated"],
+            "transcript_truncated": False,
         }
     }
 

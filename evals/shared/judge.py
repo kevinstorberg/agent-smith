@@ -44,7 +44,7 @@ def evaluate(
         threshold=threshold,
     )
     test_case = LLMTestCase(input=input, actual_output=output)
-    metric.measure(test_case)
+    metric.measure(test_case, _additional_context=criteria)
     return {
         "rule": rule_name,
         "score": metric.score,
