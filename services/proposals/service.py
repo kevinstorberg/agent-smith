@@ -30,7 +30,6 @@ from services.api.models.shared.harness import (
     HarnessWriteConflict,
     _copy_configs,
     _get_model,
-    get_item,
     get_item_by_id,
     harness_write,
     inherited_version_metadata,
@@ -192,7 +191,9 @@ def _stage_harness(p: dict) -> dict:
     )
     _require(len(body) <= BODY_MAX, f"body must be at most {BODY_MAX} chars")
 
-    target = get_item(kind, name, project=project)
+    with get_connection() as connection:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            target = _latest_active_row(cursor, kind, name, project)
     if action == "update":
         _require(
             target is not None, f"{kind} '{name}' does not exist; use action 'create'"
