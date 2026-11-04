@@ -11,7 +11,16 @@ import { DetailPageHeader } from '../components/DetailPageHeader';
 import { useDetailPageEdit } from '../hooks/useDetailPageEdit';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { useNotification } from '../context/useNotification';
-import { ALL_AGENTS, TYPE_PATHS, isMarkdownType, toggleArrayItem, formatError, MAX_NAME_LENGTH, nameError, isValidRepo } from '../constants';
+import {
+  ALL_AGENTS,
+  TYPE_PATHS,
+  isMarkdownType,
+  toggleArrayItem,
+  formatError,
+  MAX_NAME_LENGTH,
+  nameError,
+  isValidRepo,
+} from '../constants';
 import { FieldError } from '../components/FieldError';
 import { harnessStyles as styles } from '../styles/harness';
 import { validators } from '../utils/validation';
@@ -30,7 +39,6 @@ function formatTimestamp(ts: string): string {
     minute: '2-digit',
   });
 }
-
 
 interface HarnessEditValues {
   name: string;
@@ -60,19 +68,23 @@ export function HarnessDetailPage() {
     cancelEditing: cancelEdit,
     setSaving,
   } = useDetailPageEdit<HarnessEditValues>({
-    initialData: item ? {
-      name: item.name,
-      project: item.project || '',
-      sort_key: String(item.sort_key ?? 0),
-      agents: [...item.agents],
-      enabled: item.enabled,
-      clone_as_skill: !!item.clone_as_skill,
-      body: formatBody(item, type),
-    } : undefined,
+    initialData: item
+      ? {
+          name: item.name,
+          project: item.project || '',
+          sort_key: String(item.sort_key ?? 0),
+          agents: [...item.agents],
+          enabled: item.enabled,
+          clone_as_skill: !!item.clone_as_skill,
+          body: formatBody(item, type),
+        }
+      : undefined,
   });
 
   const [history, setHistory] = useState<HarnessItem[]>([]);
-  const [previewVersion, setPreviewVersion] = useState<HarnessItem | null>(null);
+  const [previewVersion, setPreviewVersion] = useState<HarnessItem | null>(
+    null,
+  );
 
   const deleteMutation = useApiMutation({
     mutationFn: () => api.harness.items.remove(type, numericId),
@@ -83,7 +95,8 @@ export function HarnessDetailPage() {
   });
 
   const restoreMutation = useApiMutation({
-    mutationFn: (oldItem: HarnessItem) => api.harness.items.updateContent(type, numericId, oldItem.content),
+    mutationFn: (oldItem: HarnessItem) =>
+      api.harness.items.updateContent(type, numericId, oldItem.content),
     onSuccess: (updated) => {
       setPreviewVersion(null);
       navigate(`/harness/${type}/${updated.id}`, { replace: true });
@@ -150,12 +163,21 @@ export function HarnessDetailPage() {
     const body = editValues.body ?? '';
 
     const nameErr = nameError(name);
-    if (nameErr) { notify(nameErr, 'error'); return; }
-    if (agents.length === 0) { notify('At least one agent must be selected.', 'error'); return; }
+    if (nameErr) {
+      notify(nameErr, 'error');
+      return;
+    }
+    if (agents.length === 0) {
+      notify('At least one agent must be selected.', 'error');
+      return;
+    }
 
     if (!isMarkdownType(type)) {
       const jsonError = validators.json(body);
-      if (jsonError) { notify('Invalid JSON in metadata field.', 'error'); return; }
+      if (jsonError) {
+        notify('Invalid JSON in metadata field.', 'error');
+        return;
+      }
     }
 
     setSaving(true);
@@ -169,7 +191,8 @@ export function HarnessDetailPage() {
         cloneAsSkill !== !!item.clone_as_skill ||
         sortKeyNum !== (item.sort_key || 0) ||
         (project || null) !== item.project ||
-        JSON.stringify(agents.sort()) !== JSON.stringify([...item.agents].sort());
+        JSON.stringify(agents.sort()) !==
+          JSON.stringify([...item.agents].sort());
 
       let currentId = item.id;
 
@@ -177,7 +200,11 @@ export function HarnessDetailPage() {
         const newContent = isMarkdownType(type)
           ? { body, metadata: item.content?.metadata ?? {} }
           : { body: item.content?.body ?? '', metadata: JSON.parse(body) };
-        const updated = await api.harness.items.updateContent(type, currentId, newContent);
+        const updated = await api.harness.items.updateContent(
+          type,
+          currentId,
+          newContent,
+        );
         currentId = updated.id;
       }
 
@@ -226,7 +253,6 @@ export function HarnessDetailPage() {
     await deleteMutation.mutateAsync();
   };
 
-
   const resetCfgForm = () => {
     setCfgDevice('*');
     setCfgRepo('*');
@@ -268,11 +294,21 @@ export function HarnessDetailPage() {
     try {
       if (editingConfigId) {
         await api.harness.items.configs.update(type, item.id, editingConfigId, {
-          device: cfgDevice, repo: cfgRepo, agents: cfgAgents, subagents: cfgSubagents, enabled: cfgEnabled, exclude: cfgExclude,
+          device: cfgDevice,
+          repo: cfgRepo,
+          agents: cfgAgents,
+          subagents: cfgSubagents,
+          enabled: cfgEnabled,
+          exclude: cfgExclude,
         });
       } else {
         await api.harness.items.configs.add(type, item.id, {
-          device: cfgDevice, repo: cfgRepo, agents: cfgAgents, subagents: cfgSubagents, enabled: cfgEnabled, exclude: cfgExclude,
+          device: cfgDevice,
+          repo: cfgRepo,
+          agents: cfgAgents,
+          subagents: cfgSubagents,
+          enabled: cfgEnabled,
+          exclude: cfgExclude,
         });
       }
       cancelConfigForm();
@@ -293,7 +329,6 @@ export function HarnessDetailPage() {
       notify(`Config delete failed: ${formatError(err)}`, 'error');
     }
   };
-
 
   if (loading) return <div className="loading">Loading...</div>;
   if (!item) return <div className="loading">Item not found</div>;
@@ -318,21 +353,38 @@ export function HarnessDetailPage() {
 
       {editing ? (
         <div style={{ marginBottom: 12 }}>
-          <label className="form-label" htmlFor="harness-edit-name">Name</label>
+          <label className="form-label" htmlFor="harness-edit-name">
+            Name
+          </label>
           <input
-            id="harness-edit-name" className="input detail-title-input" aria-invalid={Boolean(editValues.name && nameError(editValues.name))}
-            aria-describedby={editValues.name && nameError(editValues.name) ? "harness-edit-name-error" : undefined}
+            id="harness-edit-name"
+            className="input detail-title-input"
+            aria-invalid={Boolean(
+              editValues.name && nameError(editValues.name),
+            )}
+            aria-describedby={
+              editValues.name && nameError(editValues.name)
+                ? 'harness-edit-name-error'
+                : undefined
+            }
             value={editValues.name ?? ''}
-            onChange={e => setEditValue('name', e.target.value)}
+            onChange={(e) => setEditValue('name', e.target.value)}
             maxLength={MAX_NAME_LENGTH}
           />
-          <FieldError id="harness-edit-name-error" error={editValues.name ? nameError(editValues.name) : null} maxLength={MAX_NAME_LENGTH} currentLength={editValues.name?.length ?? 0} />
+          <FieldError
+            id="harness-edit-name-error"
+            error={editValues.name ? nameError(editValues.name) : null}
+            maxLength={MAX_NAME_LENGTH}
+            currentLength={editValues.name?.length ?? 0}
+          />
         </div>
       ) : (
         <h2 className="page-title" style={{ marginBottom: 8 }}>
           {displayItem.name}
           {previewVersion && (
-            <span style={{ fontSize: 13, color: 'var(--warning)', marginLeft: 12 }}>
+            <span
+              style={{ fontSize: 13, color: 'var(--warning)', marginLeft: 12 }}
+            >
               (viewing v{previewVersion.version})
             </span>
           )}
@@ -340,23 +392,33 @@ export function HarnessDetailPage() {
       )}
 
       <div style={styles.badges}>
-        <span className="tag" style={{ fontFamily: 'var(--mono)' }}>v{displayItem.version}</span>
-        <span className="tag" style={{ fontFamily: 'var(--mono)' }}>#{displayItem.sort_key}</span>
-        <span className="tag" style={{ background: displayItem.enabled ? 'var(--success)' : 'var(--text-muted)', color: '#1a1a2e' }}>
+        <span className="tag" style={{ fontFamily: 'var(--mono)' }}>
+          v{displayItem.version}
+        </span>
+        <span className="tag" style={{ fontFamily: 'var(--mono)' }}>
+          #{displayItem.sort_key}
+        </span>
+        <span
+          className="tag"
+          style={{
+            background: displayItem.enabled
+              ? 'var(--success)'
+              : 'var(--text-muted)',
+            color: '#1a1a2e',
+          }}
+        >
           {displayItem.enabled ? 'Enabled' : 'Disabled'}
         </span>
         {displayItem.clone_as_skill && (
-          <span className="tag tag-danger">
-            Skill Clone
-          </span>
+          <span className="tag tag-danger">Skill Clone</span>
         )}
         {displayItem.project && (
-          <span className="tag tag-info">
-            {displayItem.project}
-          </span>
+          <span className="tag tag-info">{displayItem.project}</span>
         )}
-        {displayItem.agents.map(a => (
-          <span key={a} className="tag">{a}</span>
+        {displayItem.agents.map((a) => (
+          <span key={a} className="tag">
+            {a}
+          </span>
         ))}
       </div>
 
@@ -368,9 +430,10 @@ export function HarnessDetailPage() {
                 Project
               </label>
               <input
-                id="harness-edit-project" className="input"
+                id="harness-edit-project"
+                className="input"
                 value={editValues.project ?? ''}
-                onChange={e => setEditValue('project', e.target.value)}
+                onChange={(e) => setEditValue('project', e.target.value)}
                 placeholder="Empty = shared/global"
               />
             </div>
@@ -381,9 +444,10 @@ export function HarnessDetailPage() {
               <input
                 type="number"
                 min={0}
-                id="harness-edit-sort" className="input"
+                id="harness-edit-sort"
+                className="input"
                 value={editValues.sort_key ?? ''}
-                onChange={e => setEditValue('sort_key', e.target.value)}
+                onChange={(e) => setEditValue('sort_key', e.target.value)}
                 placeholder="e.g. 5"
               />
             </div>
@@ -394,7 +458,9 @@ export function HarnessDetailPage() {
                 type="checkbox"
                 className="form-checkbox"
                 checked={editValues.enabled ?? true}
-                onChange={() => setEditValue('enabled', !(editValues.enabled ?? true))}
+                onChange={() =>
+                  setEditValue('enabled', !(editValues.enabled ?? true))
+                }
               />
               Enabled
             </label>
@@ -402,43 +468,62 @@ export function HarnessDetailPage() {
               <label style={styles.checkboxLabel}>
                 <input
                   type="checkbox"
-                className="form-checkbox"
+                  className="form-checkbox"
                   checked={editValues.clone_as_skill ?? false}
-                  onChange={() => setEditValue('clone_as_skill', !(editValues.clone_as_skill ?? false))}
+                  onChange={() =>
+                    setEditValue(
+                      'clone_as_skill',
+                      !(editValues.clone_as_skill ?? false),
+                    )
+                  }
                 />
                 Clone as Skill
               </label>
             )}
           </div>
-          <fieldset className="form-group"><legend className="form-label">Agents</legend>
-            <div style={styles.checkboxRow}><AgentCheckboxes selected={editValues.agents ?? []} onToggle={toggleAgent} /></div>
+          <fieldset className="form-group">
+            <legend className="form-label">Agents</legend>
+            <div style={styles.checkboxRow}>
+              <AgentCheckboxes
+                selected={editValues.agents ?? []}
+                onToggle={toggleAgent}
+              />
+            </div>
           </fieldset>
         </>
       )}
 
       <div className="card" style={{ marginBottom: 24 }}>
-        {editing && <label className="form-label" htmlFor="harness-edit-body">{isMarkdownType(type) ? "Body" : "Configuration (JSON)"}</label>}
+        {editing && (
+          <label className="form-label" htmlFor="harness-edit-body">
+            {isMarkdownType(type) ? 'Body' : 'Configuration (JSON)'}
+          </label>
+        )}
         {editing ? (
           isMarkdownType(type) ? (
             <div data-color-mode="dark">
               <MDEditor
-                textareaProps={{ id: "harness-edit-body" }}
+                textareaProps={{ id: 'harness-edit-body' }}
                 value={editValues.body ?? ''}
-                onChange={val => setEditValue('body', val || '')}
+                onChange={(val) => setEditValue('body', val || '')}
                 height={400}
               />
             </div>
           ) : (
             <textarea
-              id="harness-edit-body" style={styles.textarea}
+              id="harness-edit-body"
+              style={styles.textarea}
               value={editValues.body ?? ''}
-              onChange={e => setEditValue('body', e.target.value)}
+              onChange={(e) => setEditValue('body', e.target.value)}
               spellCheck={false}
             />
           )
         ) : (
           <div style={{ position: 'relative' }}>
-            <CopyButton text={displayBody} style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }} />
+            <CopyButton
+              text={displayBody}
+              style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }}
+            />
             {isMarkdownType(type) ? (
               <div className="markdown-content">
                 <ReactMarkdown>{displayBody}</ReactMarkdown>
@@ -452,7 +537,11 @@ export function HarnessDetailPage() {
 
       {previewVersion && (
         <div style={{ marginBottom: 24, display: 'flex', gap: 8 }}>
-          <button className="btn btn-danger" onClick={() => restoreVersion(previewVersion)} disabled={saving}>
+          <button
+            className="btn btn-danger"
+            onClick={() => restoreVersion(previewVersion)}
+            disabled={saving}
+          >
             {saving ? 'Restoring...' : `Restore v${previewVersion.version}`}
           </button>
           <button className="btn" onClick={() => setPreviewVersion(null)}>
@@ -461,25 +550,48 @@ export function HarnessDetailPage() {
         </div>
       )}
 
-      <h3 className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <h3
+        className="section-title"
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
         Configurations
         {!previewVersion && !addingConfig && editingConfigId === null && (
-          <button className="btn btn-sm" onClick={startAddConfig}>+ Add</button>
+          <button className="btn btn-sm" onClick={startAddConfig}>
+            + Add
+          </button>
         )}
       </h3>
       <div style={{ marginBottom: 24 }}>
         {(item.configs ?? []).length === 0 && !addingConfig && (
-          <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 12 }}>
+          <div
+            style={{ color: 'var(--text-muted)', fontSize: 13, padding: 12 }}
+          >
             No configurations — using legacy defaults
           </div>
         )}
-        {(item.configs ?? []).map(cfg => (
+        {(item.configs ?? []).map((cfg) =>
           editingConfigId === cfg.id ? (
             <ConfigForm
               key={cfg.id}
-              device={cfgDevice} repo={cfgRepo} agents={cfgAgents} subagents={cfgSubagents} enabled={cfgEnabled} exclude={cfgExclude} saving={cfgSaving}
-              onDeviceChange={setCfgDevice} onRepoChange={setCfgRepo} onAgentsChange={setCfgAgents} onSubagentsChange={setCfgSubagents} onEnabledChange={setCfgEnabled} onExcludeChange={setCfgExclude}
-              onSave={saveConfig} onCancel={cancelConfigForm}
+              device={cfgDevice}
+              repo={cfgRepo}
+              agents={cfgAgents}
+              subagents={cfgSubagents}
+              enabled={cfgEnabled}
+              exclude={cfgExclude}
+              saving={cfgSaving}
+              onDeviceChange={setCfgDevice}
+              onRepoChange={setCfgRepo}
+              onAgentsChange={setCfgAgents}
+              onSubagentsChange={setCfgSubagents}
+              onEnabledChange={setCfgEnabled}
+              onExcludeChange={setCfgExclude}
+              onSave={saveConfig}
+              onCancel={cancelConfigForm}
             />
           ) : (
             <div
@@ -497,78 +609,149 @@ export function HarnessDetailPage() {
                 gap: 8,
               }}
             >
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span className={`tag tag-sm ${cfg.exclude ? 'tag-danger' : 'tag-success'}`} style={{ fontWeight: 600 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <span
+                  className={`tag tag-sm ${cfg.exclude ? 'tag-danger' : 'tag-success'}`}
+                  style={{ fontWeight: 600 }}
+                >
                   {cfg.exclude ? 'Exclude' : 'Include'}
                 </span>
                 <span className="tag tag-warning">
                   {cfg.device === '*' ? 'All devices' : cfg.device}
                 </span>
-                <span className="tag tag-success tag-sm" style={{ fontFamily: 'var(--mono)' }}>
+                <span
+                  className="tag tag-success tag-sm"
+                  style={{ fontFamily: 'var(--mono)' }}
+                >
                   {cfg.repo === '*' ? 'Global' : cfg.repo}
                 </span>
-                {cfg.agents.map(a => (
-                  <span key={a} className="tag">{a}</span>
+                {cfg.agents.map((a) => (
+                  <span key={a} className="tag">
+                    {a}
+                  </span>
                 ))}
                 {cfg.subagents && cfg.subagents.length > 0 && (
                   <>
-                    <span style={{ fontSize: 'var(--font-xs)', color: 'var(--text-muted)', margin: '0 4px' }}>|</span>
-                    <span style={{ fontSize: 'var(--font-xs)', color: 'var(--text-muted)' }}>Subagents:</span>
-                    {cfg.subagents.map(s => (
-                      <span key={s} style={{
+                    <span
+                      style={{
                         fontSize: 'var(--font-xs)',
-                        padding: '2px 6px',
-                        background: 'var(--warning)',
-                        color: 'var(--bg)',
-                        borderRadius: 4,
-                        marginLeft: 4,
-                        fontWeight: 500
-                      }}>{s}</span>
+                        color: 'var(--text-muted)',
+                        margin: '0 4px',
+                      }}
+                    >
+                      |
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 'var(--font-xs)',
+                        color: 'var(--text-muted)',
+                      }}
+                    >
+                      Subagents:
+                    </span>
+                    {cfg.subagents.map((s) => (
+                      <span
+                        key={s}
+                        style={{
+                          fontSize: 'var(--font-xs)',
+                          padding: '2px 6px',
+                          background: 'var(--warning)',
+                          color: 'var(--bg)',
+                          borderRadius: 4,
+                          marginLeft: 4,
+                          fontWeight: 500,
+                        }}
+                      >
+                        {s}
+                      </span>
                     ))}
                   </>
                 )}
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ fontSize: 'var(--font-xs)', color: cfg.enabled ? 'var(--success)' : 'var(--text-muted)' }}>
+                <span
+                  style={{
+                    fontSize: 'var(--font-xs)',
+                    color: cfg.enabled ? 'var(--success)' : 'var(--text-muted)',
+                  }}
+                >
                   {cfg.enabled ? 'Enabled' : 'Disabled'}
                 </span>
                 {!previewVersion && (
                   <>
-                    <button className="btn btn-sm" onClick={() => startEditConfig(cfg)}>Edit</button>
-                    <button className="btn btn-sm btn-danger" onClick={() => { if (confirm('Delete this configuration?')) deleteConfig(cfg.id); }}>Delete</button>
+                    <button
+                      className="btn btn-sm"
+                      onClick={() => startEditConfig(cfg)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="btn btn-sm btn-danger"
+                      onClick={() => {
+                        if (confirm('Delete this configuration?'))
+                          deleteConfig(cfg.id);
+                      }}
+                    >
+                      Delete
+                    </button>
                   </>
                 )}
               </div>
             </div>
-          )
-        ))}
+          ),
+        )}
         {addingConfig && (
           <ConfigForm
             title="New Configuration"
-            device={cfgDevice} repo={cfgRepo} agents={cfgAgents} subagents={cfgSubagents} enabled={cfgEnabled} exclude={cfgExclude} saving={cfgSaving}
-            onDeviceChange={setCfgDevice} onRepoChange={setCfgRepo} onAgentsChange={setCfgAgents} onSubagentsChange={setCfgSubagents} onEnabledChange={setCfgEnabled} onExcludeChange={setCfgExclude}
-            onSave={saveConfig} onCancel={cancelConfigForm} submitLabel="Add"
+            device={cfgDevice}
+            repo={cfgRepo}
+            agents={cfgAgents}
+            subagents={cfgSubagents}
+            enabled={cfgEnabled}
+            exclude={cfgExclude}
+            saving={cfgSaving}
+            onDeviceChange={setCfgDevice}
+            onRepoChange={setCfgRepo}
+            onAgentsChange={setCfgAgents}
+            onSubagentsChange={setCfgSubagents}
+            onEnabledChange={setCfgEnabled}
+            onExcludeChange={setCfgExclude}
+            onSave={saveConfig}
+            onCancel={cancelConfigForm}
+            submitLabel="Add"
           />
         )}
       </div>
 
       <h3 className="section-title">Version History</h3>
       <div>
-        {history.map(h => (
+        {history.map((h) => (
           <div
             key={h.id}
             style={{
               ...styles.versionItem,
-              background: previewVersion?.id === h.id ? 'var(--surface-hover)' : 'var(--surface)',
+              background:
+                previewVersion?.id === h.id
+                  ? 'var(--surface-hover)'
+                  : 'var(--surface)',
             }}
-            onMouseEnter={e => {
+            onMouseEnter={(e) => {
               if (previewVersion?.id !== h.id) {
-                (e.currentTarget as HTMLElement).style.background = 'var(--surface-hover)';
+                (e.currentTarget as HTMLElement).style.background =
+                  'var(--surface-hover)';
               }
             }}
-            onMouseLeave={e => {
+            onMouseLeave={(e) => {
               if (previewVersion?.id !== h.id) {
-                (e.currentTarget as HTMLElement).style.background = 'var(--surface)';
+                (e.currentTarget as HTMLElement).style.background =
+                  'var(--surface)';
               }
             }}
             onClick={() => {
@@ -580,9 +763,19 @@ export function HarnessDetailPage() {
             }}
           >
             <div>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>v{h.version}</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>
+                v{h.version}
+              </span>
               {h.id === item.id && (
-                <span style={{ fontSize: 'var(--font-xs)', color: 'var(--success)', marginLeft: 8 }}>current</span>
+                <span
+                  style={{
+                    fontSize: 'var(--font-xs)',
+                    color: 'var(--success)',
+                    marginLeft: 8,
+                  }}
+                >
+                  current
+                </span>
               )}
             </div>
             <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
@@ -591,7 +784,9 @@ export function HarnessDetailPage() {
           </div>
         ))}
         {history.length === 0 && (
-          <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 12 }}>
+          <div
+            style={{ color: 'var(--text-muted)', fontSize: 13, padding: 12 }}
+          >
             No version history available
           </div>
         )}

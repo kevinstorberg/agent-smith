@@ -68,7 +68,8 @@ export function EvalSuiteDetailPage() {
   });
 
   const updateMutation = useApiMutation({
-    mutationFn: (body: Partial<EvalSuite>) => api.evalConfigs.suites.update(Number(id), body),
+    mutationFn: (body: Partial<EvalSuite>) =>
+      api.evalConfigs.suites.update(Number(id), body),
     onSuccess: async () => {
       const updated = await api.evalConfigs.suites.get(Number(id));
       setSuite(updated);
@@ -83,7 +84,9 @@ export function EvalSuiteDetailPage() {
   });
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [editingScenarioId, setEditingScenarioId] = useState<number | null>(null);
+  const [editingScenarioId, setEditingScenarioId] = useState<number | null>(
+    null,
+  );
   const [editScenarioName, setEditScenarioName] = useState('');
   const [editScenarioPrompt, setEditScenarioPrompt] = useState('');
 
@@ -93,13 +96,15 @@ export function EvalSuiteDetailPage() {
 
   const loadSuite = () => {
     if (isNew) return;
-    api.evalConfigs.suites.get(Number(id)).then(data => {
+    api.evalConfigs.suites.get(Number(id)).then((data) => {
       setSuite(data);
       setScenarios(data.scenarios || []);
     });
   };
 
-  useEffect(() => { loadSuite(); }, [id, isNew]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    loadSuite();
+  }, [id, isNew]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startEditing = () => {
     startEdit({
@@ -122,16 +127,34 @@ export function EvalSuiteDetailPage() {
     const configJson = editValues.config_json ?? '{}';
     const enabled = editValues.enabled ?? true;
 
-    if (!name) { notify('Name is required.', 'error'); return; }
-    if (!evalType) { notify('Eval type is required.', 'error'); return; }
-    if (!subcategory) { notify('Subcategory is required.', 'error'); return; }
-    if (!judgePrompt) { notify('Judge prompt is required.', 'error'); return; }
+    if (!name) {
+      notify('Name is required.', 'error');
+      return;
+    }
+    if (!evalType) {
+      notify('Eval type is required.', 'error');
+      return;
+    }
+    if (!subcategory) {
+      notify('Subcategory is required.', 'error');
+      return;
+    }
+    if (!judgePrompt) {
+      notify('Judge prompt is required.', 'error');
+      return;
+    }
 
     const itemsError = validators.json(itemsJson);
-    if (itemsError) { notify('Invalid JSON in Items field', 'error'); return; }
+    if (itemsError) {
+      notify('Invalid JSON in Items field', 'error');
+      return;
+    }
 
     const configError = validators.json(configJson);
-    if (configError) { notify('Invalid JSON in Config field', 'error'); return; }
+    if (configError) {
+      notify('Invalid JSON in Config field', 'error');
+      return;
+    }
 
     const parsedItems: Record<string, unknown> = JSON.parse(itemsJson);
     const parsedConfig: Record<string, unknown> = JSON.parse(configJson);
@@ -166,13 +189,15 @@ export function EvalSuiteDetailPage() {
 
   const toggleScenario = async (sc: EvalScenario) => {
     await api.evalConfigs.scenarios.update(sc.id, { enabled: !sc.enabled });
-    setScenarios(prev => prev.map(s => (s.id === sc.id ? { ...s, enabled: !s.enabled } : s)));
+    setScenarios((prev) =>
+      prev.map((s) => (s.id === sc.id ? { ...s, enabled: !s.enabled } : s)),
+    );
   };
 
   const deleteScenario = async (sc: EvalScenario) => {
     if (!confirm(`Delete scenario "${sc.name}"?`)) return;
     await api.evalConfigs.scenarios.remove(sc.id);
-    setScenarios(prev => prev.filter(s => s.id !== sc.id));
+    setScenarios((prev) => prev.filter((s) => s.id !== sc.id));
   };
 
   const startScenarioEdit = (sc: EvalScenario) => {
@@ -189,8 +214,17 @@ export function EvalSuiteDetailPage() {
   const saveScenarioEdit = async (scId: number) => {
     setSaving(true);
     try {
-      await api.evalConfigs.scenarios.update(scId, { name: editScenarioName, prompt: editScenarioPrompt });
-      setScenarios(prev => prev.map(s => (s.id === scId ? { ...s, name: editScenarioName, prompt: editScenarioPrompt } : s)));
+      await api.evalConfigs.scenarios.update(scId, {
+        name: editScenarioName,
+        prompt: editScenarioPrompt,
+      });
+      setScenarios((prev) =>
+        prev.map((s) =>
+          s.id === scId
+            ? { ...s, name: editScenarioName, prompt: editScenarioPrompt }
+            : s,
+        ),
+      );
       setEditingScenarioId(null);
     } finally {
       setSaving(false);
@@ -198,8 +232,14 @@ export function EvalSuiteDetailPage() {
   };
 
   const addScenario = async () => {
-    if (!newName.trim()) { notify('Scenario name is required.', 'error'); return; }
-    if (!newPrompt.trim()) { notify('Scenario prompt is required.', 'error'); return; }
+    if (!newName.trim()) {
+      notify('Scenario name is required.', 'error');
+      return;
+    }
+    if (!newPrompt.trim()) {
+      notify('Scenario prompt is required.', 'error');
+      return;
+    }
     setSaving(true);
     try {
       const created = await api.evalConfigs.scenarios.create(Number(id), {
@@ -207,7 +247,7 @@ export function EvalSuiteDetailPage() {
         prompt: newPrompt.trim(),
         enabled: true,
       });
-      setScenarios(prev => [...prev, created]);
+      setScenarios((prev) => [...prev, created]);
       setAddingScenario(false);
       setNewName('');
       setNewPrompt('');
@@ -246,7 +286,7 @@ export function EvalSuiteDetailPage() {
         <input
           type="text"
           value={editValues.name ?? ''}
-          onChange={e => setEditValue('name', e.target.value)}
+          onChange={(e) => setEditValue('name', e.target.value)}
           placeholder="Suite name"
           className="page-title"
           style={{ width: '100%', marginBottom: 16 }}
@@ -263,18 +303,54 @@ export function EvalSuiteDetailPage() {
         {editing ? (
           <div className="eval-suite-fields">
             <div>
-              <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Eval Type</label>
-              <input type="text" value={editValues.eval_type ?? ''} onChange={e => setEditValue('eval_type', e.target.value)} style={{ width: '100%', fontSize: 13 }} />
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: 12,
+                  color: 'var(--text-muted)',
+                  marginBottom: 4,
+                }}
+              >
+                Eval Type
+              </label>
+              <input
+                type="text"
+                value={editValues.eval_type ?? ''}
+                onChange={(e) => setEditValue('eval_type', e.target.value)}
+                style={{ width: '100%', fontSize: 13 }}
+              />
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Subcategory</label>
-              <input type="text" value={editValues.subcategory ?? ''} onChange={e => setEditValue('subcategory', e.target.value)} style={{ width: '100%', fontSize: 13 }} />
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: 12,
+                  color: 'var(--text-muted)',
+                  marginBottom: 4,
+                }}
+              >
+                Subcategory
+              </label>
+              <input
+                type="text"
+                value={editValues.subcategory ?? ''}
+                onChange={(e) => setEditValue('subcategory', e.target.value)}
+                style={{ width: '100%', fontSize: 13 }}
+              />
             </div>
           </div>
         ) : (
           <div className="flex-wrap" style={{ gap: 8, marginBottom: 16 }}>
-            <span className="tag">{suite.eval_type} / {suite.subcategory}</span>
-            <span style={{ color: suite.enabled ? 'var(--success)' : 'var(--text-muted)', fontSize: 12, alignSelf: 'center' }}>
+            <span className="tag">
+              {suite.eval_type} / {suite.subcategory}
+            </span>
+            <span
+              style={{
+                color: suite.enabled ? 'var(--success)' : 'var(--text-muted)',
+                fontSize: 12,
+                alignSelf: 'center',
+              }}
+            >
               {suite.enabled ? 'Enabled' : 'Disabled'}
             </span>
           </div>
@@ -282,30 +358,49 @@ export function EvalSuiteDetailPage() {
 
         {/* Judge Prompt */}
         <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Judge Prompt</label>
+          <label
+            style={{
+              display: 'block',
+              fontSize: 12,
+              color: 'var(--text-muted)',
+              marginBottom: 4,
+            }}
+          >
+            Judge Prompt
+          </label>
           {editing ? (
             <textarea
               value={editValues.judge_prompt ?? ''}
-              onChange={e => setEditValue('judge_prompt', e.target.value)}
+              onChange={(e) => setEditValue('judge_prompt', e.target.value)}
               rows={10}
-              style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)' }}
+              style={{
+                width: '100%',
+                fontFamily: 'var(--mono)',
+                fontSize: 13,
+                color: 'var(--text)',
+              }}
             />
           ) : (
             <div style={{ position: 'relative' }}>
-              <CopyButton text={suite.judge_prompt || ''} style={{ position: 'absolute', top: 8, right: 8, zIndex: 1 }} />
-              <pre style={{
-                whiteSpace: 'pre-wrap',
-                fontFamily: 'var(--mono)',
-                fontSize: 13,
-                lineHeight: 1.6,
-                color: 'var(--text)',
-                background: 'var(--bg)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius)',
-                padding: 12,
-                paddingRight: 60,
-                margin: 0,
-              }}>
+              <CopyButton
+                text={suite.judge_prompt || ''}
+                style={{ position: 'absolute', top: 8, right: 8, zIndex: 1 }}
+              />
+              <pre
+                style={{
+                  whiteSpace: 'pre-wrap',
+                  fontFamily: 'var(--mono)',
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                  color: 'var(--text)',
+                  background: 'var(--bg)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)',
+                  padding: 12,
+                  paddingRight: 60,
+                  margin: 0,
+                }}
+              >
                 {suite.judge_prompt}
               </pre>
             </div>
@@ -314,25 +409,41 @@ export function EvalSuiteDetailPage() {
 
         {/* Items JSON */}
         <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Items (JSON)</label>
+          <label
+            style={{
+              display: 'block',
+              fontSize: 12,
+              color: 'var(--text-muted)',
+              marginBottom: 4,
+            }}
+          >
+            Items (JSON)
+          </label>
           {editing ? (
             <textarea
               value={editValues.items_json ?? '{}'}
-              onChange={e => setEditValue('items_json', e.target.value)}
+              onChange={(e) => setEditValue('items_json', e.target.value)}
               rows={6}
-              style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text)' }}
+              style={{
+                width: '100%',
+                fontFamily: 'var(--mono)',
+                fontSize: 12,
+                color: 'var(--text)',
+              }}
             />
           ) : (
-            <pre style={{
-              fontFamily: 'var(--mono)',
-              fontSize: 12,
-              color: 'var(--text)',
-              background: 'var(--bg)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius)',
-              padding: 12,
-              margin: 0,
-            }}>
+            <pre
+              style={{
+                fontFamily: 'var(--mono)',
+                fontSize: 12,
+                color: 'var(--text)',
+                background: 'var(--bg)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius)',
+                padding: 12,
+                margin: 0,
+              }}
+            >
               {JSON.stringify(suite.items, null, 2)}
             </pre>
           )}
@@ -340,25 +451,41 @@ export function EvalSuiteDetailPage() {
 
         {/* Config JSON */}
         <div style={{ marginBottom: editing ? 16 : 0 }}>
-          <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Config (JSON)</label>
+          <label
+            style={{
+              display: 'block',
+              fontSize: 12,
+              color: 'var(--text-muted)',
+              marginBottom: 4,
+            }}
+          >
+            Config (JSON)
+          </label>
           {editing ? (
             <textarea
               value={editValues.config_json ?? '{}'}
-              onChange={e => setEditValue('config_json', e.target.value)}
+              onChange={(e) => setEditValue('config_json', e.target.value)}
               rows={4}
-              style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text)' }}
+              style={{
+                width: '100%',
+                fontFamily: 'var(--mono)',
+                fontSize: 12,
+                color: 'var(--text)',
+              }}
             />
           ) : (
-            <pre style={{
-              fontFamily: 'var(--mono)',
-              fontSize: 12,
-              color: 'var(--text)',
-              background: 'var(--bg)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius)',
-              padding: 12,
-              margin: 0,
-            }}>
+            <pre
+              style={{
+                fontFamily: 'var(--mono)',
+                fontSize: 12,
+                color: 'var(--text)',
+                background: 'var(--bg)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius)',
+                padding: 12,
+                margin: 0,
+              }}
+            >
               {JSON.stringify(suite.config, null, 2)}
             </pre>
           )}
@@ -366,11 +493,18 @@ export function EvalSuiteDetailPage() {
 
         {/* Enabled toggle (only in edit mode) */}
         {editing && (
-          <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <label
+            style={{
+              fontSize: 13,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
             <input
               type="checkbox"
               checked={editValues.enabled ?? true}
-              onChange={e => setEditValue('enabled', e.target.checked)}
+              onChange={(e) => setEditValue('enabled', e.target.checked)}
               style={{ accentColor: 'var(--success)', width: 16, height: 16 }}
             />
             Enabled
@@ -383,7 +517,11 @@ export function EvalSuiteDetailPage() {
         <>
           <div className="eval-scenarios-header">
             <h3 className="section-title">Scenarios ({scenarios.length})</h3>
-            <button onClick={() => setAddingScenario(true)} className="btn btn-primary" style={{ fontSize: 12 }}>
+            <button
+              onClick={() => setAddingScenario(true)}
+              className="btn btn-primary"
+              style={{ fontSize: 12 }}
+            >
               + Add Scenario
             </button>
           </div>
@@ -391,25 +529,77 @@ export function EvalSuiteDetailPage() {
           {addingScenario && (
             <div className="card" style={{ marginBottom: 16 }}>
               <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Name</label>
-                <input type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="scenario_name" style={{ width: '100%', fontSize: 13 }} />
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: 12,
+                    color: 'var(--text-muted)',
+                    marginBottom: 4,
+                  }}
+                >
+                  Name
+                </label>
+                <input
+                  type="text"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="scenario_name"
+                  style={{ width: '100%', fontSize: 13 }}
+                />
               </div>
               <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Prompt</label>
-                <textarea value={newPrompt} onChange={e => setNewPrompt(e.target.value)} rows={6} placeholder="Scenario prompt..." style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)' }} />
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: 12,
+                    color: 'var(--text-muted)',
+                    marginBottom: 4,
+                  }}
+                >
+                  Prompt
+                </label>
+                <textarea
+                  value={newPrompt}
+                  onChange={(e) => setNewPrompt(e.target.value)}
+                  rows={6}
+                  placeholder="Scenario prompt..."
+                  style={{
+                    width: '100%',
+                    fontFamily: 'var(--mono)',
+                    fontSize: 13,
+                    color: 'var(--text)',
+                  }}
+                />
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={addScenario} disabled={saving} className="btn btn-primary" style={{ fontSize: 12 }}>
+                <button
+                  onClick={addScenario}
+                  disabled={saving}
+                  className="btn btn-primary"
+                  style={{ fontSize: 12 }}
+                >
                   {saving ? 'Adding...' : 'Add'}
                 </button>
-                <button onClick={() => { setAddingScenario(false); setNewName(''); setNewPrompt(''); }} className="btn" style={{ fontSize: 12 }}>
+                <button
+                  onClick={() => {
+                    setAddingScenario(false);
+                    setNewName('');
+                    setNewPrompt('');
+                  }}
+                  className="btn"
+                  style={{ fontSize: 12 }}
+                >
                   Cancel
                 </button>
               </div>
             </div>
           )}
 
-          <ScrollableTable label="Suite scenarios" className="suite-scenarios-table" empty={scenarios.length === 0}>
+          <ScrollableTable
+            label="Suite scenarios"
+            className="suite-scenarios-table"
+            empty={scenarios.length === 0}
+          >
             <thead>
               <tr>
                 <th>Name</th>
@@ -419,7 +609,7 @@ export function EvalSuiteDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {scenarios.map(sc => {
+              {scenarios.map((sc) => {
                 const isExpanded = expandedId === sc.id;
                 const isScenarioEditing = editingScenarioId === sc.id;
 
@@ -427,7 +617,12 @@ export function EvalSuiteDetailPage() {
                   <tr key={sc.id} style={{ verticalAlign: 'top' }}>
                     <td style={{ fontWeight: 500 }}>
                       {isScenarioEditing ? (
-                        <input type="text" value={editScenarioName} onChange={e => setEditScenarioName(e.target.value)} style={{ width: '100%', fontSize: 13 }} />
+                        <input
+                          type="text"
+                          value={editScenarioName}
+                          onChange={(e) => setEditScenarioName(e.target.value)}
+                          style={{ width: '100%', fontSize: 13 }}
+                        />
                       ) : (
                         sc.name
                       )}
@@ -437,41 +632,100 @@ export function EvalSuiteDetailPage() {
                         <div>
                           <textarea
                             value={editScenarioPrompt}
-                            onChange={e => setEditScenarioPrompt(e.target.value)}
+                            onChange={(e) =>
+                              setEditScenarioPrompt(e.target.value)
+                            }
                             rows={8}
-                            style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, marginBottom: 8, color: 'var(--text)' }}
+                            style={{
+                              width: '100%',
+                              fontFamily: 'var(--mono)',
+                              fontSize: 12,
+                              marginBottom: 8,
+                              color: 'var(--text)',
+                            }}
                           />
                           <div style={{ display: 'flex', gap: 8 }}>
-                            <button onClick={() => saveScenarioEdit(sc.id)} disabled={saving} className="btn btn-sm btn-primary">
+                            <button
+                              onClick={() => saveScenarioEdit(sc.id)}
+                              disabled={saving}
+                              className="btn btn-sm btn-primary"
+                            >
                               {saving ? 'Saving...' : 'Save'}
                             </button>
-                            <button onClick={cancelScenarioEdit} className="btn btn-sm">Cancel</button>
+                            <button
+                              onClick={cancelScenarioEdit}
+                              className="btn btn-sm"
+                            >
+                              Cancel
+                            </button>
                           </div>
                         </div>
                       ) : isExpanded ? (
                         <div>
                           <div style={{ position: 'relative' }}>
-                            <CopyButton text={sc.prompt} style={{ position: 'absolute', top: 0, right: 0 }} />
-                            <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--mono)', fontSize: 12, margin: 0, paddingRight: 60, color: 'var(--text)' }}>
+                            <CopyButton
+                              text={sc.prompt}
+                              style={{ position: 'absolute', top: 0, right: 0 }}
+                            />
+                            <pre
+                              style={{
+                                whiteSpace: 'pre-wrap',
+                                fontFamily: 'var(--mono)',
+                                fontSize: 12,
+                                margin: 0,
+                                paddingRight: 60,
+                                color: 'var(--text)',
+                              }}
+                            >
                               {sc.prompt}
                             </pre>
                           </div>
-                          <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                            <button onClick={() => startScenarioEdit(sc)} className="btn btn-sm">Edit</button>
-                            <button onClick={() => setExpandedId(null)} className="btn btn-sm">Collapse</button>
+                          <div
+                            style={{ marginTop: 8, display: 'flex', gap: 8 }}
+                          >
+                            <button
+                              onClick={() => startScenarioEdit(sc)}
+                              className="btn btn-sm"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => setExpandedId(null)}
+                              className="btn btn-sm"
+                            >
+                              Collapse
+                            </button>
                           </div>
                         </div>
                       ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                          }}
+                        >
                           <span
-                            {...makeKeyboardClickable(() => setExpandedId(sc.id))}
-                            style={{ color: 'var(--text-muted)', cursor: 'pointer' }}
+                            {...makeKeyboardClickable(() =>
+                              setExpandedId(sc.id),
+                            )}
+                            style={{
+                              color: 'var(--text-muted)',
+                              cursor: 'pointer',
+                            }}
                           >
                             {sc.prompt.slice(0, 120)}...
                           </span>
                           <span
-                            {...makeKeyboardClickable(() => startScenarioEdit(sc))}
-                            style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, flexShrink: 0 }}
+                            {...makeKeyboardClickable(() =>
+                              startScenarioEdit(sc),
+                            )}
+                            style={{
+                              cursor: 'pointer',
+                              color: 'var(--text-muted)',
+                              fontSize: 14,
+                              flexShrink: 0,
+                            }}
                             title="Edit scenario"
                             aria-label="Edit scenario"
                           >
@@ -481,20 +735,41 @@ export function EvalSuiteDetailPage() {
                       )}
                     </td>
                     <td>
-                      <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <label
+                        style={{
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                      >
                         <input
                           type="checkbox"
                           checked={sc.enabled}
                           onChange={() => toggleScenario(sc)}
-                          style={{ accentColor: 'var(--success)', width: 16, height: 16 }}
+                          style={{
+                            accentColor: 'var(--success)',
+                            width: 16,
+                            height: 16,
+                          }}
                         />
-                        <span style={{ color: sc.enabled ? 'var(--success)' : 'var(--text-muted)', fontSize: 12 }}>
+                        <span
+                          style={{
+                            color: sc.enabled
+                              ? 'var(--success)'
+                              : 'var(--text-muted)',
+                            fontSize: 12,
+                          }}
+                        >
                           {sc.enabled ? 'On' : 'Off'}
                         </span>
                       </label>
                     </td>
                     <td>
-                      <button onClick={() => deleteScenario(sc)} className="btn btn-sm btn-danger">
+                      <button
+                        onClick={() => deleteScenario(sc)}
+                        className="btn btn-sm btn-danger"
+                      >
                         Delete
                       </button>
                     </td>

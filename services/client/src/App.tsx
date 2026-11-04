@@ -30,7 +30,12 @@ import { NotificationProvider } from './context/NotificationContext';
 function LegacyProfileRedirect() {
   const { id } = useParams();
   const { search, hash } = useLocation();
-  return <Navigate to={`/profiles/${encodeURIComponent(id!)}${search}${hash}`} replace />;
+  return (
+    <Navigate
+      to={`/profiles/${encodeURIComponent(id!)}${search}${hash}`}
+      replace
+    />
+  );
 }
 
 function ProfileRoute() {
@@ -47,49 +52,75 @@ export default function App() {
   return (
     <NotificationProvider>
       <div className="app">
-        <a className="skip-link" href="#main-content">Skip to content</a>
+        <a className="skip-link" href="#main-content">
+          Skip to content
+        </a>
         <Sidebar />
         <main className="main-content" id="main-content" tabIndex={-1}>
           <NotificationBar />
           <Routes>
-          <Route path="/" element={<Navigate to="/action-items" replace />} />
-          <Route path="/harness/rules" element={<HarnessIndexPage key="rule" type="rule" />} />
-          <Route path="/harness/skills" element={<HarnessIndexPage key="skill" type="skill" />} />
-          <Route path="/harness/tools" element={<HarnessIndexPage key="tool" type="tool" />} />
-          <Route path="/harness/hooks" element={<HarnessIndexPage key="hook" type="hook" />} />
-          <Route path="/harness/agents" element={<HarnessIndexPage key="agent" type="agent" />} />
-          <Route path="/harness/rule/new" element={<HarnessCreatePage />} />
-          <Route path="/harness/skill/new" element={<HarnessCreatePage />} />
-          <Route path="/harness/tool/new" element={<HarnessCreatePage />} />
-          <Route path="/harness/hook/new" element={<HarnessCreatePage />} />
-          <Route path="/harness/agent/new" element={<HarnessCreatePage />} />
-          <Route path="/harness/:type/:id" element={<HarnessDetailPage />} />
-          <Route path="/memory" element={<MemoryPage />} />
-          <Route path="/action-items" element={<ActionItemsIndexPage />} />
-          <Route path="/action-items/new" element={<ActionItemDetailPage />} />
-          <Route path="/action-items/:id" element={<ActionItemDetailPage />} />
-          <Route path="/meetings" element={<MeetingsIndexPage />} />
-          <Route path="/meetings/:id" element={<MeetingRoute />} />
-          <Route path="/meetings/profiles/:id" element={<LegacyProfileRedirect />} />
-          <Route path="/profiles" element={<ProfilesIndexPage />} />
-          <Route path="/profiles/:id" element={<ProfileRoute />} />
-          <Route path="/evals" element={<EvalsPage />} />
-          <Route path="/evals/:id" element={<EvalDetailPage />} />
-          <Route path="/plans" element={<PlansIndexPage />} />
-          <Route path="/plans/new" element={<PlanDetailPage />} />
-          <Route path="/plans/:id" element={<PlanDetailPage />} />
-          <Route path="/proposals" element={<ProposalsIndexPage />} />
-          <Route path="/proposals/:id" element={<ProposalDetailPage />} />
-          <Route path="/audit" element={<AuditIndexPage />} />
-          <Route path="/audit/:id" element={<AuditDetailPage />} />
-          <Route path="/jobs" element={<JobsIndexPage />} />
-          <Route path="/jobs/new" element={<JobDetailPage />} />
-          <Route path="/jobs/:id" element={<JobDetailPage />} />
-          <Route path="/eval-configs" element={<EvalSuitesPage />} />
-          <Route path="/eval-configs/new" element={<EvalSuiteDetailPage />} />
-          <Route path="/eval-configs/:id" element={<EvalSuiteDetailPage />} />
-          <Route path="/chat" element={<ChatPage />} />
-          <Route path="*" element={<NotFoundPage />} />
+            <Route path="/" element={<Navigate to="/action-items" replace />} />
+            <Route
+              path="/harness/rules"
+              element={<HarnessIndexPage key="rule" type="rule" />}
+            />
+            <Route
+              path="/harness/skills"
+              element={<HarnessIndexPage key="skill" type="skill" />}
+            />
+            <Route
+              path="/harness/tools"
+              element={<HarnessIndexPage key="tool" type="tool" />}
+            />
+            <Route
+              path="/harness/hooks"
+              element={<HarnessIndexPage key="hook" type="hook" />}
+            />
+            <Route
+              path="/harness/agents"
+              element={<HarnessIndexPage key="agent" type="agent" />}
+            />
+            <Route path="/harness/rule/new" element={<HarnessCreatePage />} />
+            <Route path="/harness/skill/new" element={<HarnessCreatePage />} />
+            <Route path="/harness/tool/new" element={<HarnessCreatePage />} />
+            <Route path="/harness/hook/new" element={<HarnessCreatePage />} />
+            <Route path="/harness/agent/new" element={<HarnessCreatePage />} />
+            <Route path="/harness/:type/:id" element={<HarnessDetailPage />} />
+            <Route path="/memory" element={<MemoryPage />} />
+            <Route path="/action-items" element={<ActionItemsIndexPage />} />
+            <Route
+              path="/action-items/new"
+              element={<ActionItemDetailPage />}
+            />
+            <Route
+              path="/action-items/:id"
+              element={<ActionItemDetailPage />}
+            />
+            <Route path="/meetings" element={<MeetingsIndexPage />} />
+            <Route path="/meetings/:id" element={<MeetingRoute />} />
+            <Route
+              path="/meetings/profiles/:id"
+              element={<LegacyProfileRedirect />}
+            />
+            <Route path="/profiles" element={<ProfilesIndexPage />} />
+            <Route path="/profiles/:id" element={<ProfileRoute />} />
+            <Route path="/evals" element={<EvalsPage />} />
+            <Route path="/evals/:id" element={<EvalDetailPage />} />
+            <Route path="/plans" element={<PlansIndexPage />} />
+            <Route path="/plans/new" element={<PlanDetailPage />} />
+            <Route path="/plans/:id" element={<PlanDetailPage />} />
+            <Route path="/proposals" element={<ProposalsIndexPage />} />
+            <Route path="/proposals/:id" element={<ProposalDetailPage />} />
+            <Route path="/audit" element={<AuditIndexPage />} />
+            <Route path="/audit/:id" element={<AuditDetailPage />} />
+            <Route path="/jobs" element={<JobsIndexPage />} />
+            <Route path="/jobs/new" element={<JobDetailPage />} />
+            <Route path="/jobs/:id" element={<JobDetailPage />} />
+            <Route path="/eval-configs" element={<EvalSuitesPage />} />
+            <Route path="/eval-configs/new" element={<EvalSuiteDetailPage />} />
+            <Route path="/eval-configs/:id" element={<EvalSuiteDetailPage />} />
+            <Route path="/chat" element={<ChatPage />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </main>
       </div>
