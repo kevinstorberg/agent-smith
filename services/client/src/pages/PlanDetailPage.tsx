@@ -10,16 +10,16 @@ import { DetailPageHeader } from '../components/DetailPageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { useDetailPageEdit } from '../hooks/useDetailPageEdit';
 import { useApiMutation } from '../hooks/useApiMutation';
+import { usePageLifetime } from '../hooks/usePageLifetime';
 import { usePolling } from '../hooks/usePolling';
 import { useNotification } from '../context/useNotification';
 import { MAX_TITLE_LENGTH } from '../constants';
 import { validators } from '../utils/validation';
 
-
-
 export function PlanDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const isCurrent = usePageLifetime();
   const { notify } = useNotification();
   const isNew = id === 'new' || !id;
 
@@ -43,42 +43,49 @@ export function PlanDetailPage() {
   const createMutation = useApiMutation({
     mutationFn: api.plans.create,
     onSuccess: (created) => {
-      navigate(`/plans/${created.id}`, { replace: true });
+      if (isCurrent()) navigate(`/plans/${created.id}`, { replace: true });
     },
   });
 
   const updateMutation = useApiMutation({
     mutationFn: (data: Partial<Plan>) => api.plans.update(Number(id), data),
     onSuccess: async () => {
-      await loadPlan();
+      if (isCurrent()) await loadPlan();
     },
   });
 
   const deleteMutation = useApiMutation({
     mutationFn: () => api.plans.remove(Number(id)),
     onSuccess: () => {
-      navigate('/plans');
+      if (isCurrent()) navigate('/plans');
     },
   });
 
-  const loadPlan = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
-    if (isNew) return;
-    if (showLoading) setLoading(true);
-    try {
-      const data = await api.plans.get(Number(id));
-      setPlan(data);
-    } finally {
-      if (showLoading) setLoading(false);
-    }
-  }, [id, isNew]);
+  const loadPlan = useCallback(
+    async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
+      if (isNew) return;
+      if (showLoading) setLoading(true);
+      try {
+        const data = await api.plans.get(Number(id));
+        setPlan(data);
+      } finally {
+        if (showLoading) setLoading(false);
+      }
+    },
+    [id, isNew],
+  );
 
   useEffect(() => {
     loadPlan();
   }, [loadPlan]);
-  usePolling(
-    () => loadPlan({ showLoading: false }),
-    { enabled: !isNew && !editing && !saving && !updateMutation.loading && !deleteMutation.loading },
-  );
+  usePolling(() => loadPlan({ showLoading: false }), {
+    enabled:
+      !isNew &&
+      !editing &&
+      !saving &&
+      !updateMutation.loading &&
+      !deleteMutation.loading,
+  });
 
   const startEditing = () => {
     if (!plan) return;
@@ -90,11 +97,25 @@ export function PlanDetailPage() {
     const body = editValues.body ?? '';
     const project = editValues.project ?? '';
 
-    const titleError = validators.compose(validators.required, validators.maxLength(MAX_TITLE_LENGTH))(title);
-    if (titleError) { notify(titleError === 'Required' ? 'Title is required.' : `Title must be ${MAX_TITLE_LENGTH} characters or fewer.`, 'error'); return; }
+    const titleError = validators.compose(
+      validators.required,
+      validators.maxLength(MAX_TITLE_LENGTH),
+    )(title);
+    if (titleError) {
+      notify(
+        titleError === 'Required'
+          ? 'Title is required.'
+          : `Title must be ${MAX_TITLE_LENGTH} characters or fewer.`,
+        'error',
+      );
+      return;
+    }
 
     const bodyError = validators.required(body);
-    if (bodyError) { notify('Body is required.', 'error'); return; }
+    if (bodyError) {
+      notify('Body is required.', 'error');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -140,33 +161,50 @@ export function PlanDetailPage() {
 
       {editing ? (
         <>
-          <h2 className="page-title detail-form-title">{isNew ? 'New plan' : 'Edit plan'}</h2>
-          <label className="form-label" htmlFor="plan-title">Plan title</label>
+          <h2 className="page-title detail-form-title">
+            {isNew ? 'New plan' : 'Edit plan'}
+          </h2>
+          <label className="form-label" htmlFor="plan-title">
+            Plan title
+          </label>
           <input
             id="plan-title"
-            className="input detail-title-input" style={{ borderColor: editValues.title && editValues.title.length > MAX_TITLE_LENGTH ? 'var(--highlight)' : undefined }}
+            className="input detail-title-input"
+            style={{
+              borderColor:
+                editValues.title && editValues.title.length > MAX_TITLE_LENGTH
+                  ? 'var(--highlight)'
+                  : undefined,
+            }}
             value={editValues.title ?? ''}
-            onChange={e => setEditValue('title', e.target.value)}
+            onChange={(e) => setEditValue('title', e.target.value)}
             placeholder="Plan title"
             maxLength={MAX_TITLE_LENGTH}
           />
-          <FieldError maxLength={MAX_TITLE_LENGTH} currentLength={editValues.title?.length ?? 0} />
+          <FieldError
+            maxLength={MAX_TITLE_LENGTH}
+            currentLength={editValues.title?.length ?? 0}
+          />
           <div style={{ marginBottom: 16 }}>
-            <label className="form-label" htmlFor="plan-project">Project</label>
+            <label className="form-label" htmlFor="plan-project">
+              Project
+            </label>
             <input
               id="plan-project"
               className="input detail-project-input"
               value={editValues.project ?? ''}
-              onChange={e => setEditValue('project', e.target.value)}
+              onChange={(e) => setEditValue('project', e.target.value)}
               placeholder="Empty = no project"
             />
           </div>
-          <label className="form-label" htmlFor="plan-body">Plan content</label>
+          <label className="form-label" htmlFor="plan-body">
+            Plan content
+          </label>
           <div data-color-mode="dark">
             <MDEditor
               textareaProps={{ id: 'plan-body', 'aria-label': 'Plan content' }}
               value={editValues.body ?? ''}
-              onChange={val => setEditValue('body', val || '')}
+              onChange={(val) => setEditValue('body', val || '')}
               height={400}
             />
           </div>
@@ -176,17 +214,34 @@ export function PlanDetailPage() {
           <h2 className="page-title" style={{ marginBottom: 8 }}>
             {plan!.title}
           </h2>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: 8,
+              alignItems: 'center',
+              marginBottom: 16,
+              flexWrap: 'wrap',
+            }}
+          >
             <StatusBadge status={plan!.status} kind="plan" />
             {plan!.project && (
               <span className="tag tag-project">{plan!.project}</span>
             )}
             <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-              Updated {new Date(plan!.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              {'Updated '}
+              {new Date(plan!.updated_at).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
             </span>
           </div>
           <div className="card" style={{ position: 'relative' }}>
-            <CopyButton text={plan!.body} style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }} />
+            <CopyButton
+              text={plan!.body}
+              style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }}
+            />
             <div className="markdown-content">
               <ReactMarkdown>{plan!.body}</ReactMarkdown>
             </div>
@@ -195,11 +250,36 @@ export function PlanDetailPage() {
           {(plan!.feedback?.length ?? 0) > 0 && (
             <div style={{ marginTop: 16 }}>
               <div className="section-title">Feedback</div>
-              {plan!.feedback!.map(fb => (
-                <div key={fb.id} className="card" style={{ position: 'relative' }}>
-                  <CopyButton text={fb.body} style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }} />
-                  <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>
-                    {fb.source} · {new Date(fb.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              {plan!.feedback!.map((fb) => (
+                <div
+                  key={fb.id}
+                  className="card"
+                  style={{ position: 'relative' }}
+                >
+                  <CopyButton
+                    text={fb.body}
+                    style={{
+                      position: 'absolute',
+                      top: 12,
+                      right: 12,
+                      zIndex: 10,
+                    }}
+                  />
+                  <div
+                    style={{
+                      color: 'var(--text-muted)',
+                      fontSize: 12,
+                      marginBottom: 8,
+                    }}
+                  >
+                    {fb.source}
+                    {' · '}
+                    {new Date(fb.created_at).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
                   </div>
                   <div className="markdown-content">
                     <ReactMarkdown>{fb.body}</ReactMarkdown>
