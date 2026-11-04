@@ -4,7 +4,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from services.memory.db import search_page, list_page, get, update, delete
-from services.api.routers.base import require_found, list_response, delete_response, empty_to_none
+from services.api.routers.base import require_found, list_response, delete_response, empty_to_none, query_result
 
 router = APIRouter()
 
@@ -60,7 +60,8 @@ class MemoryUpdate(BaseModel):
 
 @router.put("/{memory_id}")
 def update_memory(memory_id: str, body: MemoryUpdate):
-    update(
+    query_result(
+        update,
         memory_id,
         content=body.content,
         repo=body.repo,

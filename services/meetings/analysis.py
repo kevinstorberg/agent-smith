@@ -16,6 +16,7 @@ from services.graphs.agents import create_tool_agent
 from services.graphs.model_config import resolve_request_timeout
 from services.meetings.outputs import Evidence as Evidence, MemoryItem as MemoryItem, MemoryKind as MemoryKind, MemorySubmission as MemorySubmission
 from services.meetings.service import run_db
+from services.memory.content import MAX_MEMORY_WORDS
 
 _KINDS = MemoryKind
 MODEL_CALL_LIMIT = 20
@@ -41,7 +42,11 @@ task or deliverable, supported owner, due date or original due phrase, dependenc
 status when the {source} supplies them. Distinguish proposals from agreed commitments.
 Never invent an owner or deadline. Preserve relative dates unless the actual meeting date
 and timezone make the meaning unambiguous; provider_updated_at is not a meeting date.
-Keep memories concise and self-contained, rather than retelling the discussion or greetings.
+Keep each memory concise and self-contained, with at most {max_memory_words} whitespace-separated words.
+Capture one useful fact, decision or commitment with its supported identifiers and project
+scope. Rewrite oversized drafts before staging; never pad a short memory to reach the limit.
+The stored {max_memory_words}-word maximum includes its meeting source and evidence footer, so leave room
+for that attribution. Avoid retelling the discussion or greetings.
 
 Call stage_memories with at most 20 items covering distinct useful facts, decisions,
 commitments, constraints, preferences, lessons or questions. Each item needs 1-8 meaningful
@@ -414,7 +419,7 @@ async def analyze_memories(
 
     return await run_analysis(
         context, model_role="meeting_memory", system_prompt=_SYSTEM_PROMPT.format(
-            source=context.source, attribution=_ATTRIBUTION[context.source],
+            source=context.source, attribution=_ATTRIBUTION[context.source], max_memory_words=MAX_MEMORY_WORDS,
         ),
         tools=[*context.research_tools(), context.configure_stage(stage_memories, validation_feedback=(
             "Staging rejected: use at most 20 typed items with supported kinds, nonblank content, "

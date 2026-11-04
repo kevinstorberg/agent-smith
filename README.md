@@ -215,6 +215,31 @@ profile-owned rows exist, preventing accidental loss of topic ownership.
 
 Vector memory with time-weighted retrieval, served as MCP tools on the dashboard endpoint.
 Meeting-generated memories join this same reusable store and remain available to other agents.
+New memory writes keep at most 250 Unicode whitespace-separated words, preserving the original
+text through the last retained word. Shorter text stays unchanged. The shared policy in
+`services/memory/content.py` runs before embedding and storage for additions, publications,
+and edits through MCP, HTTP, and the CLI. Editing an older long memory, including only its
+tags or scope, caps its body while preserving its ID and creation time.
+
+New meeting publications reserve room for the complete source and evidence footer within
+those 250 words. Exact evidence quotes remain unchanged in meeting artifacts. Existing
+records are not rewritten on reads or by a bulk migration; historical frozen publication
+envelopes and receipts remain immutable, and exact existing legacy replays do not rewrite records.
+
+The meeting generation prompt is in `services/meetings/analysis.py`; the owned Claude capture
+prompt is `docs/examples/claude_memories.metadata.json`. To update a managed skill through
+the harness UI, open **Skills → memory → Edit**, add this guidance to its **Store** section,
+then **Save** and **Sync** when ready to distribute it to assigned agents:
+
+> Write concise, self-contained memories of at most 250 whitespace-separated words.
+> Keep supported identifiers, project scope, decisions and rationale; rewrite oversized drafts
+> before saving. Never pad short memories. Storage keeps the first 250 words of oversized
+> records. Preserve source documents, exact evidence and other agent inputs in full.
+
+For Claude capture, open **Hooks → claude_memories** and update the metadata's
+`hooks[].prompt` using the reviewed artifact before saving and syncing. Repository changes
+do not update live skills, hooks, or generated client settings automatically.
+
 On **Memory**, enable **Meetings only** to filter by meeting provenance without changing the
 records' tags or creating another store. The list/search API accepts `meeting_only=true`;
 returned records include `from_meeting`, `source_type` and `source_id` when known.

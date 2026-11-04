@@ -5,10 +5,16 @@ failure must allow the main session to stop. The replacement metadata is
 [claude_memories.metadata.json](examples/claude_memories.metadata.json), which is
 the authoritative prompt and permission artifact.
 
+Draft each memory within 250 whitespace-separated words, retaining its supported scope and
+identifiers. Rewrite oversized drafts and do not pad shorter ones. The shared memory write
+boundary keeps the first 250 words before embedding and storage; capture evidence, source
+pages and receipts keep their existing contracts. The artifact updates guidance for future
+harness deployment and does not edit a live hook or skill.
+
 ## Deployment through the harness
 
 1. Merge this change and retain the previous harness metadata for rollback.
-2. **Before any Sync, update harness item 83, `claude_memories`, through the UI**
+2. **Before any Sync, update the `claude_memories` harness hook through the UI**
    using the reviewed metadata artifact; preserve its existing assignments.
 3. Confirm `model: haiku` is inside `hooks[0]`, with `type: agent` and timeout 120;
    remove the legacy outer `metadata.model` key.
@@ -17,10 +23,10 @@ the authoritative prompt and permission artifact.
 5. Verify the generated hook and grants, reconnect the client if necessary, and
    run the first real publication check below.
 
-The current version-6 item has an outer model key. The new compiler rejects it
-with an instruction to move it inside each hook entry; attempting Sync before
-the UI update will fail. This PR does not edit the live item or generated client
-settings, run Sync, or restart clients.
+Older hook metadata may have an outer model key. The compiler rejects that shape
+with an instruction to move the model inside each hook entry; check the current
+metadata before syncing. This change does not edit the live item or generated
+client settings, run Sync, or restart clients.
 
 `REPO_ROOT` expands through the existing host-path mechanism; interpreter and
 helper paths remain quoted when the checkout contains spaces. Dynamic session,
