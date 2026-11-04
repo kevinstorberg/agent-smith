@@ -81,7 +81,7 @@ def list_background_jobs() -> str:
     """List background jobs: name, description, schedule_config, input_params."""
     from services.jobs.models.job import list_jobs
 
-    rows, _ = list_jobs(limit=200)
+    rows, _ = list_jobs(limit=None)
     return _dumps(
         [
             {k: row.get(k) for k in ("name", "description", "schedule_config", "input_params", "version")}

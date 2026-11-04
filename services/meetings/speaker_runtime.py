@@ -13,8 +13,15 @@ async def identify(run, record: dict, *, deadline: float) -> None:
     artifact.update(total_units=len(segments), model=resolve_model_id("meeting_speaker", "curator"), prompt_version=2)
     from services.meetings import profile_directory
 
-    directory = await run_db(profile_directory.names, limit=100)
-    artifact["canonical_candidates"] = speaker_profiles.directory_candidates(directory["items"])
+    directory_items, offset = [], 0
+    while offset is not None:
+        directory = await run_db(profile_directory.names, limit=100, offset=offset)
+        directory_items.extend(directory["items"])
+        next_offset = directory["next_offset"]
+        if next_offset is not None and next_offset <= offset:
+            raise ValueError("Speaker profile directory pagination did not advance")
+        offset = next_offset
+    artifact["canonical_candidates"] = speaker_profiles.directory_candidates(directory_items)
     snapshot = speaker_db.context_snapshot(current, manual=current.get("manual_context", artifact["manual_snapshot"]))
     attached = await run_db(speaker_profiles.attached_candidates, snapshot)
     snapshot["identity_candidates"] = [*artifact.get("resolved_candidates", []), *attached, *artifact["canonical_candidates"]]

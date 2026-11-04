@@ -50,7 +50,7 @@ def target_window(segments: list[dict], offset: int) -> tuple[list[dict], int]:
         if length > WINDOW_CHARACTERS:
             if target:
                 break
-            return [], offset + 1
+            raise SpeakerAnalysisError("One complete speaker statement exceeds the supported character window", error_type="SpeakerContextTooLarge")
         if len(target) == WINDOW_STATEMENTS or target and (size + length > WINDOW_CHARACTERS or encoded_size([*target, segment]) > TARGET_BYTES):
             break
         if encoded_size([segment]) > TARGET_BYTES:
@@ -126,8 +126,10 @@ async def identify_statements(snapshot: dict, targets: list[dict], *, context: l
     async def search_known_profiles(
         query: Annotated[str, Field(max_length=200)] = "",
         profile_id: str | None = None,
+        offset: Annotated[int, Field(ge=0)] = 0,
+        limit: Annotated[int, Field(ge=1, le=100)] = 10,
     ) -> str:
-        """Search and read up to three known profile contexts by name, email, nickname, company or job role in one call."""
+        """Search full known profile contexts by name, email, nickname, company or role; follow next_offset for every page."""
         from services.meetings import speaker_profiles
 
         if profile_id is not None:
@@ -138,7 +140,7 @@ async def identify_statements(snapshot: dict, targets: list[dict], *, context: l
         if profile_id and query.strip():
             return json.dumps({"error": "Use a search query or an exact profile ID, not both"})
         try:
-            envelope = await run_db(speaker_profiles.read_contexts, query, profile_id, known_ids)
+            envelope = await run_db(speaker_profiles.read_contexts, query, profile_id, known_ids, offset=offset, limit=limit)
         except Exception as error:
             return json.dumps({"error": "Known profile context read failed", "error_type": type(error).__name__})
         discoveries = speaker_profiles.identity_candidates(envelope.get("items", []))

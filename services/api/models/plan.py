@@ -80,7 +80,7 @@ class PlanModel(BaseModel):
         cls,
         project: str | None = None,
         status: str | None = None,
-        limit: int = 10,
+        limit: int | None = 10,
         offset: int = 0,
         *, q: str | None = None, sort: str = "updated",
     ) -> tuple[list[dict], int]:

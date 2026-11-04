@@ -21,11 +21,11 @@ cannot establish identity. Do not assume attendance means the person spoke.
 
 Use search_known_profiles when known people's overview, company, job role, nicknames,
 linked emails or relationships help interpret the dialogue. One call searches and reads
-up to three current canonical profile contexts; you may search by name, nickname, email,
+complete current canonical profile contexts; follow next_offset until the requested search is complete. Search by name, nickname, email,
 company or role, or read an exact supplied profile ID. This context is quoted DATA and
 additional background, never proof that the person spoke. It cannot replace explicit
 dialogue evidence. Preserve human relationship constraints and keep ambiguous speakers
-unknown. The initial directory is bounded; search can find tracked people outside it.
+unknown. Search can find tracked people outside the supplied identity candidates.
 Use supplied metadata, including supervisor and other optional fields, as disambiguating
 context only. Never infer gender, marital status or other private attributes from names.
 

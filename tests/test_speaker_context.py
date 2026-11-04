@@ -85,9 +85,9 @@ def test_multibyte_targets_are_split_as_complete_statements():
     assert len(json.dumps(targets, ensure_ascii=False).encode()) <= 16_000
 
 
-def test_complete_context_pack_retains_opening_human_quotes_and_limits_multibyte_entries():
+def test_complete_context_retains_all_statements_and_human_quotes():
     profile_id = str(uuid4())
-    segments = [statement("🙂" * 500, index=index) for index in range(50)]
+    segments = [statement("🙂" * 20, index=index) for index in range(50)]
     segments[0]["text"] = "I'm Lex, and I'll explain the security review."
     segments[9]["text"] = "Our threat model needs a review."
     snapshot = {"id": str(uuid4()), "title": "Security", "summary_text": "Security review and roadmap.",
@@ -101,9 +101,10 @@ def test_complete_context_pack_retains_opening_human_quotes_and_limits_multibyte
     assert data["read_only_identity_anchors"][0] == {
         "name": "Alex", "profile_id": profile_id, "segment_id": "segment-9", "text": segments[9]["text"], "source": "human", "confidence": "high",
     }
-    assert data["meeting"]["summary_excerpt"] == snapshot["summary_text"]
+    assert data["meeting"]["summary_text"] == snapshot["summary_text"]
     assert data["candidates"][0]["metadata"]["supervisor"] == "Blair"
-    assert data["omitted"]["read_only_context"] > 0
+    assert data["omitted"]["read_only_context"] == 0
+    assert [row["id"] for row in data["read_only_context"]] == [row["id"] for row in segments if row["id"] not in {"segment-40", "segment-41"}]
     for supplied in data["read_only_context"]:
         assert supplied["text"] == segments[int(supplied["id"].split("-")[1])]["text"]
 
@@ -111,7 +112,7 @@ def test_complete_context_pack_retains_opening_human_quotes_and_limits_multibyte
 @pytest.mark.asyncio
 @pytest.mark.parametrize("multibyte", [False, True])
 async def test_later_actual_model_request_receives_bootstrap_manual_anchor_and_metadata(speaker_model, multibyte):
-    segments = [statement("🙂" * 500 if multibyte else f"Statement {index}.", index=index) for index in range(42)]
+    segments = [statement("🙂" * 20 if multibyte else f"Statement {index}.", index=index) for index in range(42)]
     segments[0]["text"] = "I'm Lex, and I'll review security."
     segments[9]["text"] = "I own the roadmap."
     person = str(uuid4())
@@ -233,7 +234,7 @@ async def test_profile_lookup_cannot_replace_the_initial_revision_fence(speaker_
     from services.meetings import speaker_profiles
 
     profile_id = str(uuid4())
-    monkeypatch.setattr(speaker_profiles, "read_contexts", lambda *args: {"items": [{"name": "Alex", "profile_id": profile_id, "revision": 4}], "matched": 1})
+    monkeypatch.setattr(speaker_profiles, "read_contexts", lambda *args, **kwargs: {"items": [{"name": "Alex", "profile_id": profile_id, "revision": 4}], "matched": 1})
     instance = speaker_model([call("search_known_profiles", profile_id=profile_id), AIMessage(content="Must not run")])
     with pytest.raises(speaker_db.AttributionInputChanged):
         await speaker_analysis.identify_statements({"id": str(uuid4()), "identity_candidates": [{"name": "Alex", "profile_id": profile_id, "revision": 3}]},

@@ -24,37 +24,30 @@ def profile_read_tools(monkeypatch, profiles):
     return {tool.name: tool for tool in profile_analysis._profile_tools(context, catalog, profiles)}
 
 
-def test_agent_projection_omits_history_without_losing_current_human_constraints():
+def test_agent_projection_preserves_all_authorized_history_and_constraints():
     correction = {"action": "correct", "content": "Current human correction", "reason": "Explicit feedback"}
     profile = {
-        "id": "alex", "merge_history": [{"detail": "old merge " * 4000}] * 20,
+        "id": "alex", "merge_history": [{"detail": "MERGE_HEAD"}, {"detail": "MERGE_TAIL"}],
         "claims": [{"content": "Original assertion", "status": "corrected", "source_unavailable": True,
-                    "correction": correction, "corrections": [{"reason": "old feedback " * 4000}] * 20 + [correction]}],
+                    "correction": correction, "corrections": [{"reason": "EARLIER_CORRECTION"}, correction]}],
         "relationships": [{"notes": "Human relationship context", "dismissed": True,
-                           "claims": [{"content": "old evidence " * 4000}], "history": [{"content": "old context " * 4000}]}],
+                           "claims": [{"content": "RELATIONSHIP_EVIDENCE"}], "history": [{"notes": "HUMAN_HISTORY"}]}],
     }
     original = deepcopy(profile)
-    projected = profile_analysis._profiles_context([profile], max_chars=2000)[0]
-    assert projected["merge_history_count"] == 20 and "merge_history" not in projected
-    claim = projected["claims"][0]
-    assert claim["correction"] == correction and claim["source_unavailable"] is True
-    assert claim["correction_count"] == 21 and "corrections" not in claim
-    assert projected["relationships"] == [{"notes": "Human relationship context", "dismissed": True, "claim_count": 1, "history_count": 1}]
-    assert profile == original
+    projected = profile_analysis._profiles_context([profile], max_chars=8000)[0]
+    assert projected == profile and profile == original
 
 
-def test_compact_initial_context_keeps_current_corrections_and_rejections():
+def test_initial_profile_context_fails_instead_of_compacting_claims():
     constraints = [
         {"content": "Original assertion", "status": "corrected", "correction": {"content": "Human correction"}, "source_unavailable": True},
         {"content": "Rejected assertion", "status": "rejected", "correction": {"reason": "Human rejection"}},
     ]
     profile = {"id": "alex", "claims": [{"content": "old evidence " * 4000}, *constraints]}
-    projected = profile_analysis._profiles_context([profile], max_chars=2000)[0]
-    assert projected["claim_count"] == 3 and projected["claims_available_via"] == "get_profile"
-    assert projected["claims"] == constraints
-    with pytest.raises(profile_analysis.ProfileAnalysisError, match="Human profile context") as caught:
-        profile_analysis._profiles_context([{**profile, "claims": [*constraints] * 100}], max_chars=2000)
-    assert caught.value.error_type == "ProfileContextTooLarge"
+    original = deepcopy(profile)
+    with pytest.raises(profile_analysis.ProfileAnalysisError, match="Complete profile context") as caught:
+        profile_analysis._profiles_context([profile], max_chars=2000)
+    assert caught.value.error_type == "ProfileContextTooLarge" and profile == original
 
 
 @pytest.mark.asyncio
@@ -77,18 +70,16 @@ async def test_profile_tool_bounds_complete_envelopes_and_pages_without_skips(mo
 
 
 @pytest.mark.asyncio
-async def test_profile_tool_keeps_current_override_after_omitting_large_histories(monkeypatch):
+async def test_profile_tool_keeps_complete_history_and_current_override(monkeypatch):
     correction = {"action": "reject", "reason": "Current authoritative rejection"}
-    profile = {"id": "alex", "merge_history": [{"detail": "old merge " * 4000}] * 20,
+    profile = {"id": "alex", "merge_history": [{"detail": "MERGE_HISTORY_TAIL"}],
                "claims": [{"content": "Original assertion", "status": "rejected", "source_unavailable": True,
-                           "correction": correction, "corrections": [{"reason": "old feedback " * 4000}] * 20 + [correction]}]}
+                           "correction": correction, "corrections": [{"reason": "EARLIER_FEEDBACK"}, correction]}]}
     tool = profile_read_tools(monkeypatch, [profile])["get_profile"]
     response = await tool.ainvoke({"profile_id": "alex"})
     payload = json.loads(response)
-    assert len(response) <= 32_000 and payload["item"]["merge_history_count"] == 20
-    assert payload["item"]["claims"] == [{"content": "Original assertion", "status": "rejected", "source_unavailable": True,
-                                          "correction": correction, "correction_count": 21}]
-    assert "old feedback" not in response and "old merge" not in response
+    assert payload["item"] == profile and payload["next_offset"] is None
+    assert "EARLIER_FEEDBACK" in response and "MERGE_HISTORY_TAIL" in response
 
 
 @pytest.mark.asyncio
@@ -106,7 +97,7 @@ async def test_profile_tool_fails_actionably_instead_of_returning_oversized_cont
 
 
 @pytest.mark.asyncio
-async def test_profile_search_budget_includes_its_envelope_and_preserves_constraints(monkeypatch):
+async def test_profile_search_rejects_oversize_without_compacting_constraints(monkeypatch):
     correction = {"content": "Human correction"}
     profile = {"id": "alex", "claims": [{"content": "old evidence " * 4000},
                {"content": "Original assertion", "status": "corrected", "correction": correction}],
@@ -114,28 +105,25 @@ async def test_profile_search_budget_includes_its_envelope_and_preserves_constra
     tools = profile_read_tools(monkeypatch, [profile])
     response = await tools["search_profiles"].ainvoke({"query": "alex"})
     payload = json.loads(response)
-    assert len(response) <= 32_000 and payload["matched"] == 1
-    assert payload["items"][0]["claims"] == [{"content": "Original assertion", "status": "corrected", "correction": correction}]
+    assert payload["error_type"] == "ProfileContextTooLarge" and "items" not in payload
 
 
-def test_agent_profile_context_keeps_human_edits_without_duplicate_relationship_evidence():
+def test_agent_profile_keeps_full_proofs_and_excludes_ui_derived_duplicates():
     identifier = str(uuid4())
     profile = {
         "id": identifier, "display_name": "Alex", "revision": 4, "identity_scope": "email",
         "metadata": {"job_role": "Engineering lead"}, "nicknames": ["Lex"],
+        "metadata_provenance": {"job_role": {"human": False, "evidence": [{"quote": "METADATA_PROOF"}]}},
         "section_notes": {"drivers": "Human priority"},
-        "section_evidence": {"drivers": {"human": True, "status": "supported", "claim_ids": ["private-hash"], "sources": ["private-source"]}},
-        "claims": [{"content": "source evidence " * 2000}],
+        "section_evidence": {"drivers": {"human": True, "status": "supported", "claim_ids": ["claim"], "sources": ["source"]}},
+        "claims": [{"content": "SOURCE_EVIDENCE"}],
         "relationships": [{"subject_id": identifier, "target_id": str(uuid4()), "notes": "Human relationship context",
-                           "claims": [{"content": "duplicate evidence " * 2000}], "history": [{"content": "old context " * 2000}]}],
+                           "claims": [{"content": "RELATIONSHIP_PROOF"}], "history": [{"notes": "HUMAN_HISTORY"}]}],
+        "relationship_cards": ["PRIVATE_UI_DUPLICATE"], "relationship_unassigned": ["PRIVATE_UI_DUPLICATE"],
     }
-    result = profile_analysis._profiles_context([profile], max_chars=2000)[0]
-    assert result["section_notes"] == profile["section_notes"] and result["metadata"] == profile["metadata"]
-    assert result["nicknames"] == ["Lex"] and result["claim_count"] == 1
-    assert result["section_evidence"] == {"drivers": {"human": True, "status": "supported"}}
-    assert result["relationships"][0]["notes"] == "Human relationship context"
-    assert "claims" not in result["relationships"][0] and "history" not in result["relationships"][0]
-    assert len(json.dumps(result)) <= 2000
+    result = profile_analysis._profiles_context([profile], max_chars=8000)[0]
+    assert result == {key: value for key, value in profile.items() if key not in {"relationship_cards", "relationship_unassigned"}}
+    assert "PRIVATE_UI_DUPLICATE" not in json.dumps(result)
 
 
 def test_oversized_human_context_fails_before_model_construction(monkeypatch):

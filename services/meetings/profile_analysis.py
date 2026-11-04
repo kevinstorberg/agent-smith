@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from typing import Annotated
 
 from langchain_core.tools import tool
 from pydantic import Field
 
-from services.meetings.analysis import AnalysisContext, MeetingAnalysisError, recent_items, run_analysis
+from services.meetings.analysis import AnalysisContext, MeetingAnalysisError, run_analysis
 from services.meetings.outputs import ProfileClaim as ProfileClaim, ProfileMetadataPatch, ProfileSubmission as ProfileSubmission
 from services.meetings.service import run_db
 from services.meetings.profile_fields import normalized_text as _normalized
@@ -20,8 +21,8 @@ you cannot publish memories, edit profiles, execute tasks or invent identities.
 Read the ENTIRE transcript window. Previous published memories are optional context: research
 them when useful, but continue from the saved transcript if memory search is unavailable.
 Read canonical profiles with get_profile/search_profiles when needed, including all relevant
-pages of claims and human overrides. Existing profiles/context and prior candidates may be
-summarized or limited to recent complete items; explicit counts identify omitted context.
+pages of claims and human overrides. Read the complete supplied profiles/context and prior
+candidates; follow explicit continuation offsets when a tool returns a page.
 Human corrected/rejected claims are authoritative: do not reassert the original assertion,
 paraphrase it to bypass an override, or treat it as corroboration. Keep contrary evidence and
 changes over time. A previous model hypothesis or a memory copy is not independent evidence.
@@ -86,25 +87,9 @@ def _catalog(participants: list[dict]) -> dict[str, dict]:
 
 
 def _profiles_context(profiles: list[dict], max_chars: int = 64_000) -> list[dict]:
-    context = []
-    for profile in profiles:
-        profile = _agent_profile(profile)
-        if len(_json([*context, profile])) <= max_chars:
-            context.append(profile)
-        else:
-            compact = {
-                key: profile.get(key) for key in ("id", "display_name", "identity_scope", "revision", "deleted", "metadata", "metadata_provenance", "nicknames", "section_notes", "relationships", "merge_history_count")
-            } | {
-                "section_evidence": {key: {field: proof[field] for field in ("human", "status", "coverage", "generated_at") if field in proof}
-                                     for key, proof in profile.get("section_evidence", {}).items()},
-                "claim_count": len(profile.get("claims", [])), "claims_available_via": "get_profile",
-                "claims": [{key: value for key, value in claim.items() if key in {
-                    "id", "subject_id", "target_id", "category", "content", "status", "correction", "correction_count", "source_unavailable",
-                }} for claim in profile.get("claims", []) if claim.get("status") in {"corrected", "rejected"}],
-            }
-            if len(_json([*context, compact])) > max_chars:
-                raise ProfileAnalysisError("Human profile context exceeds the analysis budget; reduce the selected context", error_type="ProfileContextTooLarge")
-            context.append(compact)
+    context = [_agent_profile(profile) for profile in profiles]
+    if len(_json(context)) > max_chars:
+        raise ProfileAnalysisError("Complete profile context exceeds the analysis budget; reduce the selected context", error_type="ProfileContextTooLarge")
     return context
 
 
@@ -115,34 +100,13 @@ def _json(value: object) -> str:
 def _agent_profile(profile: dict) -> dict:
     if profile.get("deleted"):
         return {"id": profile["id"], "revision": profile["revision"], "deleted": True}
-    result = {key: value for key, value in profile.items() if key not in {"merge_history", "relationship_cards", "relationship_unassigned"}}
-    if "metadata_provenance" in profile:
-        result["metadata_provenance"] = {
-            field: {key: value for key, value in source.items() if key != "evidence"}
-            | ({"evidence_count": len(source["evidence"])} if "evidence" in source else {})
-            for field, source in profile["metadata_provenance"].items()
-        }
-    if "merge_history" in profile:
-        result["merge_history_count"] = len(profile["merge_history"])
-    claims = []
-    for claim in profile.get("claims", []):
-        current = {key: value for key, value in claim.items() if key != "corrections"}
-        if "corrections" in claim:
-            current["correction_count"] = len(claim["corrections"])
-            if current.get("status") in {"corrected", "rejected"} and not current.get("correction") and claim["corrections"]:
-                current["correction"] = claim["corrections"][-1]
-        claims.append(current)
-    result["claims"] = claims
-    relationships = []
-    for edge in profile.get("relationships", []):
-        current = {key: value for key, value in edge.items() if key not in {"claims", "history"}}
-        if "analysis_evidence" in edge:
-            current["analysis_evidence"] = {key: edge["analysis_evidence"][key] for key in ("human", "status", "claim_count", "coverage", "generated_at") if key in edge["analysis_evidence"]}
-        for field in ("claims", "history"):
-            if field in edge:
-                current.setdefault("claim_count" if field == "claims" else "history_count", len(edge[field]))
-        relationships.append(current)
-    result["relationships"] = relationships
+    result = deepcopy({key: value for key, value in profile.items() if key not in {"relationship_cards", "relationship_unassigned"}})
+    result.setdefault("claims", [])
+    for claim in result["claims"]:
+        if claim.get("status") in {"corrected", "rejected"} and not claim.get("correction") and claim.get("corrections"):
+            claim["correction"] = claim["corrections"][-1]
+    for edge in result.get("relationships", []):
+        edge.pop("raw_analysis_evidence", None)
     return result
 
 
@@ -196,7 +160,7 @@ def _profile_tools(context: AnalysisContext, catalog: dict[str, dict], profiles:
             else:
                 from services.meetings.profile_db import get_profile as read_profile
 
-                row = await run_db(read_profile, profile_id)
+                row = await run_db(read_profile, profile_id, include_history=True)
                 if row is None or row["id"] != profile_id:
                     return _json({"error": "Directory identity changed; search for its canonical profile again"})
                 canonical[profile_id] = row
@@ -311,8 +275,8 @@ async def analyze_profiles(
     data = {
         **context.quoted_data(), "participants": current_participants,
         "canonical_profiles": _profiles_context(profiles), "canonical_profile_count": len(profiles),
-        "same_run_memories": recent_items(memories), "same_run_memory_count": len(memories),
-        "earlier_metadata_updates": recent_items(previous_metadata or []), "earlier_metadata_count": len(previous_metadata or []),
+        "same_run_memories": memories, "same_run_memory_count": len(memories),
+        "earlier_metadata_updates": previous_metadata or [], "earlier_metadata_count": len(previous_metadata or []),
     }
     directory = await run_db(profile_directory.snapshot)
     data["known_profile_directory"] = directory

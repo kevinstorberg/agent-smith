@@ -19,7 +19,7 @@ from services.graphs.agents import (
 from services.graphs.messages import extract_result_text
 from services.graphs.prompts import grounding_block
 from scripts.shared.paths import REPO_ROOT
-from services.rubric import rules_to_prompt_context, rules_to_rubric
+from services.rubric import rules_to_prompt_context
 
 log = logging.getLogger("graphs.opinion")
 
@@ -68,7 +68,7 @@ def build_graph():
         "Judge whether the opinion applies the intent of these principles to the "
         "proposal. It is a critique, not an implementation plan — principles count "
         "as applied when the opinion uses them to evaluate the proposal:\n"
-        f"{rules_to_rubric(rules)}"
+        f"{prompt_context}"
     )
     max_iterations = _configured_max_iterations()
     evaluations: list[dict] = []

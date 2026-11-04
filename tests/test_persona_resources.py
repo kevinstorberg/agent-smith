@@ -200,7 +200,8 @@ def test_linked_people_are_context_targets_without_claiming_their_speech(client,
     assert {item["id"] for item in catalog} == {alex["id"], blair["id"]}
     assert next(item for item in catalog if item["id"] == blair["id"])["segment_ids"] == []
     context = profile_db.load_profiles(catalog)
-    assert all("claims" not in edge and "history" not in edge for profile in context for edge in profile["relationships"])
+    assert all("claims" not in edge and "history" in edge and "raw_analysis_evidence" not in edge
+               for profile in context for edge in profile["relationships"])
 
 
 def test_automatic_relationships_hide_withdrawn_evidence_but_human_context_survives(client, claimed, participants):

@@ -7,7 +7,9 @@ the file_proposal tool, staging, persistence — runs for real against the DB.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 import json
+from uuid import uuid4
 
 import pytest
 
@@ -268,3 +270,102 @@ def test_curator_digest_empty_window():
 
     digest = asyncio.run(_digest(_FakeReaderModel(), "memory", []))
     assert digest == "No memory entries in the lookback window."
+
+
+def test_complete_draft_gather_sends_oldest_in_scope_plan_and_full_reviews_to_model():
+    from services.graphs.library import improve
+
+    project = "full-draft-context"
+    body = "BEGIN_FULL_PLAN\n" + "x" * 30_000 + "\nEND_FULL_PLAN"
+    review = "BEGIN_FULL_REVIEW\n" + "y" * 10_000 + "\nEND_FULL_REVIEW"
+    oldest_id = create_plan("improvetest oldest full draft", body, project=project, status="draft")
+    create_feedback(oldest_id, review)
+    with get_connection() as connection, connection.cursor() as cursor:
+        cursor.execute("""INSERT INTO plans (title, body, project, status)
+            SELECT 'improvetest full draft ' || number::text, 'Full draft body ' || number::text, %s, 'draft'
+            FROM generate_series(1, 251) AS number""", (project,))
+    old_id = create_plan("improvetest out of window", "OUTSIDE_LOOKBACK", project=project, status="draft")
+    with get_connection() as connection, connection.cursor() as cursor:
+        cursor.execute("UPDATE plans SET created_at=now()-interval '40 days', updated_at=now()-interval '40 days' WHERE id=%s", (old_id,))
+    create_plan("improvetest final excluded", "FINAL_EXCLUDED", project=project, status="final")
+    create_plan("improvetest other project", "PROJECT_EXCLUDED", project="different-project", status="draft")
+
+    entries = improve._recent_draft_entries(project, 7)
+    reader = _FakeReaderModel()
+    asyncio.run(improve._digest(reader, "plan", entries))
+
+    assert len(entries) == 252
+    requests = "\n".join(reader.calls)
+    assert all(f"[plan {entry_id}]" in requests for entry_id, _ in entries)
+    assert f"[plan {oldest_id}]" in requests and body in requests and review in requests
+    assert all(value not in requests for value in ("OUTSIDE_LOOKBACK", "FINAL_EXCLUDED", "PROJECT_EXCLUDED"))
+
+
+def test_complete_selected_memory_gather_sends_sources_after_five_hundred_to_model(monkeypatch):
+    from services.graphs.library import improve
+    from services.memory import db
+
+    now = datetime.now(timezone.utc)
+    rows = [{"id": f"memory-{number}", "content": f"Complete memory {number}", "created_at": now.isoformat()}
+            for number in range(1, 502)]
+    rows.append({"id": "old-memory", "content": "OUTSIDE_LOOKBACK", "created_at": (now - timedelta(days=40)).isoformat()})
+    requested = []
+
+    def selected_memories(*, repo, sort, limit):
+        requested.append((repo, sort, limit))
+        return rows if limit is None else rows[:limit]
+
+    monkeypatch.setattr(db, "list_memories", selected_memories)
+    entries = improve._recent_memory_entries("selected-project", 7)
+    reader = _FakeReaderModel()
+    asyncio.run(improve._digest(reader, "memory", entries))
+
+    assert requested == [("selected-project", "created_at_desc", None)]
+    assert len(entries) == 501
+    requests = "\n".join(reader.calls)
+    assert all(f"[memory memory-{number}]" in requests for number in range(1, 502))
+    assert "Complete memory 501" in requests and "OUTSIDE_LOOKBACK" not in requests
+
+
+def test_complete_job_inventory_reaches_proposer_and_research_tool(monkeypatch):
+    from services.graphs.library import improve
+    from services.graphs.tools.improve_tools import list_background_jobs
+    from services.jobs.models.job import create_job
+
+    prefix = "improvetest_full_jobs_" + uuid4().hex + "_"
+    oldest = prefix + "oldest"
+    try:
+        create_job(oldest, {"hours": 1}, {"command": "true"}, description="Full original job description")
+        with get_connection() as connection, connection.cursor() as cursor:
+            cursor.execute("""INSERT INTO background_jobs (name, description, schedule_config, input_params)
+                SELECT %s || number::text, 'Complete job definition', '{"hours":1}'::jsonb, '{"command":"true"}'::jsonb
+                FROM generate_series(1, 205) AS number""", (prefix,))
+        captured = _patch_llm_stack(monkeypatch, file_calls=[])
+        monkeypatch.setattr(improve, "_recent_draft_entries", lambda *args: [])
+        monkeypatch.setattr(improve, "_recent_memory_entries", lambda *args: [])
+
+        asyncio.run(dispatch("improve", INPUTS))
+        research_rows = json.loads(list_background_jobs.invoke({}))
+
+        prompt = captured["payload"]["messages"][0].content
+        assert prompt.count(prefix) == 206 and oldest in prompt
+        selected = [row for row in research_rows if row["name"].startswith(prefix)]
+        assert len(selected) == 206
+        original = next(row for row in selected if row["name"] == oldest)
+        assert original["description"] == "Full original job description"
+        assert original["input_params"] == {"command": "true"}
+    finally:
+        with get_connection() as connection, connection.cursor() as cursor:
+            cursor.execute("DELETE FROM background_jobs WHERE name LIKE %s", (prefix + "%",))
+
+
+def test_disappearing_draft_fails_gather_instead_of_supplying_partial_context(monkeypatch):
+    from services.api.models import plan
+    from services.graphs.library import improve
+
+    summary = {"id": 123, "updated_at": datetime.now(timezone.utc).isoformat()}
+    monkeypatch.setattr(plan, "list_plans", lambda **kwargs: ([summary], 1))
+    monkeypatch.setattr(plan, "get_plan", lambda plan_id: None)
+
+    with pytest.raises(GraphContractError, match="Draft plan 123 disappeared"):
+        improve._recent_draft_entries(None, 7)

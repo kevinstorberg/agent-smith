@@ -28,18 +28,9 @@ def rules_to_prompt_context(rules: list[tuple[str, str]]) -> str:
     assert rules, "rules must contain at least one rule"
     parts = ["Use these pragmatic engineering rules as binding review principles:"]
     for name, body in rules:
-        parts.append(f"## {name}\n{body.strip()}")
+        parts.append(f"## {name}\n{body}\n\n[End of rule: {name}]")
     return "\n\n".join(parts)
 
 
 def rules_to_rubric(rules: list[tuple[str, str]]) -> str:
-    assert rules, "rules must contain at least one rule"
-    lines: list[str] = []
-    for name, body in rules:
-        steps = extract_numbered_steps(body)
-        if not steps:
-            lines.append(f"- {name}: The opinion explicitly applies this rule.")
-            continue
-        for step in steps:
-            lines.append(f"- {name}: {step}")
-    return "\n".join(lines)
+    return rules_to_prompt_context(rules)

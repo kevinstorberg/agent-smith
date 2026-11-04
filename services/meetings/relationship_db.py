@@ -13,7 +13,9 @@ from services.meetings.profile_fields import text
 
 def for_profiles(cur, profiles: list[dict], *, include_dismissed: bool = False, include_overrides: bool = False,
                  include_evidence: bool = True, include_unavailable: bool = False,
-                 include_card_state: bool = False) -> dict[str, list[dict]]:
+                 include_card_state: bool = False, include_history: bool = False) -> dict[str, list[dict]]:
+    if type(include_history) is not bool:
+        raise ValueError("Relationship include_history must be a boolean")
     ids = tuple(str(row["id"]) for row in profiles)
     result = {key: [] for key in ids}
     if not ids:
@@ -30,16 +32,32 @@ def for_profiles(cur, profiles: list[dict], *, include_dismissed: bool = False, 
     edges = [dict(row) for row in cur.fetchall()]
     if not edges:
         return result
+    versions = [version for edge in edges for version in [edge, *(edge["history"] if include_history else [])]]
     source_ids = {str(row["subject_id"]) for row in edges}
-    source_ids.update(row["analysis_evidence"]["legacy_profile_id"] for row in edges if row["analysis_evidence"].get("legacy_profile_id"))
+    source_ids.update(row["analysis_evidence"]["legacy_profile_id"] for row in versions if row.get("analysis_evidence", {}).get("legacy_profile_id"))
     cur.execute("SELECT id, claims FROM participant_profiles WHERE id IN %s", (tuple(source_ids),))
     raw_subjects = {str(row["id"]): dict(row) for row in cur.fetchall()}
     subjects = {row["id"]: row for row in profile_db._visible(cur, list(raw_subjects.values()), include_overrides=include_overrides)}
     target_ids = {claim["target_id"] for row in raw_subjects.values() for claim in row["claims"] if claim.get("target_id")}
     canonical = profile_db.canonical_rows(cur, list(target_ids), metadata_only=True)
     contexts = profile_db._source_contexts(cur, list(raw_subjects.values()),
-        {source["meeting_id"] for edge in edges for source in edge["analysis_evidence"].get("sources", [])}
+        {source["meeting_id"] for version in versions for source in version.get("analysis_evidence", {}).get("sources", [])}
         | {claim["meeting_id"] for row in raw_subjects.values() for claim in row["claims"] if claim.get("meeting_id")})
+
+    from services.personas import sections
+
+    def project_version(version: dict) -> dict:
+        # Import receipts retain pointers; their raw UI snapshots are not model source.
+        version = {key: value for key, value in version.items() if key not in {"raw_analysis_evidence", "legacy_state"}}
+        if "subject_id" not in version:
+            return version
+        analysis_subject = version.get("analysis_evidence", {}).get("legacy_profile_id", version["subject_id"])
+        effective = []
+        for claim in sections.effective_claims(subjects.get(analysis_subject, {}), contexts):
+            target = canonical.get(claim.get("target_id"))
+            effective.append({**claim, "canonical_target_id": str(target["id"]) if target else claim.get("target_id")})
+        return relationship_analysis.project(version, effective, contexts, full_proof=include_overrides or include_history)
+
     for edge in edges:
         item = _serialize(edge)
         history = item.pop("history")
@@ -50,14 +68,13 @@ def for_profiles(cur, profiles: list[dict], *, include_dismissed: bool = False, 
         claims = [claim for claim in subjects.get(item["subject_id"], {}).get("claims", [])
                   if claim.get("target_id") and canonical.get(claim["target_id"])
                   and str(canonical[claim["target_id"]]["id"]) == item["target_id"]]
-        effective = []
-        from services.personas import sections
         analysis_subject = item["analysis_evidence"].get("legacy_profile_id", item["subject_id"])
-        for claim in sections.effective_claims(subjects.get(analysis_subject, {}), contexts):
-            target = canonical.get(claim.get("target_id"))
-            effective.append({**claim, "canonical_target_id": str(target["id"]) if target else claim.get("target_id")})
-        item = relationship_analysis.project(item, effective, contexts, full_proof=include_overrides)
+        raw_proof = item.get("raw_analysis_evidence")
+        item = project_version(item)
+        if include_history and not include_card_state:
+            item["history"] = [project_version(version) for version in history]
         if include_card_state:
+            item["raw_analysis_evidence"] = raw_proof
             proof = item["raw_analysis_evidence"]
             relevant = [claim for claim in raw_subjects.get(analysis_subject, {}).get("claims", [])
                         if claim["id"] in proof.get("claim_ids", []) or claim.get("target_id")

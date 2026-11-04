@@ -29,8 +29,8 @@ def names(query: str = "", *, offset: int = 0, limit: int = 20) -> dict:
         cur.execute(f"""SELECT p.id::text,p.display_name,p.nicknames,p.revision,
             ARRAY(SELECT DISTINCT alias.display_name FROM participant_profiles alias
                 WHERE alias.merged_into=p.id ORDER BY alias.display_name) AS aliases,
-            jsonb_strip_nulls(jsonb_build_object('company',left(visible.metadata->>'company',300),
-                'job_role',left(visible.metadata->>'job_role',300),'supervisor',left(visible.metadata->>'supervisor',300))) AS metadata,
+            jsonb_strip_nulls(jsonb_build_object('company',visible.metadata->>'company',
+                'job_role',visible.metadata->>'job_role','supervisor',visible.metadata->>'supervisor')) AS metadata,
             (SELECT coalesce(jsonb_object_agg(field.key,jsonb_build_object('human',true)), '{{}}'::jsonb)
                 FROM jsonb_each(p.metadata_provenance) field WHERE field.value->>'human'='true') AS metadata_provenance,
             ARRAY(SELECT DISTINCT lower(email) FROM participant_profiles identity

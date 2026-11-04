@@ -111,7 +111,7 @@ async def test_new_memory_stage_requires_whole_meeting_subjects(backend, model, 
 
 
 @pytest.mark.asyncio
-async def test_label_suggestion_only_reads_bounded_saved_summary_and_never_persists(model):
+async def test_label_suggestion_reads_complete_saved_summary_and_never_persists(model):
     instance, roles = model([call("stage_labels", labels=["Security", "Roadmap", "vendor-evaluation"])])
     snapshot = {"title": "Security scoping", "project": "explicit-project", "summary_text": "S" * 32_000 + "AFTER_LIMIT",
                 "transcript": "PRIVATE_TRANSCRIPT_SENTINEL", "labels": ["security"]}
@@ -120,9 +120,9 @@ async def test_label_suggestion_only_reads_bounded_saved_summary_and_never_persi
     assert instance.tool_names == ["stage_labels"]
     assert len(instance.seen) == 1
     quoted = next(message.content for message in instance.seen[0] if isinstance(message, HumanMessage))
-    assert "PRIVATE_TRANSCRIPT_SENTINEL" not in quoted and "AFTER_LIMIT" not in quoted
+    assert "PRIVATE_TRANSCRIPT_SENTINEL" not in quoted and "AFTER_LIMIT" in quoted
     data = json.loads(quoted.split("\n", 1)[1])
-    assert data["summary_truncated"] and data["summary_characters"] > len(data["summary"])
+    assert data["summary"] == snapshot["summary_text"] and data["summary_characters"] == len(data["summary"])
 
 
 def test_suggest_preview_does_not_save_until_explicit_revision_checked_save(client, saved, model):

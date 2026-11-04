@@ -21,7 +21,7 @@ from services.graphs.agents import (
 )
 from services.graphs.messages import extract_text
 from services.graphs.model_factory import build_chat_model
-from services.rubric import rules_to_prompt_context, rules_to_rubric
+from services.rubric import rules_to_prompt_context
 
 log = logging.getLogger("graphs.improve")
 
@@ -100,7 +100,7 @@ def build_graph():
     rubric = (
         "Judge whether the improvement session applies the intent of these principles. "
         "Zero proposals with sound reasoning satisfies the rubric:\n"
-        f"{rules_to_rubric(rules)}"
+        f"{prompt_context}"
     )
     max_iterations = _configured_max_iterations()
     evaluations: list[dict] = []
@@ -225,9 +225,6 @@ def _within_lookback(row: dict, days: int) -> bool:
     return ts >= datetime.now(timezone.utc) - timedelta(days=days)
 
 
-DRAFT_CAP = 250
-
-
 def _recent_draft_entries(project: str | None, days: int) -> list[tuple[str, str]]:
     """Recent DRAFT plans (the opinion-reviewed proposals), each coupled with its
     second-opinion feedback so the curator digests a proposal and its critique as
@@ -235,17 +232,14 @@ def _recent_draft_entries(project: str | None, days: int) -> list[tuple[str, str
     from services.api.models.plan import get_plan, list_plans
     from services.api.models.plan_feedback import list_feedback_for_plan
 
-    summaries, _ = list_plans(project=project, status="draft", limit=DRAFT_CAP)
-    if len(summaries) >= DRAFT_CAP:
-        log.warning(
-            "improve: draft gather hit the %d cap; older in-window drafts may be clipped",
-            DRAFT_CAP,
-        )
+    summaries, _ = list_plans(project=project, status="draft", limit=None)
     entries = []
     for summary in summaries:
         if not _within_lookback(summary, days):
             continue
         plan = get_plan(summary["id"])
+        if plan is None:
+            _raise_contract_error("source_changed", f"Draft plan {summary['id']} disappeared while gathering context; retry before generation.")
         text = f"# {plan['title']}\n{plan['body']}"
         for fb in list_feedback_for_plan(plan["id"]):
             text += f"\n\n## Second-opinion review ({fb['source']})\n{fb['body']}"
@@ -256,7 +250,7 @@ def _recent_draft_entries(project: str | None, days: int) -> list[tuple[str, str
 def _recent_memory_entries(project: str | None, days: int) -> list[tuple[str, str]]:
     from services.memory.db import list_memories
 
-    rows = list_memories(repo=project, sort="created_at_desc", limit=500)
+    rows = list_memories(repo=project, sort="created_at_desc", limit=None)
     return [(str(r["id"]), r["content"]) for r in rows if _within_lookback(r, days)]
 
 
@@ -326,7 +320,7 @@ def _inventory_summary(project: str | None) -> str:
             f"{r['name']}{'' if r['enabled'] else ' (disabled)'}" for r in rows
         )
         lines.append(f"{item_type}s: {names or '(none)'}")
-    jobs, _ = list_jobs(limit=200)
+    jobs, _ = list_jobs(limit=None)
     job_names = ", ".join(f"{j['name']} ({j['schedule_config']})" for j in jobs)
     lines.append(f"jobs: {job_names or '(none)'}")
     return "\n".join(lines)
