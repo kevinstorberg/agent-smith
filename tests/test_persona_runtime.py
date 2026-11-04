@@ -85,14 +85,13 @@ async def test_requested_old_meeting_drains_across_scheduler_ticks_without_repla
     management_db.request_processing(ready)
     monkeypatch.setattr(enrichment, "WINDOW_CHARS", len(sections[0]))
     monkeypatch.setattr(enrichment, "WINDOW_SEGMENTS", 1)
-    monkeypatch.setattr(enrichment, "AGENT_SECONDS", 0.1)
     blocked = set()
 
     async def bounded_window(snapshot, window, previous, **kwargs):
         segment = window[0]["id"]
         if segment != "summary-0" and segment not in blocked:
             blocked.add(segment)
-            await asyncio.Event().wait()
+            raise analysis.AnalysisBudgetExpired("Synthetic budget boundary")
         return await agents.analyze(snapshot, window, previous, **kwargs)
 
     monkeypatch.setattr(analysis, "analyze_memories", bounded_window)
