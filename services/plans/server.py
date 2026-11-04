@@ -8,13 +8,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from scripts.shared.paths import bootstrap  # noqa: E402
 bootstrap()
 
-from mcp.server.fastmcp import FastMCP  # noqa: E402
+from services.mcp_observability import ObservedMCP  # noqa: E402
 from mcp.types import ToolAnnotations  # noqa: E402
 from pydantic import Field  # noqa: E402
 from scripts.shared.validation import empty_to_none  # noqa: E402
 from services.api.models.plan import SEARCH_MAX_LIMIT, SEARCH_MAX_OFFSET, SEARCH_MAX_PROJECT_CHARS  # noqa: E402
 
-mcp = FastMCP("plans - save, search, and retrieve Planning Docs")
+mcp = ObservedMCP("plans - save, search, and retrieve Planning Docs")
 _READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 
 

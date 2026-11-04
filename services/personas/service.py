@@ -5,6 +5,7 @@ import copy
 from services.meetings import profile_db, processing
 from services.meetings.service import run_db
 from services.personas.factory import build_context_provider
+from services.observability import trigger_context, work_decision
 
 AGENT_SECONDS = processing.AGENT_SECONDS
 WINDOW_CHARS = processing.WINDOW_CHARS
@@ -50,28 +51,51 @@ class PersonaRun(processing.ProcessingRun):
             or not isinstance(self.record.get("segments"), list)
         ):
             raise ValueError("Persona context requires a stable ID, content hash and segment list")
+        fields = processing.stage_metadata(self.record, "profile") if self.record is not None else {"stage": "profile", "reason": "unknown"}
+        with trigger_context(**fields):
+            work_decision("claimed" if self.record is not None else "no_eligible_work",
+                          stage_status=self.record.get("profile_status") if self.record is not None else "idle")
 
     async def build_profiles(self) -> None:
         if self.record is not None:
             await self.run_stage("profile", self.profile_report, self._profile_work, self.provider.record_failure, budget=AGENT_SECONDS)
 
     async def build_assessments(self) -> None:
+        with trigger_context(stage="persona_assessment", source_kind="saved_claims", reason="unknown",
+                             profile_id=self.profile_id or self.analysis_target_id):
+            await self._build_assessments()
+
+    async def _build_assessments(self) -> None:
+        from services.personas import assessment_db
+
+        if self.remaining < 50:
+            self.assessment_report.update(outcome="continued")
+            work_decision("budget_deferred", stage_status="continued")
+            return
+        if self.analysis_target_id and self.profile_report.get("outcome") != "done":
+            work_decision("profile_prerequisite_pending", stage_status="skipped")
+            return
+        snapshot = await run_db(assessment_db.claim, self.owner, self.profile_id or self.analysis_target_id)
+        if not snapshot:
+            work_decision("no_eligible_work", stage_status="idle")
+            return
+        if snapshot.get("skipped"):
+            self.assessment_report.update(outcome="done", unchanged=True, profile_ids=[snapshot["id"]])
+            work_decision("assessment_unchanged", profile_id=snapshot["id"], stage_status="skipped")
+            return
+        self.assessment_report.update(profile_ids=[snapshot["id"]])
+        profile = snapshot["profile"]
+        with trigger_context(profile_id=snapshot["id"], source_hash=snapshot["input_hash"],
+                             source_revision=profile.get("revision"), attempt=profile.get("assessment_attempts", 0) + 1):
+            work_decision("claimed", stage_status="pending")
+            await self._assess_snapshot(snapshot)
+            work_decision("stage_result", stage_status=self.assessment_report.get("outcome", "unknown"))
+
+    async def _assess_snapshot(self, snapshot: dict) -> None:
         import asyncio
 
         from services.personas import assessment, assessment_db
 
-        if self.remaining < 50:
-            self.assessment_report.update(outcome="continued")
-            return
-        if self.analysis_target_id and self.profile_report.get("outcome") != "done":
-            return
-        snapshot = await run_db(assessment_db.claim, self.owner, self.profile_id or self.analysis_target_id)
-        if not snapshot:
-            return
-        if snapshot.get("skipped"):
-            self.assessment_report.update(outcome="done", unchanged=True, profile_ids=[snapshot["id"]])
-            return
-        self.assessment_report.update(profile_ids=[snapshot["id"]])
         deadline = asyncio.get_running_loop().time() + min(AGENT_SECONDS, self.remaining - 10)
         try:
             async with asyncio.timeout_at(deadline):
@@ -79,6 +103,7 @@ class PersonaRun(processing.ProcessingRun):
                 directed = assessment_db.relationship_insufficient(row)
                 can_assess_edges = any(sum(claim.get("canonical_target_id") == item["target_id"] for claim in claims) >= 2 for item in directed)
                 if not claims or not assessment_db.insufficient(row) and not can_assess_edges:
+                    work_decision("assessment_without_model", count=len(claims), stage_status="insufficient_evidence")
                     candidates = assessment_db.insufficient(row)
                 else:
                     result = await assessment.synthesize(row, claims, deadline=deadline)
@@ -137,10 +162,12 @@ class PersonaRun(processing.ProcessingRun):
             window, end = transcript_window(segments, artifact["offset"])
             if validate_context:
                 await run_db(validate_context, record, self.owner)
-            result = await analyze_profiles(
-                analysis_snapshot, window, artifact["items"], participants=participants,
-                profiles=profiles, memories=[], previous_metadata=artifact.get("metadata_updates", []), deadline=deadline,
-            )
+            fields = processing.stage_metadata({**record, "profile_artifact": artifact, "snapshot": analysis_snapshot}, "profile")
+            with trigger_context(**fields):
+                result = await analyze_profiles(
+                    analysis_snapshot, window, artifact["items"], participants=participants,
+                    profiles=profiles, memories=[], previous_metadata=artifact.get("metadata_updates", []), deadline=deadline,
+                )
             if self.analysis_target_id:
                 result = {**result, "items": [item for item in result["items"] if item["subject_id"] == self.analysis_target_id],
                     "metadata_updates": [item for item in result.get("metadata_updates", []) if item["subject_id"] == self.analysis_target_id]}

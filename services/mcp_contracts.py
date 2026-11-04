@@ -4,11 +4,12 @@ from collections.abc import Callable, Mapping
 from types import MappingProxyType
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.fastmcp.utilities.func_metadata import FuncMetadata
 from mcp.types import Tool
 from pydantic import BaseModel
+
+from services.mcp_observability import ObservedMCP
 
 
 class _ContractMetadata(FuncMetadata):
@@ -17,7 +18,7 @@ class _ContractMetadata(FuncMetadata):
         return data
 
 
-class ContractMCP(FastMCP):
+class ContractMCP(ObservedMCP):
     def __init__(self, name: str, contracts: Mapping[str, type[BaseModel]]) -> None:
         super().__init__(name)
         self._input_contracts = MappingProxyType(dict(contracts))

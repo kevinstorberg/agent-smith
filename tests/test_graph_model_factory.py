@@ -56,7 +56,7 @@ def captured_adapter_kwargs(monkeypatch):
         def __init__(self, **kwargs):
             captured.update(kwargs)
 
-    monkeypatch.setattr(model_factory, "ChatCompletionsTransportAdapter", _FakeTransportAdapter)
+    monkeypatch.setattr(model_factory, "_ObservedChatCompletionsTransportAdapter", _FakeTransportAdapter)
     return captured
 
 

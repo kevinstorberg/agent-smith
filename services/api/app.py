@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 import logging
 
 import anyio
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from services.config import DB_POOL_MAX
 from services.api.access_logging import MCPProbeContextMiddleware, configure_mcp_access_logging
 from services.api.mcp_transport import MCPSSECompletionMiddleware
+from services.api.operation_context import request_trigger
 from services.db import init_db, init_pool, close_pool
 from services.db.seed import seed_all
 from services.api.routers import harness_router
@@ -78,7 +79,7 @@ async def lifespan(app):
         yield
 
 
-app = FastAPI(title="Agent Smith Dashboard", lifespan=lifespan)
+app = FastAPI(title="Agent Smith Dashboard", lifespan=lifespan, dependencies=[Depends(request_trigger)])
 
 app.add_middleware(
     CORSMiddleware,

@@ -6,6 +6,9 @@ import logging
 import pkgutil
 from types import ModuleType
 from typing import Any
+from uuid import uuid4
+
+from services.observability import current_trigger, trigger_context
 
 logger = logging.getLogger(__name__)
 
@@ -108,12 +111,17 @@ async def dispatch(graph_type: str, inputs: dict[str, Any]) -> str:
     registry = scan_library()
     validate_inputs(graph_type, inputs, registry)
 
-    graph = registry[graph_type].build_graph()
-    result = await graph.ainvoke(inputs)
-    if not result:
-        raise GraphContractError(f"graph '{graph_type}' returned no result")
+    cause = current_trigger()
+    with trigger_context(
+        graph=graph_type, graph_run_id=str(uuid4()),
+        trigger=cause.get("trigger") or "graph", reason=cause.get("reason") or "unknown",
+    ):
+        graph = registry[graph_type].build_graph()
+        result = await graph.ainvoke(inputs)
+        if not result:
+            raise GraphContractError(f"graph '{graph_type}' returned no result")
 
-    out = result.get("result", result) if isinstance(result, dict) else result
-    if isinstance(out, str):
-        return out
-    return json.dumps(out, default=str)
+        out = result.get("result", result) if isinstance(result, dict) else result
+        if isinstance(out, str):
+            return out
+        return json.dumps(out, default=str)
