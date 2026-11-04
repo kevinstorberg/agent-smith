@@ -1,5 +1,41 @@
-import { describe, it, expect } from 'vitest';
-import { validators, validateField } from '../validation';
+import { describe, it, expect, vi } from 'vitest';
+import { validators, validateField, type Validator } from '../validation';
+
+describe.each([
+  { name: 'compose', create: validators.compose },
+  {
+    name: 'validateField',
+    create: <T>(...checks: Validator<T>[]) => (value: T) => validateField(value, ...checks),
+  },
+])('$name execution', ({ create }) => {
+  it('runs lazily in order and stops at the first truthy error', () => {
+    const value = { id: 'original' };
+    const first = vi.fn<Validator<typeof value>>(() => null);
+    const empty = vi.fn<Validator<typeof value>>(() => '');
+    const failing = vi.fn<Validator<typeof value>>(() => 'First error');
+    const skipped = vi.fn<Validator<typeof value>>(() => {
+      throw new Error('This validator must not run');
+    });
+
+    const validate = create(first, empty, failing, skipped);
+    for (const check of [first, empty, failing, skipped]) {
+      expect(check).not.toHaveBeenCalled();
+    }
+
+    expect(validate(value)).toBe('First error');
+    for (const check of [first, empty, failing]) {
+      expect(check).toHaveBeenCalledExactlyOnceWith(value);
+      expect(check.mock.calls[0][0]).toBe(value);
+    }
+    expect(first.mock.invocationCallOrder[0]).toBeLessThan(empty.mock.invocationCallOrder[0]);
+    expect(empty.mock.invocationCallOrder[0]).toBeLessThan(failing.mock.invocationCallOrder[0]);
+    expect(skipped).not.toHaveBeenCalled();
+  });
+
+  it('returns null when no validators are supplied', () => {
+    expect(create()('anything')).toBeNull();
+  });
+});
 
 describe('validators', () => {
   describe('required', () => {

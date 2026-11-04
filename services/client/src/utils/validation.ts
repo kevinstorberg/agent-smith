@@ -25,13 +25,7 @@ export const validators = {
   },
 
   compose: <T>(...validators: Validator<T>[]): Validator<T> => {
-    return (value: T): string | null => {
-      for (const validator of validators) {
-        const error = validator(value);
-        if (error) return error;
-      }
-      return null;
-    };
+    return (value: T): string | null => validateField(value, ...validators);
   },
 };
 
