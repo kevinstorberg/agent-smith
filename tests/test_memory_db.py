@@ -208,12 +208,12 @@ def test_search_resilient_to_float_buffer_idx(monkeypatch):
 
 
 def test_time_weighting_prefers_recent():
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from langchain_core.documents import Document
 
     retriever = db._get_retriever()
 
-    old_time = datetime.now() - timedelta(days=30)
+    old_time = datetime.now(timezone.utc) - timedelta(days=30)
     old_doc = Document(
         page_content="database optimization techniques",
         metadata={
@@ -227,7 +227,7 @@ def test_time_weighting_prefers_recent():
     )
     retriever.add_documents([old_doc], ids=["00000000-0000-0000-0000-000000000001"], current_time=old_time)
 
-    new_time = datetime.now()
+    new_time = datetime.now(timezone.utc)
     new_doc = Document(
         page_content="database optimization techniques",
         metadata={

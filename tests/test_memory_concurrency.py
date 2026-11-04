@@ -141,7 +141,6 @@ def test_retriever_is_published_only_after_single_complete_hydration(monkeypatch
     monkeypatch.setattr(db, "_retriever_lock", lock)
     monkeypatch.setattr(db, "get_backend", lambda: backend)
     monkeypatch.setattr(db, "TimeWeightedVectorStoreRetriever", build)
-    monkeypatch.setattr(db, "_id_based_salient_docs", lambda retriever, _: retriever)
     with ThreadPoolExecutor(max_workers=3) as pool:
         try:
             futures = [pool.submit(db._get_retriever) for _ in range(3)]
@@ -157,8 +156,6 @@ def test_retriever_is_published_only_after_single_complete_hydration(monkeypatch
     retriever = retrievers[0]
     assert retriever.memory_stream[0].page_content == "synthetic memory"
     assert retriever.memory_stream[0].metadata["buffer_idx"] == 0
-    db._retriever = None
-    assert retriever.get_salient_docs("query") is retriever
 
 
 def test_failed_retriever_hydration_is_not_cached(monkeypatch):
@@ -208,6 +205,5 @@ def test_protected_embeddings_reach_publication_fresh_search_and_retriever(monke
     assert db._retriever is None
     assert db.search_fresh("Synthetic shared embedding")[0]["id"] == id
     assert "query" in calls
-    retriever = db._get_retriever()
-    assert retriever.invoke("Synthetic shared embedding")[0].metadata["id"] == id
+    assert db.search("Synthetic shared embedding", limit=1)[0]["id"] == id
     assert len(constructed) == 1

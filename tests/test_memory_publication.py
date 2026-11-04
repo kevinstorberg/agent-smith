@@ -46,10 +46,11 @@ def test_cold_publish_and_fresh_search_never_initialize_or_load_retriever(monkey
     assert db._retriever is None
     assert db.search_fresh("Python", repo="meeting-project", tags=["meeting-memory"])[0]["id"] == id
     assert db._retriever is None
+    before_replay = db.get(id, record_access=False)
     with monkeypatch.context() as patch:
         patch.setattr(lancedb_backend, "get_vectorstore", no_full_load)
         assert db.publish(id, saved["content"], repo="meeting-project", tags=["meeting-memory"], created_at="2026-01-27T10:30:00-05:00") == id
-    assert db.get(id) == saved
+    assert db.get(id, record_access=False) == before_replay
 
 
 def test_cold_publish_preserves_legacy_add_update_and_lancedb_metadata_schema():
@@ -102,11 +103,11 @@ def test_publication_replay_after_delayed_fetch_does_not_duplicate_cache(monkeyp
 def test_frozen_publication_conflicts_leave_existing_memory_unchanged(change):
     kwargs = {"id": str(uuid4()), "content": "Original private memory", "repo": "meeting-project", "tags": ["meeting-memory"], "created_at": CREATED}
     db.publish(**kwargs)
-    original = db.get(kwargs["id"])
+    original = db.get(kwargs["id"], record_access=False)
     with pytest.raises(db.MemoryConflictError) as caught:
         db.publish(**{**kwargs, **change})
     assert "private" not in str(caught.value).lower()
-    assert db.get(kwargs["id"]) == original
+    assert db.get(kwargs["id"], record_access=False) == original
 
 
 def test_frozen_replay_does_not_overwrite_a_human_correction():
@@ -164,16 +165,22 @@ def test_fresh_search_serializes_backend_shapes_and_bounds_candidates(monkeypatc
         Document(id=match if shape == "pinecone" else None, page_content="Matching memory", metadata=hit_metadata),
     ]
     store = SimpleNamespace(similarity_search=Mock(return_value=docs))
-    backend = SimpleNamespace(get_vectorstore=Mock(return_value=store), load_all=no_full_load)
+    touched_at = datetime.fromisoformat(CREATED)
+    backend = SimpleNamespace(
+        get_vectorstore=Mock(return_value=store), load_all=no_full_load,
+        touch_accessed=Mock(side_effect=lambda ids, stamp: {id: stamp.isoformat() for id in ids}),
+    )
     monkeypatch.setattr(db, "get_backend", lambda: backend)
     monkeypatch.setattr(db, "_get_retriever", no_full_load)
+    monkeypatch.setattr(db, "_utcnow", lambda: touched_at)
     assert db.search_fresh("topic", repo="meeting-project", tags=["meeting-memory"], limit=limit) == [{
         "id": match, "content": "Matching memory", "repo": "meeting-project", "tags": ["meeting-memory"],
         "source_type": None, "source_id": None, "from_meeting": False,
         "context_tags": [],
-        "created_at": CREATED, "updated_at": CREATED,
+        "created_at": CREATED, "updated_at": CREATED, "last_accessed_at": CREATED,
     }]
     store.similarity_search.assert_called_once_with("topic", k=candidates)
+    backend.touch_accessed.assert_called_once_with([match], touched_at)
 
 
 @pytest.mark.parametrize("change", [

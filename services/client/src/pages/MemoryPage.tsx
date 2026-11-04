@@ -250,11 +250,16 @@ export function MemoryPage() {
               {item.repo && <span className="tag tag-info">{item.repo}</span>}
               {item.context_tags?.filter(tag => !item.tags?.includes(tag)).map(tag => <span key={`context-${tag}`} className="tag" title="Meeting topic">{tag}</span>)}
               {item.tags?.map(t => <span key={t} className="tag">{t}</span>)}
-              {item.created_at && (
-                <span className="text-muted-sm">
-                  {new Date(item.created_at).toLocaleString()}
+              {([
+                ['Created', item.created_at],
+                ['Last accessed', item.last_accessed_at],
+              ] as const).map(([label, timestamp]) => (
+                <span key={label} className="text-muted-sm">
+                  {label}: {timestamp
+                    ? <time dateTime={timestamp}>{new Date(timestamp).toLocaleString()}</time>
+                    : 'Unavailable'}
                 </span>
-              )}
+              ))}
               {!isEditing && (
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
                   <CopyButton text={item.content} className="btn-sm" />

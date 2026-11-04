@@ -29,17 +29,27 @@ def mock_index():
 
 
 @pytest.fixture
-def mock_pc(mock_index):
+def mock_pc(mock_index, monkeypatch):
+    monkeypatch.setenv("PINECONE_API_KEY", "test-api-key")
     pc = MagicMock()
     pc.has_index.return_value = True
     pc.Index.return_value = mock_index
-    with patch.object(pb, "_get_pc", return_value=pc):
+    pc.describe_index.return_value = {"host": "test-index.example.invalid"}
+    with patch.object(pb, "_get_pc", return_value=pc), patch.object(pb, "Index", return_value=mock_index):
         yield pc
 
 
 def test_init_connects(mock_pc):
     pb.init()
     mock_pc.has_index.assert_called_once()
+
+
+def test_init_configures_bounded_requests_without_sdk_retries(mock_pc):
+    pb.init()
+    kwargs = pb.Index.call_args.kwargs
+    assert kwargs["host"] == "test-index.example.invalid"
+    assert kwargs["api_key"] == "test-api-key"
+    assert kwargs["openapi_config"].retries == 0
 
 
 def test_get_row_found(mock_pc, mock_index):
@@ -86,7 +96,7 @@ def test_safe_vectorstore_does_not_mutate_input_documents(mock_pc, mock_index):
     now = _dt.now()
     original = Document(
         page_content="hello",
-        metadata={"id": "x", "last_accessed_at": now, "buffer_idx": 0},
+        metadata={"id": VALID_ID, "last_accessed_at": now, "buffer_idx": 0},
     )
 
     with patch.object(pb.PineconeVectorStore, "add_documents", _stub_parent_add):
