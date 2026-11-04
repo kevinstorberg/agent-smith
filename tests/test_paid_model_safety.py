@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 
 import httpx
 import pytest
@@ -137,27 +137,62 @@ def test_eval_cli_is_denied_before_selecting_an_environment_or_launching_pytest(
     assert "disabled in automated tests" in capsys.readouterr().err
 
 
-def test_audit_forces_automated_mode_and_sanitizes_its_pytest_environment(tmp_path, monkeypatch):
+@pytest.mark.parametrize("skip_lint", [False, True])
+@pytest.mark.parametrize("pytest_fails", [False, True])
+def test_audit_forces_automated_mode_and_sanitizes_its_pytest_environment(tmp_path, monkeypatch, skip_lint, pytest_fails):
     (tmp_path / ".env.test").write_text("OPENAI_API_KEY=fake-file\nLANGSMITH_TRACING=true\n")
     monkeypatch.setattr(manage, "ROOT", tmp_path)
     monkeypatch.setattr(manage, "python_executable", lambda: sys.executable)
     monkeypatch.setenv(LIVE_EVALS_ENV, "1")
     monkeypatch.setenv("PERSONA_MODEL_SERVER_API_KEY", "fake-inherited")
     captured = []
+    cluster_events = []
 
     @contextmanager
     def cluster():
-        yield "postgresql://owned-db/agent_smith_test"
+        cluster_events.append("opened")
+        try:
+            yield "postgresql://owned-db/agent_smith_test"
+        finally:
+            cluster_events.append("closed")
+
+    def checked(command, **options):
+        captured.append((command, options))
+        if "pytest" in command:
+            assert Path(options["env"]["MEMORY_STORE_PATH"]).is_dir()
+            if pytest_fails:
+                raise RuntimeError("synthetic pytest failure")
 
     monkeypatch.setattr(manage, "temporary_postgres", cluster)
-    monkeypatch.setattr(manage, "checked", lambda command, **kwargs: captured.append((command, kwargs)))
-    manage.audit(type("Args", (), {"backend_only": True})(), [])
+    monkeypatch.setattr(manage, "checked", checked)
+    expected = pytest.raises(RuntimeError, match="synthetic pytest failure") if pytest_fails else nullcontext()
+    with expected:
+        manage.audit(type("Args", (), {"backend_only": True, "skip_lint": skip_lint})(), ["-k", "synthetic"])
     command, options = next(item for item in captured if "pytest" in item[0])
     assert "tests/" in command
+    assert command[-2:] == ["-k", "synthetic"]
+    assert [item[0] for item in captured if "ruff" in item[0]] == ([] if skip_lint else [[sys.executable, "-m", "ruff", "check", "."]])
     env = options["env"]
     assert env[AUTOMATED_TESTS_ENV] == "1" and env["DATABASE_URL_TEST"] == "postgresql://owned-db/agent_smith_test"
     assert not {LIVE_EVALS_ENV, "OPENAI_API_KEY", "PERSONA_MODEL_SERVER_API_KEY"} & env.keys()
     assert env["LANGSMITH_TRACING"] == "false"
+    assert env["MEMORY_BACKEND"] == "lancedb"
+    assert not Path(env["MEMORY_STORE_PATH"]).exists()
+    assert cluster_events == ["opened", "closed"]
+
+
+@pytest.mark.parametrize("flags,skip_lint", [([], False), (["--skip-lint"], True)])
+def test_audit_cli_consumes_optional_lint_flag_before_forwarding_pytest_options(monkeypatch, flags, skip_lint):
+    captured = []
+    monkeypatch.setattr(sys, "argv", ["manage", "audit", "--backend-only", *flags, "-k", "audit_contract"])
+    monkeypatch.setattr(manage, "audit", lambda args, extra: captured.append((args, extra)))
+
+    assert manage.main() == 0
+
+    args, extra = captured.pop()
+    assert args.backend_only is True
+    assert args.skip_lint is skip_lint
+    assert extra == ["-k", "audit_contract"]
 
 
 @pytest.mark.parametrize("opt_in", [False, True])

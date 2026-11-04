@@ -781,6 +781,19 @@ tests with a temporary local memory store, and stops/removes only that owned clu
 It never resets, drops, or connects to your configured application databases. CI uses
 this same native backend audit command; no container runtime is required.
 
+### GitHub checks
+
+The Tests workflow reports Python lint, backend tests, frontend lint, frontend
+typechecking, frontend build, frontend unit tests, and browser regressions
+separately. Matrix failures leave the other checks running. Typechecking includes
+both application and browser-test sources.
+
+CI uses `./audit.sh --backend-only --skip-lint` after assigning Ruff its own check;
+the ordinary local audit still runs Ruff by default. Checks run on pull requests,
+pushes to main, and manual dispatch. They use standard public-repository runners
+and skip if the repository becomes private. The workflow does not upload
+artifacts or use cache storage; browser diagnostics remain in the job logs.
+
 For direct `pytest tests/` invocations, set `APP_ENV=test` and `DATABASE_URL_TEST`
 to a dedicated loopback database ending in `_test`. Remote targets and targets
 matching configured production are rejected before connecting. Prefer `./audit.sh`
