@@ -17,29 +17,13 @@ from pgvector.psycopg2 import register_vector
 from scripts.shared.validation import validate_memory_id
 from services.config import MEMORY_EMBEDDING_DIMENSION, MEMORY_EMBEDDING_MODEL
 from services.db import get_connection
-from services.memory.backends import BackendRow, build_row
+from services.memory.backends import BackendRow, access_datetime, build_row, memory_ids, metadata_datetime
 
 TABLE_NAME = "memories"
 _ROW_COLUMNS = "id, content, repo, tags, created_at, updated_at, last_accessed_at, source_type, source_id"
 
 _init_lock = threading.Lock()
 _initialized = False
-
-
-def _as_utc(value: Any, field: str) -> datetime:
-    if isinstance(value, datetime):
-        parsed = value
-    elif isinstance(value, str) and value:
-        try:
-            parsed = datetime.fromisoformat(value)
-        except ValueError as exc:
-            raise ValueError(f"Memory metadata {field!r} must be an ISO datetime") from exc
-    else:
-        raise ValueError(f"Memory metadata {field!r} must be a datetime")
-
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
 
 
 def _parse_tags(value: Any) -> list[str]:
@@ -83,9 +67,9 @@ def _metadata_values(id: str, metadata: dict[str, Any]) -> tuple[Any, ...]:
         uuid.UUID(id),
         repo,
         _parse_tags(metadata.get("tags", [])),
-        _as_utc(metadata.get("created_at"), "created_at"),
-        _as_utc(metadata.get("updated_at"), "updated_at"),
-        _as_utc(metadata.get("last_accessed_at"), "last_accessed_at"),
+        metadata_datetime(metadata.get("created_at"), "created_at"),
+        metadata_datetime(metadata.get("updated_at"), "updated_at"),
+        metadata_datetime(metadata.get("last_accessed_at"), "last_accessed_at"),
         metadata.get("source_type"), metadata.get("source_id"),
     )
 
@@ -224,7 +208,7 @@ class PGVectorStore(VectorStore):
                         embedding = EXCLUDED.embedding,
                         embedding_model = EXCLUDED.embedding_model,
                         updated_at = EXCLUDED.updated_at,
-                        last_accessed_at = EXCLUDED.last_accessed_at,
+                        last_accessed_at = GREATEST(memories.last_accessed_at, EXCLUDED.last_accessed_at),
                         source_type = EXCLUDED.source_type,
                         source_id = EXCLUDED.source_id
                     """,
@@ -328,7 +312,14 @@ def list_rows(repo: str | None = None, limit: int = 20) -> list[BackendRow]:
 
 
 def get_row(id: str) -> BackendRow | None:
-    validate_memory_id(id)
+    rows = get_rows([id])
+    return rows[0] if rows else None
+
+
+def get_rows(ids: list[str]) -> list[BackendRow]:
+    ids = memory_ids(ids)
+    if not ids:
+        return []
     init()
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -336,12 +327,23 @@ def get_row(id: str) -> BackendRow | None:
                 f"""
                 SELECT {_ROW_COLUMNS}
                 FROM memories
-                WHERE id = %s
+                WHERE id = ANY(%s::uuid[])
                 """,
-                (uuid.UUID(id),),
+                (ids,),
             )
-            row = cur.fetchone()
-    return _to_backend_row(row) if row else None
+            rows = {str(row[0]): _to_backend_row(row) for row in cur.fetchall()}
+    return [rows[id] for id in ids if id in rows]
+
+
+def touch_accessed(ids: list[str], accessed_at: datetime) -> dict[str, str]:
+    ids, stamp = memory_ids(ids), access_datetime(accessed_at)
+    if not ids:
+        return {}
+    init()
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("""UPDATE memories SET last_accessed_at = GREATEST(last_accessed_at, %s)
+            WHERE id = ANY(%s::uuid[]) RETURNING id, last_accessed_at""", (stamp, ids))
+        return {str(id): _iso(value) for id, value in cur.fetchall()}
 
 
 def delete_row(id: str) -> None:

@@ -194,8 +194,8 @@ export interface MemoryItem {
   content: string;
   repo?: string;
   tags?: string[];
-  created_at?: string;
-  last_accessed_at?: string;
+  created_at?: string | null;
+  last_accessed_at?: string | null;
 }
 
 export interface MeetingSummary {

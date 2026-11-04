@@ -62,11 +62,11 @@ def test_live_label_edits_do_not_change_raw_memory_or_frozen_replay(saved, monke
 
     monkeypatch.setattr(db, "_persist_document", forbidden)
     labels_db.update(meeting_id, 0, ["product", "roadmapping"])
-    assert db.get(memory_id)["context_tags"] == ["product", "roadmapping"]
+    assert db.get(memory_id, record_access=False)["context_tags"] == ["product", "roadmapping"]
     assert get_backend().get_row(memory_id) == original
     assert db.publish(memory_id, original["text"], repo="context-test", tags=raw_tags, created_at=CREATED, source_type="meeting", source_id=meeting_id) == memory_id
     labels_db.update(meeting_id, 1, [])
-    assert db.get(memory_id)["context_tags"] == []
+    assert db.get(memory_id, record_access=False)["context_tags"] == []
     assert get_backend().get_row(memory_id) == original
 
 
@@ -125,22 +125,41 @@ def test_semantic_context_filter_preserves_bounded_candidates_and_list_uses_cach
             for _ in range(db.SEARCH_FETCH_CEILING)]
     docs.append(db._memory_document(matching_id, "Lower ranked meeting candidate", None, [], CREATED, CREATED,
                                     source_type="meeting", source_id=meeting_id))
-    fresh_limits, ordinary_limits = [], []
+    fresh_limits, ordinary_limits, batch_sizes = [], [], []
 
     def similarity_search(query, *, k):
         fresh_limits.append(k)
         return docs[:k]
 
-    retriever = SimpleNamespace(memory_stream=docs, k=10)
+    retriever = db._get_retriever()
+    retriever.memory_stream = docs
+    records = {
+        document.metadata["id"]: {
+            "id": document.metadata["id"], "text": document.page_content, "metadata": document.metadata,
+        }
+        for document in docs
+    }
 
-    def invoke(query):
-        ordinary_limits.append(retriever.k)
-        return docs[:retriever.k]
+    def scored_search(query, *, k):
+        ordinary_limits.append(k)
+        return [(document, 1.0) for document in docs[:k]]
 
-    retriever.invoke = invoke
-    monkeypatch.setattr(db, "get_backend", lambda: SimpleNamespace(get_vectorstore=lambda embeddings: SimpleNamespace(similarity_search=similarity_search)))
-    monkeypatch.setattr(db, "_get_retriever", lambda: retriever)
+    def get_rows(ids):
+        batch_sizes.append(len(ids))
+        return [records[id] for id in ids]
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Read-only filtered candidates must not reload or touch memories")
+
+    monkeypatch.setattr(retriever.vectorstore, "similarity_search", similarity_search)
+    monkeypatch.setattr(retriever.vectorstore, "similarity_search_with_relevance_scores", scored_search)
+    monkeypatch.setattr(db, "get_backend", lambda: SimpleNamespace(
+        get_vectorstore=lambda embeddings: retriever.vectorstore,
+        get_rows=get_rows, load_all=forbidden, touch_accessed=forbidden,
+    ))
     assert db.search_fresh("candidate", tags=["security"], limit=1) == []
     assert db.search("candidate", tags=["security"], limit=1) == []
-    assert fresh_limits == [20] and ordinary_limits == [db.SEARCH_FETCH_CEILING]
+    assert fresh_limits == [20] and ordinary_limits == [50]
+    assert batch_sizes == [db.SEARCH_FETCH_CEILING + 1]
     assert [row["id"] for row in db.list_memories(tags=["security"], limit=1)] == [matching_id]
+    assert batch_sizes == [db.SEARCH_FETCH_CEILING + 1, 1]

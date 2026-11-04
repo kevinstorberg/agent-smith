@@ -217,7 +217,7 @@ def test_reloaded_time_weighted_search_prefers_recent_memory():
 
     assert [result["id"] for result in results[:2]] == [recent_id, VALID_ID]
     assert all(
-        doc.metadata["last_accessed_at"].tzinfo is None
+        doc.metadata["last_accessed_at"].utcoffset() == timedelta(0)
         for doc in memory_db._get_retriever().memory_stream
     )
 

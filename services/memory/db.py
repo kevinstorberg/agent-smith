@@ -14,7 +14,7 @@ from langchain_classic.retrievers.time_weighted_retriever import (
 )
 from langchain_huggingface import HuggingFaceEmbeddings
 
-from services.memory.backends import get_backend
+from services.memory.backends import TIMESTAMP_FIELDS, canonical_metadata, get_backend, metadata_datetime
 from services.config import MEMORY_EMBEDDING_DEVICE, MEMORY_EMBEDDING_MODEL
 
 MODEL_NAME = MEMORY_EMBEDDING_MODEL
@@ -63,45 +63,8 @@ def _get_embeddings() -> Embeddings:
     return _embeddings
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _parse_datetime(val) -> datetime:
-    if isinstance(val, datetime):
-        parsed = val
-    elif isinstance(val, (int, float)):
-        parsed = datetime.fromtimestamp(val, tz=timezone.utc)
-    elif isinstance(val, str) and val:
-        try:
-            parsed = datetime.fromisoformat(val)
-        except (ValueError, TypeError):
-            return datetime.now()
-    else:
-        return datetime.now()
-
-    # LangChain's time-weighted retriever uses naive local datetimes internally.
-    # Normalize persisted timestamps to naive UTC so reloads cannot mix aware and
-    # naive values during datetime subtraction.
-    if parsed.tzinfo is not None:
-        return parsed.astimezone(timezone.utc).replace(tzinfo=None)
-    return parsed
-
-
-def _id_based_salient_docs(retriever: TimeWeightedVectorStoreRetriever, query: str) -> dict:
-    fetched = retriever.vectorstore.similarity_search_with_relevance_scores(
-        query, **retriever.search_kwargs
-    )
-    id_to_idx = {
-        d.metadata.get("id"): i
-        for i, d in enumerate(retriever.memory_stream)
-        if d.metadata.get("id")
-    }
-    return {
-        idx: (retriever.memory_stream[idx], score)
-        for doc, score in fetched
-        if (idx := id_to_idx.get(doc.metadata.get("id"))) is not None
-    }
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _get_retriever() -> TimeWeightedVectorStoreRetriever:
@@ -129,17 +92,14 @@ def _get_retriever() -> TimeWeightedVectorStoreRetriever:
                 page_content=row.get("text", ""),
                 metadata={
                     **meta,
-                    "last_accessed_at": _parse_datetime(meta.get("last_accessed_at")),
+                    "id": row.get("id") or meta.get("id"),
+                    **({"last_accessed_at": metadata_datetime(meta["last_accessed_at"], "last_accessed_at")}
+                       if meta.get("last_accessed_at") is not None else {}),
                     "buffer_idx": i,
                 },
             )
             retriever.memory_stream.append(doc)
 
-        object.__setattr__(
-            retriever,
-            "get_salient_docs",
-            lambda query: _id_based_salient_docs(retriever, query),
-        )
         _retriever = retriever
 
     return _retriever
@@ -204,6 +164,7 @@ def _meeting_origin_tag(tag: str) -> bool:
 
 
 def _to_row(*, content: str, id: str, meta: dict) -> dict:
+    meta = canonical_metadata(meta)
     tags = _stored_tags(meta)
     source_type, source_id = meta.get("source_type"), meta.get("source_id")
     if source_type is None and "meeting-memory" in tags:
@@ -224,8 +185,7 @@ def _to_row(*, content: str, id: str, meta: dict) -> dict:
         "source_type": source_type,
         "source_id": source_id,
         "from_meeting": source_type == "meeting",
-        "created_at": meta.get("created_at"),
-        "updated_at": meta.get("updated_at"),
+        **{field: meta.get(field) for field in TIMESTAMP_FIELDS},
     }
 
 
@@ -257,6 +217,37 @@ def _with_context_tags(rows: list[dict]) -> list[dict]:
     return [{**row, "context_tags": labels.get(sources.get(row.get("source_id")), []) if row.get("from_meeting") else []} for row in rows]
 
 
+def _record_access(rows: list[dict]) -> list[dict]:
+    if not rows:
+        return []
+    accessed = get_backend().touch_accessed([row["id"] for row in rows], _utcnow())
+    with _retriever_lock:
+        if _retriever is not None:
+            for document in _retriever.memory_stream:
+                stamp = accessed.get(document.metadata.get("id"))
+                if stamp is None:
+                    continue
+                stamp = metadata_datetime(stamp, "last_accessed_at")
+                previous = document.metadata.get("last_accessed_at")
+                document.metadata["last_accessed_at"] = max(stamp, metadata_datetime(previous, "last_accessed_at")) if previous is not None else stamp
+    return [{**row, "last_accessed_at": accessed[row["id"]]} for row in rows if row["id"] in accessed]
+
+
+def _page(rows: list[dict], limit: int | None, offset: int) -> tuple[list[dict], int]:
+    if type(offset) is not int or offset < 0:
+        raise ValueError("Memory offset must be a nonnegative integer")
+    if limit is not None and (type(limit) is not int or limit < 1):
+        raise ValueError("Memory limit must be a positive integer")
+    return rows[offset:offset + limit] if limit is not None else rows[offset:], len(rows)
+
+
+def _refresh_rows(rows: list[dict]) -> list[dict]:
+    if not rows:
+        return []
+    current = {row["id"]: row["metadata"].get("last_accessed_at") for row in get_backend().get_rows([row["id"] for row in rows])}
+    return [{**row, "last_accessed_at": current[row["id"]]} for row in rows if row["id"] in current]
+
+
 def _cached_index(retriever: TimeWeightedVectorStoreRetriever, id: str) -> int | None:
     return next((index for index, item in enumerate(retriever.memory_stream) if item.metadata.get("id") == id), None)
 
@@ -269,6 +260,9 @@ def _persist_document(
     current_time: datetime,
     replace_index: int | None = None,
 ) -> None:
+    if current_time.tzinfo is None or current_time.utcoffset() is None:
+        raise ValueError("Memory write time must include a timezone")
+    current_time = current_time.astimezone(timezone.utc)
     memory_document = deepcopy(document)
     memory_document.metadata.setdefault("last_accessed_at", current_time)
     memory_document.metadata.setdefault("created_at", current_time)
@@ -283,10 +277,18 @@ def _persist_document(
     )
     if retriever is None:
         return
-    if replace_index is None:
-        retriever.memory_stream.append(memory_document)
-    else:
-        retriever.memory_stream[replace_index] = memory_document
+    with _retriever_lock:
+        current_index = _cached_index(retriever, id)
+        if current_index is None:
+            retriever.memory_stream.append(memory_document)
+        else:
+            previous = retriever.memory_stream[current_index].metadata.get("last_accessed_at")
+            if previous is not None:
+                memory_document.metadata["last_accessed_at"] = max(
+                    metadata_datetime(previous, "last_accessed_at"),
+                    metadata_datetime(memory_document.metadata["last_accessed_at"], "last_accessed_at"),
+                )
+            retriever.memory_stream[current_index] = memory_document
 
 
 def _memory_document(id: str, content: str, repo: str | None, tags: list[str] | None, created_at: str, updated_at: str,
@@ -348,7 +350,7 @@ def publish(id: str, content: str, repo: str | None = None, tags: list[str] | No
         return id
     doc = _memory_document(id, content, repo, tags, stamp.isoformat(), stamp.isoformat(), source_type=source_type, source_id=source_id)
     replace_index = _cached_index(_retriever, id) if _retriever is not None else None
-    _persist_document(_retriever, doc, id=id, current_time=stamp.replace(tzinfo=None), replace_index=replace_index)
+    _persist_document(_retriever, doc, id=id, current_time=stamp, replace_index=replace_index)
     return id
 
 
@@ -362,7 +364,7 @@ def search_fresh(query: str, repo: str | None = None, tags: list[str] | None = N
     vectorstore = get_backend().get_vectorstore(_get_embeddings())
     docs = vectorstore.similarity_search(query, k=min(200, max(20, limit * 5)))
     rows = _with_context_tags([_doc_to_row(doc) for doc in docs])
-    return _filter_and_sort(rows, repo=repo, tags=tags, sort=None)[:limit]
+    return _record_access(_filter_and_sort(rows, repo=repo, tags=tags, sort=None)[:limit])
 
 
 
@@ -373,14 +375,65 @@ def init() -> None:
 def add(content: str, repo: str | None = None, tags: list[str] | None = None) -> str:
     assert content and content.strip(), "Memory content must not be empty."
     id = str(uuid.uuid4())
-    now_str = _now()
-    now_dt = datetime.now()
+    now_dt = _utcnow()
+    now_str = now_dt.isoformat()
 
     doc = _memory_document(id, content, repo, tags, now_str, now_str)
 
     retriever = _get_retriever()
     _persist_document(retriever, doc, id=id, current_time=now_dt)
     return id
+
+
+def _ranked_rows(retriever: TimeWeightedVectorStoreRetriever, query: str) -> list[dict]:
+    with _retriever_lock:
+        scores = {
+            document.metadata["id"]: retriever.default_salience
+            for document in retriever.memory_stream[-SEARCH_FETCH_CEILING:]
+            if document.metadata.get("id")
+        }
+    hits = retriever.vectorstore.similarity_search_with_relevance_scores(query, **retriever.search_kwargs)
+    for document, score in hits:
+        id = document.metadata.get("id") or document.id
+        if id:
+            scores[id] = score
+    records = {row["id"]: row for row in get_backend().get_rows(list(scores))}
+    now = _utcnow()
+    ranked = []
+    for id, relevance in scores.items():
+        record = records.get(id)
+        if record is None:
+            continue
+        metadata = dict(record["metadata"])
+        ranking_access = metadata.get("last_accessed_at") or metadata.get("created_at")
+        metadata["last_accessed_at"] = metadata_datetime(ranking_access, "last_accessed_at") if ranking_access is not None else datetime(1970, 1, 1, tzinfo=timezone.utc)
+        document = Document(page_content=record["text"], metadata=metadata)
+        # Native invoke uses local time and changes cache before storage acknowledges access.
+        score = retriever._get_combined_score(document, relevance, now)
+        ranked.append((_raw_to_row(record), score))
+    return [row for row, _ in sorted(ranked, key=lambda item: item[1], reverse=True)[:SEARCH_FETCH_CEILING]]
+
+
+def search_page(
+    query: str,
+    repo: str | None = None,
+    tags: list[str] | None = None,
+    sort: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+    meeting_only: bool = False,
+) -> tuple[list[dict], int]:
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("Search query must not be empty")
+    _validate_scope(repo, tags)
+    _validate_sort(sort)
+    _page([], limit, offset)
+
+    retriever = _get_retriever()
+    rows = _with_context_tags(_ranked_rows(retriever, query))
+    result = _filter_and_sort(rows, repo=repo, tags=tags, sort=sort, meeting_only=meeting_only)
+    selected, total = _page(result, limit, offset)
+    return _record_access(selected), total
 
 
 def search(
@@ -391,18 +444,25 @@ def search(
     limit: int | None = None,
     meeting_only: bool = False,
 ) -> list[dict]:
-    assert query and query.strip(), "Search query must not be empty."
-    _validate_sort(sort)
+    return search_page(query, repo=repo, tags=tags, sort=sort, limit=limit, meeting_only=meeting_only)[0]
 
+
+def list_page(
+    repo: str | None = None,
+    tags: list[str] | None = None,
+    sort: str = "created_at_desc",
+    limit: int | None = None,
+    offset: int = 0,
+    meeting_only: bool = False,
+) -> tuple[list[dict], int]:
     retriever = _get_retriever()
-    if not retriever.memory_stream:
-        return []
-
-    retriever.k = SEARCH_FETCH_CEILING
-    docs = retriever.invoke(query)
-    rows = _with_context_tags([_doc_to_row(doc) for doc in docs])
+    with _retriever_lock:
+        rows = [_doc_to_row(doc) for doc in retriever.memory_stream]
+    rows = _with_context_tags(rows)
     result = _filter_and_sort(rows, repo=repo, tags=tags, sort=sort, meeting_only=meeting_only)
-    return result[: int(limit)] if limit is not None else result
+    selected, total = _page(result, limit, offset)
+    # Polling the feed observes stored access without itself counting as memory use.
+    return _refresh_rows(selected), total
 
 
 def list_memories(
@@ -412,18 +472,18 @@ def list_memories(
     limit: int | None = None,
     meeting_only: bool = False,
 ) -> list[dict]:
-    # Read the retriever's stream, which add/update/delete keep current, instead of a full
-    # backend load per call: on Pinecone that load is ~5 MB and exhausted the monthly egress
-    # quota. Like search, it sees other processes' writes only after this process restarts.
-    rows = _with_context_tags([_doc_to_row(doc) for doc in _get_retriever().memory_stream])
-    result = _filter_and_sort(rows, repo=repo, tags=tags, sort=sort, meeting_only=meeting_only)
-    return result[: int(limit)] if limit is not None else result
+    return list_page(repo=repo, tags=tags, sort=sort, limit=limit, meeting_only=meeting_only)[0]
 
 
-def get(id: str) -> dict | None:
+def get(id: str, *, record_access: bool = True) -> dict | None:
     assert id and id.strip(), "ID must not be empty."
     row = get_backend().get_row(id)
-    return _with_context_tags([_raw_to_row(row)])[0] if row else None
+    if row is None:
+        return None
+    rows = _with_context_tags([_raw_to_row(row)])
+    if record_access:
+        rows = _record_access(rows)
+    return rows[0] if rows else None
 
 
 def delete(id: str) -> None:
@@ -431,13 +491,14 @@ def delete(id: str) -> None:
     get_backend().delete_row(id)
 
     global _retriever
-    if _retriever:
-        _retriever.memory_stream = [
-            doc for doc in _retriever.memory_stream
-            if doc.metadata.get("id") != id
-        ]
-        for i, doc in enumerate(_retriever.memory_stream):
-            doc.metadata["buffer_idx"] = i
+    with _retriever_lock:
+        if _retriever:
+            _retriever.memory_stream = [
+                doc for doc in _retriever.memory_stream
+                if doc.metadata.get("id") != id
+            ]
+            for i, doc in enumerate(_retriever.memory_stream):
+                doc.metadata["buffer_idx"] = i
 
 
 def update(
@@ -450,7 +511,7 @@ def update(
     assert any(v is not None for v in (content, repo, tags)), (
         "Provide at least one of: content, repo, tags."
     )
-    existing = get(id)
+    existing = get(id, record_access=False)
     if not existing:
         raise KeyError(f"Memory not found: {id}")
 
@@ -458,8 +519,8 @@ def update(
     new_repo = repo if repo is not None else (existing.get("repo") or "")
     new_tags = tags if tags is not None else existing.get("tags", [])
 
-    now_str = _now()
-    now_dt = datetime.now()
+    now_dt = _utcnow()
+    now_str = now_dt.isoformat()
 
     doc = _memory_document(id, new_content, new_repo, new_tags, existing.get("created_at", now_str), now_str,
                            source_type=existing.get("source_type"), source_id=existing.get("source_id"))

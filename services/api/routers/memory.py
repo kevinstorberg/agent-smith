@@ -3,8 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
-from services.memory.db import search, list_memories, get, update, delete
-from services.api.routers.base import require_found, list_response, delete_response, empty_to_none, paginate
+from services.memory.db import search_page, list_page, get, update, delete
+from services.api.routers.base import require_found, list_response, delete_response, empty_to_none
 
 router = APIRouter()
 
@@ -22,8 +22,8 @@ def search_memories(
     offset: int = Query(0, ge=0),
     meeting_only: bool = False,
 ):
-    all_results = search(q, repo=empty_to_none(repo), tags=tags or None, sort=sort or None, meeting_only=meeting_only)
-    items, total = paginate(all_results, offset, limit)
+    items, total = search_page(q, repo=empty_to_none(repo), tags=tags or None, sort=sort or None,
+                               limit=limit, offset=offset, meeting_only=meeting_only)
     return list_response(items, total)
 
 
@@ -36,13 +36,14 @@ def list_all(
     offset: int = Query(0, ge=0),
     meeting_only: bool = False,
 ):
-    all_results = list_memories(
+    items, total = list_page(
         repo=empty_to_none(repo),
         tags=tags or None,
         sort=sort or "created_at_desc",
+        limit=limit,
+        offset=offset,
         meeting_only=meeting_only,
     )
-    items, total = paginate(all_results, offset, limit)
     return list_response(items, total)
 
 
@@ -65,11 +66,11 @@ def update_memory(memory_id: str, body: MemoryUpdate):
         repo=body.repo,
         tags=body.tags,
     )
-    return require_found(get(memory_id), "Memory", memory_id)
+    return require_found(get(memory_id, record_access=False), "Memory", memory_id)
 
 
 @router.delete("/{memory_id}")
 def delete_memory(memory_id: str):
-    require_found(get(memory_id), "Memory", memory_id)
+    require_found(get(memory_id, record_access=False), "Memory", memory_id)
     delete(memory_id)
     return delete_response(memory_id)

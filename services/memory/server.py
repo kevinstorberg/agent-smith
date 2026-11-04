@@ -68,7 +68,7 @@ def memory_list(repo: str = "", limit: int = db.DEFAULT_LIMIT,
 
     Returns:
         Memories with id, content, repo, editable tags, inherited context_tags,
-        from_meeting, source_type/source_id and timestamps. Reads use the current cached memory stream.
+        from_meeting, source_type/source_id and timestamps. Listing observes stored access times without marking memories as accessed.
     """
     return db.list_memories(repo=empty_to_none(repo), limit=limit, tags=tags, meeting_only=meeting_only)
 
