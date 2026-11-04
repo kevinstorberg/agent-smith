@@ -800,6 +800,40 @@ and the existing migration regressions. It uses the same owned-cluster guards as
 backend tests. These checks examine CI's disposable database, so no application
 database credentials or production monitoring service are needed.
 
+### Free security checks
+
+The Security workflow reports Python dependency security, frontend dependency
+security, secret scanning, and CodeQL analysis for Python, JavaScript/TypeScript,
+and GitHub Actions workflows
+as separate checks. It runs on pull requests, main pushes, manual dispatch, and
+weekly schedules using standard public-repository runners, without artifact or
+cache uploads. Public-repository availability is described in [GitHub's billing
+documentation](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
+
+Python tooling has its own environment because application and formatter-tool
+dependencies require different `packaging` versions. The auditor checks each
+installed application/tool package from a `pip list` inventory without resolving
+another dependency tree. Missing/skipped packages, incompatible installs, and
+known Python advisories fail the check. Independent jobs resolve their own fresh
+environments from the declared requirements.
+
+The npm check includes development dependencies and fails on high/critical
+advisories; lower severities remain visible. Compatible lockfile updates remove
+the initial high-severity findings. Seven moderate findings in the TypeScript
+lint dependency chain remain visible because npm proposes an incompatible
+downgrade to remove them.
+
+Gitleaks scans full Git history with completely redacted findings. The four
+ignored fingerprints are exact, verified synthetic test literals; test
+directories are not excluded. CodeQL's analysis check confirms execution, while
+its separate code-scanning result check evaluates reported alerts. Results also
+appear in GitHub's Security tab.
+
+Dependabot is configured for weekly Python, npm, and GitHub Actions update PRs,
+grouping minor/patch updates without automatic merges. Version updates activate
+when the configuration reaches the default branch. Native vulnerability alerts
+and security updates are repository settings, separate from the workflow jobs.
+
 For direct `pytest tests/` invocations, set `APP_ENV=test` and `DATABASE_URL_TEST`
 to a dedicated loopback database ending in `_test`. Remote targets and targets
 matching configured production are rejected before connecting. Prefer `./audit.sh`

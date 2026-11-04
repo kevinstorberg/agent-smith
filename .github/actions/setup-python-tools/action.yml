@@ -1,0 +1,14 @@
+name: Set up isolated Python CI tools
+description: Install CI tools separately from application dependencies
+outputs:
+  python:
+    description: Explicit Python interpreter for the isolated tools environment
+    value: ${{ steps.tools.outputs.python }}
+runs:
+  using: composite
+  steps:
+    - id: tools
+      shell: bash
+      run: |
+        python scripts/ci_python.py setup-tools --directory "$RUNNER_TEMP/ci-tools"
+        printf 'python=%s\n' "$RUNNER_TEMP/ci-tools/bin/python" >> "$GITHUB_OUTPUT"

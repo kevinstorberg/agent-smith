@@ -1,0 +1,16 @@
+name: Set up verified native tools
+description: Install one checksum-pinned native CLI on a Linux X64 runner.
+
+inputs:
+  tool:
+    description: Native CLI to install (gitleaks, actionlint, or shellcheck).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install verified native tool
+      shell: bash
+      env:
+        NATIVE_TOOL: ${{ inputs.tool }}
+      run: bash "${GITHUB_ACTION_PATH}/install.sh" "$NATIVE_TOOL"

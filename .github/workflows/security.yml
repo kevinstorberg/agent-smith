@@ -1,0 +1,105 @@
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "23 8 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  python-dependencies:
+    name: Python dependency security
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.13"
+      - name: Install isolated application dependencies
+        id: app
+        run: |
+          python -m venv "$RUNNER_TEMP/ci-app"
+          "$RUNNER_TEMP/ci-app/bin/python" -m pip install -r requirements.txt
+          echo "python=$RUNNER_TEMP/ci-app/bin/python" >> "$GITHUB_OUTPUT"
+      - name: Install isolated audit tools
+        id: tools
+        uses: ./.github/actions/setup-python-tools
+      - name: Audit complete installed application and tool inventories
+        env:
+          APP_PYTHON: ${{ steps.app.outputs.python }}
+          TOOLS_PYTHON: ${{ steps.tools.outputs.python }}
+        run: '"$TOOLS_PYTHON" scripts/ci_python.py audit --python "$APP_PYTHON" --tools-python "$TOOLS_PYTHON"'
+
+  npm-dependencies:
+    name: Frontend dependency security
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/client
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Audit runtime and development dependencies
+        run: npm audit --audit-level=high
+
+  secrets:
+    name: Secret scan
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-native-tools
+        with:
+          tool: gitleaks
+      - name: Scan full history with redacted diagnostics
+        run: gitleaks git --redact=100 --no-banner --timeout 120 --log-opts=--all .
+
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript, actions]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@5895b2c9be147bc7f1c75ce72c5cb577febb1907 # v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - name: Analyze and publish code-scanning results
+        uses: github/codeql-action/analyze@5895b2c9be147bc7f1c75ce72c5cb577febb1907 # v4
+        with:
+          category: "/language:${{ matrix.language }}"
