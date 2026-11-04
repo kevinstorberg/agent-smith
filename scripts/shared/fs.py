@@ -3,6 +3,8 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from scripts.shared.path_safety import contained_path
+
 
 def _remove_stale(dest_dir: Path, keep: set[str], *, match_dirs: bool = False) -> None:
     iterator = dest_dir.iterdir() if match_dirs else dest_dir.glob("*.md")
@@ -42,11 +44,14 @@ def atomic_write(path: Path | str, content: str) -> tuple[bool, str]:
     return True, f"updated:   {path}"
 
 
-def _sync_rules_to_target(items: list[tuple[str, str]], cfg: dict, dry_run: bool) -> None:
+def _sync_rules_to_target(
+    items: list[tuple[str, str]], cfg: dict, dry_run: bool
+) -> None:
     rules_file = Path(cfg["rules_file"]).expanduser()
     rules_dir = Path(cfg["rules_dir"]).expanduser() if "rules_dir" in cfg else None
 
     if rules_dir:
+
         def transform(text, name):
             return extract_brief(text, rules_dir / f"{name}.md")
     else:
@@ -65,7 +70,9 @@ def _sync_rules_to_target(items: list[tuple[str, str]], cfg: dict, dry_run: bool
 
 
 def _resolve_and_partition(
-    item_type: str, agent: str, device_name: str,
+    item_type: str,
+    agent: str,
+    device_name: str,
 ) -> tuple[list[dict], dict[str, list[dict]]]:
     """Resolve sync targets for all items and partition into global vs per-repo.
 
@@ -82,7 +89,9 @@ def _resolve_and_partition(
 
     for row in rows:
         configs = list_configs(row["id"], item_type)
-        targets = resolve_sync_targets({**row, "configs": configs}, agent=agent, device_name=device_name)
+        targets = resolve_sync_targets(
+            {**row, "configs": configs}, agent=agent, device_name=device_name
+        )
         for target in targets:
             if target == "*":
                 global_items.append(row)
@@ -126,7 +135,9 @@ def sync_rules(agent: str, dry_run: bool, device_name: str = "") -> None:
     _sync_to_repo_targets(repo_rows, agent, "rules_file", _repo_sync, dry_run)
 
 
-def _sync_rules_dir(items: list[tuple[str, str]], dest_dir: Path, dry_run: bool) -> None:
+def _sync_rules_dir(
+    items: list[tuple[str, str]], dest_dir: Path, dry_run: bool
+) -> None:
     if dry_run:
         print(f"  would copy {len(items)} file(s) -> {dest_dir}")
         return
@@ -141,35 +152,59 @@ def _sync_rules_dir(items: list[tuple[str, str]], dest_dir: Path, dry_run: bool)
     _remove_stale(dest_dir, source_names)
 
 
-def _sync_skills_to_target(skills: dict[str, dict], dest_dir: Path, dry_run: bool) -> None:
+def _skill_outputs(
+    skills: dict[str, dict], dest_dir: Path
+) -> dict[str, list[tuple[Path, str]]]:
+    if not isinstance(skills, dict):
+        raise ValueError("skills must be an object")
+    outputs = {}
+    for name, data in skills.items():
+        if not isinstance(name, str) or "/" in name:
+            raise ValueError("skill name must be a single path component")
+        dest_skill = contained_path(dest_dir, name)
+        if not isinstance(data, dict) or not isinstance(data.get("skill_md"), str):
+            raise ValueError(f"skill {name!r} must provide string skill_md content")
+        files = data.get("files", {})
+        if not isinstance(files, dict):
+            raise ValueError(f"skill {name!r} files must be an object")
+        rendered = [(contained_path(dest_skill, "SKILL.md"), data["skill_md"])]
+        for relative, content in files.items():
+            destination = contained_path(dest_skill, relative)
+            if not isinstance(content, str):
+                raise ValueError(f"skill {name!r} files must contain string content")
+            rendered.append((destination, content))
+        outputs[name] = rendered
+    return outputs
+
+
+def _sync_skills_to_target(
+    skills: dict[str, dict], dest_dir: Path, dry_run: bool
+) -> None:
+    outputs = _skill_outputs(skills, dest_dir)
     if dry_run:
         print(f"  would sync {len(skills)} skill(s) -> {dest_dir}")
         return
 
     dest_dir.mkdir(parents=True, exist_ok=True)
-    for name, data in sorted(skills.items()):
-        dest_skill = dest_dir / name
-        dest_skill.mkdir(parents=True, exist_ok=True)
-        _, msg = atomic_write(dest_skill / "SKILL.md", data["skill_md"])
-        print(f"  {msg}")
-        for rel_path, file_content in sorted(data.get("files", {}).items()):
-            dest_file = dest_skill / rel_path
-            dest_file.parent.mkdir(parents=True, exist_ok=True)
-            _, msg = atomic_write(dest_file, file_content)
+    for _, files in sorted(outputs.items()):
+        for destination, content in files:
+            _, msg = atomic_write(destination, content)
             print(f"  {msg}")
 
     _remove_stale(dest_dir, set(skills.keys()), match_dirs=True)
 
 
 def _collect_skill_clones(
-    agent: str, device_name: str,
+    agent: str,
+    device_name: str,
 ) -> tuple[dict[str, dict], dict[str, dict[str, dict]]]:
     global_rows, repo_rows = _resolve_and_partition("rule", agent, device_name)
 
     def to_skills(rows: list[dict]) -> dict[str, dict]:
         return {
             r["name"]: {"skill_md": r["content"]["body"], "files": {}}
-            for r in rows if r.get("clone_as_skill")
+            for r in rows
+            if r.get("clone_as_skill")
         }
 
     global_clones = to_skills(global_rows)
@@ -189,7 +224,10 @@ def sync_skills(agent: str, dry_run: bool, device_name: str = "") -> None:
         result = {}
         for r in rows:
             meta = content_metadata(r)
-            result[r["name"]] = {"skill_md": r["content"]["body"], "files": meta.get("files", {})}
+            result[r["name"]] = {
+                "skill_md": r["content"]["body"],
+                "files": meta.get("files", {}),
+            }
         return result
 
     global_skills = {**global_clones, **rows_to_skills(global_rows)}
@@ -210,10 +248,13 @@ def sync_skills(agent: str, dry_run: bool, device_name: str = "") -> None:
         _sync_skills_to_target({**clones, **real}, Path(rcfg["skills_dir"]), dry_run)
 
 
-def _compose_agent_file(body: str, metadata: dict, scoped_rules: list | None = None) -> str:
+def _compose_agent_file(
+    body: str, metadata: dict, scoped_rules: list | None = None
+) -> str:
     parts = []
     if metadata:
         import yaml
+
         frontmatter = yaml.dump(metadata, default_flow_style=False).rstrip()
         parts.append(f"---\n{frontmatter}\n---\n")
     parts.append(body.rstrip())
@@ -247,7 +288,9 @@ def sync_agents(agent: str, dry_run: bool, device_name: str = "") -> None:
         filename = f"{name}.md"
         source_names.add(filename)
         content = _compose_agent_file(
-            data["body"], data["metadata"], data.get("scoped_rules"),
+            data["body"],
+            data["metadata"],
+            data.get("scoped_rules"),
         )
         _, msg = atomic_write(dest_dir / filename, content)
         print(f"  {msg}")
