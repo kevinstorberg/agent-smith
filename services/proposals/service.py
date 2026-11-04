@@ -23,6 +23,7 @@ import psycopg2
 from psycopg2.errors import DeadlockDetected, LockNotAvailable, QueryCanceled
 from psycopg2.extras import Json, RealDictCursor
 
+from scripts.shared.validation import MAX_NAME_LENGTH, validate_item_name
 from services.api.models.proposal import ProposalModel, existing_fingerprints
 from services.api.models.shared.harness import (
     VALID_TABLES,
@@ -179,6 +180,11 @@ def _validate_common(p: dict) -> None:
 
 def _stage_harness(p: dict) -> dict:
     kind, action, name = p["target_kind"], p["action"], p["target_name"]
+    _require(
+        isinstance(name, str) and 0 < len(name) <= MAX_NAME_LENGTH,
+        f"target_name must be a 1-{MAX_NAME_LENGTH} char string",
+    )
+    validate_item_name(name)
     project = p.get("project") or None
     body = p.get("body")
     _require(
