@@ -1,0 +1,7 @@
+# Deterministic numeric token/SSN input in the historical redaction test.
+398914a85435a22fa2e13fce52f4a15bf1c03ade:tests/test_claude_memory_capture.py:generic-api-key:220
+
+# Identical synthetic model credential: test markers and sequential alphabet/digits.
+98178bdebd757d125b56e45ffd6a3eeb098edbca:tests/test_graph_model_factory.py:generic-api-key:16
+98178bdebd757d125b56e45ffd6a3eeb098edbca:tests/test_graph_model_config.py:generic-api-key:12
+f14cb547dbdba928b366a49a5de50f6ea6cd93c9:tests/test_graphs_server.py:generic-api-key:31

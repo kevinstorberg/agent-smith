@@ -1,6 +1,8 @@
 .env.*
 !.env.default
 .venv
+.ci-app-venv/
+.ci-tools-venv/
 .runtime/
 .pytest_cache/
 .ruff_cache/
