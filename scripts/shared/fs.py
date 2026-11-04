@@ -121,20 +121,36 @@ def _sync_to_repo_targets(
             sync_fn(rows, rcfg, dry_run)
 
 
-def sync_rules(agent: str, dry_run: bool, device_name: str = "") -> None:
+def _target_selected(target: str, destinations: set[str] | None) -> bool:
+    return destinations is None or target in destinations
+
+
+def sync_rules(
+    agent: str,
+    dry_run: bool,
+    device_name: str = "",
+    *,
+    destinations: set[str] | None = None,
+) -> None:
     from scripts.shared.agents import AGENT_TARGETS
 
     cfg = AGENT_TARGETS[agent]
     global_rows, repo_rows = _resolve_and_partition("rule", agent, device_name)
 
     global_items = [(r["name"], r["content"]["body"]) for r in global_rows]
-    _sync_rules_to_target(global_items, cfg, dry_run, owner=agent)
+    if _target_selected("*", destinations):
+        _sync_rules_to_target(global_items, cfg, dry_run, owner=agent)
 
     def _repo_sync(rows, rcfg, dr):
         items = [(r["name"], r["content"]["body"]) for r in rows]
         _sync_rules_to_target(items, rcfg, dr, owner=agent)
 
-    _sync_to_repo_targets(repo_rows, agent, "rules_file", _repo_sync, dry_run)
+    selected_repos = {
+        repo: rows
+        for repo, rows in repo_rows.items()
+        if _target_selected(repo, destinations)
+    }
+    _sync_to_repo_targets(selected_repos, agent, "rules_file", _repo_sync, dry_run)
 
 
 def _sync_rules_dir(
@@ -215,7 +231,13 @@ def _collect_skill_clones(
     return global_clones, repo_clones
 
 
-def sync_skills(agent: str, dry_run: bool, device_name: str = "") -> None:
+def sync_skills(
+    agent: str,
+    dry_run: bool,
+    device_name: str = "",
+    *,
+    destinations: set[str] | None = None,
+) -> None:
     from scripts.shared.agents import AGENT_TARGETS
     from services.api.models.shared.harness import content_metadata
 
@@ -234,14 +256,17 @@ def sync_skills(agent: str, dry_run: bool, device_name: str = "") -> None:
         return result
 
     global_skills = {**global_clones, **rows_to_skills(global_rows)}
-    _sync_skills_to_target(
-        global_skills, Path(cfg["skills_dir"]).expanduser(), dry_run, owner=agent
-    )
+    if _target_selected("*", destinations):
+        _sync_skills_to_target(
+            global_skills, Path(cfg["skills_dir"]).expanduser(), dry_run, owner=agent
+        )
 
     from scripts.shared.agents import repo_config as _repo_config
 
     all_repo_paths = set(repo_rows) | set(repo_clones)
     for repo_path in all_repo_paths:
+        if not _target_selected(repo_path, destinations):
+            continue
         if not Path(repo_path).is_dir():
             print(f"  warning: repo path does not exist, skipping: {repo_path}")
             continue
@@ -302,7 +327,6 @@ def sync_item(
 ) -> dict:
     from services.api.models.shared.harness import get_item_by_id, _table
     from services.api.models.shared.sync import resolve_sync_targets
-    from services.api.models import shared
     from scripts.shared.agents import AGENT_TARGETS
     from scripts.shared.mcp_utils import sync_mcp
     from scripts.shared.hook_utils import sync_hooks
@@ -339,28 +363,31 @@ def sync_item(
             "message": "No agents to sync",
         }
 
+    def selected_destinations(agent: str) -> set[str]:
+        return set(resolve_sync_targets(item, agent=agent, device_name=device_name))
+
     withheld: list[str] = []
     sync_dispatch = {
-        "rule": lambda a: sync_rules(a, dry_run, device_name),
-        "skill": lambda a: sync_skills(a, dry_run, device_name),
+        "rule": lambda a: sync_rules(
+            a, dry_run, device_name, destinations=selected_destinations(a)
+        ),
+        "skill": lambda a: sync_skills(
+            a, dry_run, device_name, destinations=selected_destinations(a)
+        ),
         "tool": lambda a: withheld.extend(sync_mcp(a, dry_run)),
         "hook": lambda a: sync_hooks(a, dry_run),
         "agent": lambda a: sync_agents(a, dry_run, device_name),
     }
 
-    original = shared.harness.list_items_full
-    shared.harness.list_items_full = lambda t: [item] if t == item_type else original(t)
+    for agent in agents_to_sync:
+        print(f"[{agent}/{item_type}]")
+        sync_dispatch[item_type](agent)
 
-    try:
-        for agent in agents_to_sync:
-            print(f"[{agent}/{item_type}]")
-            sync_dispatch[item_type](agent)
-
-            if item_type == "rule" and item.get("clone_as_skill"):
-                print(f"[{agent}/skills (clone)]")
-                sync_skills(agent, dry_run, device_name)
-    finally:
-        shared.harness.list_items_full = original
+        if item_type == "rule" and item.get("clone_as_skill"):
+            print(f"[{agent}/skills (clone)]")
+            sync_skills(
+                agent, dry_run, device_name, destinations=selected_destinations(agent)
+            )
 
     if withheld:
         return {
