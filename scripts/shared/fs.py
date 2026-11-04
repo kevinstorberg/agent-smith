@@ -298,7 +298,9 @@ def sync_agents(agent: str, dry_run: bool, device_name: str = "") -> None:
     _remove_stale(dest_dir, source_names)
 
 
-def sync_item(item_type: str, item_id: int, device_name: str = "") -> dict:
+def sync_item(
+    item_type: str, item_id: int, device_name: str = "", *, dry_run: bool = False
+) -> dict:
     from services.api.models.shared.harness import get_item_by_id, _table
     from services.api.models.shared.sync import resolve_sync_targets
     from services.api.models import shared
@@ -307,6 +309,8 @@ def sync_item(item_type: str, item_id: int, device_name: str = "") -> dict:
     from scripts.shared.hook_utils import sync_hooks
 
     _table(item_type)
+    if type(dry_run) is not bool:
+        raise ValueError("dry_run must be a boolean")
     item = get_item_by_id(item_type, item_id)
 
     if not item:
@@ -338,11 +342,11 @@ def sync_item(item_type: str, item_id: int, device_name: str = "") -> dict:
 
     withheld: list[str] = []
     sync_dispatch = {
-        "rule": lambda a: sync_rules(a, False, device_name),
-        "skill": lambda a: sync_skills(a, False, device_name),
-        "tool": lambda a: withheld.extend(sync_mcp(a, False)),
-        "hook": lambda a: sync_hooks(a, False),
-        "agent": lambda a: sync_agents(a, False, device_name),
+        "rule": lambda a: sync_rules(a, dry_run, device_name),
+        "skill": lambda a: sync_skills(a, dry_run, device_name),
+        "tool": lambda a: withheld.extend(sync_mcp(a, dry_run)),
+        "hook": lambda a: sync_hooks(a, dry_run),
+        "agent": lambda a: sync_agents(a, dry_run, device_name),
     }
 
     original = shared.harness.list_items_full
@@ -355,7 +359,7 @@ def sync_item(item_type: str, item_id: int, device_name: str = "") -> dict:
 
             if item_type == "rule" and item.get("clone_as_skill"):
                 print(f"[{agent}/skills (clone)]")
-                sync_skills(agent, False, device_name)
+                sync_skills(agent, dry_run, device_name)
     finally:
         shared.harness.list_items_full = original
 
@@ -366,9 +370,10 @@ def sync_item(item_type: str, item_id: int, device_name: str = "") -> dict:
             "agents_synced": agents_to_sync,
             "message": "; ".join(withheld),
         }
+    verb = "Would sync" if dry_run else "Synced"
     return {
         "success": True,
         "item_name": item["name"],
         "agents_synced": agents_to_sync,
-        "message": f"Synced to {len(agents_to_sync)} agent(s): {', '.join(agents_to_sync)}",
+        "message": f"{verb} to {len(agents_to_sync)} agent(s): {', '.join(agents_to_sync)}",
     }
