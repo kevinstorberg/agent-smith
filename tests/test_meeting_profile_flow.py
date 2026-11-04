@@ -149,18 +149,17 @@ async def test_cancellation_between_nodes_keeps_memory_done_and_releases_lease(s
 
 @pytest.mark.asyncio
 async def test_profile_windows_resume_without_repeating_summary_memory_stage(source, people, agents, profiler, monkeypatch):
-    from services.meetings import profile_analysis
+    from services.meetings import analysis, profile_analysis
     from services.personas import service as persona_service
 
     monkeypatch.setattr(persona_service, "WINDOW_CHARS", 45)
-    monkeypatch.setattr(persona_service, "AGENT_SECONDS", 0.15)
     monkeypatch.setattr(enrichment, "WINDOW_CHARS", 45)
-    monkeypatch.setattr(enrichment, "AGENT_SECONDS", 0.15)
     calls, original = profiler
 
     async def pause_second(snapshot, window, previous, **kwargs):
-        if previous:
-            await asyncio.Event().wait()
+        if window[0]["id"] == "segment-1":
+            assert previous
+            raise analysis.AnalysisBudgetExpired("Synthetic profile checkpoint boundary")
         return await original(snapshot, window, previous, **kwargs)
 
     monkeypatch.setattr(profile_analysis, "analyze_profiles", pause_second)
@@ -172,8 +171,6 @@ async def test_profile_windows_resume_without_repeating_summary_memory_stage(sou
     assert agents.analyses[0][0]["memory_source"] == "summary"
     assert agents.analyses[0][1] == [{"id": "summary-0", "text": people.summaries["one"].summary_text}]
     assert row["memory_status"] == "done" and row["memory_artifact"]["offset"] == 1
-    monkeypatch.setattr(enrichment, "AGENT_SECONDS", 10)
-    monkeypatch.setattr(persona_service, "AGENT_SECONDS", 10)
     monkeypatch.setattr(profile_analysis, "analyze_profiles", original)
     await ingest_and_profile({"source": source.name})
     assert len(agents.analyses) == 1 and len(calls) == 2
