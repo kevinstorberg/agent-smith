@@ -41,7 +41,8 @@
     "data_through": null,
     "cost_basis": "Observed RU/WU at configured prices",
     "pricing_source": "https://www.pinecone.io/pricing/",
-    "pricing_as_of": "2026-11-05"
+    "pricing_as_of": "2026-11-05",
+    "account_id": null
   },
   "observed": {
     "provider": "pinecone",
@@ -93,7 +94,8 @@
     "data_through": null,
     "cost_basis": "Observed RU/WU at configured prices",
     "pricing_source": "https://www.pinecone.io/pricing/",
-    "pricing_as_of": "2026-11-05"
+    "pricing_as_of": "2026-11-05",
+    "account_id": null
   },
   "no_price": {
     "provider": "pinecone",
@@ -136,7 +138,8 @@
     "data_through": null,
     "cost_basis": "Observed RU/WU at configured prices",
     "pricing_source": null,
-    "pricing_as_of": null
+    "pricing_as_of": null,
+    "account_id": null
   },
   "utc_boundary": {
     "provider": "pinecone",
@@ -178,6 +181,7 @@
     "data_through": null,
     "cost_basis": "Observed RU/WU at configured prices",
     "pricing_source": "https://www.pinecone.io/pricing/",
-    "pricing_as_of": "2026-11-01"
+    "pricing_as_of": "2026-11-01",
+    "account_id": null
   }
 }

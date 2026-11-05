@@ -2,10 +2,20 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from dataclasses import dataclass
+import re
 from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+
+
+AWS_ACCOUNT_PATTERN = r"^[0-9]{12}$"
+
+
+def valid_aws_account(value: object) -> bool:
+    return (
+        isinstance(value, str) and re.fullmatch(AWS_ACCOUNT_PATTERN, value) is not None
+    )
 
 
 def validate_pricing_source(value: str | None) -> str | None:
@@ -48,6 +58,7 @@ class CostReport(BaseModel):
     cost_basis: str = "UnblendedCost"
     pricing_source: str | None = None
     pricing_as_of: date | None = None
+    account_id: str | None = Field(default=None, pattern=AWS_ACCOUNT_PATTERN)
 
     _pricing_source = field_validator("pricing_source")(validate_pricing_source)
 
