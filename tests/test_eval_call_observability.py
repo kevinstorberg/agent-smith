@@ -13,8 +13,15 @@ from scripts.shared.automated_tests import PaidModelCallBlocked
 from services.observability import current_trigger, trigger_context
 
 
+pytestmark = pytest.mark.usefixtures("terminal_diagnostics")
+
+
 def records(caplog):
-    return [record.billable_event for record in caplog.records if hasattr(record, "billable_event")]
+    return [
+        record.billable_event
+        for record in caplog.records
+        if hasattr(record, "billable_event")
+    ]
 
 
 @pytest.fixture
@@ -56,7 +63,12 @@ def scripted_runner(monkeypatch, caplog):
                 return texts()
 
             def __iter__(self):
-                return (SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=text))]) for text in texts())
+                return (
+                    SimpleNamespace(
+                        choices=[SimpleNamespace(delta=SimpleNamespace(content=text))]
+                    )
+                    for text in texts()
+                )
 
         def create(**kwargs):
             started("create")
@@ -64,19 +76,34 @@ def scripted_runner(monkeypatch, caplog):
             return Stream()
 
         if provider == "anthropic":
-            monkeypatch.setattr(anthropic, "Anthropic", lambda **_: SimpleNamespace(messages=SimpleNamespace(stream=create)))
+            monkeypatch.setattr(
+                anthropic,
+                "Anthropic",
+                lambda **_: SimpleNamespace(messages=SimpleNamespace(stream=create)),
+            )
             model = "claude-test"
         elif provider == "openai":
-            monkeypatch.setattr(openai, "OpenAI", lambda **_: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+            monkeypatch.setattr(
+                openai,
+                "OpenAI",
+                lambda **_: SimpleNamespace(
+                    chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+                ),
+            )
             model = "gpt-test"
         else:
+
             def generate(prompt, **kwargs):
                 started("create")
                 calls.append({"prompt": prompt, **kwargs})
                 return (SimpleNamespace(text=text) for text in texts())
 
             monkeypatch.setattr(genai, "configure", lambda **_: None)
-            monkeypatch.setattr(genai, "GenerativeModel", lambda *_, **__: SimpleNamespace(generate_content=generate))
+            monkeypatch.setattr(
+                genai,
+                "GenerativeModel",
+                lambda *_, **__: SimpleNamespace(generate_content=generate),
+            )
             model = "gemini-test"
         return model, calls
 
@@ -84,14 +111,23 @@ def scripted_runner(monkeypatch, caplog):
 
 
 @pytest.mark.parametrize("provider", ["anthropic", "openai", "gemini"])
-def test_runner_covers_sdk_entry_collection_and_supported_cleanup(scripted_runner, provider, caplog, capsys):
+def test_runner_covers_sdk_entry_collection_and_supported_cleanup(
+    scripted_runner, provider, caplog, capsys
+):
     model, calls = scripted_runner(provider)
     with trigger_context(trigger="mcp", tool="evals", request_id="synthetic"):
-        assert runner.run_agent(model, "PRIVATE_INPUT", "PRIVATE_EXTRA") == "PRIVATE_REPLY tail"
+        assert (
+            runner.run_agent(model, "PRIVATE_INPUT", "PRIVATE_EXTRA")
+            == "PRIVATE_REPLY tail"
+        )
 
     before, after = records(caplog)
     assert before["event_id"] == after["event_id"] and after["outcome"] == "success"
-    assert (before["provider"], before["stage"], before["model_role"]) == (provider, "evaluation_agent", "eval_agent")
+    assert (before["provider"], before["stage"], before["model_role"]) == (
+        provider,
+        "evaluation_agent",
+        "eval_agent",
+    )
     assert before["model"] == model and before["streaming"] is True
     assert before["trigger"] == "mcp" and before["request_id"] == "synthetic"
     assert calls[-1] == ("iteration" if provider == "gemini" else "close")
@@ -102,14 +138,35 @@ def test_runner_covers_sdk_entry_collection_and_supported_cleanup(scripted_runne
     if provider != "gemini":
         assert kwargs["max_tokens"] == 16384
     if provider == "openai":
-        assert kwargs["messages"] == [{"role": "system", "content": "PRIVATE_SYSTEM\n\nPRIVATE_EXTRA"}, {"role": "user", "content": "PRIVATE_INPUT"}]
+        assert kwargs["messages"] == [
+            {"role": "system", "content": "PRIVATE_SYSTEM\n\nPRIVATE_EXTRA"},
+            {"role": "user", "content": "PRIVATE_INPUT"},
+        ]
     elif provider == "anthropic":
         assert kwargs["system"] == "PRIVATE_SYSTEM\n\nPRIVATE_EXTRA"
 
 
-@pytest.mark.parametrize("provider,phase", [(provider, phase) for provider in ("anthropic", "openai", "gemini") for phase in ("create", "iteration")] + [("openai", "close"), ("anthropic", "close")])
-@pytest.mark.parametrize("kind,outcome", [(RuntimeError, "failed"), (TimeoutError, "timeout"), (asyncio.CancelledError, "cancelled"), (KeyboardInterrupt, "cancelled")])
-def test_runner_failures_keep_original_exception_and_pair(scripted_runner, provider, phase, kind, outcome, caplog):
+@pytest.mark.parametrize(
+    "provider,phase",
+    [
+        (provider, phase)
+        for provider in ("anthropic", "openai", "gemini")
+        for phase in ("create", "iteration")
+    ]
+    + [("openai", "close"), ("anthropic", "close")],
+)
+@pytest.mark.parametrize(
+    "kind,outcome",
+    [
+        (RuntimeError, "failed"),
+        (TimeoutError, "timeout"),
+        (asyncio.CancelledError, "cancelled"),
+        (KeyboardInterrupt, "cancelled"),
+    ],
+)
+def test_runner_failures_keep_original_exception_and_pair(
+    scripted_runner, provider, phase, kind, outcome, caplog
+):
     failure = kind("PRIVATE_ERROR")
     model, calls = scripted_runner(provider, failure, phase)
     with pytest.raises(kind) as raised:
@@ -126,13 +183,22 @@ def test_runner_failures_keep_original_exception_and_pair(scripted_runner, provi
 
 @pytest.mark.parametrize("entry", ["runner", "judge"])
 def test_automated_guard_produces_no_billable_event(monkeypatch, caplog, entry):
-    monkeypatch.setattr(runner, "_load_rules_context", lambda: pytest.fail("guard must precede context"))
-    monkeypatch.setattr(judge, "GEval", lambda **_: pytest.fail("guard must precede metric"))
+    monkeypatch.setattr(
+        runner, "_load_rules_context", lambda: pytest.fail("guard must precede context")
+    )
+    monkeypatch.setattr(
+        judge, "GEval", lambda **_: pytest.fail("guard must precede metric")
+    )
     with pytest.raises(PaidModelCallBlocked):
         if entry == "runner":
             runner.run_agent("gpt-test", "PRIVATE_INPUT")
         else:
-            judge.evaluate("PRIVATE_INPUT", "PRIVATE_OUTPUT", rule_content="PRIVATE_RULE", judge_prompt="PRIVATE_CRITERIA")
+            judge.evaluate(
+                "PRIVATE_INPUT",
+                "PRIVATE_OUTPUT",
+                rule_content="PRIVATE_RULE",
+                judge_prompt="PRIVATE_CRITERIA",
+            )
     assert records(caplog) == []
 
 
@@ -151,10 +217,21 @@ def native_judge(monkeypatch, caplog):
         schema = kwargs.get("response_format")
         parsed = None
         if isinstance(schema, type):
-            values = {"steps": ["PRIVATE_STEP"]} if "steps" in schema.model_fields else {"score": 8, "reason": "PRIVATE_REASON"}
+            values = (
+                {"steps": ["PRIVATE_STEP"]}
+                if "steps" in schema.model_fields
+                else {"score": 8, "reason": "PRIVATE_REASON"}
+            )
             parsed = schema(**values)
         return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(parsed=parsed, content='{"score": 8, "reason": "PRIVATE_REASON"}'))],
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        parsed=parsed,
+                        content='{"score": 8, "reason": "PRIVATE_REASON"}',
+                    )
+                )
+            ],
             usage=SimpleNamespace(prompt_tokens=3, completion_tokens=4),
         )
 
@@ -165,64 +242,106 @@ def native_judge(monkeypatch, caplog):
         def async_call(kind):
             async def call(**kwargs):
                 return response(kind, kwargs)
+
             return call
 
         call = async_call if asynchronous else sync
-        return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=call("raw"))), beta=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(parse=call("schema")))))
+        return SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=call("raw"))),
+            beta=SimpleNamespace(
+                chat=SimpleNamespace(completions=SimpleNamespace(parse=call("schema")))
+            ),
+        )
 
-    monkeypatch.setattr(models.OpenAIModel, "load_model", lambda _, async_mode=False: client(async_mode))
+    monkeypatch.setattr(
+        models.OpenAIModel, "load_model", lambda _, async_mode=False: client(async_mode)
+    )
     return calls
 
 
 @pytest.mark.parametrize("supplied_steps", [False, True])
 @pytest.mark.parametrize("log_probs", [False, True])
-def test_actual_geval_logs_step_generation_and_native_raw_or_schema_score(native_judge, monkeypatch, caplog, supplied_steps, log_probs):
+def test_actual_geval_logs_step_generation_and_native_raw_or_schema_score(
+    native_judge, monkeypatch, caplog, supplied_steps, log_probs
+):
     metrics = []
 
     def metric(**kwargs):
         result = GEval(**kwargs)
-        result.model.model_data = replace(result.model.model_data, supports_log_probs=log_probs)
+        result.model.model_data = replace(
+            result.model.model_data, supports_log_probs=log_probs
+        )
         metrics.append(result)
         return result
 
     monkeypatch.setattr(judge, "GEval", metric)
-    monkeypatch.setattr(judge, "_rule_to_steps", lambda _: ["PRIVATE_STEP"] if supplied_steps else [])
+    monkeypatch.setattr(
+        judge, "_rule_to_steps", lambda _: ["PRIVATE_STEP"] if supplied_steps else []
+    )
     with trigger_context(trigger="mcp", tool="evals", reason="manual_request"):
-        result = judge.evaluate("PRIVATE_INPUT", "PRIVATE_OUTPUT", rule_content="PRIVATE_RULE", rule_name="PRIVATE_NAME", judge_prompt="PRIVATE_CRITERIA")
+        result = judge.evaluate(
+            "PRIVATE_INPUT",
+            "PRIVATE_OUTPUT",
+            rule_content="PRIVATE_RULE",
+            rule_name="PRIVATE_NAME",
+            judge_prompt="PRIVATE_CRITERIA",
+        )
 
     assert result == {"rule": "PRIVATE_NAME", "score": 0.8, "reason": "PRIVATE_REASON"}
     metric = metrics[0]
-    assert type(metric.model) is models.OpenAIModel and metric.using_native_model is True
+    assert (
+        type(metric.model) is models.OpenAIModel and metric.using_native_model is True
+    )
     assert metric.evaluation_model == "gpt-4o" and metric.evaluation_cost > 0
     assert metric.model.supports_structured_outputs() is True
-    assert [kind for kind, _ in native_judge] == ([] if supplied_steps else ["schema"]) + ["raw" if log_probs else "schema"]
+    assert [kind for kind, _ in native_judge] == (
+        [] if supplied_steps else ["schema"]
+    ) + ["raw" if log_probs else "schema"]
     result = records(caplog)
     assert len(result) == 2 * len(native_judge)
     for before, after in zip(result[::2], result[1::2]):
         assert before["event_id"] == after["event_id"] and after["outcome"] == "success"
         assert before["provider"] == "openai" and before["model_role"] == "eval_judge"
         assert before["trigger"] == "mcp" and before["reason"] == "manual_request"
-    assert result[-2]["operation"] == ("a_generate_raw_response" if log_probs else "a_generate")
+    assert result[-2]["operation"] == (
+        "a_generate_raw_response" if log_probs else "a_generate"
+    )
     assert "PRIVATE_" not in caplog.text and current_trigger() == {}
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("name", ["generate", "a_generate", "generate_raw_response", "a_generate_raw_response"])
-async def test_actual_native_generation_methods_reach_scripted_sdk(native_judge, caplog, name):
+@pytest.mark.parametrize(
+    "name",
+    ["generate", "a_generate", "generate_raw_response", "a_generate_raw_response"],
+)
+async def test_actual_native_generation_methods_reach_scripted_sdk(
+    native_judge, caplog, name
+):
     model = models.OpenAIModel("gpt-4o", api_key="fake")
     judge._observe_model(model)
     method = getattr(model, name)
-    result, cost = await method("PRIVATE_INPUT") if name.startswith("a_") else method("PRIVATE_INPUT")
+    result, cost = (
+        await method("PRIVATE_INPUT")
+        if name.startswith("a_")
+        else method("PRIVATE_INPUT")
+    )
     assert cost > 0 and len(native_judge) == 1
-    assert (result.choices[0].message.content if "raw_response" in name else result) == '{"score": 8, "reason": "PRIVATE_REASON"}'
+    assert (
+        result.choices[0].message.content if "raw_response" in name else result
+    ) == '{"score": 8, "reason": "PRIVATE_REASON"}'
     before, after = records(caplog)
     assert before["operation"] == name and before["event_id"] == after["event_id"]
     assert after["outcome"] == "success" and "PRIVATE_" not in caplog.text
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("name", ["generate", "a_generate", "generate_raw_response", "a_generate_raw_response"])
-async def test_native_public_wrappers_preserve_tuple_identity_and_capabilities(native_judge, caplog, name):
+@pytest.mark.parametrize(
+    "name",
+    ["generate", "a_generate", "generate_raw_response", "a_generate_raw_response"],
+)
+async def test_native_public_wrappers_preserve_tuple_identity_and_capabilities(
+    native_judge, caplog, name
+):
     model = models.OpenAIModel("gpt-4o", api_key="fake")
     result = (object(), object())
 
@@ -237,7 +356,11 @@ async def test_native_public_wrappers_preserve_tuple_identity_and_capabilities(n
     judge._observe_model(model)
     method = getattr(model, name)
     assert iscoroutinefunction(method) is name.startswith("a_")
-    assert (await method("PRIVATE_INPUT") if name.startswith("a_") else method("PRIVATE_INPUT")) is result
+    assert (
+        await method("PRIVATE_INPUT")
+        if name.startswith("a_")
+        else method("PRIVATE_INPUT")
+    ) is result
     assert selection.is_native_model(model) and model.supports_log_probs() is True
     assert len(records(caplog)) == 2 and "PRIVATE_INPUT" not in caplog.text
 
@@ -255,14 +378,24 @@ def test_bedrock_native_sync_async_delegation_has_one_pair(monkeypatch, caplog, 
 
     model.a_generate = call
     judge._observe_model(model)
-    actual = model.generate("PRIVATE_INPUT") if name == "generate" else asyncio.run(model.a_generate("PRIVATE_INPUT"))
+    actual = (
+        model.generate("PRIVATE_INPUT")
+        if name == "generate"
+        else asyncio.run(model.a_generate("PRIVATE_INPUT"))
+    )
     assert actual is result
     before, after = records(caplog)
-    assert before["provider"] == "bedrock" and before["operation"] == name and after["outcome"] == "success"
+    assert (
+        before["provider"] == "bedrock"
+        and before["operation"] == name
+        and after["outcome"] == "success"
+    )
 
 
 @pytest.mark.asyncio
-async def test_judge_task_local_nesting_isolates_cancellation_and_restores_context(native_judge, caplog):
+async def test_judge_task_local_nesting_isolates_cancellation_and_restores_context(
+    native_judge, caplog
+):
     model = models.OpenAIModel("gpt-4o", api_key="fake")
     entered = asyncio.Queue()
     release = asyncio.Event()
@@ -297,13 +430,17 @@ async def test_judge_task_local_nesting_isolates_cancellation_and_restores_conte
         await asyncio.gather(first, second, return_exceptions=True)
     assert len(records(caplog)) == 4
     for name, outcome in (("first", "cancelled"), ("second", "success")):
-        before, after = [record for record in records(caplog) if record["request_id"] == name]
+        before, after = [
+            record for record in records(caplog) if record["request_id"] == name
+        ]
         assert before["event_id"] == after["event_id"] and after["outcome"] == outcome
     await model.a_generate("PRIVATE_INPUT")
     assert len(records(caplog)) == 6 and current_trigger() == {}
 
 
-def test_deepeval_provider_selection_flags_remain_authoritative(native_judge, monkeypatch, caplog):
+def test_deepeval_provider_selection_flags_remain_authoritative(
+    native_judge, monkeypatch, caplog
+):
     metrics = []
 
     def initialize(self, **kwargs):
@@ -313,7 +450,15 @@ def test_deepeval_provider_selection_flags_remain_authoritative(native_judge, mo
 
         async def raw(*_args, **_kwargs):
             assert records(caplog)[-1]["provider"] == "azure_openai"
-            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"score": 8, "reason": "PRIVATE_REASON"}'))]), 0.25
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content='{"score": 8, "reason": "PRIVATE_REASON"}'
+                        )
+                    )
+                ]
+            ), 0.25
 
         self.a_generate_raw_response = raw
 
@@ -326,16 +471,37 @@ def test_deepeval_provider_selection_flags_remain_authoritative(native_judge, mo
     monkeypatch.setattr(models.AzureOpenAIModel, "__init__", initialize)
     monkeypatch.setattr(judge, "GEval", metric)
     monkeypatch.setattr(judge, "_rule_to_steps", lambda _: ["PRIVATE_STEP"])
-    assert judge.evaluate("PRIVATE_INPUT", "PRIVATE_OUTPUT", rule_content="PRIVATE_RULE", judge_prompt="PRIVATE_CRITERIA")["score"] == 0.8
-    assert metrics[0].using_native_model and type(metrics[0].model) is models.AzureOpenAIModel
+    assert (
+        judge.evaluate(
+            "PRIVATE_INPUT",
+            "PRIVATE_OUTPUT",
+            rule_content="PRIVATE_RULE",
+            judge_prompt="PRIVATE_CRITERIA",
+        )["score"]
+        == 0.8
+    )
+    assert (
+        metrics[0].using_native_model
+        and type(metrics[0].model) is models.AzureOpenAIModel
+    )
     assert metrics[0].evaluation_cost == 0.25
     assert records(caplog)[0]["provider"] == "azure_openai"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kind,outcome", [(RuntimeError, "failed"), (TimeoutError, "timeout"), (asyncio.CancelledError, "cancelled"), (KeyboardInterrupt, "cancelled")])
+@pytest.mark.parametrize(
+    "kind,outcome",
+    [
+        (RuntimeError, "failed"),
+        (TimeoutError, "timeout"),
+        (asyncio.CancelledError, "cancelled"),
+        (KeyboardInterrupt, "cancelled"),
+    ],
+)
 @pytest.mark.parametrize("asynchronous", [False, True])
-async def test_judge_failure_preserves_exception_identity(native_judge, caplog, kind, outcome, asynchronous):
+async def test_judge_failure_preserves_exception_identity(
+    native_judge, caplog, kind, outcome, asynchronous
+):
     model = models.OpenAIModel("gpt-4o", api_key="fake")
     failure = kind("PRIVATE_ERROR")
 

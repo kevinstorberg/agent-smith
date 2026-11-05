@@ -10,14 +10,26 @@ CONTRACT: this hook is pure observation. It ALWAYS exits 0 and writes nothing to
 stdout, so a missing dashboard, a slow network, or a malformed payload can never
 block or alter the agent's tool call (fail-open).
 """
+
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import logging
 import os
+from pathlib import Path
 import sys
+from urllib.parse import urlsplit
 import urllib.request
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.shared.operation_logging import action_label, write_log
+
+_transport_logger = logging.getLogger("agent_smith.audit_hook")
+if _transport_logger.level == logging.NOTSET:
+    _transport_logger.setLevel(logging.INFO)
 
 # Kept in lockstep with services.api.routers.audit._cap / MAX_FIELD_CHARS
 # (intentional cross-boundary copy — this host script must not import services.*);
@@ -90,7 +102,10 @@ def _cap(value):
     if isinstance(value, list):
         return [_cap(v) for v in value]
     if isinstance(value, str) and len(value) > MAX_FIELD_CHARS:
-        return value[:MAX_FIELD_CHARS] + f"...[truncated {len(value) - MAX_FIELD_CHARS} chars]"
+        return (
+            value[:MAX_FIELD_CHARS]
+            + f"...[truncated {len(value) - MAX_FIELD_CHARS} chars]"
+        )
     return value
 
 
@@ -98,7 +113,10 @@ def _correlation_key(native_id, session_id: str, tool_name: str, tool_input) -> 
     if native_id:
         return str(native_id)
     canonical = json.dumps(
-        [session_id, tool_name, tool_input], sort_keys=True, separators=(",", ":"), default=str
+        [session_id, tool_name, tool_input],
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
@@ -156,6 +174,24 @@ def _post(event: dict) -> None:
     token = os.environ.get("AUDIT_INGEST_TOKEN")
     if token:
         req.add_header("X-Audit-Token", token)
+    try:
+        local = urlsplit(req.full_url).hostname in {"localhost", "127.0.0.1", "::1"}
+        label = action_label("audit", "ingest", local_only=local)
+        write_log(
+            {
+                "trigger": "hook",
+                "client": event.get("agent")
+                if event.get("agent") in FIELD_KEYS
+                else "unknown",
+                "source": "local_dashboard" if local else "remote_dashboard",
+            },
+            label.prefix,
+            _transport_logger,
+            "operation_event",
+        )
+    except Exception:
+        # Diagnostics cannot prevent the original observational POST.
+        pass
     urllib.request.urlopen(req, timeout=POST_TIMEOUT_SECONDS).close()
 
 
@@ -177,7 +213,13 @@ def run(argv: list[str], stdin_text: str) -> int:
         _post(build_payload(detect_agent(payload), args.phase, args.status, payload))
     except Exception as exc:  # never block the tool call
         if os.environ.get("AUDIT_DEBUG"):
-            print(f"audit_hook: {exc}", file=sys.stderr)
+            try:
+                print(
+                    f"{action_label('audit', 'ingest').prefix} error_type={type(exc).__name__}",
+                    file=sys.stderr,
+                )
+            except Exception:
+                pass
     return 0
 
 
