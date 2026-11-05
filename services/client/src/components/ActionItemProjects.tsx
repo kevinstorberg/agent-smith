@@ -78,7 +78,6 @@ export function ActionItemProjectTabs({
     names.push(scope.name);
   const tabs: { label: string; scope: ProjectScope }[] = [
     { label: 'All projects', scope: { kind: 'all' } },
-    { label: 'Unassigned', scope: { kind: 'unassigned' } },
     ...names.map((name) => ({
       label: projectLabel(name),
       scope: { kind: 'named' as const, name },
@@ -88,6 +87,10 @@ export function ActionItemProjectTabs({
     scope.kind === 'named'
       ? projects.find((project) => project.name === scope.name)
       : undefined;
+
+  function selectScope(next: ProjectScope) {
+    onChange(next.kind === 'all' && scope.kind === 'unassigned' ? scope : next);
+  }
 
   function navigateTabs(
     event: KeyboardEvent<HTMLButtonElement>,
@@ -111,7 +114,7 @@ export function ActionItemProjectTabs({
       )[next];
     button?.focus();
     button?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
-    onChange(tabs[next].scope);
+    selectScope(tabs[next].scope);
   }
 
   return (
@@ -224,7 +227,10 @@ export function ActionItemProjectTabs({
         aria-label="Action item projects"
       >
         {tabs.map((tab, index) => {
-          const active = projectScopeKey(tab.scope) === projectScopeKey(scope);
+          const active =
+            tab.scope.kind === 'all'
+              ? scope.kind !== 'named'
+              : projectScopeKey(tab.scope) === projectScopeKey(scope);
           return (
             <button
               key={projectScopeKey(tab.scope)}
@@ -234,7 +240,7 @@ export function ActionItemProjectTabs({
               tabIndex={active ? 0 : -1}
               title={tab.label}
               disabled={busy}
-              onClick={() => onChange(tab.scope)}
+              onClick={() => selectScope(tab.scope)}
               onKeyDown={(event) => navigateTabs(event, index)}
             >
               {tab.label}

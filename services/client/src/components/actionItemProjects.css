@@ -82,3 +82,16 @@
   border-top-left-radius: 0;
   border-top-right-radius: 0;
 }
+
+.action-item-filters {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.action-item-filters > label:not(.checkbox-label) {
+  flex: 1 1 max(180px, 10em);
+}
+
+.action-item-filters > .action-deadline-window {
+  flex: 1 0 100%;
+}

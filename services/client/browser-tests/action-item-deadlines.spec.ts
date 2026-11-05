@@ -286,9 +286,16 @@ for (const scale of [1, 2]) {
         sort.boundingBox(),
         label.boundingBox(),
       ]);
-      expect(
-        Math.abs(sortBox!.y + sortBox!.height - labelBox!.y - labelBox!.height),
-      ).toBeLessThanOrEqual(2);
+      if (
+        Math.abs(sortBox!.y - labelBox!.y) <
+        Math.min(sortBox!.height, labelBox!.height)
+      ) {
+        expect(
+          Math.abs(
+            sortBox!.y + sortBox!.height - labelBox!.y - labelBox!.height,
+          ),
+        ).toBeLessThanOrEqual(2);
+      }
       const detailBox = (await details.boundingBox())!;
       expect(detailBox.y).toBeGreaterThanOrEqual(
         labelBox!.y + labelBox!.height,
@@ -308,6 +315,10 @@ for (const scale of [1, 2]) {
     );
     await expect(hours).toHaveValue('24');
     await sort.focus();
+    await page.keyboard.press('Tab');
+    await expect(
+      page.getByRole('checkbox', { name: 'Unassigned only' }),
+    ).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(checkbox).toBeFocused();
     await page.keyboard.press('Space');
