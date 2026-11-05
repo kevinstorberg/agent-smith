@@ -123,7 +123,7 @@ def _insert_version(
     device: str = "*",
     repo: str = "*",
 ) -> int:
-    values = {**fields, **inherited_version_metadata(item_type, source)}
+    values = {**inherited_version_metadata(item_type, source), **fields}
     values["content"] = Json(values["content"])
     item_id = _get_model(item_type).create(conn=conn, **values)
     with conn.cursor() as cur:
