@@ -316,6 +316,10 @@ for (const scale of [1, 2]) {
     await expect(hours).toHaveValue('24');
     await sort.focus();
     await page.keyboard.press('Tab');
+    await expect(
+      page.getByRole('checkbox', { name: 'Unassigned only' }),
+    ).toBeFocused();
+    await page.keyboard.press('Tab');
     await expect(checkbox).toBeFocused();
     await page.keyboard.press('Space');
     await expect(checkbox).not.toBeChecked();
