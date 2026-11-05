@@ -204,7 +204,7 @@ function CostProvider({ provider }: { provider: 'aws' | 'pinecone' }) {
                   Configured pricing source
                 </a>
                 {report.pricing_as_of
-                  ? ` (verified ${report.pricing_as_of})`
+                  ? ` (rate reference date: ${report.pricing_as_of})`
                   : ''}
               </p>
             )}

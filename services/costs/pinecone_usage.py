@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from dataclasses import dataclass
 from decimal import Decimal
 from hashlib import sha256
 import json
-import re
 from typing import Literal
 
 from pydantic import (
@@ -25,6 +25,14 @@ from services.costs.contracts import (
 )
 from services.costs.periods import month_window
 from services.costs.pinecone_metrics import MetricSample
+from services.costs.pinecone_pricing import (
+    STANDARD_PRICE_DATE,
+    STANDARD_PRICE_SOURCE,
+    is_placeholder,
+    optional_setting,
+    standard_price_values,
+    valid_rate_scope,
+)
 
 
 class UsageRate(BaseModel):
@@ -47,10 +55,7 @@ class PriceBook(BaseModel):
         if (
             not value
             or len(value) > 32
-            or any(
-                not re.fullmatch(r"(aws|gcp|azure)/[a-z0-9-]{1,64}", key)
-                for key in value
-            )
+            or any(not valid_rate_scope(key) for key in value)
         ):
             raise ValueError(
                 "PINECONE_COSTS_RATES_JSON must name explicit cloud/region rates"
@@ -59,29 +64,82 @@ class PriceBook(BaseModel):
 
     @classmethod
     def from_env(cls, env, now):
-        raw = env.get("PINECONE_COSTS_RATES_JSON")
-        if not raw:
-            return None
-        try:
-            if len(raw) > 32_000:
-                raise ValueError()
-            result = cls.model_validate(
-                {
-                    "as_of": env.get("PINECONE_COSTS_PRICE_DATE"),
-                    "source": env.get(
-                        "PINECONE_COSTS_PRICE_SOURCE",
-                        "https://www.pinecone.io/pricing/",
-                    ),
-                    "rates": json.loads(raw),
-                }
-            )
-            if result.as_of > require_utc(now).date():
-                raise ValueError()
-            return result
-        except (ValueError, TypeError):
-            raise ValueError(
-                "Configure finite nonnegative Pinecone cloud/region prices and a valid nonfuture PINECONE_COSTS_PRICE_DATE."
-            ) from None
+        return resolve_price_book(env, now).book
+
+
+@dataclass(frozen=True)
+class ResolvedPricing:
+    book: PriceBook
+    note: str | None
+
+
+def _rate_override(raw: str | None) -> dict | None:
+    if raw is not None and (not isinstance(raw, str) or len(raw) > 32_000):
+        raise ValueError("PINECONE_COSTS_RATES_JSON exceeds its supported text limit.")
+    raw = optional_setting(raw)
+    if raw is None:
+        return None
+    try:
+        rates = json.loads(raw)
+    except (ValueError, TypeError):
+        raise ValueError(
+            "PINECONE_COSTS_RATES_JSON must contain a cloud/region rate map."
+        ) from None
+    if not isinstance(rates, dict):
+        raise ValueError(
+            "PINECONE_COSTS_RATES_JSON must contain a cloud/region rate map."
+        )
+    if (
+        0 < len(rates) <= 32
+        and all(valid_rate_scope(key) for key in rates)
+        and all(
+            isinstance(values, dict)
+            and set(values) == {"read_usd_per_million", "write_usd_per_million"}
+            and all(is_placeholder(value) for value in values.values())
+            for values in rates.values()
+        )
+    ):
+        return None
+    return rates
+
+
+def resolve_price_book(env, now: datetime) -> ResolvedPricing:
+    now = require_utc(now)
+    rates = _rate_override(env.get("PINECONE_COSTS_RATES_JSON"))
+    date_override = optional_setting(env.get("PINECONE_COSTS_PRICE_DATE"))
+    source_override = optional_setting(env.get("PINECONE_COSTS_PRICE_SOURCE"))
+    values = standard_price_values()
+    if rates is not None:
+        values["rates"] = rates
+    if date_override is not None:
+        values["as_of"] = date_override
+    if source_override is not None:
+        values["source"] = source_override
+    try:
+        book = PriceBook.model_validate(values)
+    except ValidationError as error:
+        field = error.errors(include_input=False)[0]["loc"][0]
+        messages = {
+            "rates": "PINECONE_COSTS_RATES_JSON must map cloud/region scopes to finite nonnegative read/write prices.",
+            "as_of": "PINECONE_COSTS_PRICE_DATE must be a valid nonfuture date when supplied.",
+            "source": "PINECONE_COSTS_PRICE_SOURCE must be an HTTP(S) URL without embedded credentials.",
+        }
+        raise ValueError(messages[field]) from None
+    if book.as_of > now.date():
+        raise ValueError(
+            "PINECONE_COSTS_PRICE_DATE must be a valid nonfuture date when supplied."
+        )
+    custom = (
+        rates is not None
+        or book.as_of != STANDARD_PRICE_DATE
+        or book.source != STANDARD_PRICE_SOURCE
+    )
+    note = (
+        "Environment pricing overrides are user-supplied; the reference date is metadata, not independent verification of custom rates."
+        if custom
+        else None
+    )
+    return ResolvedPricing(book, note)
 
 
 class StoredCounter(BaseModel):
@@ -172,6 +230,8 @@ def build_usage(
     previous_state: dict | None,
     prices: PriceBook | None,
     minimum: Decimal,
+    *,
+    pricing_note: str | None = None,
 ) -> CollectionResult:
     now = require_utc(now)
     if (
@@ -313,6 +373,8 @@ def build_usage(
             )
     if sample.unsupported:
         limitations.add("unsupported_capacity")
+    if pricing_note is not None:
+        notes.append(pricing_note)
     notes.extend(_LIMITATIONS[code] for code in sorted(limitations))
     active_scopes = {
         point.scope
@@ -320,6 +382,18 @@ def build_usage(
         if point.group not in sample.unsupported
     }
     available = prices is not None and priced and active_scopes <= prices.rates.keys()
+    missing_scopes = (
+        active_scopes - prices.rates.keys() if prices is not None else set()
+    )
+    if missing_scopes:
+        scope_description = (
+            next(iter(missing_scopes))
+            if len(missing_scopes) == 1
+            else f"{len(missing_scopes)} observed cloud/region scopes"
+        )
+        notes.append(
+            f"No applicable read/write prices are available for {scope_description}; quantities remain visible."
+        )
     if not available:
         daily = {}
         breakdown = {}
