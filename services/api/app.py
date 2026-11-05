@@ -5,6 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from scripts.shared.paths import bootstrap  # noqa: E402
+
 bootstrap()
 
 import contextlib
@@ -18,7 +19,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from services.config import DB_POOL_MAX
-from services.api.access_logging import MCPProbeContextMiddleware, configure_mcp_access_logging
+from services.api.access_logging import (
+    MCPProbeContextMiddleware,
+    configure_mcp_access_logging,
+)
 from services.api.mcp_transport import MCPSSECompletionMiddleware
 from services.api.operation_context import request_trigger
 from services.db import init_db, init_pool, close_pool
@@ -51,7 +55,18 @@ from services.action_items.server import mcp as action_items_mcp
 from services.profiles.server import mcp as profiles_mcp
 from services.jobs.scheduler import JobScheduler
 
-MCP_SERVERS = [memory_mcp, plans_mcp, harness_mcp, evals_mcp, graphs_mcp, jobs_mcp, chat_mcp, meetings_mcp, action_items_mcp, profiles_mcp]
+MCP_SERVERS = [
+    memory_mcp,
+    plans_mcp,
+    harness_mcp,
+    evals_mcp,
+    graphs_mcp,
+    jobs_mcp,
+    chat_mcp,
+    meetings_mcp,
+    action_items_mcp,
+    profiles_mcp,
+]
 
 # Stateless transports finish after every request, so their INFO cleanup messages are routine noise.
 logging.getLogger("mcp.server.streamable_http").setLevel(logging.WARNING)
@@ -79,7 +94,11 @@ async def lifespan(app):
         yield
 
 
-app = FastAPI(title="Agent Smith Dashboard", lifespan=lifespan, dependencies=[Depends(request_trigger)])
+app = FastAPI(
+    title="Agent Smith Dashboard",
+    lifespan=lifespan,
+    dependencies=[Depends(request_trigger)],
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -89,18 +108,28 @@ app.add_middleware(
 )
 
 app.include_router(harness_router, prefix="/api/harness", tags=["harness"])
-app.include_router(action_items.router, prefix="/api/action-items", tags=["action-items"])
+app.include_router(
+    action_items.router, prefix="/api/action-items", tags=["action-items"]
+)
 app.include_router(memory.router, prefix="/api/memory", tags=["memory"])
 app.include_router(meetings.router, prefix="/api/meetings", tags=["meetings"])
-app.include_router(meeting_analysis.router, prefix="/api/meeting-analysis", tags=["manual meeting analysis"])
+app.include_router(
+    meeting_analysis.router,
+    prefix="/api/meeting-analysis",
+    tags=["manual meeting analysis"],
+)
 app.include_router(profiles.router, prefix="/api/profiles", tags=["profiles"])
-app.include_router(profile_topics.router, prefix="/api/profiles", tags=["profile discussion topics"])
+app.include_router(
+    profile_topics.router, prefix="/api/profiles", tags=["profile discussion topics"]
+)
 app.include_router(evals.router, prefix="/api/evals", tags=["evals"])
 app.include_router(plans.router, prefix="/api/plans", tags=["plans"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
 app.include_router(proposals.router, prefix="/api/proposals", tags=["proposals"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
-app.include_router(eval_configs.router, prefix="/api/eval-configs", tags=["eval-configs"])
+app.include_router(
+    eval_configs.router, prefix="/api/eval-configs", tags=["eval-configs"]
+)
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 
 _mcp_authenticated_mounts = {}
@@ -116,7 +145,9 @@ for _srv in MCP_SERVERS:
     app.mount(_mount_path, _app)
     _mcp_authenticated_mounts[_mount_path] = _srv.settings.auth is not None
 configure_mcp_access_logging(_mcp_authenticated_mounts)
-app.add_middleware(MCPProbeContextMiddleware, authenticated_mounts=_mcp_authenticated_mounts)
+app.add_middleware(
+    MCPProbeContextMiddleware, authenticated_mounts=_mcp_authenticated_mounts
+)
 
 dist_dir = Path(__file__).resolve().parent.parent / "client" / "dist"
 if dist_dir.exists():
@@ -155,5 +186,6 @@ async def spa_fallback(path: str):
 if __name__ == "__main__":
     import uvicorn
     from services.config import DASHBOARD_PORT
+
     port = int(DASHBOARD_PORT)
     uvicorn.run("services.api.app:app", host="0.0.0.0", port=port, reload=True)
