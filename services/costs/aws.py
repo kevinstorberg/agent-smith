@@ -1,20 +1,28 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from contextlib import closing
+from collections.abc import Iterator
+from contextlib import closing, contextmanager
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 import re
 import time
+from typing import Any
 
-from services.costs.contracts import CostReport, ProviderFailure, require_utc
+from services.costs.contracts import (
+    CostReport,
+    ProviderFailure,
+    require_utc,
+    valid_aws_account,
+)
 from services.costs.periods import month_window
 from services.observability import billable_operation
 
 
 def collect_aws(client, account_id: str, now: datetime) -> CostReport:
     now = require_utc(now)
-    if not re.fullmatch(r"\d{12}", account_id):
+    if not valid_aws_account(account_id):
         raise ProviderFailure(
             "invalid_response", "AWS returned an invalid account identity."
         )
@@ -24,6 +32,7 @@ def collect_aws(client, account_id: str, now: datetime) -> CostReport:
         "Granularity": "DAILY",
         "Metrics": ["UnblendedCost"],
         "GroupBy": [{"Type": "DIMENSION", "Key": "SERVICE"}],
+        "Filter": {"Dimensions": {"Key": "LINKED_ACCOUNT", "Values": [account_id]}},
     }
     daily, services = defaultdict(Decimal), defaultdict(Decimal)
     currency = None
@@ -114,7 +123,8 @@ def collect_aws(client, account_id: str, now: datetime) -> CostReport:
         currency=currency,
         total=str(sum(daily.values(), Decimal(0))),
         estimated=estimated,
-        scope=f"AWS billing visible to account {account_id}",
+        scope=f"AWS account {account_id}",
+        account_id=account_id,
         fetched_at=now,
         data_through=max(date.fromisoformat(day) for day in daily),
         daily=[
@@ -127,7 +137,7 @@ def collect_aws(client, account_id: str, now: datetime) -> CostReport:
             )
         ],
         notes=[
-            "Account-wide billing visible to these credentials; not limited to Agent Smith.",
+            "Costs are filtered to this verified account, excluding other organization accounts; not limited to Agent Smith resources.",
             "Unblended costs include credits and refunds; they are not a final invoice.",
             "AWS data is delayed and this report is cached for 24 hours; displayed spending can lag by roughly 48 hours.",
             "Cost Explorer charges $0.01 for each API page requested.",
@@ -135,13 +145,17 @@ def collect_aws(client, account_id: str, now: datetime) -> CostReport:
     )
 
 
-def fetch_aws(now: datetime, profile: str | None = None) -> CostReport:
+def _require_aws_calls_allowed() -> None:
     from scripts.shared.automated_tests import automated_tests_enabled
 
     if automated_tests_enabled():
         raise ProviderFailure(
             "automated_test", "Live billing calls are disabled in automated tests."
         )
+
+
+@contextmanager
+def _aws_sdk() -> Iterator[tuple[Any, Any]]:
     try:
         import boto3
         from botocore.config import Config
@@ -152,38 +166,7 @@ def fetch_aws(now: datetime, profile: str | None = None) -> CostReport:
             "Install the application's updated requirements to enable AWS costs.",
         ) from None
     try:
-        session = boto3.Session(profile_name=profile)
-        credentials = session.get_credentials()
-        if credentials is None:
-            raise ProviderFailure(
-                "not_configured",
-                "Configure AWS read-only billing credentials or AWS_COSTS_PROFILE.",
-            )
-        frozen = credentials.get_frozen_credentials()
-        auth = dict(
-            aws_access_key_id=frozen.access_key,
-            aws_secret_access_key=frozen.secret_key,
-            aws_session_token=frozen.token,
-        )
-        config = Config(
-            connect_timeout=5, read_timeout=10, retries={"total_max_attempts": 1}
-        )
-        with closing(
-            session.client("sts", region_name="us-east-1", config=config, **auth)
-        ) as identity:
-            with billable_operation(
-                "aws_sts",
-                "get_caller_identity",
-                source="costs",
-                reason="cost_dashboard",
-                billing="nonbillable",
-                sdk_retries=0,
-            ):
-                account = identity.get_caller_identity()["Account"]
-        with closing(
-            session.client("ce", region_name="us-east-1", config=config, **auth)
-        ) as client:
-            return collect_aws(client, account, now)
+        yield boto3, Config
     except ClientError as error:
         code = error.response.get("Error", {}).get("Code", "")
         if code in {"AccessDenied", "AccessDeniedException", "UnauthorizedOperation"}:
@@ -200,3 +183,89 @@ def fetch_aws(now: datetime, profile: str | None = None) -> CostReport:
             "not_configured",
             "AWS billing credentials are unavailable or the connection failed.",
         ) from None
+
+
+@dataclass(frozen=True)
+class AwsCredentialsSnapshot:
+    session: Any = field(repr=False)
+    config: Any = field(repr=False)
+    access_key: str = field(repr=False)
+    secret_key: str = field(repr=False)
+    session_token: str | None = field(repr=False)
+
+    def client(self, service: str) -> Any:
+        return self.session.client(
+            service,
+            region_name="us-east-1",
+            config=self.config,
+            aws_access_key_id=self.access_key,
+            aws_secret_access_key=self.secret_key,
+            aws_session_token=self.session_token,
+        )
+
+
+@dataclass(frozen=True)
+class AwsIdentity:
+    account_id: str
+    credentials: AwsCredentialsSnapshot = field(repr=False)
+    profile_name: str | None = None
+
+
+def prepare_aws(
+    profile: str | None = None, *, expected_account: str | None = None
+) -> AwsIdentity:
+    _require_aws_calls_allowed()
+    if expected_account is not None and not valid_aws_account(expected_account):
+        raise ProviderFailure(
+            "not_configured", "AWS_COSTS_ACCOUNT_ID must be a 12-digit account ID."
+        )
+    with _aws_sdk() as (boto3, Config):
+        session = boto3.Session(profile_name=profile)
+        credentials = session.get_credentials()
+        if credentials is None:
+            raise ProviderFailure(
+                "not_configured",
+                "Configure AWS read-only billing credentials or AWS_COSTS_PROFILE.",
+            )
+        frozen = credentials.get_frozen_credentials()
+        config = Config(
+            connect_timeout=5, read_timeout=10, retries={"total_max_attempts": 1}
+        )
+        captured = AwsCredentialsSnapshot(
+            session, config, frozen.access_key, frozen.secret_key, frozen.token
+        )
+        with closing(captured.client("sts")) as identity:
+            with billable_operation(
+                "aws_sts",
+                "get_caller_identity",
+                source="costs",
+                reason="cost_dashboard",
+                billing="nonbillable",
+                sdk_retries=0,
+            ):
+                response = identity.get_caller_identity()
+                account = (
+                    response.get("Account") if isinstance(response, dict) else None
+                )
+        if not valid_aws_account(account):
+            raise ProviderFailure(
+                "invalid_response", "AWS returned an invalid account identity."
+            )
+        if expected_account is not None and account != expected_account:
+            raise ProviderFailure(
+                "account_mismatch",
+                f"Expected AWS account {expected_account}, but {profile or 'the default credential chain'} authenticates as {account}. Configure credentials for the application account or select an existing AWS_COSTS_PROFILE.",
+            )
+        return AwsIdentity(account, captured, getattr(session, "profile_name", profile))
+
+
+def fetch_aws(
+    now: datetime,
+    profile: str | None = None,
+    *,
+    prepared: AwsIdentity | None = None,
+) -> CostReport:
+    _require_aws_calls_allowed()
+    captured = prepared if prepared is not None else prepare_aws(profile)
+    with _aws_sdk(), closing(captured.credentials.client("ce")) as client:
+        return collect_aws(client, captured.account_id, now)

@@ -1,18 +1,21 @@
 # Cost tracking
 
-The Dashboard's **Costs** tab shows the current UTC calendar month's AWS spending, daily totals, and service breakdown. Amounts use AWS's **UnblendedCost** basis and show whether AWS considers them estimated; they cover the billing data visible to the configured credentials across the account. They are provisional billing figures, not a final invoice.
+The Dashboard's **Costs** tab shows the current UTC calendar month's AWS spending, daily totals, and service breakdown. Amounts use AWS's **UnblendedCost** basis and show whether AWS considers them estimated. Every request filters billing to the verified application account with `LINKED_ACCOUNT`, excluding other organization accounts even when a management account can see them; totals remain account-wide rather than limited to Agent Smith resources. They are provisional billing figures, not a final invoice.
 
-Set these in your normal environment file, then update dependencies and restart through the application's usual workflow:
+Set the verified application account in your normal environment file, then restart through the application's usual workflow:
 
 ```dotenv
 AWS_COSTS_ENABLED=true
-# Optional named AWS CLI/SDK profile; otherwise use the standard AWS credential chain.
-AWS_COSTS_PROFILE=default
+AWS_COSTS_ACCOUNT_ID=REPLACE_WITH_VERIFIED_ACCOUNT_ID
+# Optional existing named profile; otherwise use the normal SDK credential chain.
+# AWS_COSTS_PROFILE=existing-profile
 ```
 
-The identity needs `ce:GetCostAndUsage`, and Cost Explorer must be enabled for the account. Existing `aws login` profiles are supported through the required `boto3[crt]` dependency; the Bedrock bearer token alone does not authorize billing requests. Credentials remain server-side.
+The account ID is a safety pin, not a credential. Enabled costs without a valid pin now show `not_configured`; set the verified pin before restarting the updated application. The identity needs `ce:GetCostAndUsage`, and Cost Explorer must be enabled for that account. Each enabled read verifies the current identity with a bounded, nonbillable STS `GetCallerIdentity` call before accessing cached billing. A mismatch displays the expected and selected accounts without querying Cost Explorer or showing another account's report.
 
-Cost Explorer charges **$0.01 per paginated request**. Successful reports are cached for 24 hours; failures retry after at least 30 minutes, capped at three attempts per UTC day. Dashboard polling every 15 seconds reuses that cache. Each actual provider request is logged through the existing observability layer. Missing access and failed refreshes display explicitly, and previous reports remain visibly stale rather than becoming zero.
+The normal SDK credential chain supports existing IAM roles, `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (plus `AWS_SESSION_TOKEN` for temporary credentials), and existing login profiles. Browser sign-in is not required when valid noninteractive credentials already exist. Only an explicit `AWS_COSTS_PROFILE` selects a profile ahead of ENV credentials; the ordinary `AWS_PROFILE` variable retains native SDK precedence. Existing `aws login` profiles are supported through `boto3[crt]`; to authenticate a dedicated profile without changing the default, use `aws login --profile agent-smith --region us-east-1`, then select it with `AWS_COSTS_PROFILE=agent-smith`. Bedrock API keys and PostgreSQL credentials do not authorize Cost Explorer. Credentials remain server-side.
+
+Cost Explorer charges **$0.01 per paginated request**. Successful reports are cached for 24 hours; failures retry after at least 30 minutes, capped at three attempts per UTC day. Dashboard polling every 15 seconds repeats the free identity check and reuses the paid-report cache. STS and any subsequent billing request use the same captured credentials. Account/profile/month scopes isolate reports; rotating credentials within the same account does not force another paid request. Reports also carry an explicit account ID that must match the verified pin before display. Legacy unbound cache files are left untouched and ignored. Each actual provider request is logged through the existing observability layer. Missing access and failed refreshes display explicitly, and previous reports remain visibly stale rather than becoming zero.
 
 Private snapshots use the existing atomic JSON writer and cross-process lock in `.runtime/costs/<APP_ENV>`, surviving app restarts. `COSTS_CACHE_PATH` optionally selects an absolute private local directory. Separate devices or checkouts have separate caches and may each issue billing queries; network filesystems and non-POSIX locking are not supported. Cache age plus AWS's own reporting delay can put the display roughly 48 hours behind usage.
 

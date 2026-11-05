@@ -6,6 +6,7 @@ export interface CostReport {
   total: string | null;
   estimated: boolean;
   scope: string;
+  account_id?: string | null;
   fetched_at: string;
   data_through?: string | null;
   cost_basis: string;
