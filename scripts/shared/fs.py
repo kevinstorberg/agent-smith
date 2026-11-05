@@ -217,11 +217,13 @@ def _collect_skill_clones(
     agent: str,
     device_name: str,
 ) -> tuple[dict[str, dict], dict[str, dict[str, dict]]]:
+    from services.harness.editor_codecs import render_rule_clone
+
     global_rows, repo_rows = _resolve_and_partition("rule", agent, device_name)
 
     def to_skills(rows: list[dict]) -> dict[str, dict]:
         return {
-            r["name"]: {"skill_md": r["content"]["body"], "files": {}}
+            r["name"]: {"skill_md": render_rule_clone(r), "files": {}}
             for r in rows
             if r.get("clone_as_skill")
         }
@@ -283,18 +285,9 @@ def sync_skills(
 def _compose_agent_file(
     body: str, metadata: dict, scoped_rules: list | None = None
 ) -> str:
-    parts = []
-    if metadata:
-        import yaml
+    from services.harness.frontmatter import compose_agent_file
 
-        frontmatter = yaml.dump(metadata, default_flow_style=False).rstrip()
-        parts.append(f"---\n{frontmatter}\n---\n")
-    parts.append(body.rstrip())
-    if scoped_rules:
-        parts.append("\n\n# Rules\n")
-        for rule in scoped_rules:
-            parts.append(rule["content"]["body"].rstrip())
-    return "\n\n".join(parts) + "\n"
+    return compose_agent_file(body, metadata, scoped_rules)
 
 
 def sync_agents(agent: str, dry_run: bool, device_name: str = "") -> None:

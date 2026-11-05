@@ -2,19 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { HarnessDetailPage } from '../HarnessDetailPage';
-
-vi.mock('@uiw/react-md-editor', () => ({
-  default: (props: any) => (
-    <textarea
-      data-testid="md-editor"
-      value={props.value}
-      onChange={(e: any) => props.onChange?.(e.target.value)}
-    />
-  ),
-}));
+import { ApiError } from '../../api';
+import { editorFixtures, harnessKinds } from './harnessEditorFixtures';
 
 vi.mock('react-markdown', () => ({
-  default: ({ children }: any) => <div data-testid="markdown-content">{children}</div>,
+  default: ({ children }: any) => (
+    <div data-testid="markdown-content">{children}</div>
+  ),
 }));
 
 vi.mock('remark-gfm', () => ({ default: {} }));
@@ -25,7 +19,8 @@ const { mockNavigate, mockParams } = vi.hoisted(() => ({
 }));
 
 vi.mock('react-router', async () => {
-  const actual = await vi.importActual<typeof import('react-router')>('react-router');
+  const actual =
+    await vi.importActual<typeof import('react-router')>('react-router');
   return {
     ...actual,
     useNavigate: () => mockNavigate,
@@ -38,14 +33,38 @@ const { mockNotify } = vi.hoisted(() => ({
 }));
 
 vi.mock('../../context/useNotification', async () => {
-  const actual = await vi.importActual<typeof import('../../context/useNotification')>('../../context/useNotification');
+  const actual = await vi.importActual<
+    typeof import('../../context/useNotification')
+  >('../../context/useNotification');
   return {
     ...actual,
-    useNotification: () => ({ notify: mockNotify, notifications: [], dismiss: vi.fn() }),
+    useNotification: () => ({
+      notify: mockNotify,
+      notifications: [],
+      dismiss: vi.fn(),
+    }),
   };
 });
 
-const { mockGet, mockUpdateContent, mockUpdateMetadata, mockHistory, mockRemove, mockConfigsAdd, mockConfigsUpdate, mockConfigsRemove, mockAssignableAgents } = vi.hoisted(() => ({
+const {
+  mockGet,
+  mockUpdateContent,
+  mockUpdateMetadata,
+  mockHistory,
+  mockRemove,
+  mockConfigsAdd,
+  mockConfigsUpdate,
+  mockConfigsRemove,
+  mockAssignableAgents,
+  editor,
+} = vi.hoisted(() => ({
+  editor: {
+    descriptors: vi.fn(),
+    decode: vi.fn(),
+    preview: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+  },
   mockAssignableAgents: vi.fn(),
   mockGet: vi.fn(),
   mockUpdateContent: vi.fn(),
@@ -57,9 +76,11 @@ const { mockGet, mockUpdateContent, mockUpdateMetadata, mockHistory, mockRemove,
   mockConfigsRemove: vi.fn(),
 }));
 
-vi.mock('../../api', () => ({
+vi.mock('../../api', async (original) => ({
+  ...(await original<typeof import('../../api')>()),
   api: {
     harness: {
+      editor,
       assignableAgents: mockAssignableAgents,
       items: {
         get: mockGet,
@@ -113,7 +134,12 @@ function makeHistory() {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
+  editor.descriptors.mockResolvedValue(editorFixtures.descriptors);
+  editor.decode.mockResolvedValue(
+    structuredClone(editorFixtures.cases.rule.draft),
+  );
+  editor.update.mockResolvedValue(makeItem());
   mockParams.type = 'rule';
   mockParams.id = '1';
   mockGet.mockResolvedValue(makeItem());
@@ -140,113 +166,122 @@ describe('HarnessDetailPage', () => {
     expect(screen.getByText('claude')).toBeInTheDocument();
   });
 
-  it('enters edit mode and shows editor', async () => {
+  it.each(harnessKinds)(
+    'edits %s through the shared guided form and atomic snapshot API',
+    async (kind) => {
+      const example = editorFixtures.cases[kind];
+      mockParams.type = kind;
+      mockParams.id = String(example.item.id);
+      mockGet.mockResolvedValue(example.item);
+      mockHistory.mockResolvedValue([example.item]);
+      editor.decode.mockResolvedValue(structuredClone(example.draft));
+      editor.update.mockResolvedValue(example.updated);
+      renderWithProviders(<HarnessDetailPage />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+      const descriptor = editorFixtures.descriptors.types[kind].fields.find(
+        (field) => field.key === example.changed_field,
+      )!;
+      const input = await screen.findByLabelText(descriptor.label, {
+        exact: true,
+      });
+      expect(input).toHaveValue(String(example.fields[example.changed_field]));
+      expect(screen.getByRole('tab', { name: 'Guided' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      expect(screen.queryByLabelText('Initial device')).not.toBeInTheDocument();
+      fireEvent.change(input, { target: { value: example.updated_value } });
+      fireEvent.submit(input.closest('form')!);
+      await waitFor(() => expect(editor.update).toHaveBeenCalledTimes(1));
+      expect(editor.update).toHaveBeenCalledWith(
+        kind,
+        example.item.id,
+        expect.objectContaining({
+          expected_version: example.item.version,
+          expected_updated_at: example.item.updated_at,
+          original_content: example.item.content,
+          extensions: example.draft.extensions,
+          dirty_paths: [`/fields/${example.changed_field}`],
+          common: expect.objectContaining({
+            name: example.item.name,
+            agents: example.item.agents,
+          }),
+        }),
+      );
+      expect(mockUpdateContent).not.toHaveBeenCalled();
+      expect(mockUpdateMetadata).not.toHaveBeenCalled();
+      expect(mockNavigate).toHaveBeenCalledWith(
+        `/harness/${kind}/${example.updated.id}`,
+        { replace: true },
+      );
+    },
+  );
+
+  it('sends content and common metadata together without partial legacy writes', async () => {
     renderWithProviders(<HarnessDetailPage />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Edit')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    const instructions = await screen.findByLabelText('Instructions', {
+      exact: true,
     });
-
-    fireEvent.click(screen.getByText('Edit'));
-
-    expect(screen.getByTestId('md-editor')).toBeInTheDocument();
-    expect(screen.getByText('Save')).toBeInTheDocument();
-    expect(screen.getByText('Cancel')).toBeInTheDocument();
-  });
-
-  it('validates name on save', async () => {
-    renderWithProviders(<HarnessDetailPage />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Edit')).toBeInTheDocument();
+    fireEvent.change(instructions, {
+      target: { value: 'Complete revised instructions.' },
     });
-
-    fireEvent.click(screen.getByText('Edit'));
-
-    const nameInput = document.querySelector('input[maxlength]') as HTMLInputElement;
-    fireEvent.change(nameInput, { target: { value: '' } });
-
-    fireEvent.click(screen.getByText('Save'));
-
-    expect(mockNotify).toHaveBeenCalledWith('Name is required.', 'error');
+    fireEvent.change(screen.getByLabelText('Project'), {
+      target: { value: 'harness' },
+    });
+    fireEvent.click(screen.getByLabelText('Enabled', { exact: true }));
+    fireEvent.submit(instructions.closest('form')!);
+    await waitFor(() => expect(editor.update).toHaveBeenCalledTimes(1));
+    expect(editor.update.mock.calls[0][2]).toMatchObject({
+      common: { project: 'harness', enabled: false },
+      fields: { instructions: 'Complete revised instructions.' },
+      expected_version: 3,
+      expected_updated_at: '2026-01-01T00:00:00Z',
+    });
     expect(mockUpdateContent).not.toHaveBeenCalled();
     expect(mockUpdateMetadata).not.toHaveBeenCalled();
   });
 
-  it('validates JSON for non-markdown types', async () => {
-    mockParams.type = 'tool';
-    const toolItem = makeItem({
-      content: { body: '', metadata: { url: 'https://test.com' } },
-    });
-    mockGet.mockResolvedValue(toolItem);
-
+  it('refreshes the same saved identity and history after a no-change save', async () => {
     renderWithProviders(<HarnessDetailPage />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Edit')).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByText('Edit'));
-
-    const textarea = document.querySelector('textarea[spellcheck="false"]') as HTMLTextAreaElement;
-    fireEvent.change(textarea, { target: { value: 'not valid json' } });
-
-    fireEvent.click(screen.getByText('Save'));
-
-    expect(mockNotify).toHaveBeenCalledWith('Invalid JSON in metadata field.', 'error');
-    expect(mockUpdateContent).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    const input = await screen.findByLabelText('Instructions', { exact: true });
+    fireEvent.submit(input.closest('form')!);
+    await screen.findByRole('button', { name: 'Edit' });
+    expect(mockGet).toHaveBeenCalledTimes(2);
+    expect(mockHistory).toHaveBeenCalledTimes(2);
+    expect(editor.update.mock.calls[0][2].dirty_paths).toEqual([]);
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('saves body change only (calls updateContent, not updateMetadata)', async () => {
+  it('retains the displayed snapshot and unsaved content after a conflict', async () => {
+    editor.update.mockRejectedValueOnce(
+      new ApiError(
+        'This item changed; reopen the latest version before retrying.',
+        409,
+      ),
+    );
     renderWithProviders(<HarnessDetailPage />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Edit')).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByText('Edit'));
-
-    const editor = screen.getByTestId('md-editor') as HTMLTextAreaElement;
-    fireEvent.change(editor, { target: { value: '# Updated content' } });
-
-    fireEvent.click(screen.getByText('Save'));
-
-    await waitFor(() => {
-      expect(mockUpdateContent).toHaveBeenCalledWith(
-        'rule',
-        1,
-        expect.objectContaining({ body: '# Updated content' }),
-      );
-      expect(mockUpdateMetadata).not.toHaveBeenCalled();
-    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    const input = await screen.findByLabelText('Instructions', { exact: true });
+    fireEvent.change(input, { target: { value: 'Keep this unsaved draft.' } });
+    fireEvent.submit(input.closest('form')!);
+    await screen.findByRole('alert');
+    expect(input).toHaveValue('Keep this unsaved draft.');
+    expect(mockGet).toHaveBeenCalledTimes(1);
+    expect(editor.update).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('saves metadata change only (calls updateMetadata, not updateContent)', async () => {
+  it('cancels guided editing back to the existing history and configuration view', async () => {
     renderWithProviders(<HarnessDetailPage />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Edit')).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByText('Edit'));
-
-    const enabledCheckbox = screen.getAllByRole('checkbox').find(cb => {
-      const label = cb.closest('label');
-      return label?.textContent?.trim() === 'Enabled';
-    });
-    expect(enabledCheckbox).toBeDefined();
-    fireEvent.click(enabledCheckbox!);
-
-    fireEvent.click(screen.getByText('Save'));
-
-    await waitFor(() => {
-      expect(mockUpdateContent).not.toHaveBeenCalled();
-      expect(mockUpdateMetadata).toHaveBeenCalledWith(
-        'rule',
-        1,
-        expect.objectContaining({ enabled: false }),
-      );
-    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    await screen.findByLabelText('Instructions', { exact: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByText('Version History')).toBeVisible();
+    expect(screen.getByText('Configurations')).toBeVisible();
+    expect(screen.getByText('test_rule')).toBeVisible();
+    expect(editor.update).not.toHaveBeenCalled();
   });
 
   it('renders version history', async () => {
@@ -269,7 +304,9 @@ describe('HarnessDetailPage', () => {
     renderWithProviders(<HarnessDetailPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('No version history available')).toBeInTheDocument();
+      expect(
+        screen.getByText('No version history available'),
+      ).toBeInTheDocument();
     });
   });
 
@@ -280,7 +317,9 @@ describe('HarnessDetailPage', () => {
       expect(screen.getByText('Configurations')).toBeInTheDocument();
     });
 
-    expect(screen.getByText('No configurations — using legacy defaults')).toBeInTheDocument();
+    expect(
+      screen.getByText('No configurations — using legacy defaults'),
+    ).toBeInTheDocument();
     expect(screen.getByText('+ Add')).toBeInTheDocument();
   });
 

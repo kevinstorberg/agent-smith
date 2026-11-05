@@ -11,6 +11,8 @@ import {
 } from '../constants';
 import { useViewPreferences } from '../hooks/useViewPreferences';
 import { parseViewField } from '../utils/viewPreferences';
+import { ActionItemProjectTabs } from '../components/ActionItemProjects';
+import { projectScope, projectScopeFields } from '../utils/actionItemProjects';
 
 export function ActionItemsIndexPage() {
   const navigate = useNavigate();
@@ -19,16 +21,14 @@ export function ActionItemsIndexPage() {
     status,
     sort,
     q: queryInput,
-    project: projectInput,
+    project,
+    unassigned,
     tags: tagsInput,
   } = preferences.values;
   const query = useDebouncedValue(queryInput.trim());
-  const project = useDebouncedValue(projectInput.trim());
   const tags = useDebouncedValue(tagsInput.trim());
   const criteriaPending =
-    queryInput.trim() !== query ||
-    projectInput.trim() !== project ||
-    tagsInput.trim() !== tags;
+    queryInput.trim() !== query || tagsInput.trim() !== tags;
   const queue = useActionItemQueue({
     source: api.actionItems,
     removeRow: api.actionItems.remove,
@@ -37,14 +37,16 @@ export function ActionItemsIndexPage() {
       sort,
       q: query || undefined,
       project: project || undefined,
+      ...(unassigned ? { unassigned: true } : {}),
       tags: actionItemTags(tags),
     },
-    criteria: JSON.stringify([status, sort, query, project, tags]),
+    criteria: JSON.stringify([status, sort, query, project, unassigned, tags]),
     viewKey: JSON.stringify([
       status,
       sort,
       queryInput,
-      projectInput,
+      project,
+      unassigned,
       tagsInput,
     ]),
     reorderableView: status === 'open' && sort === 'manual',
@@ -59,11 +61,21 @@ export function ActionItemsIndexPage() {
         <Link
           className="btn btn-primary"
           style={{ textDecoration: 'none' }}
-          to="/action-items/new"
+          to={
+            project
+              ? `/action-items/new?${new URLSearchParams({ project })}`
+              : '/action-items/new'
+          }
         >
           New action item
         </Link>
       </div>
+      <ActionItemProjectTabs
+        scope={projectScope(project, unassigned)}
+        onChange={(scope) => preferences.setFields(projectScopeFields(scope))}
+        disabled={freezeControls}
+        paused={queue.busy}
+      />
       <div className="sub-tabs" role="tablist" aria-label="Action item status">
         {ACTION_ITEM_STATUSES.map(([value, label]) => (
           <button
@@ -94,19 +106,6 @@ export function ActionItemsIndexPage() {
             disabled={freezeControls}
             onChange={(event) => preferences.setField('q', event.target.value)}
             placeholder="Search title or description…"
-          />
-        </label>
-        <label>
-          <span className="form-label">Project</span>
-          <input
-            className="input"
-            maxLength={200}
-            value={projectInput}
-            disabled={freezeControls}
-            onChange={(event) =>
-              preferences.setField('project', event.target.value)
-            }
-            placeholder="All projects"
           />
         </label>
         <label>

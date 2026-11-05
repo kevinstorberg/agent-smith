@@ -11,6 +11,9 @@ from services.mcp_observability import ObservedMCP
 from services.observability import billable_operation, current_trigger, trigger_context
 
 
+pytestmark = pytest.mark.usefixtures("terminal_diagnostics")
+
+
 def billable_records(caplog):
     return [
         record.billable_event

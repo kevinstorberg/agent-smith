@@ -80,6 +80,52 @@ describe('Harness anchored moves', () => {
 });
 
 describe('action items', () => {
+  it('uses the first-class project catalog routes and immutable deletion ID', async () => {
+    globalThis.fetch = mockFetch({});
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    await api.actionItemProjects.list();
+    await api.actionItemProjects.create('Café / QA & family #1');
+    await api.actionItemProjects.remove(17);
+    const calls = vi.mocked(globalThis.fetch).mock.calls;
+    expect(
+      calls.map(([url, options]) => [
+        new URL(String(url), 'http://localhost').pathname,
+        options?.method ?? 'GET',
+      ]),
+    ).toEqual([
+      ['/api/action-items/projects', 'GET'],
+      ['/api/action-items/projects', 'POST'],
+      ['/api/action-items/projects/17', 'DELETE'],
+    ]);
+    expect(JSON.parse(String(calls[1][1]?.body))).toEqual({
+      name: 'Café / QA & family #1',
+    });
+    expect(calls[2][1]?.body).toBeUndefined();
+    expect(timeout.mock.calls).toEqual([[30_000], [30_000], [30_000]]);
+  });
+
+  it('sends Unassigned as a boolean scope while preserving literal legacy project strings', async () => {
+    globalThis.fetch = mockFetch({ items: [], total: 0 });
+    await api.actionItems.list({
+      unassigned: true,
+      tags: ['security'],
+      status: 'completed',
+    });
+    await api.actionItems.list({
+      project: '  Legacy\nCafé / QA & family #1  ',
+      unassigned: false,
+    });
+    const calls = vi.mocked(globalThis.fetch).mock.calls;
+    const unassigned = new URL(String(calls[0][0])).searchParams;
+    expect(unassigned.get('unassigned')).toBe('true');
+    expect(unassigned.has('project')).toBe(false);
+    expect(unassigned.getAll('tags')).toEqual(['security']);
+    expect(unassigned.get('status')).toBe('completed');
+    const named = new URL(String(calls[1][0])).searchParams;
+    expect(named.get('project')).toBe('  Legacy\nCafé / QA & family #1  ');
+    expect(named.has('unassigned')).toBe(false);
+  });
+
   it('scopes every discussion-topic endpoint to its encoded profile and preserves UUID/revision/anchor bodies', async () => {
     globalThis.fetch = mockFetch({});
     const profileId = 'profile/id';

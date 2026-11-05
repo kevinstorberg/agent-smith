@@ -19,6 +19,9 @@ from tests.test_graph_model_factory import (
 )
 
 
+pytestmark = pytest.mark.usefixtures("terminal_diagnostics")
+
+
 def records(caplog):
     return [
         record.billable_event

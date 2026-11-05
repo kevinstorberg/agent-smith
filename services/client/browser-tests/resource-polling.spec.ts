@@ -12,6 +12,7 @@ interface PollingView {
   path: string;
   endpoint: string;
   related?: [string, unknown][];
+  responseDelayMs?: number;
 }
 
 const views: PollingView[] = [
@@ -97,12 +98,30 @@ const views: PollingView[] = [
   },
 ];
 
-for (const view of views) {
+const scenarios: PollingView[] = views.flatMap((view) =>
+  view.name === 'jobs'
+    ? [
+        view,
+        { ...view, name: 'jobs with delayed responses', responseDelayMs: 250 },
+      ]
+    : [view],
+);
+
+for (const view of scenarios) {
   test(`${view.name} polls its current page four times per visible minute without writes`, async ({
     page,
     fixtureAPI,
   }, testInfo) => {
-    fixtureAPI.get(view.endpoint, { items: [], total: 100 });
+    let responseIndex = 0;
+    fixtureAPI.get(view.endpoint, async () => {
+      const total = 100 + responseIndex++;
+      if (view.responseDelayMs) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, view.responseDelayMs),
+        );
+      }
+      return { items: [], total };
+    });
     for (const [path, body] of view.related ?? []) fixtureAPI.get(path, body);
     await freezeClock(page);
     await page.goto(view.path);
@@ -118,8 +137,17 @@ for (const view of views) {
     for (let cycle = 1; cycle <= 4; cycle += 1) {
       await page.clock.runFor(14_999);
       expect(reads()).toHaveLength(cycle);
+      const response = page.waitForResponse(
+        (result) =>
+          new URL(result.url()).pathname === view.endpoint &&
+          result.request().method() === 'GET',
+      );
       await page.clock.runFor(1);
       await expect.poll(() => reads().length).toBe(cycle + 1);
+      expect(await (await response).finished()).toBeNull();
+      await expect(
+        page.getByText(`Showing 51–75 of ${100 + cycle}`),
+      ).toBeVisible();
     }
     expect(
       reads().every((request) => new URL(request.url).search === original),
@@ -216,4 +244,8 @@ test('Chat retains its two-second visible polling interval', async ({
   expect(reads()).toBe(1);
   await page.clock.runFor(1);
   await expect.poll(reads).toBe(2);
+});
+
+test.beforeEach(async ({ fixtureAPI }) => {
+  fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
 });

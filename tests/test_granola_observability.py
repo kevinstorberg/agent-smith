@@ -10,6 +10,9 @@ from services.observability import current_trigger, trigger_context
 from tests.test_meeting_provider import CONFIG, NOTE_ID, Clock, _note
 
 
+pytestmark = pytest.mark.usefixtures("terminal_diagnostics")
+
+
 def records(caplog):
     return [
         record.billable_event

@@ -13,6 +13,9 @@ from scripts.shared.automated_tests import PaidModelCallBlocked
 from services.observability import current_trigger, trigger_context
 
 
+pytestmark = pytest.mark.usefixtures("terminal_diagnostics")
+
+
 def records(caplog):
     return [
         record.billable_event

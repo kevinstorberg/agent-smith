@@ -29,7 +29,7 @@ SECRET = "PRIVATE_PROMPT_PROPOSAL_RULE_CRITERIA_KEY_CANARY"
 
 @pytest.fixture(autouse=True)
 def capture_billable_logs(caplog):
-    caplog.set_level(logging.INFO, logger=LOGGER)
+    caplog.set_level(logging.DEBUG, logger=LOGGER)
 
 
 def records(caplog):
@@ -71,8 +71,8 @@ def test_before_is_visible_inside_provider_and_end_follows_completion(caplog):
     for record in records(caplog):
         payload = record.billable_event
         assert_utc(payload["utc_timestamp"])
-        assert json.loads(record.getMessage().split(" ", 2)[2]) == payload
-        assert record.getMessage().startswith(f"BILLABLE {payload['phase']} ")
+        assert json.loads(record.getMessage().split("] ", 1)[1]) == payload
+        assert record.getMessage().startswith("MODEL GENERATE [BILLABLE] ")
 
 
 @pytest.mark.parametrize(
@@ -321,12 +321,15 @@ def test_invalid_trigger_scope_does_not_change_current_context(caplog):
     assert records(caplog) == []
 
 
-def test_cli_without_logging_setup_still_emits_paired_structured_records():
+@pytest.mark.parametrize("debug", [False, True])
+def test_cli_without_logging_setup_has_one_entry_and_opt_in_terminal_diagnostics(debug):
     program = """
+import logging
 from services.observability import billable_operation
+logging.getLogger('agent_smith.billable').setLevel(LEVEL)
 with billable_operation('openai', 'unit-test'):
     pass
-"""
+""".replace("LEVEL", "logging.DEBUG" if debug else "logging.INFO")
     completed = subprocess.run(
         [sys.executable, "-c", program],
         cwd=Path(__file__).resolve().parents[1],
@@ -336,8 +339,15 @@ with billable_operation('openai', 'unit-test'):
         timeout=10,
     )
     payloads = [
-        json.loads(line.split(" ", 2)[2]) for line in completed.stderr.splitlines()
+        json.loads(line.split("] ", 1)[1]) for line in completed.stderr.splitlines()
     ]
-    assert [item["phase"] for item in payloads] == ["START", "END"]
-    assert payloads[0]["event_id"] == payloads[1]["event_id"]
-    assert payloads[1]["outcome"] == "success"
+    assert [item["phase"] for item in payloads] == (
+        ["START", "END"] if debug else ["START"]
+    )
+    assert (
+        "BILLABLE START" not in completed.stderr
+        and "BILLABLE END" not in completed.stderr
+    )
+    if debug:
+        assert payloads[0]["event_id"] == payloads[1]["event_id"]
+        assert payloads[1]["outcome"] == "success"

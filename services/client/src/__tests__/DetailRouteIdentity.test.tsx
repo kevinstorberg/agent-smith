@@ -11,6 +11,8 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router';
 import type { TextareaHTMLAttributes } from 'react';
 import App from '../App';
 import { api } from '../api';
+import { editorFixtures } from '../pages/__tests__/harnessEditorFixtures';
+import type { HarnessKind } from '../pages/__tests__/harnessEditorFixtures';
 import type {
   AuditEvent,
   EvalRunDetail,
@@ -320,6 +322,25 @@ beforeEach(() => {
     harness(id),
   );
   vi.spyOn(api.harness.items, 'history').mockResolvedValue([]);
+  vi.spyOn(api.harness.editor, 'descriptors').mockResolvedValue(
+    editorFixtures.descriptors,
+  );
+  vi.spyOn(api.harness.editor, 'decode').mockImplementation(
+    async (kind, _name, content) => {
+      const baseline = structuredClone(
+        editorFixtures.cases[kind as HarnessKind].draft,
+      );
+      return {
+        ...baseline,
+        fields: { ...baseline.fields, instructions: content?.body ?? '' },
+        original_content: content,
+        raw: content?.body ?? '',
+      };
+    },
+  );
+  vi.spyOn(api.harness.editor, 'update').mockImplementation(async (_kind, id) =>
+    harness(id),
+  );
   vi.spyOn(api.harness.items, 'updateContent').mockResolvedValue(harness(3));
   vi.spyOn(api.harness.items, 'updateMetadata').mockImplementation(
     async (_type, id) => harness(id),
@@ -397,15 +418,19 @@ describe('detail route resource identity', () => {
     await act(async () => old.resolve(harness(1)));
     expect(await heading('Skill 1')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    fireEvent.change(screen.getByLabelText('Name'), {
+    fireEvent.change(await screen.findByLabelText('Name'), {
       target: { value: 'edited_skill' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Skill' }));
     await waitFor(() =>
-      expect(api.harness.items.updateMetadata).toHaveBeenCalledWith(
+      expect(api.harness.editor.update).toHaveBeenCalledWith(
         'skill',
         1,
-        expect.objectContaining({ name: 'edited_skill' }),
+        expect.objectContaining({
+          common: expect.objectContaining({ name: 'edited_skill' }),
+          expected_version: 1,
+          expected_updated_at: timestamp,
+        }),
       ),
     );
     expectRoute('/harness/skill/1');
@@ -457,22 +482,26 @@ describe('detail route resource identity', () => {
     renderRoute('/harness/rule/1');
     await heading('Item 1');
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    fireEvent.change(screen.getByLabelText('Name'), {
+    fireEvent.change(await screen.findByLabelText('Name'), {
       target: { value: 'Draft A' },
     });
     go('/harness/rule/2');
     await heading('Item 2');
     expect(screen.queryByDisplayValue('Draft A')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    fireEvent.change(screen.getByLabelText('Name'), {
+    fireEvent.change(await screen.findByLabelText('Name'), {
       target: { value: 'draft_b' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }));
     await waitFor(() =>
-      expect(api.harness.items.updateMetadata).toHaveBeenCalledWith(
+      expect(api.harness.editor.update).toHaveBeenCalledWith(
         'rule',
         2,
-        expect.objectContaining({ name: 'draft_b' }),
+        expect.objectContaining({
+          common: expect.objectContaining({ name: 'draft_b' }),
+          expected_version: 2,
+          expected_updated_at: timestamp,
+        }),
       ),
     );
     expectRoute('/harness/rule/2');
@@ -532,6 +561,7 @@ describe('detail route resource identity', () => {
             : 'Item 1',
       );
       fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+      if (path.startsWith('/harness')) await screen.findByLabelText('Name');
       fireEvent.change(nameField(path), { target: { value: 'Current draft' } });
       go(`${path}/1?view=raw#editor`);
       expect(nameField(path)).toHaveValue('Current draft');
@@ -612,34 +642,37 @@ describe('detail route resource identity', () => {
     },
   );
 
-  it('keeps B selected when an A version save finishes, including its captured metadata target', async () => {
+  it('keeps B selected when a captured atomic A edit finishes', async () => {
     const pending = deferred<HarnessItem>();
-    vi.mocked(api.harness.items.updateContent).mockReturnValue(pending.promise);
+    vi.mocked(api.harness.editor.update).mockReturnValue(pending.promise);
     renderRoute('/harness/rule/1');
     await heading('Item 1');
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    fireEvent.change(screen.getByLabelText('Name'), {
+    fireEvent.change(await screen.findByLabelText('Name'), {
       target: { value: 'saved_a' },
     });
-    fireEvent.change(screen.getByLabelText('Body'), {
+    fireEvent.change(screen.getByLabelText('Instructions'), {
       target: { value: 'Updated A body' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }));
     await waitFor(() =>
-      expect(api.harness.items.updateContent).toHaveBeenCalledWith(
+      expect(api.harness.editor.update).toHaveBeenCalledWith(
         'rule',
         1,
-        expect.objectContaining({ body: 'Updated A body' }),
+        expect.objectContaining({
+          common: expect.objectContaining({ name: 'saved_a' }),
+          fields: expect.objectContaining({ instructions: 'Updated A body' }),
+          expected_version: 1,
+          expected_updated_at: timestamp,
+        }),
       ),
     );
     go('/harness/rule/2');
     await heading('Item 2');
     await act(async () => pending.resolve(harness(3)));
-    expect(api.harness.items.updateMetadata).toHaveBeenCalledWith(
-      'rule',
-      3,
-      expect.objectContaining({ name: 'saved_a' }),
-    );
+    expect(api.harness.editor.update).toHaveBeenCalledTimes(1);
+    expect(api.harness.items.updateContent).not.toHaveBeenCalled();
+    expect(api.harness.items.updateMetadata).not.toHaveBeenCalled();
     expectRoute('/harness/rule/2');
     expect(await heading('Item 2')).toBeVisible();
   });
