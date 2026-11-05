@@ -17,6 +17,11 @@ from scripts.shared.processes import instance_lock
 from scripts import manage
 
 
+@pytest.fixture(autouse=True)
+def isolate_backend_dependency_installation(monkeypatch):
+    monkeypatch.setattr(manage, "ensure_backend_dependencies", lambda *args: False)
+
+
 class FakeCommands:
     def __init__(self, root, *, branch="main", dirty="", ancestor=True):
         self.root = root

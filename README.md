@@ -18,7 +18,12 @@ The Dashboard's **Costs** tab shows current-month AWS charges and forward Pineco
 ```
 
 Requires Python 3.13, Node 22.12 or newer, Git, `lsof`, and `ps`. `./setup.sh` installs into `.venv`
-and `services/client/node_modules`; subsequent launches reuse those dependencies.
+and `services/client/node_modules`. Each normal launch satisfies the current Python
+requirements before migrations or server startup, so pulling new dependencies does
+not require a manual install. Already satisfied packages are retained without upgrades;
+`./setup.sh --refresh` explicitly requests upgrades. This does not prune extra packages.
+Installation or dependency conflicts stop startup visibly. Initial setup still creates
+the Python environment and foundational startup dependencies.
 `./run.sh` starts production from a clean `main` checkout: it activates the virtual
 environment, validates configuration and tools, fetches `origin/main`, and verifies
 that the checkout can fast-forward before stopping anything. It then stops this
