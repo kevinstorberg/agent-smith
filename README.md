@@ -244,7 +244,8 @@ names with project IDs. Deploy the schema and updated backend together; the prev
 backend still expects the old column. Downgrade restores the original project strings.
 
 Global tasks accept an optional `due_at` timestamp with an explicit timezone, such as
-`2026-11-06T17:00:00Z`. The database and API use UTC. Omitted updates retain the deadline;
+`2026-11-06T17:00:00Z`. The database and API use UTC. Inputs support up to six fractional
+second digits; finer precision is rejected before parsing. Omitted updates retain the deadline;
 `due_at: null` clears it. Completion and reopening retain the saved deadline, and equivalent
 offset spellings of the same instant do not create a new revision. Original creation IDs
 and payloads remain authoritative when retrying uncertain requests, including older tasks

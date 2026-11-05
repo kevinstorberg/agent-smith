@@ -117,7 +117,7 @@ def action_item_create(
 
     Supply a UUID request_id and reuse it with the original input after uncertain failures.
     Replay returns the current task without resetting edits/completion. Different input or a deleted task conflicts.
-    due_at is an optional ISO datetime with an explicit timezone; storage and output use UTC.
+    due_at is an optional ISO datetime with an explicit timezone and at most six fractional digits; storage and output use UTC.
     """
     return db.create(
         {
