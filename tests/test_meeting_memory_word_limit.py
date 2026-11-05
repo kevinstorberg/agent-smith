@@ -42,8 +42,9 @@ def artifact(*items):
     }
 
 
-def test_new_meeting_payload_reserves_actual_footer_words_and_preserves_exact_evidence():
+def test_new_fitting_meeting_payload_preserves_complete_footer_and_exact_evidence():
     candidate = item()
+    candidate["content"] = "The team confirmed the complete release decision."
     candidate["evidence"] += [
         {"segment_id": f"summary-{index}", "quote": "unchanged"}
         for index in range(1, 10)
@@ -53,14 +54,16 @@ def test_new_meeting_payload_reserves_actual_footer_words_and_preserves_exact_ev
     frozen = artifact(candidate)
     memory_pass.freeze_publications(frozen, str(uuid4()), snapshot)
     content = frozen["publication_envelopes"][candidate["id"]]["content"]
-    assert len(content.split()) == 250
+    budget = vector_db.get_memory_token_budget()
+    assert budget.total_tokens(content) <= 256
+    assert memory_pass.publication_token_error(snapshot, candidate, budget) is None
     assert content.endswith(
         "\n\nMeeting source: https://example.test/full-source\nEvidence: Granola summary ("
         + ", ".join(f"summary-{index}" for index in range(10))
         + ")"
     )
     assert frozen["items"] == [before]
-    assert "EXTRA_BODY_TAIL" not in content
+    assert content.startswith(candidate["content"])
 
 
 def test_mandatory_footer_must_leave_room_for_body_without_changing_frozen_envelopes():
@@ -69,7 +72,9 @@ def test_mandatory_footer_must_leave_room_for_body_without_changing_frozen_envel
     before = deepcopy(frozen)
     snapshot = {"source_url": " ".join(["source"] * 250), "project": "project"}
     with pytest.raises(ValueError, match="footer leaves no room"):
-        memory_pass.freeze_publications(frozen, str(uuid4()), snapshot)
+        memory_pass.require_publication_room(
+            snapshot, ["summary-0"], vector_db.get_memory_token_budget()
+        )
     assert frozen == before
 
 
@@ -96,8 +101,9 @@ def test_existing_publication_envelopes_and_receipts_remain_immutable(content_st
     vector_db.publish(
         candidate["id"], **frozen["publication_envelopes"][candidate["id"]]
     )
-    assert backend.get_row(candidate["id"])["text"] == BODY
-    assert embeddings.documents == [BODY]
+    stored = backend.get_row(candidate["id"])["text"]
+    assert envelope["content"].startswith(stored) and len(stored.split()) + 2 <= 256
+    assert embeddings.documents == [stored]
     assert frozen == before
     frozen["published_ids"].append(candidate["id"])
     acknowledged = deepcopy(frozen)
@@ -105,7 +111,7 @@ def test_existing_publication_envelopes_and_receipts_remain_immutable(content_st
     assert frozen == acknowledged
 
 
-def test_only_memory_body_is_capped_and_existing_character_contracts_remain():
+def test_generated_draft_and_evidence_keep_existing_character_contracts_until_staging():
     evidence = {"segment_id": "summary-0", "quote": QUOTE}
     memory = MemoryItem(
         content=BODY + " EXTRA", kind="fact", tags=["product"], evidence=[evidence]
@@ -118,7 +124,7 @@ def test_only_memory_body_is_capped_and_existing_character_contracts_remain():
         content=QUOTE,
         evidence=[evidence],
     )
-    assert memory.content == BODY
+    assert memory.content == BODY + " EXTRA"
     assert (
         Evidence(**evidence).quote
         == profile.content
@@ -180,7 +186,10 @@ async def test_native_lost_publication_replays_same_capped_envelope_and_id_witho
     stored = deepcopy(backend.get_row(candidate["id"]))
     assert first["publication_envelopes"] == {candidate["id"]: expected}
     assert first["published_ids"] == []
-    assert stored["text"] == expected["content"] and len(stored["text"].split()) == 250
+    assert (
+        expected["content"].startswith(stored["text"])
+        and len(stored["text"].split()) + 2 <= 256
+    )
     with get_connection() as connection, connection.cursor() as cursor:
         cursor.execute(
             "UPDATE meeting_digestions SET memory_next_attempt_at=clock_timestamp() WHERE meeting_id=%s",
@@ -195,4 +204,4 @@ async def test_native_lost_publication_replays_same_capped_envelope_and_id_witho
     assert final["published_ids"] == [candidate["id"]]
     assert final["items"] == [candidate]
     assert backend.get_row(candidate["id"]) == stored
-    assert embeddings.documents == [expected["content"]]
+    assert embeddings.documents == [stored["text"]]

@@ -36,7 +36,8 @@ def test_reviewed_artifact_compiles_model_and_grants_through_consumer(monkeypatc
         f"{host_root}/scripts/claude_memory_context.py",
     ]
     assert helper_prefix in hook["prompt"]
-    assert "at most 250 whitespace-separated words" in hook["prompt"]
+    assert "256 total embedding tokens" in hook["prompt"]
+    assert "254" in hook["prompt"] and "special tokens" in hook["prompt"]
     assert (
         "Rewrite oversized drafts" in hook["prompt"]
         and "never pad short memories" in hook["prompt"]

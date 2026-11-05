@@ -18,7 +18,7 @@ from services.meetings.topics import (
     TOPIC_LIMIT,
     normalize_topics,
 )
-from services.memory.content import MAX_MEMORY_WORDS, normalize_memory_content
+from services.memory.content import MAX_MEMORY_TOKENS
 
 
 def _nonblank(value: str) -> str:
@@ -60,18 +60,17 @@ class MemoryItem(_Output):
     content: _Content = Field(
         min_length=1,
         max_length=4000,
-        description=f"A self-contained memory of at most {MAX_MEMORY_WORDS} whitespace-separated words",
+        description=(
+            f"One concise self-contained memory; its complete publication, including "
+            f"source/evidence footer and model special tokens, must fit {MAX_MEMORY_TOKENS} "
+            "embedding tokens. Rewrite oversized drafts using staging feedback."
+        ),
     )
     kind: MemoryKind
     tags: list[Annotated[str, Field(min_length=1, max_length=TOPIC_LENGTH)]] = Field(
         min_length=1, max_length=TOPIC_LIMIT
     )
     evidence: list[Evidence] = Field(min_length=1, max_length=10)
-
-    @field_validator("content")
-    @classmethod
-    def bounded_memory(cls, value: str) -> str:
-        return normalize_memory_content(value)
 
     @field_validator("tags")
     @classmethod

@@ -15,12 +15,14 @@ from services.mcp_observability import ObservedMCP  # noqa: E402
 from scripts.shared.validation import empty_to_none  # noqa: E402
 
 import services.memory.db as db
-from services.memory.content import MAX_MEMORY_WORDS
+from services.memory.content import MAX_MEMORY_TOKENS
 
 _CONTENT_DESCRIPTION = (
-    f"A concise, self-contained memory of at most {MAX_MEMORY_WORDS} whitespace-separated words. "
+    f"A concise, self-contained memory fitting at most {MAX_MEMORY_TOKENS} total embedding tokens, "
+    "including the configured encoder's special tokens. The server reports the actual content allowance. "
     "Rewrite oversized drafts before saving; never pad short memories. "
-    f"Storage keeps only the first {MAX_MEMORY_WORDS} words of oversized content."
+    "Oversized agent drafts are rejected without a write; use measured feedback to revise a complete fact. "
+    "These are embedding-tokenizer tokens, not the generating model's tokens."
 )
 
 mcp = ObservedMCP("memory - store and search observations, learnings, and context")
@@ -44,7 +46,7 @@ def memory_add(
     Returns:
         The ID of the newly created memory.
     """
-    id = db.add(content=content, repo=empty_to_none(repo), tags=tags or [])
+    id = db.add(content=content, repo=empty_to_none(repo), tags=tags or [], strict=True)
     return id
 
 
@@ -145,5 +147,6 @@ def memory_update(
         content=content or None,
         repo=empty_to_none(repo),
         tags=tags,
+        strict=True,
     )
     return f"Updated: {id}"
