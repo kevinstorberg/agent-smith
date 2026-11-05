@@ -64,16 +64,17 @@ describe('Harness anchored moves', () => {
   });
 
   it('reports an uncertain move timeout without automatically retrying the write', async () => {
-    globalThis.fetch = vi
-      .fn()
-      .mockRejectedValue(new DOMException('Deadline', 'TimeoutError'));
-    await expect(
-      api.harness.items.move('rule', 101, {
-        before_id: 107,
-        expected_updated_at: 'source',
-        expected_anchor_updated_at: 'anchor',
-      }),
-    ).rejects.toThrow('Refresh to check whether your change was saved');
+    const cause = new DOMException('Deadline', 'TimeoutError');
+    globalThis.fetch = vi.fn().mockRejectedValue(cause);
+    const result = api.harness.items.move('rule', 101, {
+      before_id: 107,
+      expected_updated_at: 'source',
+      expected_anchor_updated_at: 'anchor',
+    });
+    await expect(result).rejects.toThrow(
+      'Refresh to check whether your change was saved',
+    );
+    await result.catch((error: Error) => expect(error.cause).toBe(cause));
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 });

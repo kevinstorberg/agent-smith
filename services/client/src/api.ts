@@ -60,6 +60,7 @@ async function request<T>(
     if (timeoutMs !== undefined && isAborted(error)) {
       throw new Error(
         'The request timed out. Refresh to check whether your change was saved before trying again.',
+        { cause: error },
       );
     }
     throw error;
