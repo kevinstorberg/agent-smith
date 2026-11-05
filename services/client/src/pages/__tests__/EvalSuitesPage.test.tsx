@@ -24,7 +24,9 @@ vi.mock('../../api', () => ({
 import { api } from '../../api';
 
 const mockList = api.evalConfigs.suites.list as ReturnType<typeof vi.fn>;
-const mockSuiteUpdate = api.evalConfigs.suites.update as ReturnType<typeof vi.fn>;
+const mockSuiteUpdate = api.evalConfigs.suites.update as ReturnType<
+  typeof vi.fn
+>;
 
 const fakeSuites = [
   {
@@ -64,7 +66,9 @@ beforeEach(() => {
 
 describe('EvalSuitesPage', () => {
   it('renders the suites table with data', async () => {
-    renderWithProviders(<EvalSuitesPage />, { initialEntries: ['/eval-configs'] });
+    renderWithProviders(<EvalSuitesPage />, {
+      initialEntries: ['/eval-configs'],
+    });
 
     await waitFor(() => {
       expect(screen.getByText('Code Quality Suite')).toBeInTheDocument();
@@ -81,7 +85,9 @@ describe('EvalSuitesPage', () => {
   it('shows loading state initially', () => {
     mockList.mockReturnValue(new Promise(() => {}));
 
-    renderWithProviders(<EvalSuitesPage />, { initialEntries: ['/eval-configs'] });
+    renderWithProviders(<EvalSuitesPage />, {
+      initialEntries: ['/eval-configs'],
+    });
 
     expect(screen.getByText('Loading...')).toBeInTheDocument();
   });
@@ -89,7 +95,9 @@ describe('EvalSuitesPage', () => {
   it('shows empty state when no suites exist', async () => {
     mockList.mockResolvedValue({ items: [], total: 0 });
 
-    renderWithProviders(<EvalSuitesPage />, { initialEntries: ['/eval-configs'] });
+    renderWithProviders(<EvalSuitesPage />, {
+      initialEntries: ['/eval-configs'],
+    });
 
     await waitFor(() => {
       expect(screen.getByText('No eval suites found')).toBeInTheDocument();
@@ -99,13 +107,17 @@ describe('EvalSuitesPage', () => {
   });
 
   it('toggles enabled state on checkbox click', async () => {
-    renderWithProviders(<EvalSuitesPage />, { initialEntries: ['/eval-configs'] });
+    renderWithProviders(<EvalSuitesPage />, {
+      initialEntries: ['/eval-configs'],
+    });
 
     await waitFor(() => {
       expect(screen.getByText('Code Quality Suite')).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Enable Code Quality Suite' }));
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Enable Code Quality Suite' }),
+    );
 
     await waitFor(() => {
       expect(mockSuiteUpdate).toHaveBeenCalledWith(1, { enabled: false });
@@ -113,13 +125,17 @@ describe('EvalSuitesPage', () => {
   });
 
   it('toggles disabled suite to enabled', async () => {
-    renderWithProviders(<EvalSuitesPage />, { initialEntries: ['/eval-configs'] });
+    renderWithProviders(<EvalSuitesPage />, {
+      initialEntries: ['/eval-configs'],
+    });
 
     await waitFor(() => {
       expect(screen.getByText('Safety Suite')).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Enable Safety Suite' }));
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Enable Safety Suite' }),
+    );
 
     await waitFor(() => {
       expect(mockSuiteUpdate).toHaveBeenCalledWith(2, { enabled: true });
@@ -127,7 +143,9 @@ describe('EvalSuitesPage', () => {
   });
 
   it('navigates to suite detail on row click', async () => {
-    renderWithProviders(<EvalSuitesPage />, { initialEntries: ['/eval-configs'] });
+    renderWithProviders(<EvalSuitesPage />, {
+      initialEntries: ['/eval-configs'],
+    });
 
     await waitFor(() => {
       expect(screen.getByText('Code Quality Suite')).toBeInTheDocument();
@@ -139,7 +157,9 @@ describe('EvalSuitesPage', () => {
   });
 
   it('navigates to new suite on button click', async () => {
-    renderWithProviders(<EvalSuitesPage />, { initialEntries: ['/eval-configs'] });
+    renderWithProviders(<EvalSuitesPage />, {
+      initialEntries: ['/eval-configs'],
+    });
 
     await waitFor(() => {
       expect(screen.getByText('+ New Suite')).toBeInTheDocument();
@@ -153,14 +173,19 @@ describe('EvalSuitesPage', () => {
   });
 
   it('links to eval results without activating suite row navigation', async () => {
-    renderWithProviders(<EvalSuitesPage />, { initialEntries: ['/eval-configs'] });
+    renderWithProviders(<EvalSuitesPage />, {
+      initialEntries: ['/eval-configs'],
+    });
 
     await waitFor(() => {
       expect(screen.getByText('Code Quality Suite')).toBeInTheDocument();
     });
 
     const resultsLinks = screen.getAllByRole('link', { name: 'Results →' });
-    expect(resultsLinks[0]).toHaveAttribute('href', '/evals?category=code&subcategory=quality');
+    expect(resultsLinks[0]).toHaveAttribute(
+      'href',
+      '/evals?category=code&subcategory=quality',
+    );
     fireEvent.click(resultsLinks[0]);
 
     expect(mockNavigate).not.toHaveBeenCalled();

@@ -8,7 +8,9 @@ interface UsePollingOptions {
 
 function validateInterval(intervalMs: number) {
   if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
-    throw new Error(`usePolling intervalMs must be a positive finite number, got ${intervalMs}`);
+    throw new Error(
+      `usePolling intervalMs must be a positive finite number, got ${intervalMs}`,
+    );
   }
 }
 
