@@ -32,6 +32,7 @@ from services.api.routers import (
     action_items,
     audit,
     chat,
+    costs,
     eval_suites as eval_configs,
     evals,
     jobs,
@@ -131,6 +132,7 @@ app.include_router(
     eval_configs.router, prefix="/api/eval-configs", tags=["eval-configs"]
 )
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
+app.include_router(costs.router, prefix="/api/costs", tags=["costs"])
 
 _mcp_authenticated_mounts = {}
 for _srv in MCP_SERVERS:
