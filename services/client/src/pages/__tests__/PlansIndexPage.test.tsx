@@ -5,28 +5,56 @@ import { POLL_INTERVAL_MS } from '../../constants';
 import { PlansIndexPage } from '../PlansIndexPage';
 
 const navigate = vi.fn();
-vi.mock('react-router', async original => ({ ...await original<typeof import('react-router')>(), useNavigate: () => navigate }));
-vi.mock('../../api', () => ({ api: { plans: { list: vi.fn(), search: vi.fn() } } }));
+vi.mock('react-router', async (original) => ({
+  ...(await original<typeof import('react-router')>()),
+  useNavigate: () => navigate,
+}));
+vi.mock('../../api', () => ({
+  api: { plans: { list: vi.fn(), search: vi.fn() } },
+}));
 import { api } from '../../api';
 
 const plans = [
-  { id: 1, title: 'Plan Alpha', project: 'proj-a', status: 'final', updated_at: '2026-01-15T10:00:00Z' },
-  { id: 2, title: 'Plan Beta', project: null, status: 'draft', updated_at: '2026-02-20T14:30:00Z' },
+  {
+    id: 1,
+    title: 'Plan Alpha',
+    project: 'proj-a',
+    status: 'final',
+    updated_at: '2026-01-15T10:00:00Z',
+  },
+  {
+    id: 2,
+    title: 'Plan Beta',
+    project: null,
+    status: 'draft',
+    updated_at: '2026-02-20T14:30:00Z',
+  },
 ];
 beforeEach(() => {
   document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.clearAllMocks();
-  vi.mocked(api.plans.list).mockImplementation(async params => ({
-    items: params?.q ? [{ ...plans[0], id: 3, title: 'Found plan' }] : plans,
-    total: params?.q ? 1 : 25,
-  } as never));
-  vi.mocked(api.plans.search).mockResolvedValue([{ ...plans[0], id: 3, title: 'Found plan' }] as never);
+  vi.mocked(api.plans.list).mockImplementation(
+    async (params) =>
+      ({
+        items: params?.q
+          ? [{ ...plans[0], id: 3, title: 'Found plan' }]
+          : plans,
+        total: params?.q ? 1 : 25,
+      }) as never,
+  );
+  vi.mocked(api.plans.search).mockResolvedValue([
+    { ...plans[0], id: 3, title: 'Found plan' },
+  ] as never);
 });
 afterEach(() => vi.useRealTimers());
 
 async function typeSearch(value: string) {
-  fireEvent.change(screen.getByPlaceholderText('Search by title...'), { target: { value } });
-  await act(async () => { vi.advanceTimersByTime(300); });
+  fireEvent.change(screen.getByPlaceholderText('Search by title...'), {
+    target: { value },
+  });
+  await act(async () => {
+    vi.advanceTimersByTime(300);
+  });
 }
 
 describe('PlansIndexPage', () => {
@@ -45,28 +73,50 @@ describe('PlansIndexPage', () => {
     vi.mocked(api.plans.list).mockResolvedValue({ items: [], total: 0 });
     renderWithProviders(<PlansIndexPage />, { initialEntries: ['/plans'] });
     expect(screen.getByText('Loading...')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Search by title...')).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: 'Sort plans' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: 'Project scope' })).toBeVisible();
+    expect(
+      screen.getByPlaceholderText('Search by title...'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Title/ })).toBeVisible();
+    expect(
+      screen.queryByRole('combobox', { name: 'Sort plans' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('textbox', { name: 'Project scope' }),
+    ).toBeVisible();
     expect(await screen.findByText('No plans found')).toBeInTheDocument();
   });
 
   it('coalesces typing into one search request without requiring Enter or a button', async () => {
     vi.useFakeTimers();
     renderWithProviders(<PlansIndexPage />, { initialEntries: ['/plans'] });
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(screen.getByText('Plan Alpha')).toBeInTheDocument();
     const input = screen.getByPlaceholderText('Search by title...');
     vi.mocked(api.plans.list).mockClear();
     input.focus();
     fireEvent.change(input, { target: { value: 'Fo' } });
-    await act(async () => { vi.advanceTimersByTime(200); });
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
     fireEvent.change(input, { target: { value: 'Found' } });
-    await act(async () => { vi.advanceTimersByTime(299); });
+    await act(async () => {
+      vi.advanceTimersByTime(299);
+    });
     expect(api.plans.list).not.toHaveBeenCalled();
-    await act(async () => { vi.advanceTimersByTime(1); });
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
     expect(api.plans.list).toHaveBeenCalledTimes(1);
-    expect(api.plans.list).toHaveBeenCalledWith({ limit: 10, offset: 0, q: 'Found', project: undefined, status: undefined, sort: 'updated' });
+    expect(api.plans.list).toHaveBeenCalledWith({
+      limit: 10,
+      offset: 0,
+      q: 'Found',
+      project: undefined,
+      status: undefined,
+      sort: 'updated',
+    });
     expect(api.plans.search).not.toHaveBeenCalled();
     expect(input).toHaveFocus();
     expect(screen.getByText('Found plan')).toBeInTheDocument();
@@ -77,15 +127,38 @@ describe('PlansIndexPage', () => {
     renderWithProviders(<PlansIndexPage />, { initialEntries: ['/plans'] });
     await screen.findByText('Plan Alpha');
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    await waitFor(() => expect(api.plans.list).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 })));
+    await waitFor(() =>
+      expect(api.plans.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ offset: 10 }),
+      ),
+    );
     vi.mocked(api.plans.list).mockClear();
-    fireEvent.change(screen.getByPlaceholderText('Filter by project...'), { target: { value: 'proj-a' } });
-    await act(async () => { vi.advanceTimersByTime(300); });
+    fireEvent.change(screen.getByPlaceholderText('Filter by project...'), {
+      target: { value: 'proj-a' },
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
     expect(api.plans.list).toHaveBeenCalledTimes(1);
-    expect(api.plans.list).toHaveBeenCalledWith({ limit: 10, offset: 0, q: undefined, project: 'proj-a', status: undefined, sort: 'updated' });
+    expect(api.plans.list).toHaveBeenCalledWith({
+      limit: 10,
+      offset: 0,
+      q: undefined,
+      project: 'proj-a',
+      status: undefined,
+      sort: 'updated',
+    });
     await typeSearch('Found');
     fireEvent.click(screen.getByRole('button', { name: 'draft' }));
-    await waitFor(() => expect(api.plans.list).toHaveBeenLastCalledWith(expect.objectContaining({ q: 'Found', project: 'proj-a', status: 'draft' })));
+    await waitFor(() =>
+      expect(api.plans.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          q: 'Found',
+          project: 'proj-a',
+          status: 'draft',
+        }),
+      ),
+    );
   });
 
   it('ignores late search responses after clearing and preserves the current list', async () => {
@@ -93,55 +166,90 @@ describe('PlansIndexPage', () => {
     let complete!: (items: never[]) => void;
     renderWithProviders(<PlansIndexPage />, { initialEntries: ['/plans'] });
     await screen.findByText('Plan Alpha');
-    vi.mocked(api.plans.list).mockReturnValueOnce(new Promise(resolve => {
-      complete = items => resolve({ items, total: items.length });
-    }));
+    vi.mocked(api.plans.list).mockReturnValueOnce(
+      new Promise((resolve) => {
+        complete = (items) => resolve({ items, total: items.length });
+      }),
+    );
     await typeSearch('Old');
-    fireEvent.change(screen.getByPlaceholderText('Search by title...'), { target: { value: '' } });
+    fireEvent.change(screen.getByPlaceholderText('Search by title...'), {
+      target: { value: '' },
+    });
     await screen.findByText('Plan Alpha');
-    await act(async () => { complete([{ ...plans[0], title: 'Stale search' }] as never); });
+    await act(async () => {
+      complete([{ ...plans[0], title: 'Stale search' }] as never);
+    });
     expect(screen.queryByText('Stale search')).not.toBeInTheDocument();
     expect(screen.getByText('Plan Alpha')).toBeInTheDocument();
   });
 
   it('shows retryable errors while keeping filters available', async () => {
-    vi.mocked(api.plans.list).mockRejectedValueOnce(new Error('private diagnostic'));
+    vi.mocked(api.plans.list).mockRejectedValueOnce(
+      new Error('private diagnostic'),
+    );
     renderWithProviders(<PlansIndexPage />, { initialEntries: ['/plans'] });
-    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load plans.');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not load plans.',
+    );
     expect(screen.queryByText('private diagnostic')).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Search by title...')).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: 'Sort plans' })).toBeVisible();
+    expect(
+      screen.getByPlaceholderText('Search by title...'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Title/ })).toBeVisible();
+    expect(
+      screen.queryByRole('combobox', { name: 'Sort plans' }),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Plan Alpha')).toBeInTheDocument();
   });
 
   it('polls the current search scope and stops on unmount', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    const { unmount } = renderWithProviders(<PlansIndexPage />, { initialEntries: ['/plans'] });
+    const { unmount } = renderWithProviders(<PlansIndexPage />, {
+      initialEntries: ['/plans'],
+    });
     await screen.findByText('Plan Alpha');
     await typeSearch('Found');
     vi.mocked(api.plans.search).mockClear();
     vi.mocked(api.plans.list).mockClear();
-    await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS); });
-    expect(api.plans.list).toHaveBeenCalledWith(expect.objectContaining({ q: 'Found', sort: 'updated' }));
+    await act(async () => {
+      vi.advanceTimersByTime(POLL_INTERVAL_MS);
+    });
+    expect(api.plans.list).toHaveBeenCalledWith(
+      expect.objectContaining({ q: 'Found', sort: 'updated' }),
+    );
     expect(api.plans.search).not.toHaveBeenCalled();
     unmount();
     vi.mocked(api.plans.search).mockClear();
     vi.mocked(api.plans.list).mockClear();
-    await act(async () => { vi.advanceTimersByTime(POLL_INTERVAL_MS); });
+    await act(async () => {
+      vi.advanceTimersByTime(POLL_INTERVAL_MS);
+    });
     expect(api.plans.search).not.toHaveBeenCalled();
     expect(api.plans.list).not.toHaveBeenCalled();
   });
 
   it('sorts server-side before paging and resets the current page', async () => {
+    vi.mocked(api.plans.list).mockImplementation(
+      async (params) =>
+        ({
+          items: params?.offset
+            ? [{ ...plans[0], title: 'Committed page two' }]
+            : plans,
+          total: 25,
+        }) as never,
+    );
     renderWithProviders(<PlansIndexPage />, { initialEntries: ['/plans'] });
     await screen.findByText('Plan Alpha');
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    await waitFor(() => expect(api.plans.list).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 })));
+    await screen.findByText('Committed page two');
+    expect(screen.getByText('Showing 11–20 of 25')).toBeInTheDocument();
     vi.mocked(api.plans.list).mockClear();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Sort plans' }), { target: { value: 'title' } });
+    fireEvent.click(screen.getByRole('button', { name: /Title/ }));
     await waitFor(() => expect(api.plans.list).toHaveBeenCalledTimes(1));
-    expect(api.plans.list).toHaveBeenCalledWith(expect.objectContaining({ offset: 0, sort: 'title' }));
+    expect(api.plans.list).toHaveBeenCalledWith(
+      expect.objectContaining({ offset: 0, sort: 'title' }),
+    );
     expect(api.plans.search).not.toHaveBeenCalled();
   });
 });

@@ -1,0 +1,15 @@
+.plans-table .table.plans-sorting-table {
+  min-width: max(600px, 45em);
+}
+
+.plans-table .plans-status-column {
+  width: 7em;
+}
+
+.plans-table .plans-project-column {
+  width: 10em;
+}
+
+.plans-table .plans-date-column {
+  width: 10em;
+}

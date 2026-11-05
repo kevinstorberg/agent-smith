@@ -341,7 +341,7 @@ for (const view of [
   {
     path: '/plans',
     label: 'Plan status',
-    sort: 'Sort plans',
+    sort: null,
     status: 'draft',
     api: '/api/plans',
   },
@@ -364,7 +364,9 @@ for (const view of [
     });
     if (page.viewportSize()!.width === 1440)
       await expectSameRow(
-        page.getByRole('combobox', { name: view.sort }),
+        view.sort
+          ? page.getByRole('combobox', { name: view.sort })
+          : page.getByRole('textbox', { name: 'Project scope' }),
         button,
       );
     await button.focus();
