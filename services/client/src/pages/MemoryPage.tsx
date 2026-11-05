@@ -9,7 +9,10 @@ import { usePolling } from '../hooks/usePolling';
 import { usePagination } from '../hooks/usePagination';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { parseTags } from '../utils/tags';
-import { MEMORY_LIST_SORT_OPTIONS, MEMORY_SEARCH_SORT_OPTIONS } from '../constants';
+import {
+  MEMORY_LIST_SORT_OPTIONS,
+  MEMORY_SEARCH_SORT_OPTIONS,
+} from '../constants';
 import { useViewPreferences } from '../hooks/useViewPreferences';
 import { parseViewField } from '../utils/viewPreferences';
 
@@ -17,15 +20,35 @@ export function MemoryPage() {
   const { notify } = useNotification();
   const preferences = useViewPreferences('memory');
   const setPreferenceField = preferences.setField;
-  const { q: appliedQuery, repo: filterRepo, tags: filterTags, listSort, searchSort, meeting_only: meetingsOnly } = preferences.values;
-  const [queryDraft, setQueryDraft] = useState({ applied: appliedQuery, restoredAt: preferences.restoreKey, input: appliedQuery });
-  if (queryDraft.applied !== appliedQuery || queryDraft.restoredAt !== preferences.restoreKey) setQueryDraft({
-    applied: appliedQuery, restoredAt: preferences.restoreKey,
-    input: queryDraft.restoredAt === preferences.restoreKey && queryDraft.input.trim() === appliedQuery.trim() ? queryDraft.input : appliedQuery,
+  const {
+    q: appliedQuery,
+    repo: filterRepo,
+    tags: filterTags,
+    listSort,
+    searchSort,
+    meeting_only: meetingsOnly,
+  } = preferences.values;
+  const [queryDraft, setQueryDraft] = useState({
+    applied: appliedQuery,
+    restoredAt: preferences.restoreKey,
+    input: appliedQuery,
   });
+  if (
+    queryDraft.applied !== appliedQuery ||
+    queryDraft.restoredAt !== preferences.restoreKey
+  )
+    setQueryDraft({
+      applied: appliedQuery,
+      restoredAt: preferences.restoreKey,
+      input:
+        queryDraft.restoredAt === preferences.restoreKey &&
+        queryDraft.input.trim() === appliedQuery.trim()
+          ? queryDraft.input
+          : appliedQuery,
+    });
   const query = queryDraft.input;
   const setQuery = (input: string) => {
-    setQueryDraft(previous => ({ ...previous, input }));
+    setQueryDraft((previous) => ({ ...previous, input }));
     if (!input.trim()) preferences.setField('q', '');
   };
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -37,7 +60,11 @@ export function MemoryPage() {
 
   const debouncedQuery = useDebouncedValue(query.trim());
   useEffect(() => {
-    if (debouncedQuery === query.trim() && debouncedQuery !== appliedQuery.trim()) setPreferenceField('q', debouncedQuery);
+    if (
+      debouncedQuery === query.trim() &&
+      debouncedQuery !== appliedQuery.trim()
+    )
+      setPreferenceField('q', debouncedQuery);
   }, [debouncedQuery, query, appliedQuery, setPreferenceField]);
   const searchTerm = appliedQuery.trim();
   const repo = useDebouncedValue(filterRepo.trim());
@@ -45,30 +72,56 @@ export function MemoryPage() {
   const tagsArray = useMemo(() => parseTags(tagText), [tagText]);
   const mode = searchTerm ? 'search' : 'list';
   const sort = mode === 'search' ? searchSort : listSort;
-  const sortOptions = mode === 'search' ? MEMORY_SEARCH_SORT_OPTIONS : MEMORY_LIST_SORT_OPTIONS;
+  const sortOptions =
+    mode === 'search' ? MEMORY_SEARCH_SORT_OPTIONS : MEMORY_LIST_SORT_OPTIONS;
 
-  const { items, total, loading, error, refresh, limit, offset, setLimit, setOffset } = usePagination<MemoryItem>((limit, offset) => {
-    const opts = {
-      limit,
-      offset,
-      meeting_only: meetingsOnly,
-      ...(repo ? { repo } : {}),
-      ...(tagsArray.length ? { tags: tagsArray } : {}),
-      ...(sort ? { sort } : {}),
-    };
-    return searchTerm
-      ? api.memory.search(searchTerm, opts)
-      : api.memory.list(opts);
-  }, [searchTerm, meetingsOnly, repo, tagsArray, sort], 10, { ...preferences.pagination, enabled: repo === filterRepo.trim() && tagText === filterTags });
-
-  usePolling(
-    () => refresh({ showLoading: false }),
-    { enabled: !editingId && !saving && !confirmDeleteId },
+  const {
+    items,
+    total,
+    loading,
+    error,
+    refresh,
+    limit,
+    offset,
+    setLimit,
+    setOffset,
+  } = usePagination<MemoryItem>(
+    (limit, offset) => {
+      const opts = {
+        limit,
+        offset,
+        meeting_only: meetingsOnly,
+        ...(repo ? { repo } : {}),
+        ...(tagsArray.length ? { tags: tagsArray } : {}),
+        ...(sort ? { sort } : {}),
+      };
+      return searchTerm
+        ? api.memory.search(searchTerm, opts)
+        : api.memory.list(opts);
+    },
+    [searchTerm, meetingsOnly, repo, tagsArray, sort],
+    10,
+    {
+      ...preferences.pagination,
+      enabled: repo === filterRepo.trim() && tagText === filterTags,
+    },
   );
 
+  usePolling(() => refresh({ showLoading: false }), {
+    enabled: !editingId && !saving && !confirmDeleteId,
+  });
+
   const onSortChange = (value: string) => {
-    if (mode === 'search') preferences.setField('searchSort', parseViewField('memory', 'searchSort', value));
-    else preferences.setField('listSort', parseViewField('memory', 'listSort', value));
+    if (mode === 'search')
+      preferences.setField(
+        'searchSort',
+        parseViewField('memory', 'searchSort', value),
+      );
+    else
+      preferences.setField(
+        'listSort',
+        parseViewField('memory', 'listSort', value),
+      );
   };
 
   const startEdit = (item: MemoryItem) => {
@@ -94,7 +147,10 @@ export function MemoryPage() {
       setEditingId(null);
       await refresh();
     } catch (err) {
-      notify(`Save failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      notify(
+        `Save failed: ${err instanceof Error ? err.message : String(err)}`,
+        'error',
+      );
     }
     setSaving(false);
   };
@@ -106,57 +162,80 @@ export function MemoryPage() {
       setConfirmDeleteId(null);
       await refresh();
     } catch (err) {
-      notify(`Delete failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      notify(
+        `Delete failed: ${err instanceof Error ? err.message : String(err)}`,
+        'error',
+      );
     }
     setSaving(false);
   };
 
-
   return (
     <div className="memory-page">
-      <h2 className="page-title" style={{ marginBottom: 16 }}>Memory</h2>
+      <h2 className="page-title" style={{ marginBottom: 16 }}>
+        Memory
+      </h2>
 
       <div className="search-bar memory-controls">
-        <label><span className="form-label">Search memories</span>
-        <input
-          placeholder="Semantic search..."
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-        />
+        <label>
+          <span className="form-label">Search memories</span>
+          <input
+            placeholder="Semantic search..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
         </label>
         {query && (
-          <button className="btn" onClick={() => setQuery('')}>Clear</button>
+          <button className="btn" onClick={() => setQuery('')}>
+            Clear
+          </button>
         )}
       </div>
 
       <div className="search-bar memory-controls">
-        <label><span className="form-label">Repository</span><input
-          className="input"
-          placeholder="Filter by repo"
-          value={filterRepo}
-          onChange={e => preferences.setField('repo', e.target.value)}
-        /></label>
-        <label><span className="form-label">Tags</span><input
-          className="input"
-          placeholder="Filter by tags (comma-separated)"
-          value={filterTags}
-          onChange={e => preferences.setField('tags', e.target.value)}
-        /></label>
-        <label><span className="form-label">Sort</span>
-        <select
-          id="memory-sort"
-          aria-label="Sort"
-          className="pagination-select"
-          value={sort}
-          onChange={e => onSortChange(e.target.value)}
-        >
-          {sortOptions.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
+        <label>
+          <span className="form-label">Repository</span>
+          <input
+            className="input"
+            placeholder="Filter by repo"
+            value={filterRepo}
+            onChange={(e) => preferences.setField('repo', e.target.value)}
+          />
+        </label>
+        <label>
+          <span className="form-label">Tags</span>
+          <input
+            className="input"
+            placeholder="Filter by tags (comma-separated)"
+            value={filterTags}
+            onChange={(e) => preferences.setField('tags', e.target.value)}
+          />
+        </label>
+        <label>
+          <span className="form-label">Sort</span>
+          <select
+            id="memory-sort"
+            aria-label="Sort"
+            className="pagination-select"
+            value={sort}
+            onChange={(e) => onSortChange(e.target.value)}
+          >
+            {sortOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="checkbox-label filter-checkbox">
-          <input className="form-checkbox" type="checkbox" checked={meetingsOnly} onChange={event => preferences.setField('meeting_only', event.target.checked)} />
+          <input
+            className="form-checkbox"
+            type="checkbox"
+            checked={meetingsOnly}
+            onChange={(event) =>
+              preferences.setField('meeting_only', event.target.checked)
+            }
+          />
           Meetings only
         </label>
       </div>
@@ -168,119 +247,257 @@ export function MemoryPage() {
       )}
 
       {loading && <div className="loading">Loading...</div>}
-      {error && <div role="alert" className="card">
-        Could not load memories. <button className="btn btn-sm" onClick={() => refresh()}>Retry</button>
-      </div>}
+      {error && (
+        <div role="alert" className="card">
+          Could not load memories.{' '}
+          <button className="btn btn-sm" onClick={() => refresh()}>
+            Retry
+          </button>
+        </div>
+      )}
 
       {!loading && !error && items.length === 0 && (
         <div className="loading">
           {mode === 'search'
             ? 'No results found'
-            : (meetingsOnly || filterRepo || tagsArray.length > 0)
+            : meetingsOnly || filterRepo || tagsArray.length > 0
               ? 'No memories match the current filters'
               : 'No memories yet'}
         </div>
       )}
 
-      {!loading && !error && items.map(item => {
-        const isEditing = editingId === item.id;
+      {!loading &&
+        !error &&
+        items.map((item) => {
+          const isEditing = editingId === item.id;
 
-        return (
-          <div key={item.id} className="card">
-            <div>
-              {isEditing ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase' as const }}>Content</label>
-                  <textarea
+          return (
+            <div key={item.id} className="card">
+              <div>
+                {isEditing ? (
+                  <div
                     style={{
-                      background: 'var(--bg)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 'var(--radius)',
-                      color: 'var(--text)',
-                      padding: 10,
-                      fontFamily: 'var(--font)',
-                      fontSize: 13,
-                      width: '100%',
-                      minHeight: 120,
-                      resize: 'vertical',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 10,
                     }}
-                    value={editContent}
-                    onChange={e => setEditContent(e.target.value)}
-                    onClick={e => e.stopPropagation()}
-                  />
-                  <div style={{ display: 'flex', gap: 12 }}>
-                    <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase' as const, display: 'block', marginBottom: 4 }}>Repo</label>
-                      <input
-                        className="input"
-                        value={editRepo}
-                        onChange={e => setEditRepo(e.target.value)}
-                        placeholder="e.g. agent-smith"
-                        onClick={e => e.stopPropagation()}
-                      />
+                  >
+                    <label
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 500,
+                        color: 'var(--text-muted)',
+                        textTransform: 'uppercase' as const,
+                      }}
+                    >
+                      Content
+                    </label>
+                    <textarea
+                      style={{
+                        background: 'var(--bg)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius)',
+                        color: 'var(--text)',
+                        padding: 10,
+                        fontFamily: 'var(--font)',
+                        fontSize: 13,
+                        width: '100%',
+                        minHeight: 120,
+                        resize: 'vertical',
+                      }}
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <div style={{ display: 'flex', gap: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <label
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 500,
+                            color: 'var(--text-muted)',
+                            textTransform: 'uppercase' as const,
+                            display: 'block',
+                            marginBottom: 4,
+                          }}
+                        >
+                          Repo
+                        </label>
+                        <input
+                          className="input"
+                          value={editRepo}
+                          onChange={(e) => setEditRepo(e.target.value)}
+                          placeholder="e.g. agent-smith"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                      <div style={{ flex: 2 }}>
+                        <label
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 500,
+                            color: 'var(--text-muted)',
+                            textTransform: 'uppercase' as const,
+                            display: 'block',
+                            marginBottom: 4,
+                          }}
+                        >
+                          Tags (comma-separated)
+                        </label>
+                        <input
+                          className="input"
+                          value={editTags}
+                          onChange={(e) => setEditTags(e.target.value)}
+                          placeholder="e.g. architecture, convention"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
                     </div>
-                    <div style={{ flex: 2 }}>
-                      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase' as const, display: 'block', marginBottom: 4 }}>Tags (comma-separated)</label>
-                      <input
-                        className="input"
-                        value={editTags}
-                        onChange={e => setEditTags(e.target.value)}
-                        placeholder="e.g. architecture, convention"
-                        onClick={e => e.stopPropagation()}
-                      />
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                    <button className="btn btn-success" onClick={e => { e.stopPropagation(); saveEdit(item.id); }} disabled={saving}>
-                      {saving ? 'Saving...' : 'Save'}
-                    </button>
-                    <button className="btn" onClick={e => { e.stopPropagation(); cancelEdit(); }}>Cancel</button>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ marginBottom: 8, fontSize: 13, lineHeight: 1.6 }}>
-                  {item.content}
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: isEditing ? 12 : 0 }}>
-              {item.from_meeting && <span className="tag tag-info">Meeting</span>}
-              {item.from_meeting && item.source_id && <Link className="text-muted-sm" to={`/meetings/${encodeURIComponent(item.source_id)}`}>Source meeting</Link>}
-              {item.repo && <span className="tag tag-info">{item.repo}</span>}
-              {item.context_tags?.filter(tag => !item.tags?.includes(tag)).map(tag => <span key={`context-${tag}`} className="tag" title="Meeting topic">{tag}</span>)}
-              {item.tags?.map(t => <span key={t} className="tag">{t}</span>)}
-              {([
-                ['Created', item.created_at],
-                ['Last accessed', item.last_accessed_at],
-              ] as const).map(([label, timestamp]) => (
-                <span key={label} className="text-muted-sm">
-                  {label}: {timestamp
-                    ? <time dateTime={timestamp}>{new Date(timestamp).toLocaleString()}</time>
-                    : 'Unavailable'}
-                </span>
-              ))}
-              {!isEditing && (
-                <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-                  <CopyButton text={item.content} className="btn-sm" />
-                  <button className="btn btn-sm" onClick={e => { e.stopPropagation(); startEdit(item); }}>Edit</button>
-                  {confirmDeleteId === item.id ? (
-                    <>
-                      <span style={{ color: 'var(--warning)', fontSize: 12, alignSelf: 'center' }}>Delete?</span>
-                      <button className="btn btn-danger btn-sm" onClick={e => { e.stopPropagation(); deleteMemory(item.id); }} disabled={saving}>
-                        {saving ? '...' : 'Yes'}
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                      <button
+                        className="btn btn-success"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          saveEdit(item.id);
+                        }}
+                        disabled={saving}
+                      >
+                        {saving ? 'Saving...' : 'Save'}
                       </button>
-                      <button className="btn btn-sm" onClick={e => { e.stopPropagation(); setConfirmDeleteId(null); }}>No</button>
-                    </>
-                  ) : (
-                    <button className="btn btn-danger btn-sm" onClick={e => { e.stopPropagation(); setConfirmDeleteId(item.id); }}>Delete</button>
-                  )}
-                </div>
-              )}
+                      <button
+                        className="btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          cancelEdit();
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    style={{ marginBottom: 8, fontSize: 13, lineHeight: 1.6 }}
+                  >
+                    {item.content}
+                  </div>
+                )}
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  marginTop: isEditing ? 12 : 0,
+                }}
+              >
+                {item.from_meeting && (
+                  <span className="tag tag-info">Meeting</span>
+                )}
+                {item.from_meeting && item.source_id && (
+                  <Link
+                    className="text-muted-sm"
+                    to={`/meetings/${encodeURIComponent(item.source_id)}`}
+                  >
+                    Source meeting
+                  </Link>
+                )}
+                {item.repo && <span className="tag tag-info">{item.repo}</span>}
+                {item.context_tags
+                  ?.filter((tag) => !item.tags?.includes(tag))
+                  .map((tag) => (
+                    <span
+                      key={`context-${tag}`}
+                      className="tag"
+                      title="Meeting topic"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                {item.tags?.map((t) => (
+                  <span key={t} className="tag">
+                    {t}
+                  </span>
+                ))}
+                {(
+                  [
+                    ['Created', item.created_at],
+                    ['Last accessed', item.last_accessed_at],
+                  ] as const
+                ).map(([label, timestamp]) => (
+                  <span key={label} className="text-muted-sm">
+                    {label}:{' '}
+                    {timestamp ? (
+                      <time dateTime={timestamp}>
+                        {new Date(timestamp).toLocaleString()}
+                      </time>
+                    ) : (
+                      'Unavailable'
+                    )}
+                  </span>
+                ))}
+                {!isEditing && (
+                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                    <CopyButton text={item.content} className="btn-sm" />
+                    <button
+                      className="btn btn-sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startEdit(item);
+                      }}
+                    >
+                      Edit
+                    </button>
+                    {confirmDeleteId === item.id ? (
+                      <>
+                        <span
+                          style={{
+                            color: 'var(--warning)',
+                            fontSize: 12,
+                            alignSelf: 'center',
+                          }}
+                        >
+                          Delete?
+                        </span>
+                        <button
+                          className="btn btn-danger btn-sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteMemory(item.id);
+                          }}
+                          disabled={saving}
+                        >
+                          {saving ? '...' : 'Yes'}
+                        </button>
+                        <button
+                          className="btn btn-sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmDeleteId(null);
+                          }}
+                        >
+                          No
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="btn btn-danger btn-sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmDeleteId(item.id);
+                        }}
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
 
       {!loading && !error && (
         <Pagination
@@ -288,7 +505,10 @@ export function MemoryPage() {
           limit={limit}
           offset={offset}
           onPageChange={setOffset}
-          onLimitChange={newLimit => { setLimit(newLimit); setOffset(0); }}
+          onLimitChange={(newLimit) => {
+            setLimit(newLimit);
+            setOffset(0);
+          }}
         />
       )}
     </div>
