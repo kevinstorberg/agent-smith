@@ -8,12 +8,8 @@ import re
 import time
 
 from services.costs.contracts import CostReport, ProviderFailure, require_utc
+from services.costs.periods import month_window
 from services.observability import billable_operation
-
-
-def month_window(now: datetime) -> tuple[str, str]:
-    today = require_utc(now).date()
-    return today.replace(day=1).isoformat(), (today + timedelta(days=1)).isoformat()
 
 
 def collect_aws(client, account_id: str, now: datetime) -> CostReport:
