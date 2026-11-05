@@ -207,7 +207,7 @@ describe('MeetingsIndexPage', () => {
         sort: 'newest',
       }),
     );
-    expect(screen.getByText('Loading meetings...')).toBeVisible();
+    expect(await screen.findByText('Loading meetings...')).toBeVisible();
     expect(
       screen.queryByRole('button', { name: 'Next' }),
     ).not.toBeInTheDocument();
