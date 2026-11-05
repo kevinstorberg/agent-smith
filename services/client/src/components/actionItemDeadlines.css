@@ -8,8 +8,7 @@
   display: inline;
 }
 
-.action-deadline-field,
-.action-deadline-window {
+.action-deadline-field {
   min-width: 0;
   margin: 1rem 0;
 }
@@ -28,8 +27,10 @@
   max-width: 24rem;
 }
 
-.action-deadline-window .filter-checkbox {
-  display: inline-flex;
+.action-deadline-window {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 0;
 }
 
 .action-deadline-window-inputs {

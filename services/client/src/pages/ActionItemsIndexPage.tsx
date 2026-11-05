@@ -164,6 +164,13 @@ export function ActionItemsIndexPage() {
                   ))}
                 </select>
               </label>
+              <ActionItemDeadlineWindow
+                hours={dueHoursInput}
+                onChange={(hours) =>
+                  preferences.setField('due_within_hours', hours)
+                }
+                disabled={freezeControls}
+              />
             </div>
             {(status !== 'open' || sort !== 'manual') && (
               <p className="text-muted-sm">
@@ -171,13 +178,6 @@ export function ActionItemsIndexPage() {
                 filters can stay applied.
               </p>
             )}
-            <ActionItemDeadlineWindow
-              hours={dueHoursInput}
-              onChange={(hours) =>
-                preferences.setField('due_within_hours', hours)
-              }
-              disabled={freezeControls}
-            />
           </>
         }
       />
