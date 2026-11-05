@@ -443,3 +443,7 @@ for (const view of views) {
     });
   }
 }
+
+test.beforeEach(async ({ fixtureAPI }) => {
+  fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
+});

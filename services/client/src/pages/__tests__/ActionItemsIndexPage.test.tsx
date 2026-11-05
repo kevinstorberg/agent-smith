@@ -82,6 +82,7 @@ vi.mock('@hello-pangea/dnd', () => ({
 vi.mock('../../api', async (original) => ({
   ...(await original<typeof import('../../api')>()),
   api: {
+    actionItemProjects: { list: vi.fn(), create: vi.fn(), remove: vi.fn() },
     actionItems: {
       list: vi.fn(),
       get: vi.fn(),
@@ -112,6 +113,13 @@ const titles = () =>
 beforeEach(() => {
   document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.resetAllMocks();
+  vi.mocked(api.actionItemProjects.list).mockResolvedValue({
+    items: [
+      { id: 1, name: 'Work', created_at: '2026-11-01T12:00:00Z' },
+      { id: 2, name: 'Paralign', created_at: '2026-11-01T12:00:00Z' },
+    ],
+    total: 2,
+  });
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   drag.start = null;
   drag.end = null;
@@ -372,9 +380,7 @@ describe('ActionItemsIndexPage', () => {
   it('sends combined project/tags filters to the server and applies select changes immediately', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await renderReady();
-    fireEvent.change(screen.getByLabelText('Project'), {
-      target: { value: 'Paralign' },
-    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Paralign' }));
     fireEvent.change(screen.getByLabelText('Tags'), {
       target: { value: 'product, security' },
     });
@@ -537,7 +543,11 @@ describe('ActionItemsIndexPage', () => {
     expect(titles().at(-1)).toBe('Task 11');
     expect(screen.getAllByLabelText('Priority updating')).toHaveLength(10);
     expect(screen.getByLabelText('Search action items')).toBeDisabled();
-    for (const label of ['Project', 'Tags', 'Sort'])
+    for (const tab of within(
+      screen.getByRole('tablist', { name: 'Action item projects' }),
+    ).getAllByRole('tab'))
+      expect(tab).toBeDisabled();
+    for (const label of ['Tags', 'Sort'])
       expect(screen.getByLabelText(label)).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
     expect(
@@ -560,9 +570,7 @@ describe('ActionItemsIndexPage', () => {
     fireEvent.change(screen.getByLabelText('Search action items'), {
       target: { value: 'Task' },
     });
-    fireEvent.change(screen.getByLabelText('Project'), {
-      target: { value: 'Work' },
-    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Work' }));
     fireEvent.change(screen.getByLabelText('Tags'), {
       target: { value: 'security' },
     });
@@ -725,9 +733,7 @@ describe('ActionItemsIndexPage', () => {
       items: [actionItem(24), actionItem(13), actionItem(3)],
       total: 3,
     });
-    fireEvent.change(screen.getByLabelText('Project'), {
-      target: { value: 'Work' },
-    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Work' }));
     await act(async () => {
       vi.advanceTimersByTime(300);
     });
@@ -787,7 +793,9 @@ describe('ActionItemsIndexPage', () => {
       screen.getByRole('region', { name: 'Task 1' }).closest('td'),
     ).toHaveAttribute('colspan', '5');
     await user.keyboard(' ');
-    expect(screen.queryByRole('region')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('region', { name: /^Task \d+$/ }),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Task 2' }));
     expect(
       await screen.findByRole('region', { name: 'Task 2' }),
@@ -831,20 +839,26 @@ describe('ActionItemsIndexPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Task 1' }));
     await screen.findByRole('region', { name: 'Task 1' });
     act(() => drag.start!());
-    expect(screen.queryByRole('region')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('region', { name: /^Task \d+$/ }),
+    ).not.toBeInTheDocument();
     await act(async () => drag.end!({ ...drop(), destination: null }));
     fireEvent.click(screen.getByRole('button', { name: 'Task 1' }));
     await screen.findByRole('region', { name: 'Task 1' });
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() =>
-      expect(screen.queryByRole('region')).not.toBeInTheDocument(),
+      expect(
+        screen.queryByRole('region', { name: /^Task \d+$/ }),
+      ).not.toBeInTheDocument(),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Task 1' }));
     await screen.findByRole('region', { name: 'Task 1' });
     fireEvent.change(screen.getByLabelText('Search action items'), {
       target: { value: 'new' },
     });
-    expect(screen.queryByRole('region')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('region', { name: /^Task \d+$/ }),
+    ).not.toBeInTheDocument();
   });
 
   it('opens Edit directly without reading a description or toggling its disclosure', async () => {

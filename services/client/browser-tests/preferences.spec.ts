@@ -485,3 +485,7 @@ test('Meeting tab links restore their own saved query and page without sharing c
   expect(new URL(meetings()[1].url).searchParams.get('offset')).toBe('50');
   expect(new URL(page.url()).searchParams.get('keep')).toBe('1');
 });
+
+test.beforeEach(async ({ fixtureAPI }) => {
+  fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
+});
