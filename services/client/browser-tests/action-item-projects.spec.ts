@@ -502,7 +502,7 @@ test('a project-filtered keyboard drag keeps global priorities and anchored revi
   await page.keyboard.press('Space');
   await expect(
     page.getByRole('tab', { name: 'Work', exact: true }),
-  ).toBeDisabled();
+  ).toHaveAttribute('aria-disabled', 'true');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Space');
   await expect.poll(() => moves).toBe(1);

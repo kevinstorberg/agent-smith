@@ -66,6 +66,7 @@ export function ActionItemsIndexPage() {
       tagsInput,
     ]),
     reorderableView: status === 'open' && sort === 'manual',
+    projectAssignment: true,
     criteriaPending,
     pagination: { ...preferences.pagination, enabled: !criteriaPending },
   });
@@ -90,7 +91,10 @@ export function ActionItemsIndexPage() {
         scope={projectScope(project, unassigned)}
         onChange={(scope) => preferences.setFields(projectScopeFields(scope))}
         disabled={freezeControls}
-        paused={queue.busy}
+        paused={queue.busy || Boolean(queue.snapshot)}
+        dropTargetsRef={queue.projectTabsRef}
+        dropProject={queue.snapshot?.project}
+        dragging={Boolean(queue.snapshot) && !queue.busy}
         toolbarAccessory={
           <div
             className="sub-tabs"

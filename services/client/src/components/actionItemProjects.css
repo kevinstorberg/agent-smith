@@ -77,6 +77,13 @@
   outline-offset: -3px;
 }
 
+.action-project-tabs button.project-drop-target {
+  outline: 2px solid var(--info);
+  outline-offset: -3px;
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
 .action-items-index-page .action-items-container {
   border-top: 0;
   border-top-left-radius: 0;

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import type { KeyboardEvent, ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode, Ref } from 'react';
 import { api } from '../api';
 import { useActionItemProjects } from '../hooks/useActionItemProjects';
 import { useApiMutation } from '../hooks/useApiMutation';
@@ -22,6 +22,9 @@ export function ActionItemProjectTabs({
   paused = false,
   toolbarAccessory,
   beforeTabs,
+  dropTargetsRef,
+  dropProject,
+  dragging = false,
 }: {
   scope: ProjectScope;
   onChange: (scope: ProjectScope) => void;
@@ -29,6 +32,9 @@ export function ActionItemProjectTabs({
   paused?: boolean;
   toolbarAccessory?: ReactNode;
   beforeTabs?: ReactNode;
+  dropTargetsRef?: Ref<HTMLDivElement>;
+  dropProject?: string | null;
+  dragging?: boolean;
 }) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -222,11 +228,14 @@ export function ActionItemProjectTabs({
       {notice && <p role="alert">{notice}</p>}
       {beforeTabs}
       <div
+        ref={dropTargetsRef}
         className="action-project-tabs"
         role="tablist"
         aria-label="Action item projects"
       >
         {tabs.map((tab, index) => {
+          const projectName =
+            tab.scope.kind === 'named' ? tab.scope.name : undefined;
           const active =
             tab.scope.kind === 'all'
               ? scope.kind !== 'named'
@@ -235,12 +244,30 @@ export function ActionItemProjectTabs({
             <button
               key={projectScopeKey(tab.scope)}
               role="tab"
-              className={active ? 'active' : ''}
+              className={[
+                active ? 'active' : '',
+                tab.scope.kind === 'named' && tab.scope.name === dropProject
+                  ? 'project-drop-target'
+                  : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              data-project-id={
+                tab.scope.kind === 'named'
+                  ? projects.find(({ name }) => name === projectName)?.id
+                  : undefined
+              }
+              data-project-name={
+                tab.scope.kind === 'named' ? tab.scope.name : undefined
+              }
               aria-selected={active}
               tabIndex={active ? 0 : -1}
               title={tab.label}
-              disabled={busy}
-              onClick={() => selectScope(tab.scope)}
+              disabled={busy && !dragging}
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (!busy) selectScope(tab.scope);
+              }}
               onKeyDown={(event) => navigateTabs(event, index)}
             >
               {tab.label}
