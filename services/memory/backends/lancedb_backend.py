@@ -142,7 +142,7 @@ class _UpsertingLanceDBVectorStore(LanceDBVectorStore):
             return super().add_documents(sanitized, **kwargs)
         except Exception:
             current_table = _get_table()
-            if current_table and existing_rows:
+            if current_table is not None and existing_rows:
                 current_table.add(existing_rows)
             raise
 
