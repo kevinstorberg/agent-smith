@@ -36,7 +36,9 @@ def metadata_datetime(value: Any, field: str) -> datetime:
         try:
             parsed = datetime.fromisoformat(value)
         except ValueError as exc:
-            raise ValueError(f"Memory metadata {field!r} must be an ISO datetime") from exc
+            raise ValueError(
+                f"Memory metadata {field!r} must be an ISO datetime"
+            ) from exc
     else:
         raise ValueError(f"Memory metadata {field!r} must be a datetime")
 
@@ -54,7 +56,11 @@ def memory_ids(ids: list[str]) -> list[str]:
 
 
 def access_datetime(value: datetime) -> datetime:
-    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+    if (
+        not isinstance(value, datetime)
+        or value.tzinfo is None
+        or value.utcoffset() is None
+    ):
         raise ValueError("Memory accessed_at must be a timezone-aware datetime")
     return metadata_datetime(value, "accessed_at")
 
@@ -72,12 +78,15 @@ def get_backend() -> MemoryBackend:
 
     if name == "lancedb":
         from services.memory.backends import lancedb_backend
+
         return cast(MemoryBackend, lancedb_backend)
     elif name == "pinecone":
         from services.memory.backends import pinecone_backend
+
         return cast(MemoryBackend, pinecone_backend)
     elif name == "pgvector":
         from services.memory.backends import pgvector_backend
+
         return cast(MemoryBackend, pgvector_backend)
     else:
         raise ValueError(

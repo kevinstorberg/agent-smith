@@ -11,5 +11,7 @@ from services.observability import trigger_context
 async def request_trigger(request: Request) -> AsyncIterator[None]:
     route = request.scope.get("route")
     path = getattr(route, "path", "unknown")
-    with trigger_context(trigger=f"http.{request.method}", source=path, request_id=str(uuid4())):
+    with trigger_context(
+        trigger=f"http.{request.method}", source=path, request_id=str(uuid4())
+    ):
         yield

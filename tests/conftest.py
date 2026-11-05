@@ -27,11 +27,14 @@ def _setup_test_db():
     from services.db import init_db
 
     if APP_ENV != "test":
-        raise RuntimeError("Backend tests cannot use an application configured outside APP_ENV=test")
+        raise RuntimeError(
+            "Backend tests cannot use an application configured outside APP_ENV=test"
+        )
     create_database(DATABASE_URL)
     init_db()
 
     from tests.seeds import seed_test_data
+
     seed_test_data()
 
 
@@ -46,6 +49,7 @@ HARNESS_TABLES = [
 
 def clean_harness_rows(*patterns: str):
     from services.db import get_connection
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             for table, item_type in HARNESS_TABLES:
@@ -62,15 +66,19 @@ def harness_cleanup(*patterns: str):
     def _clean():
         yield
         clean_harness_rows(*patterns)
+
     return _clean
 
 
 def clean_job_rows(*patterns: str):
     from services.db import get_connection
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             for pattern in patterns:
-                cur.execute("DELETE FROM background_jobs WHERE name LIKE %s", (pattern,))
+                cur.execute(
+                    "DELETE FROM background_jobs WHERE name LIKE %s", (pattern,)
+                )
 
 
 def jobs_cleanup(*patterns: str):
@@ -78,14 +86,20 @@ def jobs_cleanup(*patterns: str):
     def _clean():
         yield
         clean_job_rows(*patterns)
+
     return _clean
 
 
 def clean_meeting_rows(account_key: str):
     from services.db import get_connection
+
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("DELETE FROM meeting_summaries WHERE account_key = %s", (account_key,))
-        cur.execute("DELETE FROM meeting_sync_state WHERE account_key = %s", (account_key,))
+        cur.execute(
+            "DELETE FROM meeting_summaries WHERE account_key = %s", (account_key,)
+        )
+        cur.execute(
+            "DELETE FROM meeting_sync_state WHERE account_key = %s", (account_key,)
+        )
 
 
 @pytest.fixture
@@ -100,10 +114,13 @@ def unidentified_speakers(monkeypatch):
 
 def clean_audit_rows(*patterns: str):
     from services.db import get_connection
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             for pattern in patterns:
-                cur.execute("DELETE FROM tool_call_events WHERE session_id LIKE %s", (pattern,))
+                cur.execute(
+                    "DELETE FROM tool_call_events WHERE session_id LIKE %s", (pattern,)
+                )
 
 
 def audit_cleanup(*patterns: str):
@@ -111,4 +128,5 @@ def audit_cleanup(*patterns: str):
     def _clean():
         yield
         clean_audit_rows(*patterns)
+
     return _clean
