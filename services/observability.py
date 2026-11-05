@@ -3,11 +3,11 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterator, Mapping
 from concurrent.futures import CancelledError as FutureCancelledError, Executor, Future
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar, copy_context
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial
-import json
 import logging
 import math
 import re
@@ -17,15 +17,27 @@ from types import MappingProxyType
 from typing import Any, Callable, TypeVar
 from uuid import UUID, uuid4
 
+from scripts.shared.operation_logging import (
+    action_label,
+    provider_label,
+    resource_name,
+    write_log as _write_log,
+)
+
 
 logger = logging.getLogger("agent_smith.billable")
-logger.setLevel(logging.INFO)
 _work_logger = logging.getLogger("agent_smith.work")
-_work_logger.setLevel(logging.INFO)
-_handler_lock = Lock()
+_action_logger = logging.getLogger("agent_smith.action")
+for _logger in (logger, _work_logger, _action_logger):
+    if _logger.level == logging.NOTSET:
+        _logger.setLevel(logging.INFO)
 _trigger: ContextVar[Mapping[str, Any] | None] = ContextVar(
     "billable_trigger", default=None
 )
+_actions: ContextVar[tuple[_ActionFrame, ...]] = ContextVar(
+    "action_boundaries", default=()
+)
+_ADAPTER_OWNERS = frozenset({"http", "mcp", "agent_tool"})
 _CONTEXT_FIELDS = frozenset(
     {
         "trigger",
@@ -64,6 +76,7 @@ _CONTEXT_FIELDS = frozenset(
         "billing",
         "input_messages",
         "input_characters",
+        "memory_backend",
     }
 )
 _END_FIELDS = frozenset(
@@ -92,6 +105,15 @@ _TIMEOUT_TYPES = frozenset(
     }
 )
 _T = TypeVar("_T")
+
+
+@dataclass(frozen=True)
+class _ActionFrame:
+    resource: str
+    action: str
+    owner: str
+    request_id: str | None
+    event: BillableEvent
 
 
 def _safe_fields(fields: Mapping[str, Any], allowed: frozenset[str]) -> dict[str, Any]:
@@ -135,26 +157,21 @@ def trigger_context(**fields: Any) -> Iterator[None]:
         _trigger.reset(token)
 
 
-def _write_log(
-    record: dict[str, Any], prefix: str, target_logger: logging.Logger, extra_name: str
-) -> None:
-    # CLI providers also need visible records when no application handler was installed.
-    with _handler_lock:
-        if not target_logger.hasHandlers():
-            handler = logging.StreamHandler()
-            handler.setFormatter(logging.Formatter("%(message)s"))
-            target_logger.addHandler(handler)
-            target_logger.propagate = False
-    target_logger.info(
-        "%s %s",
-        prefix,
-        json.dumps(record, ensure_ascii=False, sort_keys=True),
-        extra={extra_name: record},
+def _event_level(record: dict[str, Any]) -> int:
+    if record["phase"] == "START":
+        return logging.INFO
+    return (
+        logging.WARNING
+        if record.get("outcome") in {"failed", "timeout"}
+        else logging.DEBUG
     )
 
 
 def _emit(record: dict[str, Any]) -> None:
-    _write_log(record, f"BILLABLE {record['phase']}", logger, "billable_event")
+    label = provider_label(record["provider"], record["operation"])
+    _write_log(
+        record, label.prefix, logger, "billable_event", level=_event_level(record)
+    )
 
 
 def work_decision(decision: str, **fields: Any) -> None:
@@ -165,6 +182,14 @@ def work_decision(decision: str, **fields: Any) -> None:
     metadata = _safe_fields(
         fields, _CONTEXT_FIELDS | {"outcome", "error_type", "duration_ms"}
     )
+    terminal = decision in {
+        "job_started",
+        "job_finished",
+        "stage_result",
+        "summary_saved",
+        "summary_references_processed",
+    }
+    label = action_label("work", decision)
     _write_log(
         {
             "trigger": "unknown",
@@ -173,18 +198,27 @@ def work_decision(decision: str, **fields: Any) -> None:
             "decision": decision,
             "utc_timestamp": datetime.now(timezone.utc).isoformat(),
         },
-        "WORK DECISION",
+        label.prefix,
         _work_logger,
         "work_decision",
+        level=logging.DEBUG if terminal else logging.INFO,
     )
 
 
 class BillableEvent:
-    def __init__(self, provider: str, operation: str, fields: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        provider: str,
+        operation: str,
+        fields: dict[str, Any],
+        *,
+        emitter: Callable | None = None,
+    ) -> None:
         self.event_id = str(uuid4())
         self._started = time.monotonic()
         self._lock = Lock()
         self._finished = False
+        self._emitter = emitter or _emit
         self._fields = MappingProxyType(
             {
                 "trigger": "unknown",
@@ -207,14 +241,17 @@ class BillableEvent:
             raise ValueError("Billable provider and operation must be nonblank strings")
         metadata = {**current_trigger(), **_safe_fields(fields, _CONTEXT_FIELDS)}
         event = cls(provider[:128], operation[:128], metadata)
-        _emit(
+        event._start_record()
+        return event
+
+    def _start_record(self) -> None:
+        self._emitter(
             {
-                **event._fields,
+                **self._fields,
                 "phase": "START",
                 "utc_timestamp": datetime.now(timezone.utc).isoformat(),
             }
         )
-        return event
 
     def finish(
         self,
@@ -236,7 +273,7 @@ class BillableEvent:
         with self._lock:
             if self._finished:
                 return False
-            _emit(
+            self._emitter(
                 {
                     **self._fields,
                     **terminal,
@@ -272,10 +309,7 @@ def error_outcome(error: BaseException) -> str:
 
 
 @contextmanager
-def billable_operation(
-    provider: str, operation: str, **fields: Any
-) -> Iterator[BillableEvent]:
-    event = BillableEvent.start(provider, operation, **fields)
+def _event_scope(event: BillableEvent) -> Iterator[BillableEvent]:
     with trigger_context(parent_event_id=event.event_id):
         try:
             yield event
@@ -284,6 +318,98 @@ def billable_operation(
             raise
         else:
             event.finish()
+
+
+@contextmanager
+def billable_operation(
+    provider: str, operation: str, **fields: Any
+) -> Iterator[BillableEvent]:
+    with _event_scope(BillableEvent.start(provider, operation, **fields)) as event:
+        yield event
+
+
+@contextmanager
+def action_operation(
+    resource: str, action: str, *, owner: str, local_only: bool = False, **fields: Any
+) -> Iterator[BillableEvent]:
+    if not isinstance(owner, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", owner):
+        raise ValueError("Action owner must be a short lowercase identifier")
+    if type(local_only) is not bool:
+        raise ValueError("Local-only classification must be a boolean")
+    with ExitStack() as scopes:
+        fields = {
+            "request_id": current_trigger().get("request_id") or str(uuid4()),
+            **fields,
+        }
+        backend = None
+        if resource_name(resource) == "MEMORY":
+            from services.memory.backends import backend_snapshot
+
+            backend = scopes.enter_context(backend_snapshot())
+            fields = {
+                **fields,
+                "memory_backend": backend
+                if backend in {"pinecone", "lancedb", "pgvector"}
+                else "unknown",
+            }
+        scopes.enter_context(trigger_context(**fields))
+        label = action_label(
+            resource,
+            action,
+            memory_backend=backend,
+            graph_type=current_trigger().get("graph"),
+            local_only=local_only,
+        )
+        request_id = current_trigger().get("request_id")
+        previous = next(
+            (
+                frame
+                for frame in reversed(_actions.get())
+                if (frame.resource, frame.action) == (label.resource, label.action)
+                and frame.request_id == request_id
+            ),
+            None,
+        )
+        delegated = (
+            previous is not None
+            and previous.owner in _ADAPTER_OWNERS
+            and previous.owner != owner
+        )
+
+        def emit(record):
+            _write_log(
+                record,
+                label.prefix,
+                _action_logger,
+                "operation_event",
+                level=_event_level(record),
+            )
+
+        event = (
+            previous.event
+            if delegated
+            else BillableEvent(
+                label.resource.lower(),
+                label.action.lower(),
+                {
+                    **current_trigger(),
+                    "billing": label.billing,
+                },
+                emitter=emit,
+            )
+        )
+        token = _actions.set(
+            (
+                *_actions.get(),
+                _ActionFrame(label.resource, label.action, owner, request_id, event),
+            )
+        )
+        scopes.callback(_actions.reset, token)
+        if delegated:
+            yield event
+            return
+        event._start_record()
+        yield scopes.enter_context(_event_scope(event))
 
 
 def submit_with_context(

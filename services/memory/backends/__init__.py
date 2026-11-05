@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol, TypedDict, cast
 
@@ -10,6 +12,28 @@ from langchain_core.vectorstores import VectorStore
 from scripts.shared.validation import validate_memory_id
 
 TIMESTAMP_FIELDS = ("created_at", "updated_at", "last_accessed_at")
+_selected_backend: ContextVar[str | None] = ContextVar(
+    "memory_backend_snapshot", default=None
+)
+
+
+def _backend_name() -> str:
+    captured = _selected_backend.get()
+    return (
+        captured
+        if captured is not None
+        else os.environ.get("MEMORY_BACKEND", "lancedb")
+    )
+
+
+@contextmanager
+def backend_snapshot():
+    name = _backend_name()
+    token = _selected_backend.set(name)
+    try:
+        yield name
+    finally:
+        _selected_backend.reset(token)
 
 
 class BackendRow(TypedDict):
@@ -74,7 +98,7 @@ def canonical_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_backend() -> MemoryBackend:
-    name = os.environ.get("MEMORY_BACKEND", "lancedb")
+    name = _backend_name()
 
     if name == "lancedb":
         from services.memory.backends import lancedb_backend

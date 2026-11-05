@@ -11,6 +11,15 @@ import pytest
 
 
 @pytest.fixture
+def terminal_diagnostics(caplog):
+    """Lifecycle controls explicitly opt into terminal DEBUG records."""
+    import logging
+
+    caplog.set_level(logging.DEBUG, logger="agent_smith.billable")
+    caplog.set_level(logging.DEBUG, logger="agent_smith.work")
+
+
+@pytest.fixture
 def extraction_only(monkeypatch):
     from services.personas.service import PersonaRun
 
