@@ -13,7 +13,12 @@ from services.db import get_connection
 from services.api.models.base import BaseModel
 from services.api.models.shared.listing import sort_clause
 
-HARNESS_SORTS = {"manual": "sort_key, id", "name": "lower(name), id", "newest": "created_at DESC, id DESC", "updated": "updated_at DESC, id DESC"}
+HARNESS_SORTS = {
+    "manual": "sort_key, id",
+    "name": "lower(name), id",
+    "newest": "created_at DESC, id DESC",
+    "updated": "updated_at DESC, id DESC",
+}
 
 
 def content_metadata(item: dict) -> dict:
@@ -40,7 +45,9 @@ _LATEST_VERSION_CLAUSE = """
 
 
 def _table(item_type: str) -> str:
-    assert item_type in VALID_TABLES, f"Invalid type: {item_type}. Must be one of {set(VALID_TABLES)}."
+    assert item_type in VALID_TABLES, (
+        f"Invalid type: {item_type}. Must be one of {set(VALID_TABLES)}."
+    )
     return VALID_TABLES[item_type]
 
 
@@ -49,17 +56,24 @@ class HarnessWriteConflict(RuntimeError):
 
 
 @contextmanager
-def harness_write(item_type: str, conn: Connection | None = None) -> Iterator[Connection]:
+def harness_write(
+    item_type: str, conn: Connection | None = None
+) -> Iterator[Connection]:
     _table(item_type)
     try:
-        with (get_connection() if conn is None else nullcontext(conn)) as connection:
+        with get_connection() if conn is None else nullcontext(conn) as connection:
             with connection.cursor() as cur:
                 cur.execute("SET LOCAL lock_timeout = '3s'")
                 cur.execute("SET LOCAL statement_timeout = '5s'")
-                cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"agent-smith:harness-write:{item_type}",))
+                cur.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                    (f"agent-smith:harness-write:{item_type}",),
+                )
             yield connection
     except (LockNotAvailable, QueryCanceled):
-        raise HarnessWriteConflict("Harness items are busy. Refresh the list before trying again.") from None
+        raise HarnessWriteConflict(
+            "Harness items are busy. Refresh the list before trying again."
+        ) from None
 
 
 def _sort_optional_list(value: list[str] | None) -> list[str] | None:
@@ -75,7 +89,9 @@ def _row_to_dict(row: dict) -> dict:
     return result
 
 
-def _copy_configs(cursor, source_item_id: int, target_item_id: int, item_type: str) -> None:
+def _copy_configs(
+    cursor, source_item_id: int, target_item_id: int, item_type: str
+) -> None:
     """Copy all harness_configs from source item to target item."""
     cursor.execute(
         """
@@ -99,8 +115,13 @@ def inherited_version_metadata(item_type: str, source: dict | None) -> dict[str,
 
 
 def _insert_version(
-    conn: Connection, item_type: str, fields: dict, source: dict | None = None,
-    *, device: str = "*", repo: str = "*",
+    conn: Connection,
+    item_type: str,
+    fields: dict,
+    source: dict | None = None,
+    *,
+    device: str = "*",
+    repo: str = "*",
 ) -> int:
     values = {**fields, **inherited_version_metadata(item_type, source)}
     values["content"] = Json(values["content"])
@@ -114,7 +135,15 @@ def _insert_version(
                 INSERT INTO harness_configs (item_id, item_type, device, repo, agents, subagents, enabled, exclude)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, false)
                 """,
-                (item_id, item_type, device, repo, fields["agents"], fields["subagents"], fields["enabled"]),
+                (
+                    item_id,
+                    item_type,
+                    device,
+                    repo,
+                    fields["agents"],
+                    fields["subagents"],
+                    fields["enabled"],
+                ),
             )
     return item_id
 
@@ -125,9 +154,13 @@ def _get_model(item_type: str):
     from services.api.models.tool import ToolModel
     from services.api.models.hook import HookModel
     from services.api.models.agent import AgentModel
+
     registry = {
-        "rule": RuleModel, "skill": SkillModel, "tool": ToolModel,
-        "hook": HookModel, "agent": AgentModel,
+        "rule": RuleModel,
+        "skill": SkillModel,
+        "tool": ToolModel,
+        "hook": HookModel,
+        "agent": AgentModel,
     }
     return registry[item_type]
 
@@ -184,14 +217,25 @@ def _list_items_internal(
     return sorted(seen.values(), key=lambda r: r["sort_key"])
 
 
-def list_items(item_type: str, project: str | None = None, agent: str | None = None) -> list[dict]:
+def list_items(
+    item_type: str, project: str | None = None, agent: str | None = None
+) -> list[dict]:
     return _list_items_internal(item_type, project, agent, enabled_only=True)
 
 
-def list_items_summary(item_type: str, project: str | None = None, agent: str | None = None, *, sort: str = "manual", enabled: bool | None = None) -> list[dict]:
+def list_items_summary(
+    item_type: str,
+    project: str | None = None,
+    agent: str | None = None,
+    *,
+    sort: str = "manual",
+    enabled: bool | None = None,
+) -> list[dict]:
     table = _table(item_type)
     latest = _LATEST_VERSION_CLAUSE.format(table=table)
-    base_cols = "id, name, project, agents, sort_key, enabled, version, created_at, updated_at"
+    base_cols = (
+        "id, name, project, agents, sort_key, enabled, version, created_at, updated_at"
+    )
     cols = f"{base_cols}, clone_as_skill" if item_type == "rule" else base_cols
 
     project_clause, params = _project_filter(project)
@@ -214,7 +258,9 @@ def list_items_summary(item_type: str, project: str | None = None, agent: str | 
             return [_row_to_dict(r) for r in cur.fetchall()]
 
 
-def list_items_full(item_type: str, project: str | None = None, agent: str | None = None) -> list[dict]:
+def list_items_full(
+    item_type: str, project: str | None = None, agent: str | None = None
+) -> list[dict]:
     return _list_items_internal(item_type, project, agent, enabled_only=False)
 
 
@@ -248,19 +294,32 @@ def create_item(
     enabled: bool = True,
 ) -> int:
     assert_not_empty(name, "name")
-    assert isinstance(content, dict) and "body" in content, "content must be a dict with a 'body' key."
+    assert isinstance(content, dict) and "body" in content, (
+        "content must be a dict with a 'body' key."
+    )
     _table(item_type)
     with harness_write(item_type) as conn:
-        return _insert_version(conn, item_type, {
-            "name": name, "project": project, "agents": _sort_optional_list(agents) or [],
-            "subagents": _sort_optional_list(subagents) or [], "content": content,
-            "sort_key": sort_key if sort_key is not None else 0, "enabled": enabled, "version": 1,
-        })
+        return _insert_version(
+            conn,
+            item_type,
+            {
+                "name": name,
+                "project": project,
+                "agents": _sort_optional_list(agents) or [],
+                "subagents": _sort_optional_list(subagents) or [],
+                "content": content,
+                "sort_key": sort_key if sort_key is not None else 0,
+                "enabled": enabled,
+                "version": 1,
+            },
+        )
 
 
 def update_content(item_type: str, item_id: int, content: dict) -> int:
     BaseModel._validate_id(item_id)
-    assert isinstance(content, dict) and "body" in content, "content must be a dict with a 'body' key."
+    assert isinstance(content, dict) and "body" in content, (
+        "content must be a dict with a 'body' key."
+    )
     table = _table(item_type)
 
     with harness_write(item_type) as conn:
@@ -272,11 +331,21 @@ def update_content(item_type: str, item_id: int, content: dict) -> int:
                 f"Item {item_id} is a proposed row (no version); promote it via the proposals service instead."
             )
 
-            return _insert_version(conn, item_type, {
-                "name": source["name"], "project": source["project"], "agents": source["agents"],
-                "subagents": source["subagents"], "content": content, "sort_key": source["sort_key"],
-                "enabled": source["enabled"], "version": source["version"] + 1,
-            }, source)
+            return _insert_version(
+                conn,
+                item_type,
+                {
+                    "name": source["name"],
+                    "project": source["project"],
+                    "agents": source["agents"],
+                    "subagents": source["subagents"],
+                    "content": content,
+                    "sort_key": source["sort_key"],
+                    "enabled": source["enabled"],
+                    "version": source["version"] + 1,
+                },
+                source,
+            )
 
 
 def update_metadata(
@@ -293,7 +362,10 @@ def update_metadata(
     _table(item_type)
 
     fields = BaseModel._collect_fields(
-        enabled=enabled, name=name, sort_key=sort_key, clone_as_skill=clone_as_skill,
+        enabled=enabled,
+        name=name,
+        sort_key=sort_key,
+        clone_as_skill=clone_as_skill,
     )
     if agents is not None:
         fields["agents"] = _sort_optional_list(agents)
@@ -319,7 +391,9 @@ def reorder_items(item_type: str, ids: list[int]) -> None:
                 )
 
 
-def get_version_history(item_type: str, name: str, project: str | None = None) -> list[dict]:
+def get_version_history(
+    item_type: str, name: str, project: str | None = None
+) -> list[dict]:
     assert_not_empty(name, "name")
     table = _table(item_type)
     proj_clause, proj_params = _project_clause(project)
@@ -333,7 +407,9 @@ def get_version_history(item_type: str, name: str, project: str | None = None) -
             return [_row_to_dict(r) for r in cur.fetchall()]
 
 
-def get_version_history_summary(item_type: str, name: str, project: str | None = None) -> list[dict]:
+def get_version_history_summary(
+    item_type: str, name: str, project: str | None = None
+) -> list[dict]:
     assert_not_empty(name, "name")
     table = _table(item_type)
     proj_clause, proj_params = _project_clause(project)
@@ -347,7 +423,9 @@ def get_version_history_summary(item_type: str, name: str, project: str | None =
             return [dict(r) for r in cur.fetchall()]
 
 
-def _get_scoped_item(cursor, item_type: str, name: str, project: str | None, *, for_update: bool = False) -> dict | None:
+def _get_scoped_item(
+    cursor, item_type: str, name: str, project: str | None, *, for_update: bool = False
+) -> dict | None:
     table = _table(item_type)
     latest = _LATEST_VERSION_CLAUSE.format(table=table)
     cursor.execute(
@@ -385,7 +463,9 @@ def upsert_item(
     repo: str = "*",
 ) -> int:
     assert_not_empty(name, "name")
-    assert isinstance(content, dict) and "body" in content, "content must be a dict with a 'body' key."
+    assert isinstance(content, dict) and "body" in content, (
+        "content must be a dict with a 'body' key."
+    )
     _table(item_type)
 
     agents = _sort_optional_list(agents)
@@ -402,11 +482,27 @@ def upsert_item(
                 agents = sorted(set(agents or []) | preserved)
         else:
             new_version = 1
-        return _insert_version(conn, item_type, {
-            "name": name, "project": project, "agents": agents or [], "subagents": subagents or [],
-            "content": content, "sort_key": sort_key if sort_key is not None else existing["sort_key"] if existing else 0,
-            "enabled": enabled, "version": new_version,
-        }, existing, device=device, repo=repo)
+        return _insert_version(
+            conn,
+            item_type,
+            {
+                "name": name,
+                "project": project,
+                "agents": agents or [],
+                "subagents": subagents or [],
+                "content": content,
+                "sort_key": sort_key
+                if sort_key is not None
+                else existing["sort_key"]
+                if existing
+                else 0,
+                "enabled": enabled,
+                "version": new_version,
+            },
+            existing,
+            device=device,
+            repo=repo,
+        )
 
 
 def delete_item(item_type: str, item_id: int) -> None:
