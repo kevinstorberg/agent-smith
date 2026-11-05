@@ -286,6 +286,14 @@ matching historical deadlines. Count and rows share one transaction-stable datab
 The additive deadline migration preserves existing rows and receipts; downgrading removes
 only the deadline field. Deploy this backend before clients send the new deadline filters.
 
+Task editors accept a local **Due date and time**, show the selected time-zone offset,
+and offer **Clear deadline**. Storage remains UTC; lists and task details show local time.
+Unchanged saved deadlines retain their exact precision. A nonexistent local time during
+a spring clock change is rejected; a newly entered repeated fall-back time uses the earlier
+occurrence shown in the offset preview. Existing later occurrences remain unchanged.
+Enable **Deadline window** to adjust the upcoming hours with the slider or number field;
+past deadlines remain included, and the independent status/project/tag filters still apply.
+
 Deploy reviewed action-items migrations with the normal production command
 `./db.sh production --confirm-database <database-name>`, then restart the updated
 dashboard. Startup registers the MCP connection without replacing customized settings.

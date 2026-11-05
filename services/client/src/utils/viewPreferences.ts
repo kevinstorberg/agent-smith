@@ -22,6 +22,7 @@ import {
   VOCABULARY_SORT_OPTIONS,
 } from '../constants';
 import type { PageLimit } from '../constants';
+import { MAX_DUE_WINDOW_HOURS } from './actionItemDeadlines';
 
 export const VIEW_COOKIE_NAME = 'agent-smith.ui.v1';
 export const MAX_COOKIE_BYTES = 3000;
@@ -65,6 +66,7 @@ export interface ViewSettings extends Record<
     q: string;
     project: string;
     unassigned: boolean;
+    due_within_hours: number | null;
     tags: string;
     status: (typeof ACTION_ITEM_STATUSES)[number][0];
     sort: (typeof ACTION_ITEM_SORT_OPTIONS)[number]['value'];
@@ -194,6 +196,18 @@ const projectName: Field<string> = {
       ? value
       : undefined,
 };
+const dueWindow: Field<number | null> = {
+  parse: (value) => {
+    if (value === null || value === '') return null;
+    const hours = numeric(value);
+    return hours !== undefined &&
+      Number.isSafeInteger(hours) &&
+      hours >= 1 &&
+      hours <= MAX_DUE_WINDOW_HOURS
+      ? hours
+      : undefined;
+  },
+};
 function choice<const T extends string>(values: readonly T[]): Field<T> {
   return { parse: (value) => values.find((candidate) => candidate === value) };
 }
@@ -242,6 +256,7 @@ const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
       q: '',
       project: '',
       unassigned: false,
+      due_within_hours: null,
       tags: '',
       status: 'open',
       sort: 'manual',
@@ -252,6 +267,7 @@ const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
       q: text,
       project: projectName,
       unassigned: boolean,
+      due_within_hours: dueWindow,
       tags: text,
       status: choice(ACTION_ITEM_STATUSES.map((option) => option[0])),
       sort: choice(ACTION_ITEM_SORT_OPTIONS.map((option) => option.value)),

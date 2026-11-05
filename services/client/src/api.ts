@@ -186,6 +186,7 @@ export interface ActionItemRow {
   created_at: string;
   updated_at: string;
   priority: number | null;
+  due_at?: string | null;
 }
 export interface ActionItem extends ActionItemRow {
   description: string;
@@ -196,6 +197,7 @@ export interface ActionItemFields {
   project?: string | null;
   tags?: string[] | null;
   status?: ActionItemStatus;
+  due_at?: string | null;
 }
 export interface ActionItemCreate extends Omit<
   ActionItemFields,
@@ -216,12 +218,16 @@ export interface ActionItemFilters extends PaginationParams {
   q?: string;
   project?: string;
   unassigned?: boolean;
+  due_within_hours?: number;
   tags?: string[];
   status?: ActionItemStatus | 'all';
   sort?: ActionItemSort;
 }
 
-export interface ProfileDiscussionTopicRow extends ActionItemRow {
+export interface ProfileDiscussionTopicRow extends Omit<
+  ActionItemRow,
+  'due_at'
+> {
   readonly profile_id: string;
 }
 export interface ProfileDiscussionTopic extends ProfileDiscussionTopicRow {
@@ -230,11 +236,17 @@ export interface ProfileDiscussionTopic extends ProfileDiscussionTopicRow {
 export interface ProfileDiscussionTopicPage extends Paginated<ProfileDiscussionTopicRow> {
   readonly profile_id: string;
 }
-export type ProfileDiscussionTopicCreate = Omit<ActionItemCreate, 'project'>;
-export type ProfileDiscussionTopicPatch = Omit<ActionItemPatch, 'project'>;
+export type ProfileDiscussionTopicCreate = Omit<
+  ActionItemCreate,
+  'project' | 'due_at'
+>;
+export type ProfileDiscussionTopicPatch = Omit<
+  ActionItemPatch,
+  'project' | 'due_at'
+>;
 export type ProfileDiscussionTopicFilters = Omit<
   ActionItemFilters,
-  'project' | 'unassigned'
+  'project' | 'unassigned' | 'due_within_hours'
 >;
 
 export interface ActionItemProject {
@@ -1142,6 +1154,8 @@ export const api = {
       const params = itemFilterParams(filters);
       if (filters.project) params.project = filters.project;
       if (filters.unassigned) params.unassigned = 'true';
+      if (filters.due_within_hours !== undefined)
+        params.due_within_hours = String(filters.due_within_hours);
       return get<Paginated<ActionItemRow>>(
         '/action-items',
         params,
