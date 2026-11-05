@@ -1028,7 +1028,7 @@ describe('ActionItemsIndexPage', () => {
       within(screen.getByRole('table'))
         .getAllByRole('columnheader')
         .map((header) => header.textContent),
-    ).toEqual(['Priority', 'Title', 'Project / tags', 'Updated', 'Actions']);
+    ).toEqual(['Priority', 'Title', 'Project / tags', 'Due date', 'Actions']);
     expect(
       [
         ...screen.getByRole('table').querySelectorAll('.action-item-priority'),

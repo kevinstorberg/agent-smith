@@ -15,7 +15,7 @@ test.beforeEach(async ({ fixtureAPI }) => {
   });
 });
 
-for (const sample of [
+const deadlineSamples = [
   {
     name: 'winter',
     input: '2026-12-01T09:15',
@@ -28,7 +28,62 @@ for (const sample of [
     expected: '2026-07-02T03:15:00.000Z',
     local: 'July 1, 2026 at 11:15 PM',
   },
-]) {
+];
+
+for (const sample of deadlineSamples) {
+  for (const scale of [1, 2]) {
+    test(`list date column shows local ${sample.name} deadline at ${scale}x text`, async ({
+      page,
+      fixtureAPI,
+    }, testInfo) => {
+      fixtureAPI.get('/api/action-items', {
+        items: [
+          actionItem(1, {
+            due_at: sample.expected,
+            updated_at: '2020-02-03T12:00:00Z',
+          }),
+        ],
+        total: 1,
+      });
+      await page.goto('/action-items');
+      await expect(
+        page.getByRole('button', { name: 'Task 1', exact: true }),
+      ).toBeEnabled();
+      await page.getByRole('tab', { name: 'Work', exact: true }).waitFor();
+      if (scale === 2) await enlargeComputedText(page);
+      const cells = page.locator('.action-item-row').first().getByRole('cell');
+      const date = cells.nth(3);
+      await date.scrollIntoViewIfNeeded();
+      await expect(
+        page.getByRole('columnheader', { name: 'Due date', exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole('columnheader', { name: 'Updated', exact: true }),
+      ).toHaveCount(0);
+      await expect(date).toHaveText(sample.local);
+      await expect(cells.nth(1)).not.toContainText('Due');
+      expect(
+        await date.evaluate((cell) => cell.scrollWidth <= cell.clientWidth + 1),
+      ).toBe(true);
+      await expectDocumentContained(page);
+      await expectMainContained(page);
+      expect(
+        fixtureAPI.requests.filter((request) => request.method !== 'GET'),
+      ).toHaveLength(0);
+      if (
+        scale === 2 &&
+        ['chromium-1440', 'chromium-320'].includes(testInfo.project.name)
+      ) {
+        const path = testInfo.outputPath('due-date-column.png');
+        await page.screenshot({ path, fullPage: false });
+        await testInfo.attach('due-date-column', {
+          path,
+          contentType: 'image/png',
+        });
+      }
+    });
+  }
+
   test(`local ${sample.name} deadline sends UTC and displays browser-local date/time`, async ({
     page,
     fixtureAPI,
@@ -61,6 +116,29 @@ for (const sample of [
     await expectMainContained(page);
   });
 }
+
+test('list date column gives null and omitted deadlines an explicit placeholder', async ({
+  page,
+  fixtureAPI,
+}) => {
+  fixtureAPI.get('/api/action-items', {
+    items: [actionItem(1, { due_at: null }), actionItem(2)],
+    total: 2,
+  });
+  await page.goto('/action-items');
+  await expect(
+    page.getByRole('button', { name: 'Task 2', exact: true }),
+  ).toBeVisible();
+  for (const row of await page.locator('.action-item-row').all()) {
+    const date = row.getByRole('cell').nth(3);
+    await date.scrollIntoViewIfNeeded();
+    await expect(date).toHaveText('No due date');
+    await expect(row.getByRole('cell').nth(1)).not.toContainText('Due');
+  }
+  expect(
+    fixtureAPI.requests.filter((request) => request.method !== 'GET'),
+  ).toHaveLength(0);
+});
 
 test('nonexistent spring-forward local times remain visible without a write', async ({
   page,

@@ -7,7 +7,6 @@ import { useApiRead } from '../hooks/useApiRead';
 import { DateCell } from './table';
 import { Pagination } from './Pagination';
 import { ActionItemStatusButton } from './ActionItemStatusButton';
-import { ActionItemDueDate } from './ActionItemDeadlines';
 import './actionItemQueue.css';
 
 function containProjectCue(cue: HTMLSpanElement | null) {
@@ -173,7 +172,7 @@ export function ActionItemQueueTable({
                           <th>Priority</th>
                           <th>Title</th>
                           <th>{showProject ? 'Project / tags' : 'Tags'}</th>
-                          <th>Updated</th>
+                          <th>{showDueDate ? 'Due date' : 'Updated'}</th>
                           <th>Actions</th>
                         </tr>
                       </thead>
@@ -279,9 +278,6 @@ export function ActionItemQueueTable({
                                       </span>
                                       {item.title}
                                     </button>
-                                    {showDueDate && (
-                                      <ActionItemDueDate value={item.due_at} />
-                                    )}
                                   </td>
                                   <td>
                                     {showProject && item.project && (
@@ -296,7 +292,18 @@ export function ActionItemQueueTable({
                                     ))}
                                   </td>
                                   <td>
-                                    <DateCell date={item.updated_at} />
+                                    {showDueDate ? (
+                                      item.due_at ? (
+                                        <DateCell
+                                          date={item.due_at}
+                                          format="long"
+                                        />
+                                      ) : (
+                                        'No due date'
+                                      )
+                                    ) : (
+                                      <DateCell date={item.updated_at} />
+                                    )}
                                   </td>
                                   <td>
                                     <div className="flex-row action-item-actions">
