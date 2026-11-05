@@ -1,5 +1,7 @@
 from datetime import timedelta
+from concurrent.futures import ThreadPoolExecutor
 import json
+from threading import Event
 
 import pytest
 
@@ -125,4 +127,66 @@ def test_invalid_private_state_cannot_replace_valid_baseline(tmp_path, invalid):
     )
     assert result["state"] == "stale"
     assert result["report"]["total"] == "1"
+    assert json.loads(subject.path.read_text())["state"] == {"counter": "10"}
+
+
+@pytest.mark.parametrize("reader", ["read", "read_or_collect"])
+def test_active_stateful_collection_remains_pending_and_keeps_baseline_private(
+    tmp_path, reader
+):
+    subject = cache(tmp_path)
+    subject.read_or_collect(
+        NOW,
+        lambda *_: contracts.CollectionResult(pinecone_report("1"), {"counter": "10"}),
+    )
+    entered, release = Event(), Event()
+
+    def collect(previous_report, previous_state):
+        assert previous_report.total == "1" and previous_state == {"counter": "10"}
+        entered.set()
+        assert release.wait(3)
+        return contracts.CollectionResult(pinecone_report("2"), {"counter": "20"})
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        active = pool.submit(
+            subject.read_or_collect, NOW + timedelta(minutes=5), collect
+        )
+        try:
+            assert entered.wait(2)
+            view = (
+                subject.read()
+                if reader == "read"
+                else subject.read_or_collect(
+                    NOW + timedelta(minutes=6),
+                    lambda *_: pytest.fail(
+                        "pending reader started a second collection"
+                    ),
+                )
+            )
+            assert view["state"] == "pending" and view["error"] is None
+            assert view["report"]["total"] == "1"
+            assert "counter" not in json.dumps(view)
+            assert json.loads(subject.path.read_text())["state"] == {"counter": "10"}
+        finally:
+            release.set()
+        assert active.result(timeout=2)["report"]["total"] == "2"
+    assert json.loads(subject.path.read_text())["state"] == {"counter": "20"}
+
+
+def test_daily_budget_midnight_retry_preserves_stateful_baseline(tmp_path):
+    subject = cache(tmp_path)
+    subject.daily_attempt_limit = 1
+    subject.read_or_collect(
+        NOW,
+        lambda *_: contracts.CollectionResult(pinecone_report("1"), {"counter": "10"}),
+    )
+    view = subject.read_or_collect(
+        NOW + timedelta(minutes=6),
+        lambda *_: pytest.fail("daily budget allowed another collection"),
+    )
+    midnight = (NOW + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    assert view["next_refresh_at"] == midnight.isoformat()
+    assert view["report"]["total"] == "1"
     assert json.loads(subject.path.read_text())["state"] == {"counter": "10"}
