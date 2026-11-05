@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { POLL_INTERVAL_MS } from '../constants';
+import { usePageVisible } from './usePageVisible';
 
 interface UsePollingOptions {
   enabled?: boolean;
@@ -8,7 +9,9 @@ interface UsePollingOptions {
 
 function validateInterval(intervalMs: number) {
   if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
-    throw new Error(`usePolling intervalMs must be a positive finite number, got ${intervalMs}`);
+    throw new Error(
+      `usePolling intervalMs must be a positive finite number, got ${intervalMs}`,
+    );
   }
 }
 
@@ -17,6 +20,7 @@ export function usePolling(
   { enabled = true, intervalMs = POLL_INTERVAL_MS }: UsePollingOptions = {},
 ) {
   validateInterval(intervalMs);
+  const visible = usePageVisible();
 
   const callbackRef = useRef(callback);
   const inFlightRef = useRef(false);
@@ -26,7 +30,7 @@ export function usePolling(
   }, [callback]);
 
   useEffect(() => {
-    if (!enabled) return undefined;
+    if (!enabled || !visible) return undefined;
 
     const tick = () => {
       if (inFlightRef.current) return;
@@ -40,5 +44,5 @@ export function usePolling(
 
     const intervalId = window.setInterval(tick, intervalMs);
     return () => window.clearInterval(intervalId);
-  }, [enabled, intervalMs]);
+  }, [enabled, intervalMs, visible]);
 }

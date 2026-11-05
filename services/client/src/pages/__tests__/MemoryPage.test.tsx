@@ -54,15 +54,34 @@ afterEach(() => {
 
 describe('MemoryPage', () => {
   it('shows inherited meeting topics once without copying them into the editable memory tags', async () => {
-    mockList.mockResolvedValue({ items: [{ ...fakeMemories[0], context_tags: ['security', 'architecture'], from_meeting: true }], total: 1 });
+    mockList.mockResolvedValue({
+      items: [
+        {
+          ...fakeMemories[0],
+          context_tags: ['security', 'architecture'],
+          from_meeting: true,
+        },
+      ],
+      total: 1,
+    });
     renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
-    expect(await screen.findByText('security')).toHaveAttribute('title', 'Meeting topic');
+    expect(await screen.findByText('security')).toHaveAttribute(
+      'title',
+      'Meeting topic',
+    );
     expect(screen.getAllByText('architecture')).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    expect(screen.getByDisplayValue('architecture, convention')).toBeInTheDocument();
+    expect(
+      screen.getByDisplayValue('architecture, convention'),
+    ).toBeInTheDocument();
     expect(screen.queryByDisplayValue(/security/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('mem-1', expect.objectContaining({ tags: ['architecture', 'convention'] })));
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledWith(
+        'mem-1',
+        expect.objectContaining({ tags: ['architecture', 'convention'] }),
+      ),
+    );
   });
 
   it('applies the meeting filter before paging and preserves the search, repo, tags, and sort options', async () => {
@@ -71,49 +90,120 @@ describe('MemoryPage', () => {
     renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
     await screen.findByText('First memory content');
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 })));
-    fireEvent.change(screen.getByPlaceholderText('Filter by repo'), { target: { value: 'agent-smith' } });
-    fireEvent.change(screen.getByPlaceholderText('Filter by tags (comma-separated)'), { target: { value: 'decision, release' } });
-    fireEvent.change(screen.getByLabelText('Sort'), { target: { value: 'updated_at_desc' } });
+    await waitFor(() =>
+      expect(mockList).toHaveBeenLastCalledWith(
+        expect.objectContaining({ offset: 10 }),
+      ),
+    );
+    fireEvent.change(screen.getByPlaceholderText('Filter by repo'), {
+      target: { value: 'agent-smith' },
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText('Filter by tags (comma-separated)'),
+      { target: { value: 'decision, release' } },
+    );
+    fireEvent.change(screen.getByLabelText('Sort'), {
+      target: { value: 'updated_at_desc' },
+    });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Meetings only' }));
-    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({
-      limit: 10, offset: 0, meeting_only: true, repo: 'agent-smith', tags: ['decision', 'release'], sort: 'updated_at_desc',
-    }));
-    fireEvent.change(screen.getByPlaceholderText('Semantic search...'), { target: { value: 'release plans' } });
-    await waitFor(() => expect(mockSearch).toHaveBeenLastCalledWith('release plans', expect.objectContaining({ meeting_only: true, offset: 0, repo: 'agent-smith', tags: ['decision', 'release'], sort: 'relevance' })));
+    await waitFor(() =>
+      expect(mockList).toHaveBeenLastCalledWith({
+        limit: 10,
+        offset: 0,
+        meeting_only: true,
+        repo: 'agent-smith',
+        tags: ['decision', 'release'],
+        sort: 'updated_at_desc',
+      }),
+    );
+    fireEvent.change(screen.getByPlaceholderText('Semantic search...'), {
+      target: { value: 'release plans' },
+    });
+    await waitFor(() =>
+      expect(mockSearch).toHaveBeenLastCalledWith(
+        'release plans',
+        expect.objectContaining({
+          meeting_only: true,
+          offset: 0,
+          repo: 'agent-smith',
+          tags: ['decision', 'release'],
+          sort: 'relevance',
+        }),
+      ),
+    );
     fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
-    await waitFor(() => expect(mockSearch).toHaveBeenLastCalledWith('release plans', expect.objectContaining({ offset: 10, meeting_only: true })));
+    await waitFor(() =>
+      expect(mockSearch).toHaveBeenLastCalledWith(
+        'release plans',
+        expect.objectContaining({ offset: 10, meeting_only: true }),
+      ),
+    );
     fireEvent.click(screen.getByRole('checkbox', { name: 'Meetings only' }));
-    await waitFor(() => expect(mockSearch).toHaveBeenLastCalledWith('release plans', expect.objectContaining({ offset: 0, meeting_only: false, sort: 'relevance' })));
+    await waitFor(() =>
+      expect(mockSearch).toHaveBeenLastCalledWith(
+        'release plans',
+        expect.objectContaining({
+          offset: 0,
+          meeting_only: false,
+          sort: 'relevance',
+        }),
+      ),
+    );
   });
 
   it('shows meeting provenance and links to the source without hiding general memories', async () => {
     const meetingId = '54853e29-12dc-4d19-8987-ec0311f9d82e';
-    mockList.mockResolvedValue({ items: [{ ...fakeMemories[0], from_meeting: true, source_id: meetingId }, fakeMemories[1]], total: 2 });
+    mockList.mockResolvedValue({
+      items: [
+        { ...fakeMemories[0], from_meeting: true, source_id: meetingId },
+        fakeMemories[1],
+      ],
+      total: 2,
+    });
     renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
     expect(await screen.findByText('Meeting')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Source meeting' })).toHaveAttribute('href', `/meetings/${meetingId}`);
+    expect(
+      screen.getByRole('link', { name: 'Source meeting' }),
+    ).toHaveAttribute('href', `/meetings/${meetingId}`);
     expect(screen.getByText('Second memory content')).toBeInTheDocument();
   });
 
   it('shows a retryable read error instead of a false empty state', async () => {
     mockList.mockRejectedValueOnce(new Error('private backend diagnostic'));
     renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
-    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load memories.');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not load memories.',
+    );
     expect(screen.queryByText('No memories yet')).not.toBeInTheDocument();
-    expect(screen.queryByText('private backend diagnostic')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('private backend diagnostic'),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('First memory content')).toBeInTheDocument();
   });
 
   it('does not replace meeting-filtered results with an older all-memory response', async () => {
-    let resolveOld!: (value: { items: typeof fakeMemories; total: number }) => void;
-    mockList.mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve; }));
-    mockList.mockResolvedValueOnce({ items: [{ ...fakeMemories[0], content: 'Current meeting memory' }], total: 1 });
+    let resolveOld!: (value: {
+      items: typeof fakeMemories;
+      total: number;
+    }) => void;
+    mockList.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOld = resolve;
+      }),
+    );
+    mockList.mockResolvedValueOnce({
+      items: [{ ...fakeMemories[0], content: 'Current meeting memory' }],
+      total: 1,
+    });
     renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Meetings only' }));
-    expect(await screen.findByText('Current meeting memory')).toBeInTheDocument();
-    await act(async () => { resolveOld({ items: fakeMemories, total: 2 }); });
+    expect(
+      await screen.findByText('Current meeting memory'),
+    ).toBeInTheDocument();
+    await act(async () => {
+      resolveOld({ items: fakeMemories, total: 2 });
+    });
     expect(screen.getByText('Current meeting memory')).toBeInTheDocument();
     expect(screen.queryByText('Second memory content')).not.toBeInTheDocument();
   });
@@ -141,21 +231,29 @@ describe('MemoryPage', () => {
     });
   });
 
-  it('polls the current memory list every 60 seconds and stops after unmount', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const { unmount } = renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
-
-    await waitFor(() => expect(screen.getByText('First memory content')).toBeInTheDocument());
-    mockList.mockClear();
-
+  it('polls the current memory list at 15 seconds and stops after unmount', async () => {
+    vi.useFakeTimers();
+    let view!: ReturnType<typeof renderWithProviders>;
     await act(async () => {
-      vi.advanceTimersByTime(POLL_INTERVAL_MS);
-      await Promise.resolve();
+      view = renderWithProviders(<MemoryPage />, {
+        initialEntries: ['/memory'],
+      });
+    });
+    expect(screen.getByText('First memory content')).toBeInTheDocument();
+    mockList.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(14_999);
+    });
+    expect(mockList).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
     });
 
-    expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ limit: 10, offset: 0 }));
+    expect(mockList).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 10, offset: 0 }),
+    );
 
-    unmount();
+    view.unmount();
     mockList.mockClear();
     await act(async () => {
       vi.advanceTimersByTime(POLL_INTERVAL_MS);
@@ -169,7 +267,9 @@ describe('MemoryPage', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
-    await waitFor(() => expect(screen.getByText('First memory content')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('First memory content')).toBeInTheDocument(),
+    );
     fireEvent.click(screen.getAllByText('Edit')[0]);
     mockList.mockClear();
 
@@ -190,7 +290,9 @@ describe('MemoryPage', () => {
     fireEvent.change(repoInput, { target: { value: 'no-such-repo' } });
 
     await waitFor(() => {
-      expect(screen.getByText('No memories match the current filters')).toBeInTheDocument();
+      expect(
+        screen.getByText('No memories match the current filters'),
+      ).toBeInTheDocument();
     });
     expect(screen.queryByText('No memories yet')).not.toBeInTheDocument();
   });
@@ -211,7 +313,10 @@ describe('MemoryPage', () => {
       expect(screen.getByText('No results found')).toBeInTheDocument();
     });
 
-    expect(mockSearch).toHaveBeenCalledWith('nonexistent', expect.objectContaining({ limit: 10, offset: 0, sort: 'relevance' }));
+    expect(mockSearch).toHaveBeenCalledWith(
+      'nonexistent',
+      expect.objectContaining({ limit: 10, offset: 0, sort: 'relevance' }),
+    );
   });
 
   it('renders repo, tags, and sort controls', async () => {
@@ -222,7 +327,9 @@ describe('MemoryPage', () => {
     });
 
     expect(screen.getByPlaceholderText('Filter by repo')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Filter by tags (comma-separated)')).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText('Filter by tags (comma-separated)'),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText('Sort')).toBeInTheDocument();
   });
 
@@ -233,11 +340,15 @@ describe('MemoryPage', () => {
       expect(screen.getByText('First memory content')).toBeInTheDocument();
     });
 
-    const tagsInput = screen.getByPlaceholderText('Filter by tags (comma-separated)');
+    const tagsInput = screen.getByPlaceholderText(
+      'Filter by tags (comma-separated)',
+    );
     fireEvent.change(tagsInput, { target: { value: 'a, b' } });
 
     await waitFor(() => {
-      expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ tags: ['a', 'b'], offset: 0 }));
+      expect(mockList).toHaveBeenCalledWith(
+        expect.objectContaining({ tags: ['a', 'b'], offset: 0 }),
+      );
     });
   });
 
@@ -252,7 +363,9 @@ describe('MemoryPage', () => {
     fireEvent.change(sortSelect, { target: { value: 'created_at_asc' } });
 
     await waitFor(() => {
-      expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ sort: 'created_at_asc', offset: 0 }));
+      expect(mockList).toHaveBeenCalledWith(
+        expect.objectContaining({ sort: 'created_at_asc', offset: 0 }),
+      );
     });
   });
 
@@ -264,14 +377,16 @@ describe('MemoryPage', () => {
     });
 
     const sortSelect = screen.getByLabelText('Sort') as HTMLSelectElement;
-    const optionValues = Array.from(sortSelect.options).map(o => o.value);
+    const optionValues = Array.from(sortSelect.options).map((o) => o.value);
     expect(optionValues).not.toContain('relevance');
 
     const searchInput = screen.getByPlaceholderText('Semantic search...');
     fireEvent.change(searchInput, { target: { value: 'q' } });
 
     await waitFor(() => {
-      const updated = Array.from((screen.getByLabelText('Sort') as HTMLSelectElement).options).map(o => o.value);
+      const updated = Array.from(
+        (screen.getByLabelText('Sort') as HTMLSelectElement).options,
+      ).map((o) => o.value);
       expect(updated).toContain('relevance');
     });
   });
@@ -340,7 +455,10 @@ describe('MemoryPage', () => {
 
   it('saves edited memory with parsed tags', async () => {
     mockList.mockResolvedValue({ items: fakeMemories, total: 2 });
-    mockUpdate.mockResolvedValue({ ...fakeMemories[0], content: 'Updated content' });
+    mockUpdate.mockResolvedValue({
+      ...fakeMemories[0],
+      content: 'Updated content',
+    });
 
     renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
@@ -378,11 +496,15 @@ describe('MemoryPage', () => {
     const editButtons = screen.getAllByText('Edit');
     fireEvent.click(editButtons[0]);
 
-    expect(screen.getByDisplayValue('First memory content')).toBeInTheDocument();
+    expect(
+      screen.getByDisplayValue('First memory content'),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Cancel'));
 
-    expect(screen.queryByDisplayValue('First memory content')).not.toBeInTheDocument();
+    expect(
+      screen.queryByDisplayValue('First memory content'),
+    ).not.toBeInTheDocument();
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
