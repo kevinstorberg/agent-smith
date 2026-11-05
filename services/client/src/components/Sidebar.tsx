@@ -11,6 +11,7 @@ const NAV_SECTIONS = [
     links: [
       { path: '/action-items', label: 'Action items' },
       { path: '/chat', label: 'Chat' },
+      { path: '/costs', label: 'Costs' },
       { path: '/meetings', label: 'Meetings' },
       { path: '/plans', label: 'Plans' },
       { path: '/profiles', label: 'Profiles' },

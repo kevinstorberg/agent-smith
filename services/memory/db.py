@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from copy import deepcopy
 from datetime import datetime, timezone
-from threading import Lock
+from threading import Lock, RLock
 
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
@@ -20,7 +21,8 @@ from services.memory.backends import (
     get_backend,
     metadata_datetime,
 )
-from services.memory.content import normalize_memory_content
+from services.memory.content import MemoryTokenBudget, require_memory_text
+from services.memory.embedding_budget import EmbeddingTokenCounter
 from services.config import MEMORY_EMBEDDING_DEVICE, MEMORY_EMBEDDING_MODEL
 from services.observability import action_operation
 
@@ -28,6 +30,7 @@ MODEL_NAME = MEMORY_EMBEDDING_MODEL
 DECAY_RATE = float(os.environ.get("MEMORY_DECAY_RATE", "0.01"))
 DEFAULT_LIMIT = int(os.environ.get("MEMORY_DEFAULT_LIMIT", "20"))
 SEARCH_FETCH_CEILING = int(os.environ.get("MEMORY_SEARCH_FETCH_CEILING", "200"))
+_LOGGER = logging.getLogger("agent_smith.memory.embedding")
 
 _embeddings: Embeddings | None = None
 _retriever: TimeWeightedVectorStoreRetriever | None = None
@@ -46,10 +49,33 @@ class MemoryContextUnavailable(RuntimeError):
 class _SerializedEmbeddings(Embeddings):
     def __init__(self, model: Embeddings):
         self._model = model
-        self._lock = Lock()
+        self._lock = RLock()
+        self._counter = EmbeddingTokenCounter(model)
+        self._budget_reported = False
+
+    def memory_token_budget(self) -> MemoryTokenBudget:
+        with self._lock:
+            if not self._budget_reported:
+                _LOGGER.info(
+                    "Memory embedding budget configuration: %s",
+                    self._counter.diagnostics(),
+                )
+                self._budget_reported = True
+            return MemoryTokenBudget(
+                self._counter.max_tokens,
+                self._counter.special_tokens,
+                self._count_memory_tokens,
+            )
+
+    def _count_memory_tokens(self, content: str) -> int:
+        with self._lock:
+            return self._counter.count(content)
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         with self._lock:
+            budget = self.memory_token_budget()
+            for content in texts:
+                budget.require(content)
             return self._model.embed_documents(texts)
 
     def embed_query(self, text: str) -> list[float]:
@@ -82,6 +108,26 @@ def _get_embeddings() -> Embeddings:
                     )
                 _embeddings = _SerializedEmbeddings(model)
     return _embeddings
+
+
+def get_memory_token_budget() -> MemoryTokenBudget:
+    factory = getattr(_get_embeddings(), "memory_token_budget", None)
+    if not callable(factory):
+        raise ValueError(
+            "Configured memory encoder cannot expose its native token budget"
+        )
+    budget = factory()
+    if not isinstance(budget, MemoryTokenBudget):
+        raise ValueError(
+            "Configured memory encoder returned an unsupported token budget"
+        )
+    return budget
+
+
+def prepare_memory_content(content: str, *, strict: bool = False) -> str:
+    require_memory_text(content)
+    budget = get_memory_token_budget()
+    return budget.require(content) if strict else budget.normalize(content)
 
 
 def _utcnow() -> datetime:
@@ -381,7 +427,7 @@ def _persist_document(
 
 def _memory_document(
     id: str,
-    content: str,
+    prepared_content: str,
     repo: str | None,
     tags: list[str] | None,
     created_at: str,
@@ -398,7 +444,7 @@ def _memory_document(
         "updated_at": updated_at,
     }
     metadata.update(source_type=source_type or "general", source_id=source_id or id)
-    return Document(page_content=normalize_memory_content(content), metadata=metadata)
+    return Document(page_content=prepared_content, metadata=metadata)
 
 
 def _validate_scope(repo: str | None, tags: list[str] | None) -> None:
@@ -470,7 +516,7 @@ def publish(
         )
         if same_fields and existing["content"] == content:
             return id
-    content = normalize_memory_content(content)
+    content = prepare_memory_content(content)
     if existing is not None:
         if not same_fields or existing["content"] != content:
             raise MemoryConflictError(
@@ -515,11 +561,18 @@ def init() -> None:
     get_backend().init()
 
 
-def add(content: str, repo: str | None = None, tags: list[str] | None = None) -> str:
+def add(
+    content: str,
+    repo: str | None = None,
+    tags: list[str] | None = None,
+    *,
+    strict: bool = False,
+) -> str:
     id = str(uuid.uuid4())
     now_dt = _utcnow()
     now_str = now_dt.isoformat()
 
+    content = prepare_memory_content(content, strict=strict)
     doc = _memory_document(id, content, repo, tags, now_str, now_str)
 
     retriever = _get_retriever()
@@ -666,18 +719,22 @@ def update(
     content: str | None = None,
     repo: str | None = None,
     tags: list[str] | None = None,
+    *,
+    strict: bool = False,
 ) -> None:
     assert id and id.strip(), "ID must not be empty."
     assert any(v is not None for v in (content, repo, tags)), (
         "Provide at least one of: content, repo, tags."
     )
     if content is not None:
-        content = normalize_memory_content(content)
+        content = prepare_memory_content(content, strict=strict)
     existing = get(id, record_access=False)
     if not existing:
         raise KeyError(f"Memory not found: {id}")
 
-    new_content = content if content is not None else existing["content"]
+    new_content = (
+        content if content is not None else prepare_memory_content(existing["content"])
+    )
     new_repo = repo if repo is not None else (existing.get("repo") or "")
     new_tags = tags if tags is not None else existing.get("tags", [])
 

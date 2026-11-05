@@ -23,6 +23,7 @@ import { AuditDetailPage } from './pages/AuditDetailPage';
 import { EvalSuitesPage } from './pages/EvalSuitesPage';
 import { EvalSuiteDetailPage } from './pages/EvalSuiteDetailPage';
 import { ChatPage } from './pages/ChatPage';
+import { CostsPage } from './pages/CostsPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { Sidebar } from './components/Sidebar';
 import { NotificationBar } from './components/NotificationBar';
@@ -184,6 +185,7 @@ export default function App() {
               }
             />
             <Route path="/chat" element={<ChatPage />} />
+            <Route path="/costs" element={<CostsPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </main>

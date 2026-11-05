@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from threading import Condition, Event, Lock
+from threading import Condition, Event, RLock
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -12,7 +12,7 @@ from tests.test_pgvector_backend import FakeEmbeddings
 
 class ObservedLock:
     def __init__(self):
-        self._lock = Lock()
+        self._lock = RLock()
         self._condition = Condition()
         self._attempts = 0
 

@@ -9,18 +9,35 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from typing import TypeVar
 from uuid import uuid4
 
+from scripts.shared.owned_thread import run_owned_thread
 from services.meetings import db
 from services.meetings.config import SourceConfig, list_source_names, load_source_config
 from services.meetings.factory import build_meeting_provider
-from services.meetings.types import InvalidCursorError, MeetingProvider, MeetingProviderError, MeetingSummary
+from services.meetings.types import (
+    InvalidCursorError,
+    MeetingProvider,
+    MeetingProviderError,
+    MeetingSummary,
+)
 from services.observability import trigger_context, work_decision
 
 T = TypeVar("T")
 log = logging.getLogger(__name__)
-_COUNTS = ("listed", "fetched", "processed", "created", "updated", "unchanged", "stale", "pending", "unavailable")
+_COUNTS = (
+    "listed",
+    "fetched",
+    "processed",
+    "created",
+    "updated",
+    "unchanged",
+    "stale",
+    "pending",
+    "unavailable",
+)
 
 
 class MeetingSyncError(RuntimeError):
@@ -28,19 +45,39 @@ class MeetingSyncError(RuntimeError):
 
 
 def _validate_budget(run_budget_seconds: float) -> None:
-    if (isinstance(run_budget_seconds, bool) or not isinstance(run_budget_seconds, (int, float))
-            or not math.isfinite(run_budget_seconds) or not 0 < run_budget_seconds <= 240):
-        raise ValueError("Meeting run budget must be greater than zero and at most 240 seconds")
+    if (
+        isinstance(run_budget_seconds, bool)
+        or not isinstance(run_budget_seconds, (int, float))
+        or not math.isfinite(run_budget_seconds)
+        or not 0 < run_budget_seconds <= 240
+    ):
+        raise ValueError(
+            "Meeting run budget must be greater than zero and at most 240 seconds"
+        )
 
 
 def _source_failure(source: str, error: Exception) -> dict:
-    result = {"source": source, "outcome": "failed", "error_type": type(error).__name__, "counts": None}
-    if isinstance(error, MeetingProviderError) and type(error.status_code) is int and 100 <= error.status_code <= 599:
+    result = {
+        "source": source,
+        "outcome": "failed",
+        "error_type": type(error).__name__,
+        "counts": None,
+    }
+    if (
+        isinstance(error, MeetingProviderError)
+        and type(error.status_code) is int
+        and 100 <= error.status_code <= 599
+    ):
         result["status_code"] = error.status_code
     return result
 
 
-async def sync_sources(source: str | None = None, *, run_budget_seconds: float = 240, raise_on_failure: bool = True) -> dict:
+async def sync_sources(
+    source: str | None = None,
+    *,
+    run_budget_seconds: float = 240,
+    raise_on_failure: bool = True,
+) -> dict:
     _validate_budget(run_budget_seconds)
     if source is not None:
         try:
@@ -53,7 +90,9 @@ async def sync_sources(source: str | None = None, *, run_budget_seconds: float =
     env = dict(os.environ)
     names = list_source_names(env)
     if not names:
-        raise ValueError("No meeting connections are configured; set MEETING_SOURCES_JSON")
+        raise ValueError(
+            "No meeting connections are configured; set MEETING_SOURCES_JSON"
+        )
     loop = asyncio.get_running_loop()
     deadline = loop.time() + run_budget_seconds
     if len(names) > 1:
@@ -76,7 +115,9 @@ async def sync_sources(source: str | None = None, *, run_budget_seconds: float =
         try:
             async with attempt:
                 config = load_source_config(name, env)
-                result = await sync_source(name, config=config, run_budget_seconds=budget)
+                result = await sync_source(
+                    name, config=config, run_budget_seconds=budget
+                )
         except TimeoutError as error:
             if attempt.expired():
                 result = {"source": name, "outcome": "interrupted", "counts": None}
@@ -110,24 +151,10 @@ async def sync_sources(source: str | None = None, *, run_budget_seconds: float =
 
 
 async def run_db(function: Callable[..., T], *args, **kwargs) -> T:
-    task = asyncio.create_task(asyncio.to_thread(function, *args, **kwargs))
-    try:
-        return await asyncio.shield(task)
-    except asyncio.CancelledError as cancelled:
-        # The SQL thread still owns its transaction after its await is cancelled.
-        while not task.done():
-            try:
-                await asyncio.shield(task)
-            except asyncio.CancelledError:
-                continue
-            except Exception:
-                break
-        if task.done() and not task.cancelled():
-            try:
-                task.result()
-            except Exception as error:
-                cancelled.add_note(f"In-flight meeting DB operation failed: {type(error).__name__}")
-        raise cancelled
+    return await run_owned_thread(
+        partial(function, *args, **kwargs),
+        failure_context="In-flight meeting DB operation failed",
+    )
 
 
 @dataclass
@@ -151,7 +178,9 @@ async def claimed_source(config: SourceConfig):
     except BaseException as error:
         primary = error
         if claim:
-            claim.outcome = "interrupted" if isinstance(error, asyncio.CancelledError) else "failed"
+            claim.outcome = (
+                "interrupted" if isinstance(error, asyncio.CancelledError) else "failed"
+            )
         raise
     finally:
         if claim or acquiring:
@@ -159,12 +188,24 @@ async def claimed_source(config: SourceConfig):
                 if claim:
                     outcome = claim.outcome
                 else:
-                    outcome = "interrupted" if isinstance(primary, asyncio.CancelledError) else "failed"
-                await run_db(db.release_source, config, owner, outcome, type(primary).__name__ if primary else None)
+                    outcome = (
+                        "interrupted"
+                        if isinstance(primary, asyncio.CancelledError)
+                        else "failed"
+                    )
+                await run_db(
+                    db.release_source,
+                    config,
+                    owner,
+                    outcome,
+                    type(primary).__name__ if primary else None,
+                )
             except Exception as error:
                 if primary is None:
                     raise
-                primary.add_note(f"Meeting claim cleanup failed: {type(error).__name__}")
+                primary.add_note(
+                    f"Meeting claim cleanup failed: {type(error).__name__}"
+                )
 
 
 async def sync_source(
@@ -175,7 +216,12 @@ async def sync_source(
     config: SourceConfig | None = None,
 ) -> dict:
     with trigger_context(stage="summary_sync", source=source, source_kind="summary"):
-        return await _sync_source(source, provider=provider, run_budget_seconds=run_budget_seconds, config=config)
+        return await _sync_source(
+            source,
+            provider=provider,
+            run_budget_seconds=run_budget_seconds,
+            config=config,
+        )
 
 
 async def _sync_source(
@@ -209,12 +255,31 @@ async def _sync_source(
                 claim.outcome = "completed_with_warnings" if warnings else "completed"
             else:
                 claim.outcome = "continued"
-            age = (datetime.now(timezone.utc) - datetime.fromisoformat(scan["started_at"])).total_seconds()
-            result = {"source": source, "scan_id": scan["id"], "outcome": claim.outcome,
-                      "deep": scan["deep"], "degraded": age > 86400, **scan["counts"]}
-            log.info("meeting sync source=%s scan=%s outcome=%s listed=%s processed_refs=%s pending=%s",
-                     source, scan["id"], claim.outcome, result["listed"], result["processed"], result["pending"])
-            work_decision("summary_references_processed", count=result["processed"], stage_status=claim.outcome)
+            age = (
+                datetime.now(timezone.utc) - datetime.fromisoformat(scan["started_at"])
+            ).total_seconds()
+            result = {
+                "source": source,
+                "scan_id": scan["id"],
+                "outcome": claim.outcome,
+                "deep": scan["deep"],
+                "degraded": age > 86400,
+                **scan["counts"],
+            }
+            log.info(
+                "meeting sync source=%s scan=%s outcome=%s listed=%s processed_refs=%s pending=%s",
+                source,
+                scan["id"],
+                claim.outcome,
+                result["listed"],
+                result["processed"],
+                result["pending"],
+            )
+            work_decision(
+                "summary_references_processed",
+                count=result["processed"],
+                stage_status=claim.outcome,
+            )
             return result
     finally:
         await provider.aclose()
@@ -223,15 +288,30 @@ async def _sync_source(
 def _new_scan(state: dict) -> dict:
     now = datetime.now(timezone.utc)
     previous_start = state.get("last_pull_started_at")
-    if previous_start is not None and (not isinstance(previous_start, datetime) or previous_start.utcoffset() is None):
-        raise ValueError("Meeting last_pull_started_at must be a timezone-aware datetime")
+    if previous_start is not None and (
+        not isinstance(previous_start, datetime) or previous_start.utcoffset() is None
+    ):
+        raise ValueError(
+            "Meeting last_pull_started_at must be a timezone-aware datetime"
+        )
     # Overlap protects exclusive provider boundaries; unchanged references never refetch detail.
-    cutoff = previous_start - timedelta(seconds=60) if previous_start is not None else None
+    cutoff = (
+        previous_start - timedelta(seconds=60) if previous_start is not None else None
+    )
     return {
-        "version": 1, "id": str(uuid4()), "started_at": now.isoformat(),
-        "updated_after": cutoff.isoformat() if cutoff else None, "deep": False,
-        "phase": "listing", "cursor": None, "page": None, "offset": 0,
-        "next_cursor": None, "seen_cursors": [], "restarts": 0, "attempts": 0,
+        "version": 1,
+        "id": str(uuid4()),
+        "started_at": now.isoformat(),
+        "updated_after": cutoff.isoformat() if cutoff else None,
+        "deep": False,
+        "phase": "listing",
+        "cursor": None,
+        "page": None,
+        "offset": 0,
+        "next_cursor": None,
+        "seen_cursors": [],
+        "restarts": 0,
+        "attempts": 0,
         "counts": dict.fromkeys(_COUNTS, 0),
     }
 
@@ -242,7 +322,9 @@ def _scan_timestamp(value: object, field: str) -> datetime:
     except ValueError:
         stamp = None
     if stamp is None or stamp.utcoffset() is None:
-        raise ValueError(f"Meeting checkpoint {field} must be a timezone-aware ISO timestamp")
+        raise ValueError(
+            f"Meeting checkpoint {field} must be a timezone-aware ISO timestamp"
+        )
     return stamp
 
 
@@ -259,8 +341,13 @@ def _resume_scan(state: dict) -> dict:
     started = _scan_timestamp(scan.get("started_at"), "started_at")
     if "updated_after" not in scan:
         raise ValueError("Meeting checkpoint updated_after is required")
-    if scan["updated_after"] is not None and _scan_timestamp(scan["updated_after"], "updated_after") > started:
-        raise ValueError("Meeting checkpoint updated_after must not be after started_at")
+    if (
+        scan["updated_after"] is not None
+        and _scan_timestamp(scan["updated_after"], "updated_after") > started
+    ):
+        raise ValueError(
+            "Meeting checkpoint updated_after must not be after started_at"
+        )
     if scan.get("phase") not in {"listing", "done"}:
         raise ValueError("Meeting checkpoint has an invalid scan phase")
     scan["deep"] = False
@@ -268,17 +355,25 @@ def _resume_scan(state: dict) -> dict:
 
 
 class _SummaryScan:
-    def __init__(self, config: SourceConfig, owner: str, scan: dict, provider: MeetingProvider) -> None:
+    def __init__(
+        self, config: SourceConfig, owner: str, scan: dict, provider: MeetingProvider
+    ) -> None:
         self.config = config
         self.owner = owner
         self.scan = scan
         self.provider = provider
         self.counts = scan["counts"]
         self.stored: dict = {}
-        self.updated_after = _scan_timestamp(scan["updated_after"], "updated_after") if scan["updated_after"] else None
+        self.updated_after = (
+            _scan_timestamp(scan["updated_after"], "updated_after")
+            if scan["updated_after"]
+            else None
+        )
 
     async def save(self, **observation) -> dict | None:
-        return await run_db(db.save_progress, self.config, self.owner, self.scan, **observation)
+        return await run_db(
+            db.save_progress, self.config, self.owner, self.scan, **observation
+        )
 
     async def run(self) -> bool:
         self.stored = await run_db(db.get_stored_refs, self.config)
@@ -300,22 +395,41 @@ class _SummaryScan:
     async def list_page(self) -> None:
         cursor = self.scan["cursor"]
         try:
-            page = await self.provider.list_page(cursor, updated_after=self.updated_after)
+            page = await self.provider.list_page(
+                cursor, updated_after=self.updated_after
+            )
         except InvalidCursorError:
             if self.scan["restarts"] >= 1:
-                raise MeetingProviderError("Meeting listing cursor repeatedly expired; narrow the source scope") from None
-            self.scan.update(cursor=None, seen_cursors=[], restarts=self.scan["restarts"] + 1)
+                raise MeetingProviderError(
+                    "Meeting listing cursor repeatedly expired; narrow the source scope"
+                ) from None
+            self.scan.update(
+                cursor=None, seen_cursors=[], restarts=self.scan["restarts"] + 1
+            )
             await self.save()
             return
         seen = self.scan["seen_cursors"]
         if cursor is not None:
             seen.append(cursor)
-        if page.next_cursor is not None and (page.next_cursor in seen or len(seen) >= 10000):
-            raise MeetingProviderError("Meeting listing cursor did not progress; inspect source pagination")
+        if page.next_cursor is not None and (
+            page.next_cursor in seen or len(seen) >= 10000
+        ):
+            raise MeetingProviderError(
+                "Meeting listing cursor did not progress; inspect source pagination"
+            )
         self.scan.update(
-            page=[{"id": note.external_id, "updated_at": note.updated_at.isoformat(),
-                   "deleted_at": note.deleted_at.isoformat() if note.deleted_at else None} for note in page.notes],
-            offset=0, next_cursor=page.next_cursor,
+            page=[
+                {
+                    "id": note.external_id,
+                    "updated_at": note.updated_at.isoformat(),
+                    "deleted_at": note.deleted_at.isoformat()
+                    if note.deleted_at
+                    else None,
+                }
+                for note in page.notes
+            ],
+            offset=0,
+            next_cursor=page.next_cursor,
         )
         self.counts["listed"] += len(page.notes)
         await self.save()
@@ -331,8 +445,16 @@ class _SummaryScan:
     async def process(self, reference: dict) -> bool:
         external_id = reference["id"]
         old = self.stored.get(external_id)
-        updated_at = datetime.fromisoformat(reference["updated_at"]) if reference["updated_at"] else None
-        deleted_at = datetime.fromisoformat(reference["deleted_at"]) if reference["deleted_at"] else None
+        updated_at = (
+            datetime.fromisoformat(reference["updated_at"])
+            if reference["updated_at"]
+            else None
+        )
+        deleted_at = (
+            datetime.fromisoformat(reference["deleted_at"])
+            if reference["deleted_at"]
+            else None
+        )
         if deleted_at is not None:
             self.advance()
             if old and old["provider_updated_at"] > updated_at:
@@ -340,10 +462,20 @@ class _SummaryScan:
                 await self.save(seen_id=external_id)
             else:
                 self.counts["unavailable"] += 1
-                await self.save(unavailable_id=external_id, deleted_at=deleted_at, observed_updated_at=updated_at)
+                await self.save(
+                    unavailable_id=external_id,
+                    deleted_at=deleted_at,
+                    observed_updated_at=updated_at,
+                )
             return True
-        if (old and old["project"] == self.config.project and old["available"] and old["missing_count"] == 0
-                and updated_at is not None and old["provider_updated_at"] >= updated_at):
+        if (
+            old
+            and old["project"] == self.config.project
+            and old["available"]
+            and old["missing_count"] == 0
+            and updated_at is not None
+            and old["provider_updated_at"] >= updated_at
+        ):
             self.counts["unchanged"] += 1
             self.advance()
             await self.save(seen_id=external_id)
@@ -361,28 +493,48 @@ class _SummaryScan:
         self.advance()
         result = await self.save(summary=summary)
         self.counts[result["status"]] += 1
-        work_decision("summary_saved", meeting_id=result["id"], source_kind="summary",
-                      source_revision=result["revision"], stage_status=result["status"])
+        work_decision(
+            "summary_saved",
+            meeting_id=result["id"],
+            source_kind="summary",
+            source_revision=result["revision"],
+            stage_status=result["status"],
+        )
         self.stored[external_id] = {
-            "provider_updated_at": max(summary.provider_updated_at, old["provider_updated_at"]) if old else summary.provider_updated_at,
-            "available": summary.provider_deleted_at is None, "missing_count": 0,
-            "last_seen_scan_id": self.scan["id"], "project": self.config.project,
+            "provider_updated_at": max(
+                summary.provider_updated_at, old["provider_updated_at"]
+            )
+            if old
+            else summary.provider_updated_at,
+            "available": summary.provider_deleted_at is None,
+            "missing_count": 0,
+            "last_seen_scan_id": self.scan["id"],
+            "project": self.config.project,
         }
         return True
 
-    async def read_detail(self, external_id: str, listed_version: datetime | None) -> MeetingSummary | None:
+    async def read_detail(
+        self, external_id: str, listed_version: datetime | None
+    ) -> MeetingSummary | None:
         for attempt in range(3):
             summary = await self.provider.get_summary(external_id)
             self.counts["fetched"] += 1
             if summary is None:
                 return None
-            if not isinstance(summary, MeetingSummary) or summary.external_id != external_id:
-                raise MeetingProviderError("Meeting provider returned a different note identity")
+            if (
+                not isinstance(summary, MeetingSummary)
+                or summary.external_id != external_id
+            ):
+                raise MeetingProviderError(
+                    "Meeting provider returned a different note identity"
+                )
             if listed_version is None or summary.provider_updated_at >= listed_version:
                 return summary
             if attempt < 2:
                 await asyncio.sleep(0.25)
-        raise MeetingProviderError("Meeting detail is older than its listing version; retry on the next interval")
+        raise MeetingProviderError(
+            "Meeting detail is older than its listing version; retry on the next interval"
+        )
 
     def advance(self) -> None:
         self.scan["offset"] += 1
