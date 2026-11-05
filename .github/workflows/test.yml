@@ -72,6 +72,9 @@ jobs:
     if: ${{ github.event.repository.private == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    container:
+      image: ${{ matrix.container_image || '' }}
+      options: ${{ matrix.container_image && '--init --ipc=host' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -86,6 +89,7 @@ jobs:
             script: test
           - name: Browser regressions
             script: test:browser
+            container_image: mcr.microsoft.com/playwright:v1.64.1-resolute@sha256:f76885029244e5a384243a930ff283cef67d90653978ee27a77dd4cff8882fb4
 
     defaults:
       run:
@@ -103,9 +107,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Chromium for browser regressions
+      - name: Verify Playwright image compatibility
         if: matrix.script == 'test:browser'
-        run: npx playwright install --with-deps chromium
+        env:
+          PLAYWRIGHT_CI_IMAGE: ${{ matrix.container_image }}
+        run: |
+          node --test browser-tests/check-playwright-image.test.mjs
+          node browser-tests/check-playwright-image.mjs
 
       - name: Run ${{ matrix.name }}
         run: npm run ${{ matrix.script }}
