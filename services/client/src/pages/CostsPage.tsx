@@ -3,22 +3,24 @@ import { api } from '../api';
 import type { CostResponse } from '../types/costs';
 import { usePolling } from '../hooks/usePolling';
 
-function money(value: string, currency: string) {
+function money(value: string, currency: string, precision = 2) {
   return new Intl.NumberFormat(undefined, {
     style: 'currency',
     currency,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: precision,
   }).format(Number(value));
 }
 
-function CostTable({
+function ReportTable({
   title,
   rows,
   currency,
+  precision = 2,
 }: {
   title: string;
-  rows: { label: string; amount: string }[];
-  currency: string;
+  rows: { label: string; amount: string; unit?: string }[];
+  currency?: string;
+  precision?: number;
 }) {
   return (
     <section className="card" aria-label={title}>
@@ -28,16 +30,26 @@ function CostTable({
           <thead>
             <tr>
               <th>
-                {title === 'Daily costs' ? 'Billing day (UTC)' : 'Service'}
+                {title === 'Daily costs'
+                  ? 'Billing day (UTC)'
+                  : currency
+                    ? 'Service'
+                    : 'Metric'}
               </th>
-              <th>Cost</th>
+              <th>{currency ? 'Cost' : 'Observed amount'}</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
               <tr key={row.label}>
                 <td>{row.label}</td>
-                <td>{money(row.amount, currency)}</td>
+                <td>
+                  {currency
+                    ? money(row.amount, currency, precision)
+                    : row.amount === 'Unavailable'
+                      ? 'Unavailable'
+                      : `${row.amount}${row.unit ? ' ' + row.unit : ''}`}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -48,33 +60,7 @@ function CostTable({
 }
 
 export function CostsPage() {
-  const [data, setData] = useState<CostResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
-  const request = useRef(0);
-  const load = useCallback(async () => {
-    const sequence = ++request.current;
-    try {
-      const result = await api.costs.get('aws');
-      if (sequence !== request.current) return;
-      setData(result);
-      setFailed(false);
-    } catch {
-      if (sequence === request.current) setFailed(true);
-    } finally {
-      if (sequence === request.current) setLoading(false);
-    }
-  }, []);
-  useEffect(() => {
-    void load();
-    return () => {
-      request.current += 1;
-    };
-  }, [load]);
-  usePolling(load);
-  const report = data?.report;
-  const stale = data?.state === 'stale' || (failed && report);
-
+  const [provider, setProvider] = useState<'aws' | 'pinecone'>('aws');
   return (
     <div>
       <div className="page-header">
@@ -85,9 +71,16 @@ export function CostsPage() {
         role="group"
         aria-label="Cost provider"
       >
-        <button className="btn btn-primary" aria-pressed="true">
-          AWS
-        </button>
+        {(['aws', 'pinecone'] as const).map((value) => (
+          <button
+            key={value}
+            className={`btn${provider === value ? ' btn-primary' : ''}`}
+            aria-pressed={provider === value}
+            onClick={() => setProvider(value)}
+          >
+            {value === 'aws' ? 'AWS' : 'Pinecone'}
+          </button>
+        ))}
       </div>
       <p>
         <strong>This month</strong>
@@ -95,6 +88,61 @@ export function CostsPage() {
       <p className="text-muted">
         Billing dates use UTC; update times use your local time.
       </p>
+      <CostProvider key={provider} provider={provider} />
+    </div>
+  );
+}
+
+function pricingLink(value?: string | null) {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    return ['http:', 'https:'].includes(parsed.protocol) &&
+      !parsed.username &&
+      !parsed.password
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function CostProvider({ provider }: { provider: 'aws' | 'pinecone' }) {
+  const [data, setData] = useState<CostResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const request = useRef(0);
+  const load = useCallback(async () => {
+    const sequence = ++request.current;
+    try {
+      const result = await api.costs.get(provider);
+      if (result.report && result.report.provider !== provider)
+        throw new Error(
+          'Cost report provider does not match the selected view.',
+        );
+      if (sequence !== request.current) return;
+      setData(result);
+      setFailed(false);
+    } catch {
+      if (sequence === request.current) setFailed(true);
+    } finally {
+      if (sequence === request.current) setLoading(false);
+    }
+  }, [provider]);
+  useEffect(() => {
+    void load();
+    return () => {
+      request.current += 1;
+    };
+  }, [load]);
+  usePolling(load);
+  const report = data?.report;
+  const precision = provider === 'pinecone' ? 6 : 2;
+  const source = pricingLink(report?.pricing_source);
+  const stale = data?.state === 'stale' || (failed && report);
+
+  return (
+    <div>
       {loading && <div className="loading">Loading costs…</div>}
       {failed && (
         <div role="alert" className="card">
@@ -106,7 +154,9 @@ export function CostsPage() {
       )}
       {stale && (
         <p role="status">
-          Showing the last successful report; the latest refresh failed.
+          {provider === 'pinecone' && !data?.error && !failed
+            ? 'Showing the last observed snapshot while waiting for its next update.'
+            : 'Showing the last successful report; the latest refresh failed.'}
         </p>
       )}
       {data?.error && <p role="alert">{data.error.message}</p>}
@@ -118,14 +168,18 @@ export function CostsPage() {
         <>
           <section className="card" aria-label="Cost summary">
             <h3>
-              {report.estimated ? 'Estimated charges' : 'Reported charges'}
+              {provider === 'pinecone'
+                ? 'Observed usage estimate'
+                : report.estimated
+                  ? 'Estimated charges'
+                  : 'Reported charges'}
             </h3>
             <p>
               {report.total === null ? (
                 'Cost unavailable for this period'
               ) : (
                 <strong style={{ fontSize: '2rem' }}>
-                  {money(report.total, report.currency)}
+                  {money(report.total, report.currency, precision)}
                 </strong>
               )}
             </p>
@@ -136,6 +190,24 @@ export function CostsPage() {
             </p>
             <p>Cost basis: {report.cost_basis}</p>
             <p>Last updated: {new Date(report.fetched_at).toLocaleString()}</p>
+            {report.coverage_start && (
+              <p>
+                Observed since:{' '}
+                <time dateTime={report.coverage_start}>
+                  {new Date(report.coverage_start).toLocaleString()}
+                </time>
+              </p>
+            )}
+            {source && (
+              <p>
+                <a href={source} target="_blank" rel="noreferrer">
+                  Configured pricing source
+                </a>
+                {report.pricing_as_of
+                  ? ` (verified ${report.pricing_as_of})`
+                  : ''}
+              </p>
+            )}
             {report.data_through && (
               <p>Latest provider billing day: {report.data_through} (UTC)</p>
             )}
@@ -151,29 +223,40 @@ export function CostsPage() {
               </p>
             ))}
           </section>
+          {provider === 'pinecone' && report.usage.length > 0 && (
+            <ReportTable title="Observed usage" rows={report.usage} />
+          )}
           {report.breakdown.length > 0 && (
-            <CostTable
+            <ReportTable
               title="Costs by service"
               rows={report.breakdown}
               currency={report.currency}
+              precision={precision}
             />
           )}
           {report.daily.length > 0 && (
-            <CostTable
+            <ReportTable
               title="Daily costs"
               rows={report.daily}
               currency={report.currency}
+              precision={precision}
             />
           )}
         </>
       )}
       <p>
         <a
-          href="https://console.aws.amazon.com/costmanagement/home#/cost-explorer"
+          href={
+            provider === 'aws'
+              ? 'https://console.aws.amazon.com/costmanagement/home#/cost-explorer'
+              : 'https://app.pinecone.io/'
+          }
           target="_blank"
           rel="noreferrer"
         >
-          Open AWS Cost Explorer
+          {provider === 'aws'
+            ? 'Open AWS Cost Explorer'
+            : 'Open Pinecone console'}
         </a>
       </p>
     </div>

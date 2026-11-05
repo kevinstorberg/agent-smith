@@ -8,7 +8,7 @@ One source of truth, synced everywhere.
 Agent context handling and copyable **DO NOT TRUNCATE** skill instructions are documented
 in [Agent context](docs/agent-context.md).
 
-The Dashboard's **Costs** tab shows current-month AWS charges; see [Cost tracking](docs/costs.md) for environment settings and billing details.
+The Dashboard's **Costs** tab shows current-month AWS charges and forward Pinecone usage estimates; see [Cost tracking](docs/costs.md) for environment settings and billing details.
 
 ## Quick Start
 

@@ -28,6 +28,8 @@ from services.api.operation_context import request_trigger
 from services.db import init_db, init_pool, close_pool
 from services.db.seed import seed_all
 from services.api.routers import harness_router
+from services.costs.collector import pinecone_collector
+
 from services.api.routers import (
     action_items,
     audit,
@@ -92,6 +94,7 @@ async def lifespan(app):
             await stack.enter_async_context(srv.session_manager.run())
         await scheduler.start()
         stack.push_async_callback(scheduler.stop)
+        await stack.enter_async_context(pinecone_collector())
         yield
 
 
