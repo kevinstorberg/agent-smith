@@ -228,8 +228,6 @@ def test_high_level_search_applies_repo_and_tag_filters():
     )
     memory_db.add("Python testing", repo="other", tags=["python"])
 
-    results = memory_db.search(
-        "Python", repo="agent-smith", tags=["architecture"]
-    )
+    results = memory_db.search("Python", repo="agent-smith", tags=["architecture"])
 
     assert [result["id"] for result in results] == [matching_id]

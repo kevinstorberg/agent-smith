@@ -7,14 +7,24 @@ from collections.abc import Awaitable, Callable
 from typing import Annotated
 from uuid import UUID
 
-from langchain.agents.middleware import AgentMiddleware, ModelCallLimitMiddleware, ToolCallLimitMiddleware, hook_config
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    ModelCallLimitMiddleware,
+    ToolCallLimitMiddleware,
+    hook_config,
+)
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
 from services.graphs.agents import create_tool_agent
 from services.graphs.model_config import resolve_request_timeout
-from services.meetings.outputs import Evidence as Evidence, MemoryItem as MemoryItem, MemoryKind as MemoryKind, MemorySubmission as MemorySubmission
+from services.meetings.outputs import (
+    Evidence as Evidence,
+    MemoryItem as MemoryItem,
+    MemoryKind as MemoryKind,
+    MemorySubmission as MemorySubmission,
+)
 from services.meetings.service import run_db
 from services.memory.content import MAX_MEMORY_WORDS
 
@@ -105,21 +115,44 @@ class ModelCallTimeoutError(TimeoutError):
 
 
 class _StagedResult(AgentMiddleware):
-    def __init__(self, context: AnalysisContext, validate_context: Callable[[], Awaitable[None]] | None = None):
+    def __init__(
+        self,
+        context: AnalysisContext,
+        validate_context: Callable[[], Awaitable[None]] | None = None,
+    ):
         self.context = context
         self.validate_context = validate_context
 
     @hook_config(can_jump_to=["end"])
     async def abefore_model(self, state, runtime):
-        last_model = next((message for message in reversed(state["messages"]) if isinstance(message, AIMessage)), None)
-        calls = [*last_model.tool_calls, *last_model.invalid_tool_calls] if last_model else []
-        staging_calls = [call for call in calls if call["name"] in self.context.stage_tool_names]
+        last_model = next(
+            (
+                message
+                for message in reversed(state["messages"])
+                if isinstance(message, AIMessage)
+            ),
+            None,
+        )
+        calls = (
+            [*last_model.tool_calls, *last_model.invalid_tool_calls]
+            if last_model
+            else []
+        )
+        staging_calls = [
+            call for call in calls if call["name"] in self.context.stage_tool_names
+        ]
         if len(staging_calls) > 1:
             self.context.collector.clear()
-            return {"messages": [HumanMessage(content=(
-                "Staging rejected: submit exactly one staging tool call per model turn. "
-                "Review the tool feedback and submit one corrected result."
-            ))]}
+            return {
+                "messages": [
+                    HumanMessage(
+                        content=(
+                            "Staging rejected: submit exactly one staging tool call per model turn. "
+                            "Review the tool feedback and submit one corrected result."
+                        )
+                    )
+                ]
+            }
         if self.context.collector and len(staging_calls) == 1:
             if self.validate_context is not None:
                 await self.validate_context()
@@ -128,7 +161,12 @@ class _StagedResult(AgentMiddleware):
 
 
 class _ModelDeadline(AgentMiddleware):
-    def __init__(self, deadline: float, request_timeout: float, validate_context: Callable[[], Awaitable[None]] | None = None):
+    def __init__(
+        self,
+        deadline: float,
+        request_timeout: float,
+        validate_context: Callable[[], Awaitable[None]] | None = None,
+    ):
         self.deadline = deadline
         self.request_timeout = request_timeout
         self.validate_context = validate_context
@@ -144,8 +182,14 @@ class _ModelDeadline(AgentMiddleware):
                 return await handler(request)
         except TimeoutError:
             if attempt.expired():
-                error = AnalysisBudgetExpired if budget_limited else ModelCallTimeoutError
-                raise error("Analysis budget expired" if budget_limited else "Model call timed out") from None
+                error = (
+                    AnalysisBudgetExpired if budget_limited else ModelCallTimeoutError
+                )
+                raise error(
+                    "Analysis budget expired"
+                    if budget_limited
+                    else "Model call timed out"
+                ) from None
             raise
 
 
@@ -154,27 +198,58 @@ def _window_text(segments: list[dict], source: str = "transcript") -> dict[str, 
         raise ValueError(f"Memory analysis requires a nonempty {source} window")
     texts = {}
     for segment in segments:
-        if (not isinstance(segment, dict) or not isinstance(segment.get("id"), str)
-                or not segment["id"].strip() or not isinstance(segment.get("text"), str)
-                or segment["id"] in texts):
-            raise ValueError(f"{source.capitalize()} segments require unique nonblank IDs and text")
+        if (
+            not isinstance(segment, dict)
+            or not isinstance(segment.get("id"), str)
+            or not segment["id"].strip()
+            or not isinstance(segment.get("text"), str)
+            or segment["id"] in texts
+        ):
+            raise ValueError(
+                f"{source.capitalize()} segments require unique nonblank IDs and text"
+            )
         texts[segment["id"]] = segment["text"]
     return texts
 
 
 def _safe_rows(rows: list[dict]) -> list[dict]:
-    return [{**{key: row.get(key) for key in ("id", "content", "repo", "tags", "created_at", "updated_at")},
-             "context_tags": row.get("context_tags") or []} for row in rows]
+    return [
+        {
+            **{
+                key: row.get(key)
+                for key in ("id", "content", "repo", "tags", "created_at", "updated_at")
+            },
+            "context_tags": row.get("context_tags") or [],
+        }
+        for row in rows
+    ]
 
 
 def _memory_snapshot(snapshot: dict) -> dict:
     result = {"memory_source": "summary", "summary_text": snapshot.get("summary_text")}
-    text_fields = {field: snapshot[field] for field in
-                   ("id", "provider", "source_name", "project", "title", "source_url", "provider_updated_at") if field in snapshot}
+    text_fields = {
+        field: snapshot[field]
+        for field in (
+            "id",
+            "provider",
+            "source_name",
+            "project",
+            "title",
+            "source_url",
+            "provider_updated_at",
+        )
+        if field in snapshot
+    }
     metadata = snapshot.get("metadata")
     calendar = metadata.get("calendar_event") if isinstance(metadata, dict) else None
     if isinstance(calendar, dict):
-        text_fields.update({field: calendar[field] for field in ("scheduled_start_time", "scheduled_end_time") if field in calendar})
+        text_fields.update(
+            {
+                field: calendar[field]
+                for field in ("scheduled_start_time", "scheduled_end_time")
+                if field in calendar
+            }
+        )
     for field, value in text_fields.items():
         if value is not None and not isinstance(value, str):
             raise ValueError(f"Summary memory context {field} must be a string or null")
@@ -185,25 +260,60 @@ def _memory_snapshot(snapshot: dict) -> dict:
         result["revision"] = snapshot["revision"]
     if "vocabulary" in snapshot:
         vocabulary = snapshot["vocabulary"]
-        if (not isinstance(vocabulary, list) or any(not isinstance(entry, dict)
-                or any(not isinstance(entry.get(field), str) for field in ("term", "definition")) for entry in vocabulary)):
-            raise ValueError("Summary memory vocabulary requires term and definition strings")
-        result["vocabulary"] = [{field: entry[field] for field in ("term", "definition")} for entry in vocabulary]
+        if not isinstance(vocabulary, list) or any(
+            not isinstance(entry, dict)
+            or any(
+                not isinstance(entry.get(field), str)
+                for field in ("term", "definition")
+            )
+            for entry in vocabulary
+        ):
+            raise ValueError(
+                "Summary memory vocabulary requires term and definition strings"
+            )
+        result["vocabulary"] = [
+            {field: entry[field] for field in ("term", "definition")}
+            for entry in vocabulary
+        ]
     return result
 
 
 def _memory_previous(previous: list[dict]) -> list[dict]:
-    if not isinstance(previous, list) or any(not isinstance(item, dict) for item in previous):
+    if not isinstance(previous, list) or any(
+        not isinstance(item, dict) for item in previous
+    ):
         raise ValueError("Summary memory analysis requires earlier item objects")
-    return [MemoryItem.model_validate({key: item[key] for key in ("content", "kind", "tags", "evidence") if key in item})
-            .model_dump(exclude={"evidence"}) for item in previous if item.get("source") == "summary"]
+    return [
+        MemoryItem.model_validate(
+            {
+                key: item[key]
+                for key in ("content", "kind", "tags", "evidence")
+                if key in item
+            }
+        ).model_dump(exclude={"evidence"})
+        for item in previous
+        if item.get("source") == "summary"
+    ]
 
 
 class AnalysisContext:
-    def __init__(self, snapshot: dict, segments: list[dict], previous: list[dict], *,
-                 require_memory_search: bool = True, require_transcript: bool = True) -> None:
-        if not isinstance(snapshot, dict) or not isinstance(previous, list) or any(not isinstance(item, dict) for item in previous):
-            raise ValueError("Meeting analysis requires a snapshot object and earlier item objects")
+    def __init__(
+        self,
+        snapshot: dict,
+        segments: list[dict],
+        previous: list[dict],
+        *,
+        require_memory_search: bool = True,
+        require_transcript: bool = True,
+    ) -> None:
+        if (
+            not isinstance(snapshot, dict)
+            or not isinstance(previous, list)
+            or any(not isinstance(item, dict) for item in previous)
+        ):
+            raise ValueError(
+                "Meeting analysis requires a snapshot object and earlier item objects"
+            )
         self.snapshot = snapshot
         self.segments = segments
         self.previous = previous
@@ -211,15 +321,26 @@ class AnalysisContext:
         if not isinstance(self.source, str) or self.source not in _ATTRIBUTION:
             raise ValueError("Memory source must be summary or transcript")
         if not require_transcript and segments != []:
-            raise ValueError("Analysis without a transcript requires an empty segment list")
+            raise ValueError(
+                "Analysis without a transcript requires an empty segment list"
+            )
         self.texts = _window_text(segments, self.source) if require_transcript else {}
         if self.source == "summary":
             summary = snapshot.get("summary_text")
             if not isinstance(summary, str) or not summary.strip():
-                raise ValueError("Summary memory analysis requires nonblank frozen summary_text")
-            if any(not key.startswith("summary-") or not key.removeprefix("summary-").isdigit()
-                   or not text.strip() or text not in summary for key, text in self.texts.items()):
-                raise ValueError("Summary sections require summary-N IDs and exact text from frozen summary_text")
+                raise ValueError(
+                    "Summary memory analysis requires nonblank frozen summary_text"
+                )
+            if any(
+                not key.startswith("summary-")
+                or not key.removeprefix("summary-").isdigit()
+                or not text.strip()
+                or text not in summary
+                for key, text in self.texts.items()
+            ):
+                raise ValueError(
+                    "Summary sections require summary-N IDs and exact text from frozen summary_text"
+                )
         self.searched = False
         self.require_memory_search = require_memory_search
         self.collector = {}
@@ -228,26 +349,45 @@ class AnalysisContext:
     def quoted_data(self) -> dict:
         snapshot = self.snapshot
         if self.source == "summary":
-            snapshot = {key: value for key, value in snapshot.items() if key not in {"summary_text", "summary_markdown"}}
+            snapshot = {
+                key: value
+                for key, value in snapshot.items()
+                if key not in {"summary_text", "summary_markdown"}
+            }
         return {
-            "meeting_snapshot": snapshot, f"{self.source}_window": self.segments,
-            "earlier_staged_items": self.previous, "earlier_staged_count": len(self.previous),
+            "meeting_snapshot": snapshot,
+            f"{self.source}_window": self.segments,
+            "earlier_staged_items": self.previous,
+            "earlier_staged_count": len(self.previous),
         }
 
-    def stage(self, items: list[BaseModel], reason: str, validate_item: Callable | None = None) -> str:
+    def stage(
+        self, items: list[BaseModel], reason: str, validate_item: Callable | None = None
+    ) -> str:
         self.collector.clear()
         if self.require_memory_search and not self.searched:
-            return json.dumps({"error": "Successfully search prior memories before staging"})
+            return json.dumps(
+                {"error": "Successfully search prior memories before staging"}
+            )
         if not items and not reason.strip():
             return json.dumps({"error": "Zero items requires a nonblank reason"})
         for item in items:
             for evidence in item.evidence:
-                if (evidence.segment_id not in self.texts or not evidence.quote.strip()
-                        or evidence.quote not in self.texts[evidence.segment_id]):
-                    return json.dumps({"error": "Every citation must quote exact text from its segment in this window"})
+                if (
+                    evidence.segment_id not in self.texts
+                    or not evidence.quote.strip()
+                    or evidence.quote not in self.texts[evidence.segment_id]
+                ):
+                    return json.dumps(
+                        {
+                            "error": "Every citation must quote exact text from its segment in this window"
+                        }
+                    )
             if validate_item and (error := validate_item(item)):
                 return json.dumps({"error": error})
-        self.collector.update(items=[item.model_dump() for item in items], reason=reason.strip())
+        self.collector.update(
+            items=[item.model_dump() for item in items], reason=reason.strip()
+        )
         return json.dumps({"staged": len(items)})
 
     def configure_stage(self, stage_tool, *, validation_feedback: str | None = None):
@@ -255,7 +395,10 @@ class AnalysisContext:
 
         def rejected_submission(_error) -> str:
             self.collector.clear()
-            return validation_feedback or "Staging rejected: use at most 20 typed items, valid fields and nonblank content/evidence within the stated limits."
+            return (
+                validation_feedback
+                or "Staging rejected: use at most 20 typed items, valid fields and nonblank content/evidence within the stated limits."
+            )
 
         stage_tool.handle_validation_error = rejected_submission
         return stage_tool
@@ -276,14 +419,21 @@ class AnalysisContext:
             try:
                 rows = []
                 if project:
-                    rows.extend(await run_db(db.search_fresh, query, repo=project, limit=limit))
+                    rows.extend(
+                        await run_db(db.search_fresh, query, repo=project, limit=limit)
+                    )
                 rows.extend(await run_db(db.search_fresh, query, limit=limit))
                 unique = {}
                 for row in rows:
                     unique.setdefault(row["id"], row)
                 result = _safe_rows(list(unique.values()))
             except Exception as error:
-                return json.dumps({"error": "Prior memory search failed", "error_type": type(error).__name__})
+                return json.dumps(
+                    {
+                        "error": "Prior memory search failed",
+                        "error_type": type(error).__name__,
+                    }
+                )
             self.searched = True
             return json.dumps({"items": result}, default=str)
 
@@ -298,9 +448,13 @@ class AnalysisContext:
                 return json.dumps({"error": "Memory ID must be a UUID"})
             try:
                 row = await run_db(db.get, key)
-                return json.dumps({"item": _safe_rows([row])[0] if row else None}, default=str)
+                return json.dumps(
+                    {"item": _safe_rows([row])[0] if row else None}, default=str
+                )
             except Exception as error:
-                return json.dumps({"error": "Memory read failed", "error_type": type(error).__name__})
+                return json.dumps(
+                    {"error": "Memory read failed", "error_type": type(error).__name__}
+                )
 
         @tool(f"search_{self.source}")
         async def search_source(
@@ -309,14 +463,24 @@ class AnalysisContext:
         ) -> str:
             """Find case-insensitive text matches in this source window, with exact section IDs/text."""
             if not query.strip():
-                return json.dumps({"error": f"{self.source.capitalize()} query must be nonblank"})
-            return json.dumps({"items": [
-                {"segment_id": key, "text": text} for key, text in self.texts.items() if query.casefold() in text.casefold()
-            ][:limit]})
+                return json.dumps(
+                    {"error": f"{self.source.capitalize()} query must be nonblank"}
+                )
+            return json.dumps(
+                {
+                    "items": [
+                        {"segment_id": key, "text": text}
+                        for key, text in self.texts.items()
+                        if query.casefold() in text.casefold()
+                    ][:limit]
+                }
+            )
 
         readers = [search_previous_memories, get_memory, search_source]
         for reader in readers:
-            reader.handle_validation_error = "Read rejected: check the tool's argument types and limits."
+            reader.handle_validation_error = (
+                "Read rejected: check the tool's argument types and limits."
+            )
         return readers
 
 
@@ -336,48 +500,91 @@ async def run_analysis(
     validate_context: Callable[[], Awaitable[None]] | None = None,
 ) -> dict:
     loop = asyncio.get_running_loop()
-    model_call_limit = MODEL_CALL_LIMIT if model_call_limit is None else model_call_limit
+    model_call_limit = (
+        MODEL_CALL_LIMIT if model_call_limit is None else model_call_limit
+    )
     tool_call_limit = TOOL_CALL_LIMIT if tool_call_limit is None else tool_call_limit
-    if (type(model_call_limit) is not int or not 1 <= model_call_limit <= MODEL_CALL_LIMIT
-            or type(tool_call_limit) is not int or not 1 <= tool_call_limit <= TOOL_CALL_LIMIT):
-        raise ValueError("Analysis model and tool limits must be positive integers within the supported bounds")
-    if deadline is not None and (isinstance(deadline, bool) or not isinstance(deadline, (int, float)) or not math.isfinite(deadline)):
-        raise ValueError("Meeting analysis deadline must be a finite monotonic timestamp")
-    deadline = min(deadline, loop.time() + 150) if deadline is not None else loop.time() + 150
+    if (
+        type(model_call_limit) is not int
+        or not 1 <= model_call_limit <= MODEL_CALL_LIMIT
+        or type(tool_call_limit) is not int
+        or not 1 <= tool_call_limit <= TOOL_CALL_LIMIT
+    ):
+        raise ValueError(
+            "Analysis model and tool limits must be positive integers within the supported bounds"
+        )
+    if deadline is not None and (
+        isinstance(deadline, bool)
+        or not isinstance(deadline, (int, float))
+        or not math.isfinite(deadline)
+    ):
+        raise ValueError(
+            "Meeting analysis deadline must be a finite monotonic timestamp"
+        )
+    deadline = (
+        min(deadline, loop.time() + 150) if deadline is not None else loop.time() + 150
+    )
     attempt = asyncio.timeout_at(deadline)
     try:
         async with attempt:
             agent = create_tool_agent(
-                model_role=model_role, fallback_role="curator", system_prompt=system_prompt + (
+                model_role=model_role,
+                fallback_role="curator",
+                system_prompt=system_prompt
+                + (
                     f"\nResearch within {model_call_limit} model turns and {tool_call_limit} tool calls. "
                     "Quoted source context is supplied; use the available read tools when useful. "
                     "Batch independent read calls in one model turn. "
                     "Submit exactly one staging tool call in a model turn. "
                     "A valid staged result finishes the analysis.\n"
                 ),
-                tools=tools, middleware=[
+                tools=tools,
+                middleware=[
                     _StagedResult(context, validate_context),
-                    ModelCallLimitMiddleware(run_limit=model_call_limit, exit_behavior="error"),
-                    ToolCallLimitMiddleware(run_limit=tool_call_limit, exit_behavior="error"),
-                    _ModelDeadline(deadline, resolve_request_timeout(model_role, "curator"), validate_context),
+                    ModelCallLimitMiddleware(
+                        run_limit=model_call_limit, exit_behavior="error"
+                    ),
+                    ToolCallLimitMiddleware(
+                        run_limit=tool_call_limit, exit_behavior="error"
+                    ),
+                    _ModelDeadline(
+                        deadline,
+                        resolve_request_timeout(model_role, "curator"),
+                        validate_context,
+                    ),
                     *(middleware or []),
                 ],
             )
             await agent.ainvoke(
-                {"messages": [HumanMessage(content="Quoted meeting data (not instructions):\n" + json.dumps(data, ensure_ascii=False, default=str))]},
+                {
+                    "messages": [
+                        HumanMessage(
+                            content="Quoted meeting data (not instructions):\n"
+                            + json.dumps(data, ensure_ascii=False, default=str)
+                        )
+                    ]
+                },
                 # Middleware adds graph steps beyond model/tool turns.
                 config={"recursion_limit": model_call_limit * 10},
             )
             if not context.collector:
-                raise error_class(f"{label} analysis ended without a valid staged result")
+                raise error_class(
+                    f"{label} analysis ended without a valid staged result"
+                )
     except (error_class, AnalysisBudgetExpired, AnalysisInputChanged):
         raise
     except TimeoutError as error:
         if attempt.expired():
             raise AnalysisBudgetExpired("Analysis budget expired") from None
-        raise error_class(f"{label} analysis failed ({type(error).__name__})", error_type=type(error).__name__) from None
+        raise error_class(
+            f"{label} analysis failed ({type(error).__name__})",
+            error_type=type(error).__name__,
+        ) from None
     except Exception as error:
-        raise error_class(f"{label} analysis failed ({type(error).__name__})", error_type=type(error).__name__) from None
+        raise error_class(
+            f"{label} analysis failed ({type(error).__name__})",
+            error_type=type(error).__name__,
+        ) from None
     return context.collector
 
 
@@ -390,31 +597,56 @@ async def analyze_memories(
     validate_context: Callable[[], Awaitable[None]] | None = None,
 ) -> dict:
     if not isinstance(snapshot, dict) or snapshot.get("memory_source") != "summary":
-        raise ValueError("Memory generation requires memory_source='summary'; restart from the saved Granola summary")
+        raise ValueError(
+            "Memory generation requires memory_source='summary'; restart from the saved Granola summary"
+        )
     texts = _window_text(segments, "summary")
     sections = [{"id": key, "text": text} for key, text in texts.items()]
-    context = AnalysisContext(_memory_snapshot(snapshot), sections, _memory_previous(previous))
+    context = AnalysisContext(
+        _memory_snapshot(snapshot), sections, _memory_previous(previous)
+    )
 
     @tool(args_schema=MemorySubmission)
-    async def stage_memories(items: list[MemoryItem], reason: str = "", context_labels: list[str] | None = None) -> str:
+    async def stage_memories(
+        items: list[MemoryItem],
+        reason: str = "",
+        context_labels: list[str] | None = None,
+    ) -> str:
         """Stage validated memories with exact source evidence, or zero items and a reason."""
         if not context_labels:
             context.collector.clear()
-            return json.dumps({"error": "Include 1-8 context_labels for the meeting's whole purpose and subject"})
+            return json.dumps(
+                {
+                    "error": "Include 1-8 context_labels for the meeting's whole purpose and subject"
+                }
+            )
         result = context.stage(items, reason)
         if context.collector:
             context.collector["context_labels"] = context_labels
         return result
 
     return await run_analysis(
-        context, model_role="meeting_memory", system_prompt=_SYSTEM_PROMPT.format(
-            source=context.source, attribution=_ATTRIBUTION[context.source], max_memory_words=MAX_MEMORY_WORDS,
+        context,
+        model_role="meeting_memory",
+        system_prompt=_SYSTEM_PROMPT.format(
+            source=context.source,
+            attribution=_ATTRIBUTION[context.source],
+            max_memory_words=MAX_MEMORY_WORDS,
         ),
-        tools=[*context.research_tools(), context.configure_stage(stage_memories, validation_feedback=(
-            "Staging rejected: use at most 20 typed items with supported kinds, nonblank content, "
-            "exact evidence and 1-8 short topic tags. Include a real topic, not only a memory kind; "
-            "do not include meeting-memory or meeting:<id> tags."
-        ))],
-        data=context.quoted_data(), label="Memory", error_class=MemoryAnalysisError, deadline=deadline,
+        tools=[
+            *context.research_tools(),
+            context.configure_stage(
+                stage_memories,
+                validation_feedback=(
+                    "Staging rejected: use at most 20 typed items with supported kinds, nonblank content, "
+                    "exact evidence and 1-8 short topic tags. Include a real topic, not only a memory kind; "
+                    "do not include meeting-memory or meeting:<id> tags."
+                ),
+            ),
+        ],
+        data=context.quoted_data(),
+        label="Memory",
+        error_class=MemoryAnalysisError,
+        deadline=deadline,
         validate_context=validate_context,
     )

@@ -16,7 +16,9 @@ def memory_word_count(content: str) -> int:
 
 def limit_memory_content(content: str, *, max_words: int = MAX_MEMORY_WORDS) -> str:
     if type(max_words) is not int or not 1 <= max_words <= MAX_MEMORY_WORDS:
-        raise ValueError(f"Memory word budget must be an integer from 1 to {MAX_MEMORY_WORDS}")
+        raise ValueError(
+            f"Memory word budget must be an integer from 1 to {MAX_MEMORY_WORDS}"
+        )
     memory_word_count(content)
     end = 0
     for index, word in enumerate(_WORDS.finditer(content), start=1):
@@ -29,6 +31,9 @@ def limit_memory_content(content: str, *, max_words: int = MAX_MEMORY_WORDS) -> 
 def normalize_memory_content(content: str, *, max_words: int = MAX_MEMORY_WORDS) -> str:
     limited = limit_memory_content(content, max_words=max_words)
     if limited != content:
-        _LOGGER.info("Memory content truncated original_words=%s final_words=%s",
-                     memory_word_count(content), memory_word_count(limited))
+        _LOGGER.info(
+            "Memory content truncated original_words=%s final_words=%s",
+            memory_word_count(content),
+            memory_word_count(limited),
+        )
     return limited
