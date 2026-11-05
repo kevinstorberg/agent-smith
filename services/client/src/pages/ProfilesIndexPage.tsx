@@ -1,3 +1,4 @@
+import { FilterCheckbox } from '../components/FilterCheckbox';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { api, ApiError } from '../api';
@@ -246,17 +247,15 @@ export function ProfilesIndexPage() {
             ))}
           </select>
         </div>
-        <label className="checkbox-label filter-checkbox">
-          <input
-            className="form-checkbox"
-            type="checkbox"
-            checked={starredOnly}
-            onChange={(event) =>
-              preferences.setField('starred', event.target.checked)
-            }
-          />{' '}
+        <FilterCheckbox
+          checked={starredOnly}
+          onChange={(event) =>
+            preferences.setField('starred', event.target.checked)
+          }
+        >
+          {' '}
           Starred only
-        </label>
+        </FilterCheckbox>
       </div>
       {tags.length > 0 && (
         <p className="text-muted-sm">Matches all tags: {tags.join(', ')}</p>

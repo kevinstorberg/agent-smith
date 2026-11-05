@@ -1,3 +1,4 @@
+import { FilterCheckbox } from '../components/FilterCheckbox';
 import { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api';
@@ -227,17 +228,14 @@ export function MemoryPage() {
             ))}
           </select>
         </label>
-        <label className="checkbox-label filter-checkbox">
-          <input
-            className="form-checkbox"
-            type="checkbox"
-            checked={meetingsOnly}
-            onChange={(event) =>
-              preferences.setField('meeting_only', event.target.checked)
-            }
-          />
+        <FilterCheckbox
+          checked={meetingsOnly}
+          onChange={(event) =>
+            preferences.setField('meeting_only', event.target.checked)
+          }
+        >
           Meetings only
-        </label>
+        </FilterCheckbox>
       </div>
 
       {tagsArray.length > 0 && (
