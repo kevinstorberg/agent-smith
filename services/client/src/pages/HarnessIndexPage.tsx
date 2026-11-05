@@ -19,6 +19,7 @@ import { HARNESS_SORT_OPTIONS } from '../constants';
 import { harnessViewKey, parseViewField } from '../utils/viewPreferences';
 import { useViewPreferences } from '../hooks/useViewPreferences';
 import { useHarnessListActions } from '../hooks/useHarnessListActions';
+import { usePolling } from '../hooks/usePolling';
 
 const TYPE_LABELS: Record<string, string> = {
   rule: 'Rules',
@@ -85,6 +86,9 @@ export function HarnessIndexPage({ type }: { type: string }) {
     manual,
     refresh,
     setItems,
+  });
+  usePolling(() => refresh({ showLoading: false }), {
+    enabled: !loading && !criteriaPending && !actions.freezeControls,
   });
   const columns = [
     manual && '32px',

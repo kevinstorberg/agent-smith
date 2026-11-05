@@ -5,11 +5,12 @@ import { usePolling } from '../usePolling';
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe('usePolling', () => {
-  it('defaults to a 60-second interval', () => {
-    expect(POLL_INTERVAL_MS).toBe(60_000);
+  it('defaults to a 15-second interval', () => {
+    expect(POLL_INTERVAL_MS).toBe(15_000);
   });
 
   it('does not call immediately and calls after the interval', () => {
@@ -21,7 +22,12 @@ describe('usePolling', () => {
     expect(callback).not.toHaveBeenCalled();
 
     act(() => {
-      vi.advanceTimersByTime(POLL_INTERVAL_MS);
+      vi.advanceTimersByTime(14_999);
+    });
+
+    expect(callback).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(1);
     });
 
     expect(callback).toHaveBeenCalledTimes(1);
@@ -93,6 +99,55 @@ describe('usePolling', () => {
     });
 
     expect(callback).not.toHaveBeenCalled();
+  });
+
+  it('pauses while hidden and waits a full interval after becoming visible', async () => {
+    vi.useFakeTimers();
+    let hidden = false;
+    vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    const callback = vi.fn();
+    renderHook(() => usePolling(callback));
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    act(() => {
+      hidden = true;
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(callback).not.toHaveBeenCalled();
+    act(() => {
+      hidden = false;
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(14_999);
+    });
+    expect(callback).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the latest callback without restarting the visible interval', async () => {
+    vi.useFakeTimers();
+    const before = vi.fn();
+    const after = vi.fn();
+    const { rerender } = renderHook(({ callback }) => usePolling(callback), {
+      initialProps: { callback: before },
+    });
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    rerender({ callback: after });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(before).not.toHaveBeenCalled();
+    expect(after).toHaveBeenCalledTimes(1);
   });
 
   it('contains callback errors and keeps polling', async () => {

@@ -8,6 +8,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '../../test-utils';
 import { MeetingVocabulary } from '../MeetingVocabulary';
+import { defaultView, mergeViewCookie } from '../../utils/viewPreferences';
 
 vi.mock('../../api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api')>();
@@ -63,6 +64,162 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('MeetingVocabulary', () => {
+  it('silently refreshes the current vocabulary criteria and page at 15 seconds', async () => {
+    vi.useFakeTimers();
+    document.cookie = mergeViewCookie('', 'vocabulary', {
+      ...defaultView('vocabulary'),
+      q: 'LTV',
+      definition: 'defined',
+      sort: 'updated',
+      limit: 25,
+      offset: 50,
+    });
+    vi.mocked(vocabulary.list).mockResolvedValue({ items: [term], total: 100 });
+    let view!: ReturnType<typeof renderWithProviders>;
+    await act(async () => {
+      view = renderWithProviders(<MeetingVocabulary />);
+    });
+    const read = vi.mocked(vocabulary.list);
+    const params = read.mock.calls.at(-1)![0];
+    expect(params).toMatchObject({
+      q: 'LTV',
+      definition: 'defined',
+      sort: 'updated',
+      limit: 25,
+      offset: 50,
+    });
+    let finish!: (value: { items: (typeof term)[]; total: number }) => void;
+    read.mockClear().mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(14_999);
+    });
+    expect(read).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(read).toHaveBeenCalledExactlyOnceWith(params);
+    expect(screen.getByText('Lifetime value')).toBeVisible();
+    expect(screen.queryByText('Loading vocabulary...')).not.toBeInTheDocument();
+    await act(async () => {
+      finish({
+        items: [{ ...term, definition: 'Agent changed definition' }],
+        total: 100,
+      });
+    });
+    expect(screen.getByText('Agent changed definition')).toBeVisible();
+    view.unmount();
+    read.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(read).not.toHaveBeenCalled();
+    expect(vocabulary.update).not.toHaveBeenCalled();
+  });
+
+  it.each(['edit', 'remove'] as const)(
+    'pauses during a vocabulary %s draft and resumes after cancellation',
+    async (action) => {
+      vi.useFakeTimers();
+      await act(async () => {
+        open();
+      });
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: action === 'edit' ? 'Edit LTV' : 'Delete LTV',
+        }),
+      );
+      if (action === 'edit')
+        fireEvent.change(
+          screen.getByLabelText('Meaning / definition (optional)'),
+          { target: { value: 'Unsaved definition' } },
+        );
+      vi.mocked(vocabulary.list).mockClear();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      expect(vocabulary.list).not.toHaveBeenCalled();
+      if (action === 'edit')
+        expect(
+          screen.getByLabelText('Meaning / definition (optional)'),
+        ).toHaveValue('Unsaved definition');
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: action === 'edit' ? 'Cancel' : 'Cancel delete',
+        }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(vocabulary.list).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('does not poll inactive vocabulary and resumes when activated', async () => {
+    vi.useFakeTimers();
+    let view!: ReturnType<typeof renderWithProviders>;
+    await act(async () => {
+      view = renderWithProviders(<MeetingVocabulary active={false} />);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(vocabulary.list).not.toHaveBeenCalled();
+    await act(async () => {
+      view.rerender(<MeetingVocabulary active />);
+    });
+    expect(vocabulary.list).toHaveBeenCalledTimes(1);
+    vi.mocked(vocabulary.list).mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(vocabulary.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('pauses polling during a pending vocabulary save', async () => {
+    vi.useFakeTimers();
+    await act(async () => {
+      open();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit LTV' }));
+    let finish!: (value: typeof term) => void;
+    vi.mocked(vocabulary.update).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Save term' }));
+    vi.mocked(vocabulary.list).mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(vocabulary.list).not.toHaveBeenCalled();
+    let finishRead!: (value: { items: (typeof term)[]; total: number }) => void;
+    vi.mocked(vocabulary.list).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishRead = resolve;
+      }),
+    );
+    await act(async () => {
+      finish({ ...term, revision: 2 });
+    });
+    expect(vocabulary.list).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(vocabulary.list).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finishRead({ items: [term], total: 1 });
+    });
+    vi.mocked(vocabulary.list).mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(vocabulary.list).toHaveBeenCalledTimes(1);
+  });
   it('keeps search, definition filter and sort available with no terms and during errors', async () => {
     vi.mocked(vocabulary.list).mockRejectedValueOnce(new Error('Unavailable'));
     open();

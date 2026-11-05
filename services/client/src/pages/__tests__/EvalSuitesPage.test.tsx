@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { EvalSuitesPage } from '../EvalSuitesPage';
+import { defaultView, mergeViewCookie } from '../../utils/viewPreferences';
 
 const mockNavigate = vi.fn();
 
@@ -59,12 +60,131 @@ const fakeSuites = [
 
 beforeEach(() => {
   document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   mockList.mockResolvedValue({ items: fakeSuites, total: 2 });
   mockSuiteUpdate.mockResolvedValue({});
 });
 
 describe('EvalSuitesPage', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('polls the current suite criteria and page silently at 15 seconds and stops after unmount', async () => {
+    vi.useFakeTimers();
+    document.cookie = mergeViewCookie('', 'evalSuites', {
+      ...defaultView('evalSuites'),
+      q: 'quality',
+      enabled: 'true',
+      sort: 'updated',
+      limit: 25,
+      offset: 50,
+    });
+    mockList.mockResolvedValue({ items: fakeSuites, total: 100 });
+    let view!: ReturnType<typeof renderWithProviders>;
+    await act(async () => {
+      view = renderWithProviders(<EvalSuitesPage />);
+    });
+    const params = mockList.mock.calls.at(-1)![0];
+    expect(params).toMatchObject({
+      q: 'quality',
+      enabled: 'true',
+      limit: '25',
+      offset: '50',
+    });
+    let finish!: (value: unknown) => void;
+    mockList.mockClear().mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(14_999);
+    });
+    expect(mockList).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(mockList).toHaveBeenCalledExactlyOnceWith(params);
+    expect(screen.getByText('Code Quality Suite')).toBeVisible();
+    expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+    await act(async () => {
+      finish({
+        items: [{ ...fakeSuites[0], name: 'Updated suite' }],
+        total: 100,
+      });
+    });
+    expect(screen.getByText('Updated suite')).toBeVisible();
+    view.unmount();
+    mockList.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
+  it('pauses polling throughout a suite toggle and its canonical reread, then resumes', async () => {
+    vi.useFakeTimers();
+    await act(async () => {
+      renderWithProviders(<EvalSuitesPage />);
+    });
+    let finishWrite!: (value: unknown) => void;
+    let finishRead!: (value: unknown) => void;
+    mockSuiteUpdate.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishWrite = resolve;
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Enable Code Quality Suite' }),
+    );
+    mockList.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(mockList).not.toHaveBeenCalled();
+    mockList.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishRead = resolve;
+      }),
+    );
+    await act(async () => {
+      finishWrite({});
+    });
+    expect(mockList).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(mockList).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finishRead({ items: fakeSuites, total: 2 });
+    });
+    mockList.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(mockList).toHaveBeenCalledTimes(1);
+  });
+
+  it('resumes polling after a failed suite toggle without retrying the write', async () => {
+    vi.useFakeTimers();
+    await act(async () => {
+      renderWithProviders(<EvalSuitesPage />);
+    });
+    mockSuiteUpdate.mockRejectedValueOnce(new Error('offline'));
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('checkbox', { name: 'Enable Code Quality Suite' }),
+      );
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Could not change the suite',
+    );
+    mockList.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(mockList).toHaveBeenCalledTimes(1);
+    expect(mockSuiteUpdate).toHaveBeenCalledTimes(1);
+  });
   it('renders the suites table with data', async () => {
     renderWithProviders(<EvalSuitesPage />, {
       initialEntries: ['/eval-configs'],

@@ -231,27 +231,29 @@ describe('MemoryPage', () => {
     });
   });
 
-  it('polls the current memory list every 60 seconds and stops after unmount', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const { unmount } = renderWithProviders(<MemoryPage />, {
-      initialEntries: ['/memory'],
-    });
-
-    await waitFor(() =>
-      expect(screen.getByText('First memory content')).toBeInTheDocument(),
-    );
-    mockList.mockClear();
-
+  it('polls the current memory list at 15 seconds and stops after unmount', async () => {
+    vi.useFakeTimers();
+    let view!: ReturnType<typeof renderWithProviders>;
     await act(async () => {
-      vi.advanceTimersByTime(POLL_INTERVAL_MS);
-      await Promise.resolve();
+      view = renderWithProviders(<MemoryPage />, {
+        initialEntries: ['/memory'],
+      });
+    });
+    expect(screen.getByText('First memory content')).toBeInTheDocument();
+    mockList.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(14_999);
+    });
+    expect(mockList).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
     });
 
     expect(mockList).toHaveBeenCalledWith(
       expect.objectContaining({ limit: 10, offset: 0 }),
     );
 
-    unmount();
+    view.unmount();
     mockList.mockClear();
     await act(async () => {
       vi.advanceTimersByTime(POLL_INTERVAL_MS);
