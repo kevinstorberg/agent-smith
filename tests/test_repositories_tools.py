@@ -204,3 +204,29 @@ def test_cleanup_server_is_not_exposed_by_dashboard_http_mounts():
     from services.api.app import MCP_SERVERS
 
     assert not any(mcp.name.startswith("repos - ") for mcp in MCP_SERVERS)
+
+
+def test_unresolved_canonical_checkout_withholds_only_the_local_tool(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(mcp_utils, "REPO_ROOT", tmp_path / "temporary-worktree")
+    monkeypatch.setattr(mcp_utils, "resolve_repo", lambda *args: None)
+    monkeypatch.setattr(
+        "services.api.models.tool.collect_tools_from_db",
+        lambda _: {
+            "repos": {
+                "command": "${AGENT_SMITH_PYTHON}",
+                "args": ["${AGENT_SMITH_ROOT}/services/repositories/server.py"],
+            },
+            "other": {"url": "http://localhost:7654/mcp/plans/"},
+        },
+    )
+    destination = tmp_path / "client.json"
+    destination.write_text('{"unrelated":"keep"}')
+    monkeypatch.setitem(AGENT_TARGETS["claude"], "mcp_file", str(destination))
+    errors = mcp_utils.sync_mcp("claude", dry_run=False)
+    assert len(errors) == 1 and "canonical Agent Smith checkout" in errors[0]
+    data = json.loads(destination.read_text())
+    assert data["unrelated"] == "keep"
+    assert "repos" not in data["mcpServers"]
+    assert data["mcpServers"]["other"]["url"] == "http://localhost:7654/mcp/plans/"

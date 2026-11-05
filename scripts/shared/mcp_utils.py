@@ -22,7 +22,9 @@ def _local_tool_environment(server: dict) -> dict[str, str]:
     environ = dict(os.environ)
     if env_references(server) & LOCAL_TOOL_REFERENCES:
         scope = resolve_repo(str(REPO_ROOT), (Path(REPO_ROOT.anchor),))
-        root = Path(scope["canonical_root"]) if scope else REPO_ROOT
+        if scope is None:
+            raise ValueError("canonical Agent Smith checkout could not be resolved")
+        root = Path(scope["canonical_root"])
         environ.update(
             AGENT_SMITH_ROOT=str(root),
             AGENT_SMITH_PYTHON=str(root / ".venv/bin/python"),
@@ -53,7 +55,11 @@ def sync_mcp(agent: str, dry_run: bool) -> list[str]:
     app_env = os.environ.get("APP_ENV", "development")
     servers, errors = {}, []
     for name, srv in collect_tools_from_db(agent).items():
-        environ = _local_tool_environment(srv)
+        try:
+            environ = _local_tool_environment(srv)
+        except (OSError, ValueError) as error:
+            errors.append(f"{name} not deployed to {agent}: {error}")
+            continue
         unusable = unusable_env_references(srv, environ, defaults)
         if unusable:
             errors.append(
