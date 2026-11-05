@@ -1,0 +1,332 @@
+{
+  "descriptors": {
+    "common": [
+      {
+        "key": "name",
+        "label": "Name",
+        "kind": "text",
+        "placeholder": "review_changes",
+        "required": true,
+        "max_length": 40,
+        "default": ""
+      },
+      {
+        "key": "project",
+        "label": "Project",
+        "kind": "text",
+        "placeholder": "agent-smith (leave empty to share)",
+        "required": false,
+        "default": ""
+      },
+      {
+        "key": "sort_key",
+        "label": "Sort order",
+        "kind": "number",
+        "placeholder": "5",
+        "required": false,
+        "default": 0,
+        "minimum": 0
+      },
+      {
+        "key": "agents",
+        "label": "Available to agents",
+        "kind": "multiselect",
+        "placeholder": "Choose the agents that can use this item",
+        "required": true,
+        "choices": [
+          "claude",
+          "codex",
+          "gemini",
+          "opinion",
+          "curator"
+        ],
+        "default": [
+          "claude",
+          "codex",
+          "gemini"
+        ]
+      },
+      {
+        "key": "subagents",
+        "label": "Subagent audience",
+        "kind": "strings",
+        "placeholder": "reviewer (or * for every subagent)",
+        "required": false,
+        "default": []
+      },
+      {
+        "key": "enabled",
+        "label": "Enabled",
+        "kind": "boolean",
+        "placeholder": "Enable this item",
+        "required": false,
+        "default": true
+      },
+      {
+        "key": "device",
+        "label": "Initial device",
+        "kind": "text",
+        "placeholder": "* or my-macbook",
+        "required": false,
+        "default": "*",
+        "create_only": true
+      },
+      {
+        "key": "repo",
+        "label": "Initial repository",
+        "kind": "text",
+        "placeholder": "* or /Users/me/projects/agent-smith",
+        "required": false,
+        "default": "*",
+        "create_only": true
+      }
+    ],
+    "types": {
+      "skill": {
+        "label": "Skill",
+        "initial_extensions": {
+          "frontmatter": {},
+          "metadata": {}
+        },
+        "fields": [
+          {
+            "key": "description",
+            "label": "Description / when to use",
+            "kind": "text",
+            "placeholder": "Use when reviewing changes for security and correctness.",
+            "required": true,
+            "default": ""
+          },
+          {
+            "key": "instructions",
+            "label": "Instructions",
+            "kind": "markdown",
+            "placeholder": "Read the changed files, explain the findings, and cite concrete evidence.",
+            "required": true,
+            "default": ""
+          },
+          {
+            "key": "files",
+            "label": "Supporting files",
+            "kind": "rows",
+            "placeholder": "references/review-checklist.md",
+            "required": false,
+            "default": [],
+            "fields": [
+              {
+                "key": "path",
+                "label": "File path",
+                "kind": "text",
+                "placeholder": "references/review-checklist.md",
+                "required": true
+              },
+              {
+                "key": "content",
+                "label": "File content",
+                "kind": "markdown",
+                "placeholder": "# Review checklist\n\nCheck inputs, errors, and boundary conditions.",
+                "required": false
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "fields": {
+    "description": "Use when reviewing application changes.",
+    "instructions": "Read every changed line and retain the final context.",
+    "files": [
+      {
+        "path": "references/checklist.md",
+        "content": "Check errors and boundaries."
+      }
+    ]
+  },
+  "created": {
+    "id": 501,
+    "version": 1,
+    "name": "guided_skill",
+    "project": null,
+    "sort_key": 0,
+    "enabled": true,
+    "agents": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "subagents": [],
+    "content": {
+      "body": "---\nname: guided_skill\ndescription: Use when reviewing application changes.\n---\nRead every changed line and retain the final context.",
+      "metadata": {
+        "files": {
+          "references/checklist.md": "Check errors and boundaries."
+        }
+      }
+    },
+    "configs": [],
+    "created_at": "2026-11-05T12:00:00.123456Z",
+    "updated_at": "2026-11-05T12:00:00.123456Z"
+  },
+  "created_draft": {
+    "fields": {
+      "description": "Use when reviewing application changes.",
+      "instructions": "Read every changed line and retain the final context.",
+      "files": [
+        {
+          "path": "references/checklist.md",
+          "content": "Check errors and boundaries."
+        }
+      ]
+    },
+    "extensions": {
+      "frontmatter": {},
+      "metadata": {}
+    },
+    "original_content": {
+      "body": "---\nname: guided_skill\ndescription: Use when reviewing application changes.\n---\nRead every changed line and retain the final context.",
+      "metadata": {
+        "files": {
+          "references/checklist.md": "Check errors and boundaries."
+        }
+      }
+    },
+    "raw": "---\nname: guided_skill\ndescription: Use when reviewing application changes.\n---\nRead every changed line and retain the final context.",
+    "capabilities": {
+      "guided_supported": true,
+      "unsupported_paths": []
+    }
+  },
+  "existing": {
+    "id": 601,
+    "version": 1,
+    "name": "existing_skill",
+    "project": null,
+    "sort_key": 0,
+    "enabled": true,
+    "agents": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "subagents": [],
+    "content": {
+      "body": "---\nname: existing_skill\ndescription: Use when reviewing application changes.\ncustom:\n  threshold: 0\n  enabled: false\n  notes:\n  - ''\n---\nRead every changed line and retain the final context.",
+      "metadata": {
+        "custom_metadata": "Preserve this.",
+        "files": {
+          "references/checklist.md": "Check errors and boundaries."
+        }
+      }
+    },
+    "configs": [],
+    "created_at": "2026-11-05T12:00:00.123456Z",
+    "updated_at": "2026-11-05T12:00:00.123456Z"
+  },
+  "existing_draft": {
+    "fields": {
+      "description": "Use when reviewing application changes.",
+      "instructions": "Read every changed line and retain the final context.",
+      "files": [
+        {
+          "path": "references/checklist.md",
+          "content": "Check errors and boundaries."
+        }
+      ]
+    },
+    "extensions": {
+      "frontmatter": {
+        "custom": {
+          "threshold": 0,
+          "enabled": false,
+          "notes": [
+            ""
+          ]
+        }
+      },
+      "metadata": {
+        "custom_metadata": "Preserve this."
+      }
+    },
+    "original_content": {
+      "body": "---\nname: existing_skill\ndescription: Use when reviewing application changes.\ncustom:\n  threshold: 0\n  enabled: false\n  notes:\n  - ''\n---\nRead every changed line and retain the final context.",
+      "metadata": {
+        "custom_metadata": "Preserve this.",
+        "files": {
+          "references/checklist.md": "Check errors and boundaries."
+        }
+      }
+    },
+    "raw": "---\nname: existing_skill\ndescription: Use when reviewing application changes.\ncustom:\n  threshold: 0\n  enabled: false\n  notes:\n  - ''\n---\nRead every changed line and retain the final context.",
+    "capabilities": {
+      "guided_supported": true,
+      "unsupported_paths": []
+    }
+  },
+  "updated": {
+    "id": 602,
+    "version": 2,
+    "name": "existing_skill",
+    "project": null,
+    "sort_key": 0,
+    "enabled": true,
+    "agents": [
+      "claude",
+      "codex",
+      "gemini"
+    ],
+    "subagents": [],
+    "content": {
+      "body": "---\nname: existing_skill\ndescription: Use when reviewing application changes.\ncustom:\n  threshold: 0\n  enabled: false\n  notes:\n  - ''\n---\nPreserve the full review instructions and the final sentinel.",
+      "metadata": {
+        "custom_metadata": "Preserve this.",
+        "files": {
+          "references/checklist.md": "Check errors and boundaries."
+        }
+      }
+    },
+    "configs": [],
+    "created_at": "2026-11-05T12:00:00.123456Z",
+    "updated_at": "2026-11-05T12:00:00.123456Z"
+  },
+  "updated_draft": {
+    "fields": {
+      "description": "Use when reviewing application changes.",
+      "instructions": "Preserve the full review instructions and the final sentinel.",
+      "files": [
+        {
+          "path": "references/checklist.md",
+          "content": "Check errors and boundaries."
+        }
+      ]
+    },
+    "extensions": {
+      "frontmatter": {
+        "custom": {
+          "threshold": 0,
+          "enabled": false,
+          "notes": [
+            ""
+          ]
+        }
+      },
+      "metadata": {
+        "custom_metadata": "Preserve this."
+      }
+    },
+    "original_content": {
+      "body": "---\nname: existing_skill\ndescription: Use when reviewing application changes.\ncustom:\n  threshold: 0\n  enabled: false\n  notes:\n  - ''\n---\nPreserve the full review instructions and the final sentinel.",
+      "metadata": {
+        "custom_metadata": "Preserve this.",
+        "files": {
+          "references/checklist.md": "Check errors and boundaries."
+        }
+      }
+    },
+    "raw": "---\nname: existing_skill\ndescription: Use when reviewing application changes.\ncustom:\n  threshold: 0\n  enabled: false\n  notes:\n  - ''\n---\nPreserve the full review instructions and the final sentinel.",
+    "capabilities": {
+      "guided_supported": true,
+      "unsupported_paths": []
+    }
+  }
+}

@@ -1,0 +1,1587 @@
+{
+  "descriptors": {
+    "common": [
+      {
+        "key": "name",
+        "label": "Name",
+        "kind": "text",
+        "placeholder": "review_changes",
+        "required": true,
+        "max_length": 40,
+        "default": ""
+      },
+      {
+        "key": "project",
+        "label": "Project",
+        "kind": "text",
+        "placeholder": "agent-smith (leave empty to share)",
+        "required": false,
+        "default": ""
+      },
+      {
+        "key": "sort_key",
+        "label": "Sort order",
+        "kind": "number",
+        "placeholder": "5",
+        "required": false,
+        "default": 0,
+        "minimum": 0
+      },
+      {
+        "key": "agents",
+        "label": "Available to agents",
+        "kind": "multiselect",
+        "placeholder": "Choose the agents that can use this item",
+        "required": true,
+        "choices": [
+          "claude",
+          "codex",
+          "gemini",
+          "opinion",
+          "curator"
+        ],
+        "default": [
+          "claude",
+          "codex",
+          "gemini"
+        ]
+      },
+      {
+        "key": "subagents",
+        "label": "Subagent audience",
+        "kind": "strings",
+        "placeholder": "reviewer (or * for every subagent)",
+        "required": false,
+        "default": []
+      },
+      {
+        "key": "enabled",
+        "label": "Enabled",
+        "kind": "boolean",
+        "placeholder": "Enable this item",
+        "required": false,
+        "default": true
+      },
+      {
+        "key": "device",
+        "label": "Initial device",
+        "kind": "text",
+        "placeholder": "* or my-macbook",
+        "required": false,
+        "default": "*",
+        "create_only": true
+      },
+      {
+        "key": "repo",
+        "label": "Initial repository",
+        "kind": "text",
+        "placeholder": "* or /Users/me/projects/agent-smith",
+        "required": false,
+        "default": "*",
+        "create_only": true
+      }
+    ],
+    "types": {
+      "skill": {
+        "label": "Skill",
+        "initial_extensions": {
+          "frontmatter": {},
+          "metadata": {}
+        },
+        "fields": [
+          {
+            "key": "description",
+            "label": "Description / when to use",
+            "kind": "text",
+            "placeholder": "Use when reviewing changes for security and correctness.",
+            "required": true,
+            "default": ""
+          },
+          {
+            "key": "instructions",
+            "label": "Instructions",
+            "kind": "markdown",
+            "placeholder": "Read the changed files, explain the findings, and cite concrete evidence.",
+            "required": true,
+            "default": ""
+          },
+          {
+            "key": "files",
+            "label": "Supporting files",
+            "kind": "rows",
+            "placeholder": "references/review-checklist.md",
+            "required": false,
+            "default": [],
+            "fields": [
+              {
+                "key": "path",
+                "label": "File path",
+                "kind": "text",
+                "placeholder": "references/review-checklist.md",
+                "required": true
+              },
+              {
+                "key": "content",
+                "label": "File content",
+                "kind": "markdown",
+                "placeholder": "# Review checklist\n\nCheck inputs, errors, and boundary conditions.",
+                "required": false
+              }
+            ]
+          }
+        ]
+      },
+      "rule": {
+        "label": "Rule",
+        "initial_extensions": {
+          "metadata": {}
+        },
+        "common_fields": [
+          {
+            "key": "clone_as_skill",
+            "label": "Publish as a skill",
+            "kind": "boolean",
+            "placeholder": "Also publish these instructions as a skill artifact",
+            "required": false,
+            "default": false
+          }
+        ],
+        "fields": [
+          {
+            "key": "instructions",
+            "label": "Instructions",
+            "kind": "markdown",
+            "placeholder": "Explain the complete task, constraints, context and expected result.",
+            "required": true,
+            "default": ""
+          },
+          {
+            "key": "clone_description",
+            "label": "Skill description / when to use",
+            "kind": "text",
+            "placeholder": "Use when reviewing application changes.",
+            "required": true,
+            "default": "",
+            "when": {
+              "clone_as_skill": "true"
+            }
+          }
+        ]
+      },
+      "tool": {
+        "label": "Tool",
+        "initial_extensions": {
+          "metadata": {},
+          "oauth": {}
+        },
+        "fields": [
+          {
+            "key": "transport",
+            "label": "Connection type",
+            "kind": "select",
+            "placeholder": "HTTP or a local command",
+            "required": true,
+            "choices": [
+              "http",
+              "stdio"
+            ],
+            "default": "http"
+          },
+          {
+            "key": "description",
+            "label": "Description",
+            "kind": "text",
+            "placeholder": "Local repository maintenance tools",
+            "required": false,
+            "default": ""
+          },
+          {
+            "key": "url",
+            "label": "Server URL",
+            "kind": "text",
+            "placeholder": "https://example.com/mcp or ${MCP_BASE}/mcp",
+            "required": true,
+            "default": "",
+            "when": {
+              "transport": "http"
+            }
+          },
+          {
+            "key": "command",
+            "label": "Executable",
+            "kind": "text",
+            "placeholder": "${AGENT_SMITH_ROOT}/.venv/bin/python",
+            "required": true,
+            "default": "",
+            "when": {
+              "transport": "stdio"
+            }
+          },
+          {
+            "key": "args",
+            "label": "Arguments",
+            "kind": "strings",
+            "placeholder": "--config (enter one argument per row)",
+            "required": false,
+            "default": [],
+            "when": {
+              "transport": "stdio"
+            }
+          },
+          {
+            "key": "env",
+            "label": "Environment variables",
+            "kind": "pairs",
+            "placeholder": "API_TOKEN",
+            "required": false,
+            "default": [],
+            "fields": [
+              {
+                "key": "key",
+                "label": "Variable",
+                "kind": "text",
+                "placeholder": "API_TOKEN",
+                "required": true,
+                "default": ""
+              },
+              {
+                "key": "value",
+                "label": "Value",
+                "kind": "text",
+                "placeholder": "${API_TOKEN}",
+                "required": false,
+                "default": ""
+              }
+            ],
+            "when": {
+              "transport": "stdio"
+            }
+          },
+          {
+            "key": "headers",
+            "label": "HTTP headers",
+            "kind": "pairs",
+            "placeholder": "Authorization",
+            "required": false,
+            "default": [],
+            "fields": [
+              {
+                "key": "key",
+                "label": "Header",
+                "kind": "text",
+                "placeholder": "Authorization",
+                "required": true,
+                "default": ""
+              },
+              {
+                "key": "value",
+                "label": "Value",
+                "kind": "text",
+                "placeholder": "Bearer ${API_TOKEN}",
+                "required": false,
+                "default": ""
+              }
+            ],
+            "when": {
+              "transport": "http"
+            }
+          },
+          {
+            "key": "oauth_client_id",
+            "label": "OAuth client ID",
+            "kind": "text",
+            "placeholder": "my-client-id",
+            "required": false,
+            "default": "",
+            "when": {
+              "transport": "http"
+            }
+          },
+          {
+            "key": "notes",
+            "label": "Notes",
+            "kind": "markdown",
+            "placeholder": "Optional notes about this integration.",
+            "required": false,
+            "default": ""
+          }
+        ]
+      },
+      "hook": {
+        "label": "Hook",
+        "initial_extensions": {
+          "metadata": {}
+        },
+        "fields": [
+          {
+            "key": "event",
+            "label": "When to run",
+            "kind": "select",
+            "placeholder": "pre_tool_use",
+            "required": true,
+            "choices": [
+              "instructions_loaded",
+              "notification",
+              "permission_request",
+              "post_tool_use",
+              "post_tool_use_failure",
+              "pre_tool_use",
+              "session_end",
+              "session_start",
+              "stop",
+              "stop_failure",
+              "subagent_start",
+              "subagent_stop",
+              "user_prompt_submit"
+            ],
+            "default": "pre_tool_use"
+          },
+          {
+            "key": "matcher",
+            "label": "Tool matcher",
+            "kind": "text",
+            "placeholder": "Bash|Edit|Write",
+            "required": false,
+            "default": ""
+          },
+          {
+            "key": "default_model",
+            "label": "Default model for AI handlers",
+            "kind": "text",
+            "placeholder": "haiku (optional)",
+            "required": false,
+            "default": ""
+          },
+          {
+            "key": "handlers",
+            "label": "Handlers",
+            "kind": "rows",
+            "placeholder": "Add a command, prompt, or agent handler",
+            "required": false,
+            "default": [],
+            "fields": [
+              {
+                "key": "type",
+                "label": "Handler type",
+                "kind": "select",
+                "placeholder": "command",
+                "required": true,
+                "choices": [
+                  "command",
+                  "prompt",
+                  "agent"
+                ],
+                "default": "command"
+              },
+              {
+                "key": "command",
+                "label": "Command",
+                "kind": "text",
+                "placeholder": "python /absolute/path/check.py",
+                "required": true,
+                "default": "",
+                "when": {
+                  "type": "command"
+                }
+              },
+              {
+                "key": "prompt",
+                "label": "Prompt",
+                "kind": "markdown",
+                "placeholder": "Review the complete tool input and explain whether it should proceed.",
+                "required": true,
+                "default": "",
+                "when": {
+                  "type": [
+                    "prompt",
+                    "agent"
+                  ]
+                }
+              },
+              {
+                "key": "model",
+                "label": "Handler model override",
+                "kind": "text",
+                "placeholder": "haiku (uses default when empty)",
+                "required": false,
+                "default": "",
+                "when": {
+                  "type": [
+                    "prompt",
+                    "agent"
+                  ]
+                }
+              },
+              {
+                "key": "timeout",
+                "label": "Timeout in seconds",
+                "kind": "number",
+                "placeholder": "30",
+                "required": false,
+                "default": null,
+                "minimum": 0.001
+              },
+              {
+                "key": "async",
+                "label": "Run command asynchronously",
+                "kind": "boolean",
+                "placeholder": "Allow this command to continue without blocking",
+                "required": false,
+                "default": false,
+                "when": {
+                  "type": "command"
+                }
+              },
+              {
+                "key": "settings",
+                "label": "Additional handler settings",
+                "kind": "json",
+                "placeholder": "Optional handler-specific settings",
+                "required": false,
+                "default": {}
+              }
+            ]
+          },
+          {
+            "key": "permissions",
+            "label": "Allowed tool permissions",
+            "kind": "strings",
+            "placeholder": "mcp__memory__memory_search",
+            "required": false,
+            "default": []
+          },
+          {
+            "key": "notes",
+            "label": "Notes",
+            "kind": "markdown",
+            "placeholder": "Optional notes about this integration.",
+            "required": false,
+            "default": ""
+          }
+        ]
+      },
+      "agent": {
+        "label": "Agent",
+        "initial_extensions": {
+          "metadata": {}
+        },
+        "fields": [
+          {
+            "key": "description",
+            "label": "Description / when to use",
+            "kind": "text",
+            "placeholder": "Reviews changes for correctness and security",
+            "required": true,
+            "default": ""
+          },
+          {
+            "key": "instructions",
+            "label": "Instructions",
+            "kind": "markdown",
+            "placeholder": "Explain the complete task, constraints, context and expected result.",
+            "required": true,
+            "default": ""
+          },
+          {
+            "key": "model",
+            "label": "Model",
+            "kind": "text",
+            "placeholder": "sonnet (leave empty to inherit)",
+            "required": false,
+            "default": ""
+          },
+          {
+            "key": "inherit_tools",
+            "label": "Use inherited tools",
+            "kind": "boolean",
+            "placeholder": "Use the parent agent's tools",
+            "required": false,
+            "default": true
+          },
+          {
+            "key": "tools",
+            "label": "Allowed tools",
+            "kind": "strings",
+            "placeholder": "Read",
+            "required": false,
+            "default": [],
+            "when": {
+              "inherit_tools": "false"
+            }
+          },
+          {
+            "key": "disallowed_tools",
+            "label": "Disallowed tools",
+            "kind": "strings",
+            "placeholder": "Bash",
+            "required": false,
+            "default": []
+          },
+          {
+            "key": "skills",
+            "label": "Skills",
+            "kind": "strings",
+            "placeholder": "review_changes",
+            "required": false,
+            "default": []
+          }
+        ]
+      }
+    }
+  },
+  "cases": {
+    "rule": {
+      "common": {
+        "name": "guided_rule",
+        "project": null,
+        "sort_key": 0,
+        "agents": [
+          "claude"
+        ],
+        "subagents": [],
+        "enabled": true,
+        "clone_as_skill": true,
+        "device": "*",
+        "repo": "*"
+      },
+      "fields": {
+        "instructions": "Read the complete change and explain every material finding.",
+        "clone_description": "Use when reviewing a complete change."
+      },
+      "extensions": {
+        "metadata": {
+          "custom": {
+            "empty": "",
+            "enabled": false,
+            "limit": 0
+          }
+        }
+      },
+      "item": {
+        "id": 701,
+        "version": 1,
+        "name": "guided_rule",
+        "project": null,
+        "sort_key": 0,
+        "enabled": true,
+        "agents": [
+          "claude"
+        ],
+        "subagents": [],
+        "clone_as_skill": true,
+        "content": {
+          "body": "Read the complete change and explain every material finding.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "skill_description": "Use when reviewing a complete change."
+          }
+        },
+        "configs": [],
+        "created_at": "2026-11-05T12:00:00.123456Z",
+        "updated_at": "2026-11-05T12:00:00.123456Z"
+      },
+      "draft": {
+        "fields": {
+          "instructions": "Read the complete change and explain every material finding.",
+          "clone_description": "Use when reviewing a complete change."
+        },
+        "extensions": {
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            }
+          }
+        },
+        "original_content": {
+          "body": "Read the complete change and explain every material finding.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "skill_description": "Use when reviewing a complete change."
+          }
+        },
+        "raw": "Read the complete change and explain every material finding.",
+        "capabilities": {
+          "guided_supported": true,
+          "unsupported_paths": []
+        }
+      },
+      "changed_field": "instructions",
+      "updated_value": "Updated complete rule instructions.",
+      "updated": {
+        "id": 801,
+        "version": 2,
+        "name": "guided_rule",
+        "project": null,
+        "sort_key": 0,
+        "enabled": true,
+        "agents": [
+          "claude"
+        ],
+        "subagents": [],
+        "clone_as_skill": true,
+        "content": {
+          "body": "Updated complete rule instructions.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "skill_description": "Use when reviewing a complete change."
+          }
+        },
+        "configs": [],
+        "created_at": "2026-11-05T12:00:00.123456Z",
+        "updated_at": "2026-11-05T12:00:00.234567Z"
+      },
+      "updated_draft": {
+        "fields": {
+          "instructions": "Updated complete rule instructions.",
+          "clone_description": "Use when reviewing a complete change."
+        },
+        "extensions": {
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            }
+          }
+        },
+        "original_content": {
+          "body": "Updated complete rule instructions.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "skill_description": "Use when reviewing a complete change."
+          }
+        },
+        "raw": "Updated complete rule instructions.",
+        "capabilities": {
+          "guided_supported": true,
+          "unsupported_paths": []
+        }
+      }
+    },
+    "skill": {
+      "common": {
+        "name": "guided_skill",
+        "project": null,
+        "sort_key": 0,
+        "agents": [
+          "claude"
+        ],
+        "subagents": [],
+        "enabled": true,
+        "clone_as_skill": false,
+        "device": "*",
+        "repo": "*"
+      },
+      "fields": {
+        "description": "Use when reviewing a complete change.",
+        "instructions": "Read complete instructions and preserve the final context.",
+        "files": [
+          {
+            "path": "references/checklist.md",
+            "content": "Check every boundary."
+          }
+        ]
+      },
+      "extensions": {
+        "frontmatter": {
+          "custom": [
+            "",
+            false,
+            0,
+            null
+          ]
+        },
+        "metadata": {
+          "custom": {
+            "empty": "",
+            "enabled": false,
+            "limit": 0
+          }
+        }
+      },
+      "item": {
+        "id": 702,
+        "version": 1,
+        "name": "guided_skill",
+        "project": null,
+        "sort_key": 0,
+        "enabled": true,
+        "agents": [
+          "claude"
+        ],
+        "subagents": [],
+        "clone_as_skill": false,
+        "content": {
+          "body": "---\nname: guided_skill\ndescription: Use when reviewing a complete change.\ncustom:\n- ''\n- false\n- 0\n- null\n---\nRead complete instructions and preserve the final context.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "files": {
+              "references/checklist.md": "Check every boundary."
+            }
+          }
+        },
+        "configs": [],
+        "created_at": "2026-11-05T12:00:00.123456Z",
+        "updated_at": "2026-11-05T12:00:00.123456Z"
+      },
+      "draft": {
+        "fields": {
+          "description": "Use when reviewing a complete change.",
+          "instructions": "Read complete instructions and preserve the final context.",
+          "files": [
+            {
+              "path": "references/checklist.md",
+              "content": "Check every boundary."
+            }
+          ]
+        },
+        "extensions": {
+          "frontmatter": {
+            "custom": [
+              "",
+              false,
+              0,
+              null
+            ]
+          },
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            }
+          }
+        },
+        "original_content": {
+          "body": "---\nname: guided_skill\ndescription: Use when reviewing a complete change.\ncustom:\n- ''\n- false\n- 0\n- null\n---\nRead complete instructions and preserve the final context.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "files": {
+              "references/checklist.md": "Check every boundary."
+            }
+          }
+        },
+        "raw": "---\nname: guided_skill\ndescription: Use when reviewing a complete change.\ncustom:\n- ''\n- false\n- 0\n- null\n---\nRead complete instructions and preserve the final context.",
+        "capabilities": {
+          "guided_supported": true,
+          "unsupported_paths": []
+        }
+      },
+      "changed_field": "instructions",
+      "updated_value": "Updated complete skill instructions.",
+      "updated": {
+        "id": 802,
+        "version": 2,
+        "name": "guided_skill",
+        "project": null,
+        "sort_key": 0,
+        "enabled": true,
+        "agents": [
+          "claude"
+        ],
+        "subagents": [],
+        "clone_as_skill": false,
+        "content": {
+          "body": "---\nname: guided_skill\ndescription: Use when reviewing a complete change.\ncustom:\n- ''\n- false\n- 0\n- null\n---\nUpdated complete skill instructions.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "files": {
+              "references/checklist.md": "Check every boundary."
+            }
+          }
+        },
+        "configs": [],
+        "created_at": "2026-11-05T12:00:00.123456Z",
+        "updated_at": "2026-11-05T12:00:00.234567Z"
+      },
+      "updated_draft": {
+        "fields": {
+          "description": "Use when reviewing a complete change.",
+          "instructions": "Updated complete skill instructions.",
+          "files": [
+            {
+              "path": "references/checklist.md",
+              "content": "Check every boundary."
+            }
+          ]
+        },
+        "extensions": {
+          "frontmatter": {
+            "custom": [
+              "",
+              false,
+              0,
+              null
+            ]
+          },
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            }
+          }
+        },
+        "original_content": {
+          "body": "---\nname: guided_skill\ndescription: Use when reviewing a complete change.\ncustom:\n- ''\n- false\n- 0\n- null\n---\nUpdated complete skill instructions.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "files": {
+              "references/checklist.md": "Check every boundary."
+            }
+          }
+        },
+        "raw": "---\nname: guided_skill\ndescription: Use when reviewing a complete change.\ncustom:\n- ''\n- false\n- 0\n- null\n---\nUpdated complete skill instructions.",
+        "capabilities": {
+          "guided_supported": true,
+          "unsupported_paths": []
+        }
+      }
+    },
+    "tool": {
+      "common": {
+        "name": "guided_tool",
+        "project": null,
+        "sort_key": 0,
+        "agents": [
+          "claude"
+        ],
+        "subagents": [],
+        "enabled": true,
+        "clone_as_skill": false,
+        "device": "*",
+        "repo": "*"
+      },
+      "fields": {
+        "transport": "stdio",
+        "description": "Local maintenance tools",
+        "command": "python",
+        "args": [
+          "--name",
+          "two words",
+          ""
+        ],
+        "env": [
+          {
+            "key": "TOKEN",
+            "value": "${TOKEN}"
+          }
+        ],
+        "notes": "Local integration notes."
+      },
+      "extensions": {
+        "metadata": {
+          "custom": {
+            "empty": "",
+            "enabled": false,
+            "limit": 0
+          }
+        },
+        "oauth": {}
+      },
+      "item": {
+        "id": 703,
+        "version": 1,
+        "name": "guided_tool",
+        "project": null,
+        "sort_key": 0,
+        "enabled": true,
+        "agents": [
+          "claude"
+        ],
+        "subagents": [],
+        "clone_as_skill": false,
+        "content": {
+          "body": "Local integration notes.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "description": "Local maintenance tools",
+            "command": "python",
+            "args": [
+              "--name",
+              "two words",
+              ""
+            ],
+            "env": {
+              "TOKEN": "${TOKEN}"
+            }
+          }
+        },
+        "configs": [],
+        "created_at": "2026-11-05T12:00:00.123456Z",
+        "updated_at": "2026-11-05T12:00:00.123456Z"
+      },
+      "draft": {
+        "fields": {
+          "transport": "stdio",
+          "notes": "Local integration notes.",
+          "description": "Local maintenance tools",
+          "command": "python",
+          "url": "",
+          "args": [
+            "--name",
+            "two words",
+            ""
+          ],
+          "env": [
+            {
+              "key": "TOKEN",
+              "value": "${TOKEN}"
+            }
+          ],
+          "headers": [],
+          "oauth_client_id": ""
+        },
+        "extensions": {
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            }
+          },
+          "oauth": {}
+        },
+        "original_content": {
+          "body": "Local integration notes.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "description": "Local maintenance tools",
+            "command": "python",
+            "args": [
+              "--name",
+              "two words",
+              ""
+            ],
+            "env": {
+              "TOKEN": "${TOKEN}"
+            }
+          }
+        },
+        "raw": "{\n  \"custom\": {\n    \"empty\": \"\",\n    \"enabled\": false,\n    \"limit\": 0\n  },\n  \"description\": \"Local maintenance tools\",\n  \"command\": \"python\",\n  \"args\": [\n    \"--name\",\n    \"two words\",\n    \"\"\n  ],\n  \"env\": {\n    \"TOKEN\": \"${TOKEN}\"\n  }\n}\n",
+        "capabilities": {
+          "guided_supported": true,
+          "unsupported_paths": []
+        }
+      },
+      "changed_field": "description",
+      "updated_value": "Updated tool description",
+      "updated": {
+        "id": 803,
+        "version": 2,
+        "name": "guided_tool",
+        "project": null,
+        "sort_key": 0,
+        "enabled": true,
+        "agents": [
+          "claude"
+        ],
+        "subagents": [],
+        "clone_as_skill": false,
+        "content": {
+          "body": "Local integration notes.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "description": "Updated tool description",
+            "command": "python",
+            "args": [
+              "--name",
+              "two words",
+              ""
+            ],
+            "env": {
+              "TOKEN": "${TOKEN}"
+            }
+          }
+        },
+        "configs": [],
+        "created_at": "2026-11-05T12:00:00.123456Z",
+        "updated_at": "2026-11-05T12:00:00.234567Z"
+      },
+      "updated_draft": {
+        "fields": {
+          "transport": "stdio",
+          "notes": "Local integration notes.",
+          "description": "Updated tool description",
+          "command": "python",
+          "url": "",
+          "args": [
+            "--name",
+            "two words",
+            ""
+          ],
+          "env": [
+            {
+              "key": "TOKEN",
+              "value": "${TOKEN}"
+            }
+          ],
+          "headers": [],
+          "oauth_client_id": ""
+        },
+        "extensions": {
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            }
+          },
+          "oauth": {}
+        },
+        "original_content": {
+          "body": "Local integration notes.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "description": "Updated tool description",
+            "command": "python",
+            "args": [
+              "--name",
+              "two words",
+              ""
+            ],
+            "env": {
+              "TOKEN": "${TOKEN}"
+            }
+          }
+        },
+        "raw": "{\n  \"custom\": {\n    \"empty\": \"\",\n    \"enabled\": false,\n    \"limit\": 0\n  },\n  \"description\": \"Updated tool description\",\n  \"command\": \"python\",\n  \"args\": [\n    \"--name\",\n    \"two words\",\n    \"\"\n  ],\n  \"env\": {\n    \"TOKEN\": \"${TOKEN}\"\n  }\n}\n",
+        "capabilities": {
+          "guided_supported": true,
+          "unsupported_paths": []
+        }
+      }
+    },
+    "hook": {
+      "common": {
+        "name": "guided_hook",
+        "project": null,
+        "sort_key": 0,
+        "agents": [
+          "claude"
+        ],
+        "subagents": [],
+        "enabled": true,
+        "clone_as_skill": false,
+        "device": "*",
+        "repo": "*"
+      },
+      "fields": {
+        "event": "pre_tool_use",
+        "matcher": "Bash",
+        "default_model": "haiku",
+        "handlers": [
+          {
+            "type": "prompt",
+            "prompt": "Review all tool input before allowing execution.",
+            "settings": {
+              "statusMessage": "Reviewing full context",
+              "once": false
+            }
+          }
+        ],
+        "permissions": [
+          "mcp__memory__memory_search"
+        ],
+        "notes": "Review before tools run."
+      },
+      "extensions": {
+        "metadata": {
+          "custom": {
+            "empty": "",
+            "enabled": false,
+            "limit": 0
+          }
+        }
+      },
+      "item": {
+        "id": 704,
+        "version": 1,
+        "name": "guided_hook",
+        "project": null,
+        "sort_key": 0,
+        "enabled": true,
+        "agents": [
+          "claude"
+        ],
+        "subagents": [],
+        "clone_as_skill": false,
+        "content": {
+          "body": "Review before tools run.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "event": "pre_tool_use",
+            "matcher": "Bash",
+            "hooks": [
+              {
+                "statusMessage": "Reviewing full context",
+                "once": false,
+                "type": "prompt",
+                "prompt": "Review all tool input before allowing execution."
+              }
+            ],
+            "model": "haiku",
+            "permissions": {
+              "allow": [
+                "mcp__memory__memory_search"
+              ]
+            }
+          }
+        },
+        "configs": [],
+        "created_at": "2026-11-05T12:00:00.123456Z",
+        "updated_at": "2026-11-05T12:00:00.123456Z"
+      },
+      "draft": {
+        "fields": {
+          "event": "pre_tool_use",
+          "matcher": "Bash",
+          "notes": "Review before tools run.",
+          "default_model": "haiku",
+          "handlers": [
+            {
+              "type": "prompt",
+              "prompt": "Review all tool input before allowing execution.",
+              "settings": {
+                "statusMessage": "Reviewing full context",
+                "once": false
+              }
+            }
+          ],
+          "permissions": [
+            "mcp__memory__memory_search"
+          ]
+        },
+        "extensions": {
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            }
+          }
+        },
+        "original_content": {
+          "body": "Review before tools run.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "event": "pre_tool_use",
+            "matcher": "Bash",
+            "hooks": [
+              {
+                "statusMessage": "Reviewing full context",
+                "once": false,
+                "type": "prompt",
+                "prompt": "Review all tool input before allowing execution."
+              }
+            ],
+            "model": "haiku",
+            "permissions": {
+              "allow": [
+                "mcp__memory__memory_search"
+              ]
+            }
+          }
+        },
+        "raw": "{\n  \"custom\": {\n    \"empty\": \"\",\n    \"enabled\": false,\n    \"limit\": 0\n  },\n  \"event\": \"pre_tool_use\",\n  \"matcher\": \"Bash\",\n  \"hooks\": [\n    {\n      \"statusMessage\": \"Reviewing full context\",\n      \"once\": false,\n      \"type\": \"prompt\",\n      \"prompt\": \"Review all tool input before allowing execution.\"\n    }\n  ],\n  \"model\": \"haiku\",\n  \"permissions\": {\n    \"allow\": [\n      \"mcp__memory__memory_search\"\n    ]\n  }\n}\n",
+        "capabilities": {
+          "guided_supported": true,
+          "unsupported_paths": []
+        }
+      },
+      "changed_field": "matcher",
+      "updated_value": "Read|Write",
+      "updated": {
+        "id": 804,
+        "version": 2,
+        "name": "guided_hook",
+        "project": null,
+        "sort_key": 0,
+        "enabled": true,
+        "agents": [
+          "claude"
+        ],
+        "subagents": [],
+        "clone_as_skill": false,
+        "content": {
+          "body": "Review before tools run.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "event": "pre_tool_use",
+            "matcher": "Read|Write",
+            "hooks": [
+              {
+                "statusMessage": "Reviewing full context",
+                "once": false,
+                "type": "prompt",
+                "prompt": "Review all tool input before allowing execution."
+              }
+            ],
+            "model": "haiku",
+            "permissions": {
+              "allow": [
+                "mcp__memory__memory_search"
+              ]
+            }
+          }
+        },
+        "configs": [],
+        "created_at": "2026-11-05T12:00:00.123456Z",
+        "updated_at": "2026-11-05T12:00:00.234567Z"
+      },
+      "updated_draft": {
+        "fields": {
+          "event": "pre_tool_use",
+          "matcher": "Read|Write",
+          "notes": "Review before tools run.",
+          "default_model": "haiku",
+          "handlers": [
+            {
+              "type": "prompt",
+              "prompt": "Review all tool input before allowing execution.",
+              "settings": {
+                "statusMessage": "Reviewing full context",
+                "once": false
+              }
+            }
+          ],
+          "permissions": [
+            "mcp__memory__memory_search"
+          ]
+        },
+        "extensions": {
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            }
+          }
+        },
+        "original_content": {
+          "body": "Review before tools run.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "event": "pre_tool_use",
+            "matcher": "Read|Write",
+            "hooks": [
+              {
+                "statusMessage": "Reviewing full context",
+                "once": false,
+                "type": "prompt",
+                "prompt": "Review all tool input before allowing execution."
+              }
+            ],
+            "model": "haiku",
+            "permissions": {
+              "allow": [
+                "mcp__memory__memory_search"
+              ]
+            }
+          }
+        },
+        "raw": "{\n  \"custom\": {\n    \"empty\": \"\",\n    \"enabled\": false,\n    \"limit\": 0\n  },\n  \"event\": \"pre_tool_use\",\n  \"matcher\": \"Read|Write\",\n  \"hooks\": [\n    {\n      \"statusMessage\": \"Reviewing full context\",\n      \"once\": false,\n      \"type\": \"prompt\",\n      \"prompt\": \"Review all tool input before allowing execution.\"\n    }\n  ],\n  \"model\": \"haiku\",\n  \"permissions\": {\n    \"allow\": [\n      \"mcp__memory__memory_search\"\n    ]\n  }\n}\n",
+        "capabilities": {
+          "guided_supported": true,
+          "unsupported_paths": []
+        }
+      }
+    },
+    "agent": {
+      "common": {
+        "name": "guided_agent",
+        "project": null,
+        "sort_key": 0,
+        "agents": [
+          "claude"
+        ],
+        "subagents": [],
+        "enabled": true,
+        "clone_as_skill": false,
+        "device": "*",
+        "repo": "*"
+      },
+      "fields": {
+        "description": "Reviews complete changes",
+        "instructions": "Read all supplied context and explain the complete result.",
+        "model": "sonnet",
+        "tools": [
+          "Read",
+          "Write"
+        ],
+        "disallowed_tools": [
+          "Bash"
+        ],
+        "skills": [
+          "review_changes"
+        ],
+        "inherit_tools": false
+      },
+      "extensions": {
+        "metadata": {
+          "custom": {
+            "empty": "",
+            "enabled": false,
+            "limit": 0
+          }
+        }
+      },
+      "item": {
+        "id": 705,
+        "version": 1,
+        "name": "guided_agent",
+        "project": null,
+        "sort_key": 0,
+        "enabled": true,
+        "agents": [
+          "claude"
+        ],
+        "subagents": [],
+        "clone_as_skill": false,
+        "content": {
+          "body": "Read all supplied context and explain the complete result.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "name": "guided_agent",
+            "description": "Reviews complete changes",
+            "model": "sonnet",
+            "disallowedTools": [
+              "Bash"
+            ],
+            "skills": [
+              "review_changes"
+            ],
+            "tools": [
+              "Read",
+              "Write"
+            ]
+          }
+        },
+        "configs": [],
+        "created_at": "2026-11-05T12:00:00.123456Z",
+        "updated_at": "2026-11-05T12:00:00.123456Z"
+      },
+      "draft": {
+        "fields": {
+          "instructions": "Read all supplied context and explain the complete result.",
+          "inherit_tools": false,
+          "description": "Reviews complete changes",
+          "model": "sonnet",
+          "tools": [
+            "Read",
+            "Write"
+          ],
+          "disallowed_tools": [
+            "Bash"
+          ],
+          "skills": [
+            "review_changes"
+          ]
+        },
+        "extensions": {
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            }
+          }
+        },
+        "original_content": {
+          "body": "Read all supplied context and explain the complete result.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "name": "guided_agent",
+            "description": "Reviews complete changes",
+            "model": "sonnet",
+            "disallowedTools": [
+              "Bash"
+            ],
+            "skills": [
+              "review_changes"
+            ],
+            "tools": [
+              "Read",
+              "Write"
+            ]
+          }
+        },
+        "raw": "---\ncustom:\n  empty: ''\n  enabled: false\n  limit: 0\ndescription: Reviews complete changes\ndisallowedTools:\n- Bash\nmodel: sonnet\nname: guided_agent\nskills:\n- review_changes\ntools:\n- Read\n- Write\n---\n\n\nRead all supplied context and explain the complete result.\n",
+        "capabilities": {
+          "guided_supported": true,
+          "unsupported_paths": []
+        }
+      },
+      "changed_field": "instructions",
+      "updated_value": "Updated complete agent instructions.",
+      "updated": {
+        "id": 805,
+        "version": 2,
+        "name": "guided_agent",
+        "project": null,
+        "sort_key": 0,
+        "enabled": true,
+        "agents": [
+          "claude"
+        ],
+        "subagents": [],
+        "clone_as_skill": false,
+        "content": {
+          "body": "Updated complete agent instructions.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "name": "guided_agent",
+            "description": "Reviews complete changes",
+            "model": "sonnet",
+            "disallowedTools": [
+              "Bash"
+            ],
+            "skills": [
+              "review_changes"
+            ],
+            "tools": [
+              "Read",
+              "Write"
+            ]
+          }
+        },
+        "configs": [],
+        "created_at": "2026-11-05T12:00:00.123456Z",
+        "updated_at": "2026-11-05T12:00:00.234567Z"
+      },
+      "updated_draft": {
+        "fields": {
+          "instructions": "Updated complete agent instructions.",
+          "inherit_tools": false,
+          "description": "Reviews complete changes",
+          "model": "sonnet",
+          "tools": [
+            "Read",
+            "Write"
+          ],
+          "disallowed_tools": [
+            "Bash"
+          ],
+          "skills": [
+            "review_changes"
+          ]
+        },
+        "extensions": {
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            }
+          }
+        },
+        "original_content": {
+          "body": "Updated complete agent instructions.",
+          "metadata": {
+            "custom": {
+              "empty": "",
+              "enabled": false,
+              "limit": 0
+            },
+            "name": "guided_agent",
+            "description": "Reviews complete changes",
+            "model": "sonnet",
+            "disallowedTools": [
+              "Bash"
+            ],
+            "skills": [
+              "review_changes"
+            ],
+            "tools": [
+              "Read",
+              "Write"
+            ]
+          }
+        },
+        "raw": "---\ncustom:\n  empty: ''\n  enabled: false\n  limit: 0\ndescription: Reviews complete changes\ndisallowedTools:\n- Bash\nmodel: sonnet\nname: guided_agent\nskills:\n- review_changes\ntools:\n- Read\n- Write\n---\n\n\nUpdated complete agent instructions.\n",
+        "capabilities": {
+          "guided_supported": true,
+          "unsupported_paths": []
+        }
+      }
+    }
+  }
+}
