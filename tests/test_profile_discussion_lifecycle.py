@@ -72,7 +72,7 @@ def test_profile_discussion_merge_transfers_order_history_receipts_and_alias_rep
             "id",
             "title",
             "description",
-            "project",
+            "project_id",
             "tags",
             "status",
             "completed_at",

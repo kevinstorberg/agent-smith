@@ -19,6 +19,7 @@ from services.action_items.contracts import (
     Move,
     Patch,
     PositiveInt,
+    ProjectCreate,
     Query,
 )
 from services.mcp_contracts import ContractMCP
@@ -40,6 +41,10 @@ class MoveInput(ItemInput, Move):
     pass
 
 
+class ProjectInput(Contract):
+    project_id: PositiveInt
+
+
 class ActionItemsMCP(ContractMCP):
     def __init__(self, name: str) -> None:
         super().__init__(name, _INPUTS)
@@ -54,6 +59,9 @@ _INPUTS = {
     "action_item_update": UpdateInput,
     "action_item_delete": DeleteInput,
     "action_item_move": MoveInput,
+    "action_item_project_list": Contract,
+    "action_item_project_create": ProjectCreate,
+    "action_item_project_delete": ProjectInput,
 }
 
 
@@ -65,11 +73,13 @@ def action_item_list(
     sort: str | None = None,
     limit: int = 10,
     offset: int = 0,
+    unassigned: bool = False,
 ) -> dict[str, Any]:
     """Search title/description and list tasks. Status: open, completed, all. All supplied tags must match.
 
     Sort: manual (open only), completed (completed only), newest, updated, title.
     Defaults: open/manual, completed/completed, all/newest. Limit 1-100, offset nonnegative.
+    Project names match exactly; unassigned=true selects tasks without a project and cannot combine with project.
     """
     return db.list_items(
         {
@@ -80,6 +90,7 @@ def action_item_list(
             "sort": sort,
             "limit": limit,
             "offset": offset,
+            "unassigned": unassigned,
         }
     )
 
@@ -150,6 +161,24 @@ def action_item_move(
     )
 
 
+def action_item_project_list() -> dict[str, Any]:
+    """List the project catalog, including projects with no tasks. Projects and tags are independent."""
+    return db.list_projects()
+
+
+def action_item_project_create(name: str) -> dict[str, Any]:
+    """Create an empty project, or return its existing exact name. Names preserve case.
+
+    New names are trimmed, contain 1-200 characters, and cannot contain control characters.
+    """
+    return db.create_project({"name": name})
+
+
+def action_item_project_delete(project_id: PositiveInt) -> dict[str, Any]:
+    """Delete a project only when no task references it, including completed and deleted tasks."""
+    return db.delete_project(project_id)
+
+
 def create_server() -> ActionItemsMCP:
     server = ActionItemsMCP("action-items - create and manage a shared to-do list")
     for function in (
@@ -159,11 +188,16 @@ def create_server() -> ActionItemsMCP:
         action_item_update,
         action_item_delete,
         action_item_move,
+        action_item_project_list,
+        action_item_project_create,
+        action_item_project_delete,
     ):
         annotation = (
-            _READ if function in (action_item_list, action_item_get) else _WRITE
+            _READ
+            if function in (action_item_list, action_item_get, action_item_project_list)
+            else _WRITE
         )
-        if function is action_item_delete:
+        if function in (action_item_delete, action_item_project_delete):
             annotation = ToolAnnotations(readOnlyHint=False, destructiveHint=True)
         server.add_tool(function, annotations=annotation)
     return server

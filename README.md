@@ -210,7 +210,7 @@ Supports Claude, Codex, and Gemini. Only writes when content has changed. Set
 Open **Action items** (`/action-items`) to create tasks, edit their Markdown descriptions,
 complete or reopen them, and search by title or description. Project and tag filters apply
 before pagination; all selected tags must match. **Open**, **Completed**, and **All** have
-separate default sorts. Drag the handle in the unfiltered Open/manual-order view to change
+separate default sorts. Drag the handle in the Open/manual-order view, including filtered results, to change
 the shared queue. Dropping at the bottom of a page places a task after that page's last
 visible neighbor, preserving the order of tasks on other pages.
 
@@ -224,7 +224,19 @@ after an uncertain failure to retrieve the existing task without duplicating or 
 it. Deleted request IDs remain reserved. No meeting graph or model call runs as a side
 effect of managing tasks.
 
-Deploy the additive action-items migration with the normal production command
+Projects have an independent catalog with immutable IDs and exact, case-sensitive names;
+tags remain separate labels. `GET`/`POST /api/action-items/projects` and
+`action_item_project_list`/`action_item_project_create` list or create groups without tasks.
+Task APIs retain their existing `project` string input/output and create missing projects
+inside the task transaction. `unassigned=true` selects tasks without a project and cannot
+combine with `project`. `DELETE /api/action-items/projects/{id}` and
+`action_item_project_delete` remove only projects with no references, including deleted tasks.
+
+The project-catalog migration exactly backfills legacy names, then replaces stored task
+names with project IDs. Deploy the schema and updated backend together; the previous
+backend still expects the old column. Downgrade restores the original project strings.
+
+Deploy reviewed action-items migrations with the normal production command
 `./db.sh production --confirm-database <database-name>`, then restart the updated
 dashboard. Startup registers the MCP connection without replacing customized settings.
 Use the existing **Sync** action and reconnect agent clients to discover the tools.
