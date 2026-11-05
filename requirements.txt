@@ -18,7 +18,7 @@ psycopg2-binary>=2.9.0
 pgvector>=0.4.1
 alembic>=1.18.0
 fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
+uvicorn[standard]>=0.54.0
 pytest>=8.0
 ruff==0.17.3
 deepeval>=2.9.3
