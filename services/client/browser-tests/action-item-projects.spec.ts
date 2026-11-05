@@ -339,6 +339,26 @@ for (const scale of [1, 2]) {
       name: 'All projects',
       exact: true,
     });
+    const firstTabBox = await active.boundingBox();
+    expect(firstTabBox).not.toBeNull();
+    await testInfo.attach('project-folder-left-edges.json', {
+      body: JSON.stringify({
+        firstTab: firstTabBox,
+        table: tableBox,
+        stripPaddingLeft: await groups.evaluate(
+          (node) => getComputedStyle(node).paddingLeft,
+        ),
+      }),
+      contentType: 'application/json',
+    });
+    await page.screenshot({
+      path: testInfo.outputPath('project-folders.png'),
+      fullPage: true,
+    });
+    expect(
+      Math.abs(firstTabBox!.x - tableBox!.x),
+      'The first project folder must align with the table border',
+    ).toBeLessThanOrEqual(1);
     const corners = await active.evaluate((node) => {
       const style = getComputedStyle(node);
       return {
@@ -350,13 +370,6 @@ for (const scale of [1, 2]) {
     expect(corners.bottom).toBe(0);
     await expectDocumentContained(page);
     await expectMainContained(page);
-    if (
-      scale === 1 &&
-      ['chromium-1440', 'chromium-320'].includes(testInfo.project.name)
-    )
-      await page.screenshot({
-        path: testInfo.outputPath('project-folders.png'),
-      });
     await create.click();
     const name = page.getByLabel('Project name', { exact: true });
     await expect(name).toBeFocused();
@@ -397,7 +410,7 @@ for (const scale of [1, 2]) {
   test(`all fifty project tabs remain keyboard reachable at ${scale}x text`, async ({
     page,
     fixtureAPI,
-  }) => {
+  }, testInfo) => {
     const items = Array.from({ length: 50 }, (_, index) => ({
       id: index + 1,
       name: `Group ${String(index + 1).padStart(2, '0')}`,
@@ -424,6 +437,26 @@ for (const scale of [1, 2]) {
     await expect(
       groups.getByRole('tab', { name: 'All projects', exact: true }),
     ).toBeFocused();
+    const first = groups.getByRole('tab', {
+      name: 'All projects',
+      exact: true,
+    });
+    await expectControlContained(first, groups);
+    const focus = await first.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return {
+        visible: node.matches(':focus-visible'),
+        width: parseFloat(style.outlineWidth),
+        offset: parseFloat(style.outlineOffset),
+      };
+    });
+    expect(focus.visible).toBe(true);
+    expect(focus.width).toBeGreaterThan(0);
+    expect(focus.offset + focus.width).toBeLessThanOrEqual(0);
+    await page.screenshot({
+      path: testInfo.outputPath('project-folder-home-focus.png'),
+      fullPage: true,
+    });
     await expectDocumentContained(page);
     await expectMainContained(page);
   });
