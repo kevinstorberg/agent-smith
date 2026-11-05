@@ -83,6 +83,7 @@ export function ActionItemQueueTable({
     displayed,
     dragSurfaceEnabled,
     reorderableView,
+    projectAssignment,
     busy,
     expandedId,
     changeStatus,
@@ -100,12 +101,14 @@ export function ActionItemQueueTable({
   } = queue;
   return (
     <>
-      <span className="visually-hidden" role="status">
+      <span className="visually-hidden" role="status" aria-atomic="true">
         {savingOrder
           ? 'Saving order…'
           : pendingId !== null
             ? `Saving ${noun}…`
-            : ''}
+            : snapshot?.project
+              ? `Move ${snapshot.items.find((item) => String(item.id) === snapshot.itemId)?.title ?? 'action item'} to ${snapshot.project}. Press Space to move, or Escape to cancel.`
+              : ''}
       </span>
       {!snapshot && loading && !items.length && (
         <p className="loading">Loading {plural}…</p>
@@ -126,6 +129,11 @@ export function ActionItemQueueTable({
       {(snapshot || items.length > 0 || (!loading && !error)) && (
         <>
           <DragDropContext
+            dragHandleUsageInstructions={
+              projectAssignment
+                ? 'Press Space to lift. Use Left and Right to choose a project, Up and Down to reorder in Open Manual view, Space to drop, or Escape to cancel.'
+                : undefined
+            }
             onBeforeCapture={() => setExpanded(null)}
             onDragStart={startDrag}
             onDragEnd={endDrag}
@@ -187,15 +195,33 @@ export function ActionItemQueueTable({
                                   }}
                                 >
                                   <td>
+                                    {state.isDragging && snapshot?.project && (
+                                      <span
+                                        className="tag tag-project action-item-project-drop-cue"
+                                        aria-hidden="true"
+                                        title={`Move to ${snapshot.project}`}
+                                      >
+                                        → {snapshot.project}
+                                      </span>
+                                    )}
                                     <div className="flex-row">
-                                      {reorderableView && (
+                                      {(reorderableView ||
+                                        projectAssignment) && (
                                         <button
                                           type="button"
                                           className="btn btn-sm action-item-drag"
                                           {...row.dragHandleProps}
                                           disabled={!canDrag}
-                                          aria-label={`Reorder ${item.title}`}
-                                          title="Drag to reorder; press Space to use the keyboard"
+                                          aria-label={
+                                            reorderableView
+                                              ? `Reorder ${item.title}`
+                                              : `Move ${item.title} to project`
+                                          }
+                                          title={
+                                            projectAssignment
+                                              ? 'Drag onto a project; press Space, then Left or Right to choose a project'
+                                              : 'Drag to reorder; press Space to use the keyboard'
+                                          }
                                         >
                                           ⠿
                                         </button>

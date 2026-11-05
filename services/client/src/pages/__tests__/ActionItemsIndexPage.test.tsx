@@ -12,18 +12,19 @@ import {
 } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import type { DropResult } from '@hello-pangea/dnd';
+import { StrictMode } from 'react';
+import type { DragStart, DropResult } from '@hello-pangea/dnd';
 import type { ActionItemRow, Paginated } from '../../api';
 import { Route, Routes } from 'react-router';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '../../test-utils';
-import { POLL_INTERVAL_MS } from '../../constants';
+import { POLL_INTERVAL_MS, actionItemSortOptions } from '../../constants';
 import { ActionItemsIndexPage } from '../ActionItemsIndexPage';
 import { NotificationBar } from '../../components/NotificationBar';
 import { actionItem, deferred } from './actionItemFixture';
 
 const drag = vi.hoisted(() => ({
-  start: null as (() => void) | null,
+  start: null as ((start?: DragStart) => void) | null,
   end: null as ((result: DropResult) => Promise<void>) | null,
 }));
 vi.mock('@hello-pangea/dnd', () => ({
@@ -35,12 +36,12 @@ vi.mock('@hello-pangea/dnd', () => ({
   }: {
     children: ReactNode;
     onBeforeCapture: () => void;
-    onDragStart: () => void;
+    onDragStart: (start?: DragStart) => void;
     onDragEnd: (result: DropResult) => Promise<void>;
   }) => {
-    drag.start = () => {
+    drag.start = (start) => {
       onBeforeCapture();
-      onDragStart();
+      onDragStart(start);
     };
     drag.end = onDragEnd;
     return <>{children}</>;
@@ -148,7 +149,285 @@ async function renderReady() {
   return rendered;
 }
 
+function liftToProject(project = 'Paralign') {
+  act(() => {
+    drag.start!({
+      draggableId: '1',
+      type: 'DEFAULT',
+      mode: 'SNAP',
+      source: { droppableId: 'action-items', index: 0 },
+    });
+  });
+  fireEvent.keyDown(window, { key: 'ArrowRight' });
+  if (project === 'Paralign') fireEvent.keyDown(window, { key: 'ArrowRight' });
+}
+
 describe('ActionItemsIndexPage', () => {
+  it('keeps project observers idle without a drag and cleans up their exact identities under StrictMode', async () => {
+    const added = vi.spyOn(window, 'addEventListener');
+    const removed = vi.spyOn(window, 'removeEventListener');
+    const rendered = renderWithProviders(
+      <StrictMode>
+        <ActionItemsIndexPage />
+      </StrictMode>,
+      { initialEntries: ['/action-items'] },
+    );
+    await screen.findByRole('button', { name: 'Task 1' });
+    const strip = screen.getByRole('tablist', { name: 'Action item projects' });
+    const geometry = vi.spyOn(strip, 'getBoundingClientRect');
+    fireEvent.mouseMove(window, { clientX: 100, clientY: 20 });
+    fireEvent.mouseUp(window, { clientX: 100, clientY: 20 });
+    fireEvent.touchEnd(window, {
+      changedTouches: [{ clientX: 100, clientY: 20 }],
+    });
+    expect(geometry).not.toHaveBeenCalled();
+    liftToProject('Work');
+    expect(screen.getByRole('tab', { name: 'Work' })).toHaveClass(
+      'project-drop-target',
+    );
+    expect(screen.getByRole('tab', { name: 'Paralign' })).not.toHaveClass(
+      'project-drop-target',
+    );
+    const observers = added.mock.calls.filter(([name]) =>
+      ['mousemove', 'mouseup', 'touchmove', 'touchend'].includes(name),
+    );
+    expect(observers.length).toBeGreaterThanOrEqual(4);
+    rendered.unmount();
+    for (const [name, listener] of observers) {
+      expect(removed).toHaveBeenCalledWith(name, listener, true);
+    }
+    const reads = vi.mocked(api.actionItems.list).mock.calls.length;
+    await act(async () => drag.end?.(drop(0, 0)));
+    fireEvent.mouseUp(window, { clientX: 100, clientY: 20 });
+    expect(api.actionItems.update).not.toHaveBeenCalled();
+    expect(api.actionItems.list).toHaveBeenCalledTimes(reads);
+  });
+  it('assigns the exact captured project with only revision and project in a same-index drop', async () => {
+    await renderReady();
+    liftToProject();
+    await act(async () => drag.end!(drop(0, 0)));
+    expect(api.actionItems.update).toHaveBeenCalledExactlyOnceWith(1, {
+      expected_revision: 1,
+      project: 'Paralign',
+    });
+    expect(api.actionItems.move).not.toHaveBeenCalled();
+    expect(api.actionItems.list).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['cancel', 'same project', 'vertical movement'])(
+    'does not assign a project after %s',
+    async (reason) => {
+      await renderReady();
+      liftToProject(reason === 'same project' ? 'Work' : 'Paralign');
+      if (reason === 'vertical movement')
+        fireEvent.keyDown(window, { key: 'ArrowDown' });
+      await act(async () =>
+        drag.end!({
+          ...drop(0, 0),
+          reason: reason === 'cancel' ? 'CANCEL' : 'DROP',
+        }),
+      );
+      expect(api.actionItems.update).not.toHaveBeenCalled();
+      expect(api.actionItems.move).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['missing destination', 'same index'])(
+    'assigns a named project with %s without invoking the ordering API',
+    async (shape) => {
+      await renderReady();
+      liftToProject();
+      await act(async () =>
+        drag.end!({
+          ...drop(0, 0),
+          ...(shape === 'missing destination' ? { destination: null } : {}),
+        }),
+      );
+      expect(api.actionItems.update).toHaveBeenCalledOnce();
+      expect(api.actionItems.move).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['removed', 'renamed', 'replaced'])(
+    'cancels and refreshes when the captured catalog target is %s',
+    async (change) => {
+      await renderReady();
+      liftToProject();
+      const target = screen.getByRole('tab', { name: 'Paralign' });
+      if (change === 'removed') target.remove();
+      if (change === 'renamed')
+        target.setAttribute('data-project-name', 'Other');
+      if (change === 'replaced') target.setAttribute('data-project-id', '999');
+      await act(async () => drag.end!(drop()));
+      expect(api.actionItems.update).not.toHaveBeenCalled();
+      expect(api.actionItems.move).not.toHaveBeenCalled();
+      expect(api.actionItems.list).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('samples authoritative mouse release before the SDK end callback without relying on hover', async () => {
+    await renderReady();
+    const strip = screen.getByRole('tablist', { name: 'Action item projects' });
+    vi.spyOn(strip, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      right: 400,
+      top: 0,
+      bottom: 50,
+    } as DOMRect);
+    for (const [name, left] of [
+      ['Work', 100],
+      ['Paralign', 200],
+    ] as const) {
+      vi.spyOn(
+        screen.getByRole('tab', { name }),
+        'getBoundingClientRect',
+      ).mockReturnValue({
+        left,
+        right: left + 80,
+        top: 0,
+        bottom: 50,
+        width: 80,
+        height: 50,
+      } as DOMRect);
+    }
+    act(() => drag.start!());
+    fireEvent.mouseMove(window, { clientX: 120, clientY: 25 });
+    await act(async () => {
+      fireEvent.mouseUp(window, { clientX: 220, clientY: 25 });
+      await drag.end!({ ...drop(0, 0), destination: null });
+    });
+    expect(api.actionItems.update).toHaveBeenCalledExactlyOnceWith(1, {
+      expected_revision: 1,
+      project: 'Paralign',
+    });
+  });
+
+  it('does not assign from a stale hover when the pointer releases outside the strip', async () => {
+    await renderReady();
+    act(() => drag.start!());
+    fireEvent.mouseUp(window, { clientX: 999, clientY: 999 });
+    await act(async () => drag.end!({ ...drop(0, 0), destination: null }));
+    expect(api.actionItems.update).not.toHaveBeenCalled();
+  });
+
+  it('uses changedTouches release coordinates instead of the previous touch hover', async () => {
+    await renderReady();
+    vi.spyOn(
+      screen.getByRole('tablist', { name: 'Action item projects' }),
+      'getBoundingClientRect',
+    ).mockReturnValue({ left: 0, right: 400, top: 0, bottom: 50 } as DOMRect);
+    for (const [name, left] of [
+      ['Work', 100],
+      ['Paralign', 200],
+    ] as const) {
+      vi.spyOn(
+        screen.getByRole('tab', { name }),
+        'getBoundingClientRect',
+      ).mockReturnValue({
+        left,
+        right: left + 80,
+        top: 0,
+        bottom: 50,
+        width: 80,
+        height: 50,
+      } as DOMRect);
+    }
+    act(() => drag.start!());
+    fireEvent.touchMove(window, {
+      changedTouches: [{ clientX: 120, clientY: 25 }],
+    });
+    fireEvent.touchEnd(window, {
+      changedTouches: [{ clientX: 220, clientY: 25 }],
+    });
+    await act(async () => drag.end!({ ...drop(0, 0), destination: null }));
+    expect(api.actionItems.update).toHaveBeenCalledExactlyOnceWith(1, {
+      expected_revision: 1,
+      project: 'Paralign',
+    });
+  });
+
+  it('serializes assignment and keeps controls frozen through the canonical read', async () => {
+    const saving = deferred<ReturnType<typeof actionItem>>();
+    const reading = deferred<Paginated<ActionItemRow>>();
+    vi.mocked(api.actionItems.update).mockReturnValueOnce(saving.promise);
+    await renderReady();
+    vi.mocked(api.actionItems.list).mockReturnValueOnce(reading.promise);
+    liftToProject();
+    let ended!: Promise<void>;
+    await act(async () => {
+      ended = drag.end!(drop(0, 0));
+      await Promise.resolve();
+    });
+    expect(screen.getByLabelText('Search action items')).toBeDisabled();
+    await act(async () => drag.end!(drop(0, 0)));
+    expect(api.actionItems.update).toHaveBeenCalledOnce();
+    await act(async () => {
+      saving.resolve(actionItem(1, { project: 'Paralign', revision: 2 }));
+    });
+    expect(screen.getByLabelText('Search action items')).toBeDisabled();
+    await act(async () => {
+      reading.resolve({ items: rows, total: 3 });
+      await ended;
+    });
+    expect(screen.getByLabelText('Search action items')).toBeEnabled();
+  });
+
+  it.each([
+    new ApiError('Source changed', 409),
+    new Error('Network unavailable'),
+  ])(
+    'reports assignment failure without optimistic field changes or automatic retry: %s',
+    async (failure) => {
+      vi.mocked(api.actionItems.update).mockRejectedValueOnce(failure);
+      renderWithProviders(
+        <>
+          <ActionItemsIndexPage />
+          <NotificationBar />
+        </>,
+        { initialEntries: ['/action-items'] },
+      );
+      await screen.findByRole('button', { name: 'Task 1' });
+      liftToProject();
+      await act(async () => drag.end!(drop(0, 0)));
+      expect(api.actionItems.update).toHaveBeenCalledOnce();
+      expect(api.actionItems.move).not.toHaveBeenCalled();
+      expect(screen.getByRole('alert')).toHaveTextContent(failure.message);
+      expect(titles()).toEqual(['Task 1', 'Task 2', 'Task 3']);
+      expect(screen.getByLabelText('Search action items')).toBeEnabled();
+    },
+  );
+
+  it.each(
+    (['open', 'completed', 'all'] as const).flatMap((status) =>
+      actionItemSortOptions(status).map(({ value: sort }) => ({
+        status,
+        sort,
+      })),
+    ),
+  )(
+    'supports project assignment under $status / $sort while preserving reorder restrictions',
+    async ({ status, sort }) => {
+      renderWithProviders(<ActionItemsIndexPage />, {
+        initialEntries: [`/action-items?status=${status}&sort=${sort}`],
+      });
+      await screen.findByRole('button', { name: 'Task 1' });
+      expect(
+        screen.getByRole('button', {
+          name:
+            status === 'open' && sort === 'manual'
+              ? 'Reorder Task 1'
+              : 'Move Task 1 to project',
+        }),
+      ).toBeEnabled();
+      liftToProject();
+      await act(async () => drag.end!({ ...drop(0, 0), destination: null }));
+      expect(api.actionItems.update).toHaveBeenCalledExactlyOnceWith(1, {
+        expected_revision: 1,
+        project: 'Paralign',
+      });
+      expect(api.actionItems.move).not.toHaveBeenCalled();
+    },
+  );
   it('refreshes the saved action item page at 15 seconds without writing', async () => {
     vi.useFakeTimers();
     document.cookie = mergeViewCookie('', 'actionItems', {
@@ -533,8 +812,9 @@ describe('ActionItemsIndexPage', () => {
       drag.start!();
     });
     let ended!: Promise<void>;
-    act(() => {
+    await act(async () => {
       ended = drag.end!(drop(0, 9, 11));
+      await Promise.resolve();
     });
     expect(api.actionItems.move).toHaveBeenCalledWith(11, {
       expected_revision: 1,
@@ -546,7 +826,7 @@ describe('ActionItemsIndexPage', () => {
     for (const tab of within(
       screen.getByRole('tablist', { name: 'Action item projects' }),
     ).getAllByRole('tab'))
-      expect(tab).toBeDisabled();
+      expect(tab).toHaveAttribute('aria-disabled', 'true');
     for (const label of ['Tags', 'Sort'])
       expect(screen.getByLabelText(label)).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
@@ -590,8 +870,9 @@ describe('ActionItemsIndexPage', () => {
       drag.start!();
     });
     let ended!: Promise<void>;
-    act(() => {
+    await act(async () => {
       ended = drag.end!(drop(0, 2, 1));
+      await Promise.resolve();
     });
     expect(api.actionItems.move).toHaveBeenCalledWith(1, {
       expected_revision: 1,
@@ -643,8 +924,9 @@ describe('ActionItemsIndexPage', () => {
     vi.mocked(api.actionItems.list).mockReturnValueOnce(reread.promise);
     act(() => drag.start!());
     let ended!: Promise<void>;
-    act(() => {
+    await act(async () => {
       ended = drag.end!(drop());
+      await Promise.resolve();
     });
     expect(screen.getByRole('table')).toBe(table);
     expect(screen.getAllByRole('button', { name: /^Reorder / })).toHaveLength(
@@ -681,8 +963,9 @@ describe('ActionItemsIndexPage', () => {
     screen.getByRole('button', { name: 'Reorder Task 1' }).focus();
     act(() => drag.start!());
     let ended!: Promise<void>;
-    act(() => {
+    await act(async () => {
       ended = drag.end!(drop());
+      await Promise.resolve();
     });
     const create = screen.getByRole('link', { name: 'New action item' });
     create.focus();
@@ -902,8 +1185,9 @@ describe('ActionItemsIndexPage', () => {
       drag.start!();
     });
     let ended!: Promise<void>;
-    act(() => {
+    await act(async () => {
       ended = drag.end!(drop());
+      await Promise.resolve();
     });
     expect(titles()).toEqual(['Task 2', 'Task 3', 'Task 1']);
     await act(async () => {

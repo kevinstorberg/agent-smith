@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { DropResult } from '@hello-pangea/dnd';
+import type { DragStart, DropResult } from '@hello-pangea/dnd';
 import type {
   ActionItem,
   ActionItemFilters,
@@ -22,6 +22,58 @@ export interface ActionItemQueueSource {
 interface DragSnapshot {
   items: ActionItemRow[];
   view: string;
+  projects?: ProjectTarget[];
+  project?: string | null;
+  mode?: DragStart['mode'];
+  itemId?: string;
+}
+
+interface ProjectTarget {
+  id: string;
+  name: string;
+  button: HTMLButtonElement;
+}
+
+function projectTargets(tabs: HTMLDivElement | null): ProjectTarget[] {
+  return Array.from(
+    tabs?.querySelectorAll<HTMLButtonElement>('button[data-project-id]') ?? [],
+    (button) => ({
+      id: button.dataset.projectId!,
+      name: button.dataset.projectName!,
+      button,
+    }),
+  );
+}
+
+function projectAtPoint(
+  tabs: HTMLDivElement | null,
+  targets: ProjectTarget[],
+  x: number,
+  y: number,
+) {
+  const strip = tabs?.getBoundingClientRect();
+  if (
+    !strip ||
+    x < strip.left ||
+    x > strip.right ||
+    y < strip.top ||
+    y > strip.bottom
+  )
+    return null;
+  return (
+    targets.find(({ button }) => {
+      const rect = button.getBoundingClientRect();
+      return (
+        button.isConnected &&
+        rect.width > 0 &&
+        rect.height > 0 &&
+        x >= rect.left &&
+        x <= rect.right &&
+        y >= rect.top &&
+        y <= rect.bottom
+      );
+    })?.name ?? null
+  );
 }
 
 export function useActionItemQueue({
@@ -31,6 +83,7 @@ export function useActionItemQueue({
   criteria,
   viewKey,
   reorderableView,
+  projectAssignment = false,
   criteriaPending = false,
   active = true,
   disabled = false,
@@ -44,6 +97,7 @@ export function useActionItemQueue({
   criteria: string;
   viewKey: string;
   reorderableView: boolean;
+  projectAssignment?: boolean;
   criteriaPending?: boolean;
   active?: boolean;
   disabled?: boolean;
@@ -53,7 +107,12 @@ export function useActionItemQueue({
 }) {
   const [snapshot, setSnapshot] = useState<DragSnapshot | null>(null);
   const drag = useRef<DragSnapshot | null>(null);
-  const dragFocus = useRef<HTMLButtonElement | null>(null);
+  const dragFocus = useRef<{
+    handle: HTMLButtonElement | null;
+    fallback?: HTMLButtonElement;
+    view: string;
+  } | null>(null);
+  const projectTabsRef = useRef<HTMLDivElement>(null);
   const [savingOrder, setSavingOrder] = useState(false);
   const [pendingId, setPendingId] = useState<number | null>(null);
   const writing = useRef(false);
@@ -101,8 +160,13 @@ export function useActionItemQueue({
   const busy = savingOrder || pendingId !== null || editing;
   useEffect(() => {
     if (busy || snapshot) return;
-    const handle = dragFocus.current;
+    const focus = dragFocus.current;
     dragFocus.current = null;
+    const handle = focus?.handle?.isConnected
+      ? focus.handle
+      : focus?.view === current.current.view
+        ? focus?.fallback
+        : null;
     if (
       handle?.isConnected &&
       !handle.disabled &&
@@ -112,7 +176,7 @@ export function useActionItemQueue({
   }, [busy, snapshot]);
   // Retain SDK handle identity through its post-drop focus lookup.
   const dragSurfaceEnabled =
-    reorderableView &&
+    (reorderableView || projectAssignment) &&
     !criteriaPending &&
     list.dataCurrent &&
     !loading &&
@@ -228,17 +292,28 @@ export function useActionItemQueue({
     );
   }
 
-  function startDrag() {
+  function startDrag(start?: DragStart) {
     if (!canDragRef.current || writing.current) return;
     const focused = document.activeElement;
-    dragFocus.current =
-      focused instanceof HTMLButtonElement &&
-      focused.classList.contains('action-item-drag')
-        ? focused
-        : null;
+    dragFocus.current = {
+      handle:
+        focused instanceof HTMLButtonElement &&
+        focused.classList.contains('action-item-drag')
+          ? focused
+          : null,
+      view: current.current.view,
+    };
     const captured = {
       view: current.current.view,
       items: [...current.current.items],
+      itemId: start?.draggableId,
+      ...(projectAssignment
+        ? {
+            projects: projectTargets(projectTabsRef.current),
+            project: null,
+            mode: start?.mode ?? 'FLUID',
+          }
+        : {}),
     };
     drag.current = captured;
     setSnapshot(captured);
@@ -247,7 +322,7 @@ export function useActionItemQueue({
   async function endDrag(result: DropResult) {
     const captured = drag.current;
     drag.current = null;
-    if (!captured) return;
+    if (!captured || !mounted.current) return;
     const sameRows =
       captured.items.length === current.current.items.length &&
       captured.items.every(
@@ -256,16 +331,67 @@ export function useActionItemQueue({
           item.revision === current.current.items[index].revision &&
           item.priority === current.current.items[index].priority,
       );
+    const liveProjects = projectTargets(projectTabsRef.current);
+    const sameProjects =
+      !captured.projects ||
+      (captured.projects.length === liveProjects.length &&
+        captured.projects.every(
+          (target, index) =>
+            target.button === liveProjects[index].button &&
+            target.id === liveProjects[index].id &&
+            target.name === liveProjects[index].name,
+        ));
     if (
       !canDragRef.current ||
       captured.view !== current.current.view ||
       !sameRows ||
+      !sameProjects ||
+      result.reason === 'CANCEL'
+    ) {
+      setSnapshot(null);
+      if (
+        mounted.current &&
+        (captured.view !== current.current.view || !sameRows || !sameProjects)
+      )
+        await latestRefresh.current({ showLoading: false });
+      return;
+    }
+    const item = captured.items[result.source.index];
+    if (
+      !item ||
+      String(item.id) !== result.draggableId ||
+      (captured.itemId && captured.itemId !== result.draggableId)
+    ) {
+      setSnapshot(null);
+      return;
+    }
+    if (captured.project) {
+      const target = captured.projects?.find(
+        ({ name }) => name === captured.project,
+      );
+      if (!target || item.project === target.name) {
+        setSnapshot(null);
+        return;
+      }
+      if (dragFocus.current) dragFocus.current.fallback = target.button;
+      await runRowWrite(
+        item,
+        () =>
+          source.update(item.id, {
+            expected_revision: item.revision,
+            project: target.name,
+          }),
+        'Could not move this action item to the project.',
+      );
+      return;
+    }
+    if (
+      !reorderableView ||
       !result.destination ||
+      result.source.droppableId !== result.destination.droppableId ||
       result.source.index === result.destination.index
     ) {
       setSnapshot(null);
-      if (captured.view !== current.current.view || !sameRows)
-        await refresh({ showLoading: false });
       return;
     }
     const reordered = [...captured.items];
@@ -308,6 +434,77 @@ export function useActionItemQueue({
     }
   }
 
+  useLayoutEffect(() => {
+    if (!projectAssignment) return;
+    function selectProject(project: string | null) {
+      if (!drag.current || drag.current.project === project) return;
+      drag.current = { ...drag.current, project };
+      setSnapshot(drag.current);
+    }
+    function pointer(x: number, y: number) {
+      const captured = drag.current;
+      if (captured?.mode !== 'FLUID') return;
+      selectProject(
+        projectAtPoint(projectTabsRef.current, captured.projects ?? [], x, y),
+      );
+    }
+    const mouse = (event: MouseEvent) => pointer(event.clientX, event.clientY);
+    const touch = (event: TouchEvent) => {
+      const point = event.changedTouches[0];
+      if (point) pointer(point.clientX, point.clientY);
+    };
+    function keyboard(event: KeyboardEvent) {
+      const captured = drag.current;
+      if (captured?.mode !== 'SNAP') return;
+      if (['ArrowUp', 'ArrowDown', 'Escape'].includes(event.key)) {
+        selectProject(null);
+        return;
+      }
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      const targets = captured.projects ?? [];
+      if (!targets.length) return;
+      const previous = targets.findIndex(
+        ({ name }) => name === captured.project,
+      );
+      const next =
+        previous === -1
+          ? event.key === 'ArrowRight'
+            ? 0
+            : targets.length - 1
+          : (previous +
+              (event.key === 'ArrowRight' ? 1 : -1) +
+              targets.length) %
+            targets.length;
+      selectProject(targets[next].name);
+      targets[next].button.scrollIntoView?.({
+        block: 'nearest',
+        inline: 'nearest',
+      });
+    }
+    // Register before the SDK installs its active gesture listeners.
+    window.addEventListener('mousemove', mouse, {
+      capture: true,
+      passive: true,
+    });
+    window.addEventListener('mouseup', mouse, { capture: true, passive: true });
+    window.addEventListener('touchmove', touch, {
+      capture: true,
+      passive: true,
+    });
+    window.addEventListener('touchend', touch, {
+      capture: true,
+      passive: true,
+    });
+    window.addEventListener('keydown', keyboard, true);
+    return () => {
+      window.removeEventListener('mousemove', mouse, true);
+      window.removeEventListener('mouseup', mouse, true);
+      window.removeEventListener('touchmove', touch, true);
+      window.removeEventListener('touchend', touch, true);
+      window.removeEventListener('keydown', keyboard, true);
+    };
+  }, [projectAssignment]);
+
   const previousActive = useRef(active);
   useEffect(() => {
     if (active && !previousActive.current && !editing)
@@ -325,6 +522,8 @@ export function useActionItemQueue({
     expandedId,
     setExpanded,
     reorderableView,
+    projectAssignment,
+    projectTabsRef,
     dragSurfaceEnabled,
     canDrag,
     startDrag,

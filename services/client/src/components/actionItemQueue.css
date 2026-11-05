@@ -6,3 +6,14 @@
 .action-items-table-deletable .action-item-actions {
   flex-wrap: wrap;
 }
+
+.action-item-project-drop-cue {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  max-width: min(24rem, 40vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: inherit;
+}
