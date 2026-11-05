@@ -12,11 +12,19 @@ from services.observability import billable_operation, current_trigger, trigger_
 
 
 def billable_records(caplog):
-    return [record.billable_event for record in caplog.records if hasattr(record, "billable_event")]
+    return [
+        record.billable_event
+        for record in caplog.records
+        if hasattr(record, "billable_event")
+    ]
 
 
 def client_context(name):
-    parameters = SimpleNamespace(clientInfo=SimpleNamespace(name=name)) if name is not None else None
+    parameters = (
+        SimpleNamespace(clientInfo=SimpleNamespace(name=name))
+        if name is not None
+        else None
+    )
     return SimpleNamespace(session=SimpleNamespace(client_params=parameters))
 
 
@@ -29,7 +37,9 @@ def test_every_registered_mcp_server_has_trigger_observation():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("client_name", ["actual-test-client", None])
-async def test_mcp_cause_reaches_billable_boundary_without_tool_arguments(monkeypatch, caplog, client_name):
+async def test_mcp_cause_reaches_billable_boundary_without_tool_arguments(
+    monkeypatch, caplog, client_name
+):
     server = ObservedMCP("memory - test")
     monkeypatch.setattr(server, "get_context", lambda: client_context(client_name))
 
@@ -46,9 +56,25 @@ async def test_mcp_cause_reaches_billable_boundary_without_tool_arguments(monkey
     records = billable_records(caplog)
     assert [record["phase"] for record in records] == ["START", "END"]
     for record in records:
-        assert {key: record[key] for key in ("trigger", "source", "tool", "client", "request_id", "origin", "reason")} == {
-            "trigger": "mcp", "source": "memory", "tool": "observe",
-            "client": client_name or "unknown", "request_id": "request-123", "origin": "http", "reason": "mcp_tool",
+        assert {
+            key: record[key]
+            for key in (
+                "trigger",
+                "source",
+                "tool",
+                "client",
+                "request_id",
+                "origin",
+                "reason",
+            )
+        } == {
+            "trigger": "mcp",
+            "source": "memory",
+            "tool": "observe",
+            "client": client_name or "unknown",
+            "request_id": "request-123",
+            "origin": "http",
+            "reason": "mcp_tool",
         }
         assert "PRIVATE_TOOL_ARGUMENT" not in str(record)
     assert records[0]["event_id"] == records[1]["event_id"]
@@ -84,7 +110,9 @@ async def test_mcp_failure_and_cancellation_restore_parent_context(failure):
 
     with trigger_context(trigger="http", request_id="parent-request"):
         before = current_trigger()
-        with pytest.raises(ToolError if failure is RuntimeError else asyncio.CancelledError):
+        with pytest.raises(
+            ToolError if failure is RuntimeError else asyncio.CancelledError
+        ):
             await server.call_tool("fail", {})
         assert current_trigger() == before
 
@@ -120,14 +148,19 @@ async def test_concurrent_mcp_clients_keep_distinct_cause_contexts(monkeypatch, 
     records = billable_records(caplog)
     assert len(records) == 4
     assert {(record["request_id"], record["client"]) for record in records} == {
-        ("first-client", "first-client"), ("second-client", "second-client"),
+        ("first-client", "first-client"),
+        ("second-client", "second-client"),
     }
     assert current_trigger() == {}
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("cause", [{}, {"trigger": "mcp", "reason": "mcp_tool", "request_id": "request-123"}])
-async def test_graph_build_and_invocation_share_run_id_and_preserve_cause(monkeypatch, caplog, cause):
+@pytest.mark.parametrize(
+    "cause", [{}, {"trigger": "mcp", "reason": "mcp_tool", "request_id": "request-123"}]
+)
+async def test_graph_build_and_invocation_share_run_id_and_preserve_cause(
+    monkeypatch, caplog, cause
+):
     observed = []
 
     class Graph:
@@ -140,9 +173,15 @@ async def test_graph_build_and_invocation_share_run_id_and_preserve_cause(monkey
         observed.append(current_trigger())
         return Graph()
 
-    monkeypatch.setattr(runtime, "scan_library", lambda: {
-        "probe": SimpleNamespace(INPUT_SCHEMA={"text": "string"}, build_graph=build),
-    })
+    monkeypatch.setattr(
+        runtime,
+        "scan_library",
+        lambda: {
+            "probe": SimpleNamespace(
+                INPUT_SCHEMA={"text": "string"}, build_graph=build
+            ),
+        },
+    )
     with trigger_context(**cause):
         before = current_trigger()
         assert await runtime.dispatch("probe", {"text": "PRIVATE_GRAPH_INPUT"}) == "ok"
@@ -153,7 +192,9 @@ async def test_graph_build_and_invocation_share_run_id_and_preserve_cause(monkey
     assert observed[0]["graph"] == "probe"
     assert observed[0]["trigger"] == cause.get("trigger", "graph")
     assert observed[0]["reason"] == cause.get("reason", "unknown")
-    assert all("PRIVATE_GRAPH_INPUT" not in str(record) for record in billable_records(caplog))
+    assert all(
+        "PRIVATE_GRAPH_INPUT" not in str(record) for record in billable_records(caplog)
+    )
     assert current_trigger() == {}
 
 
@@ -163,9 +204,13 @@ async def test_graph_failure_restores_parent_context(monkeypatch):
         async def ainvoke(self, inputs):
             raise RuntimeError("synthetic failure")
 
-    monkeypatch.setattr(runtime, "scan_library", lambda: {
-        "probe": SimpleNamespace(INPUT_SCHEMA={}, build_graph=Graph),
-    })
+    monkeypatch.setattr(
+        runtime,
+        "scan_library",
+        lambda: {
+            "probe": SimpleNamespace(INPUT_SCHEMA={}, build_graph=Graph),
+        },
+    )
     with trigger_context(trigger="job", graph_run_id="outer-run"):
         before = current_trigger()
         with pytest.raises(RuntimeError, match="synthetic failure"):

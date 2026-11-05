@@ -170,7 +170,11 @@ def test_failed_retriever_hydration_is_not_cached(monkeypatch):
     backend = SimpleNamespace(get_vectorstore=lambda _: object(), load_all=load_all)
     monkeypatch.setattr(db, "_embeddings", FakeEmbeddings())
     monkeypatch.setattr(db, "get_backend", lambda: backend)
-    monkeypatch.setattr(db, "TimeWeightedVectorStoreRetriever", lambda **kwargs: SimpleNamespace(**kwargs, memory_stream=[]))
+    monkeypatch.setattr(
+        db,
+        "TimeWeightedVectorStoreRetriever",
+        lambda **kwargs: SimpleNamespace(**kwargs, memory_stream=[]),
+    )
     with pytest.raises(RuntimeError, match="Synthetic backend unavailable"):
         db._get_retriever()
     assert db._retriever is None
@@ -178,7 +182,9 @@ def test_failed_retriever_hydration_is_not_cached(monkeypatch):
     assert len(loads) == 2
 
 
-def test_protected_embeddings_reach_publication_fresh_search_and_retriever(monkeypatch, tmp_path):
+def test_protected_embeddings_reach_publication_fresh_search_and_retriever(
+    monkeypatch, tmp_path
+):
     calls = []
 
     class Model(FakeEmbeddings):

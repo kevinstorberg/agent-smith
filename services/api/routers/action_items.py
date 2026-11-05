@@ -14,6 +14,7 @@ from services.action_items.contracts import (
     Create,
     Delete,
     Move,
+    MAX_DUE_WINDOW_HOURS,
     Patch,
     ProjectCreate,
     Query,
@@ -33,6 +34,7 @@ def _query(
     limit: int = 10,
     offset: int = 0,
     unassigned: bool = False,
+    due_within_hours: int | None = None,
 ) -> Query:
     unknown = set(request.query_params) - Query.model_fields.keys()
     if unknown:
@@ -43,6 +45,13 @@ def _query(
         "unassigned"
     ] not in {"true", "false"}:
         raise HTTPException(422, "unassigned must be true or false")
+    if "due_within_hours" in request.query_params:
+        hours = request.query_params["due_within_hours"]
+        if not hours.isascii() or not hours.isdecimal():
+            raise HTTPException(
+                422,
+                f"due_within_hours must be an integer from 1 through {MAX_DUE_WINDOW_HOURS}",
+            )
     return _call(
         Query.model_validate,
         {
@@ -54,6 +63,7 @@ def _query(
             "limit": limit,
             "offset": offset,
             "unassigned": unassigned,
+            "due_within_hours": due_within_hours,
         },
     )
 
