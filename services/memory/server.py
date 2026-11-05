@@ -8,6 +8,7 @@ from pydantic import Field
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from scripts.shared.paths import bootstrap  # noqa: E402
+
 bootstrap()
 
 from services.mcp_observability import ObservedMCP  # noqa: E402
@@ -16,15 +17,21 @@ from scripts.shared.validation import empty_to_none  # noqa: E402
 import services.memory.db as db
 from services.memory.content import MAX_MEMORY_WORDS
 
-_CONTENT_DESCRIPTION = (f"A concise, self-contained memory of at most {MAX_MEMORY_WORDS} whitespace-separated words. "
-                        "Rewrite oversized drafts before saving; never pad short memories. "
-                        f"Storage keeps only the first {MAX_MEMORY_WORDS} words of oversized content.")
+_CONTENT_DESCRIPTION = (
+    f"A concise, self-contained memory of at most {MAX_MEMORY_WORDS} whitespace-separated words. "
+    "Rewrite oversized drafts before saving; never pad short memories. "
+    f"Storage keeps only the first {MAX_MEMORY_WORDS} words of oversized content."
+)
 
 mcp = ObservedMCP("memory - store and search observations, learnings, and context")
 
 
 @mcp.tool()
-def memory_add(content: Annotated[str, Field(description=_CONTENT_DESCRIPTION)], repo: str = "", tags: list[str] | None = None) -> str:
+def memory_add(
+    content: Annotated[str, Field(description=_CONTENT_DESCRIPTION)],
+    repo: str = "",
+    tags: list[str] | None = None,
+) -> str:
     """
     Store an observation, learning, or context note.
     NOT for implementation plans or strategies — use the plans server's save tool instead.
@@ -42,8 +49,13 @@ def memory_add(content: Annotated[str, Field(description=_CONTENT_DESCRIPTION)],
 
 
 @mcp.tool()
-def memory_search(query: str, repo: str = "", limit: int = db.DEFAULT_LIMIT,
-                  tags: list[str] | None = None, meeting_only: bool = False) -> list[dict]:
+def memory_search(
+    query: str,
+    repo: str = "",
+    limit: int = db.DEFAULT_LIMIT,
+    tags: list[str] | None = None,
+    meeting_only: bool = False,
+) -> list[dict]:
     """
     Semantically search memories using vector similarity.
 
@@ -59,12 +71,22 @@ def memory_search(query: str, repo: str = "", limit: int = db.DEFAULT_LIMIT,
         repo, editable tags, inherited context_tags, from_meeting, source_type/source_id and timestamps.
         Filtering applies to the existing bounded semantic candidate set, not an exhaustive index scan.
     """
-    return db.search(query=query, repo=empty_to_none(repo), limit=limit, tags=tags, meeting_only=meeting_only)
+    return db.search(
+        query=query,
+        repo=empty_to_none(repo),
+        limit=limit,
+        tags=tags,
+        meeting_only=meeting_only,
+    )
 
 
 @mcp.tool()
-def memory_list(repo: str = "", limit: int = db.DEFAULT_LIMIT,
-                tags: list[str] | None = None, meeting_only: bool = False) -> list[dict]:
+def memory_list(
+    repo: str = "",
+    limit: int = db.DEFAULT_LIMIT,
+    tags: list[str] | None = None,
+    meeting_only: bool = False,
+) -> list[dict]:
     """
     List recent memories, newest first.
 
@@ -78,7 +100,9 @@ def memory_list(repo: str = "", limit: int = db.DEFAULT_LIMIT,
         Memories with id, content, repo, editable tags, inherited context_tags,
         from_meeting, source_type/source_id and timestamps. Listing observes stored access times without marking memories as accessed.
     """
-    return db.list_memories(repo=empty_to_none(repo), limit=limit, tags=tags, meeting_only=meeting_only)
+    return db.list_memories(
+        repo=empty_to_none(repo), limit=limit, tags=tags, meeting_only=meeting_only
+    )
 
 
 @mcp.tool()
