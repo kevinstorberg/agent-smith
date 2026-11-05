@@ -268,6 +268,22 @@ The project-catalog migration exactly backfills legacy names, then replaces stor
 names with project IDs. Deploy the schema and updated backend together; the previous
 backend still expects the old column. Downgrade restores the original project strings.
 
+Global tasks accept an optional `due_at` timestamp with an explicit timezone, such as
+`2026-11-06T17:00:00Z`. The database and API use UTC. Inputs support up to six fractional
+second digits; finer precision is rejected before parsing. Omitted updates retain the deadline;
+`due_at: null` clears it. Completion and reopening retain the saved deadline, and equivalent
+offset spellings of the same instant do not create a new revision. Original creation IDs
+and payloads remain authoritative when retrying uncertain requests, including older tasks
+created without deadline fields. Profile discussion topics do not support deadlines.
+
+`GET /api/action-items?due_within_hours=24` and `action_item_list(due_within_hours=24)`
+select past deadlines and deadlines within the next 24 hours, excluding undated tasks.
+The adjustable window accepts integers from 1 through 168 hours. Status, project, tags,
+and pagination still apply: Open is the default; Completed/All deliberately include
+matching historical deadlines. Count and rows share one transaction-stable database clock.
+The additive deadline migration preserves existing rows and receipts; downgrading removes
+only the deadline field. Deploy this backend before clients send the new deadline filters.
+
 Deploy reviewed action-items migrations with the normal production command
 `./db.sh production --confirm-database <database-name>`, then restart the updated
 dashboard. Startup registers the MCP connection without replacing customized settings.
