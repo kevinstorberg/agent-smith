@@ -471,12 +471,34 @@ test('project pointer targeting remains usable at doubled text size', async ({
 }, testInfo) => {
   const writes = projectFixture(fixtureAPI);
   await page.goto('/action-items');
+  const handle = page.getByRole('button', {
+    name: 'Reorder Task 1',
+    exact: true,
+  });
+  await expect(handle).toBeEnabled();
+  await page.getByRole('tab', { name: 'Work', exact: true }).waitFor();
+  const rowCell = page.locator('.action-item-row > td').first();
+  const initialFont = await rowCell.evaluate((cell) =>
+    parseFloat(getComputedStyle(cell).fontSize),
+  );
   await enlargeComputedText(page, 2, { preserveMotion: true });
+  const enlargedFont = await rowCell.evaluate((cell) =>
+    parseFloat(getComputedStyle(cell).fontSize),
+  );
+  expect(enlargedFont).toBeCloseTo(initialFont * 2, 1);
   await page
     .getByRole('tab', { name: 'Work', exact: true })
     .scrollIntoViewIfNeeded();
   await liftPointer(page);
   await pointAtProject(page, 'Work');
+  const cueFont = await page
+    .locator('.action-item-project-drop-cue')
+    .evaluate((cue) => parseFloat(getComputedStyle(cue).fontSize));
+  expect(cueFont).toBeCloseTo(enlargedFont, 1);
+  await testInfo.attach('drag-font-sizes.json', {
+    body: JSON.stringify({ initialFont, enlargedFont, cueFont }),
+    contentType: 'application/json',
+  });
   if (['chromium-1440', 'chromium-320'].includes(testInfo.project.name)) {
     await page.screenshot({
       path: `/private/tmp/agent-smith-project-drag-${testInfo.project.name}-1740.png`,
