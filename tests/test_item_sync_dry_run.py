@@ -8,6 +8,7 @@ import sys
 import pytest
 
 from scripts.shared import agents, fs, hook_utils, mcp_utils, paths
+from scripts.shared.file_ownership import publish_files
 from services import db
 from services.api.models import agent as agent_model
 from services.api.models import hook as hook_model
@@ -56,7 +57,6 @@ def deployment(tmp_path, monkeypatch):
         monkeypatch.setattr(module, "AGENT_TARGETS", targets)
     monkeypatch.setattr(mcp_utils, "REPO_ROOT", tmp_path)
     initial = {
-        "CLAUDE.md": "existing rules\n",
         "rules/manual.md": "manual rule\n",
         "skills/manual/SKILL.md": "manual skill\n",
         "agents/manual.md": "manual agent\n",
@@ -68,6 +68,12 @@ def deployment(tmp_path, monkeypatch):
         ),
         "settings.json": json.dumps({"keep": True, "hooks": {"Manual": []}}),
     }
+    publish_files(
+        dest,
+        "claude:rules-file",
+        {"CLAUDE.md": "existing rules\n"},
+        write=fs.atomic_write,
+    )
     for relative, content in initial.items():
         path = dest / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -176,6 +182,9 @@ def test_per_item_default_still_publishes_to_temporary_targets(
 
     assert result["success"] is True
     assert result["message"].startswith("Synced to ")
+    assert (dest / "rules/manual.md").read_text() == "manual rule\n"
+    assert (dest / "skills/manual/SKILL.md").read_text() == "manual skill\n"
+    assert (dest / "agents/manual.md").read_text() == "manual agent\n"
     if item_type == "rule":
         assert (dest / "rules/selected.md").read_text() == "selected content\n"
         if clone:

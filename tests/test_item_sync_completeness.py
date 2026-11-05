@@ -205,7 +205,9 @@ def test_item_sync_successive_kinds_cannot_leak_a_partial_inventory(deployment):
         assert fs.sync_item(kind, selected["id"])["success"]
         assert harness.list_items_full is deployment.full
         names = {
-            path.name for path in (deployment.roots["claude"] / "skills").iterdir()
+            path.name
+            for path in (deployment.roots["claude"] / "skills").iterdir()
+            if path.is_dir()
         }
         assert names == {"selected_rule", "other_rule", "selected_skill", "other_skill"}
 
