@@ -10,20 +10,34 @@ from services.observability import current_trigger, trigger_context
 from tests.test_meeting_provider import CONFIG, NOTE_ID, Clock, _note
 
 
+pytestmark = pytest.mark.usefixtures("terminal_diagnostics")
+
+
 def records(caplog):
-    return [record.billable_event for record in caplog.records if hasattr(record, "billable_event")]
+    return [
+        record.billable_event
+        for record in caplog.records
+        if hasattr(record, "billable_event")
+    ]
 
 
 def provider_for(handler, *, clock=None):
     clock = clock or Clock()
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     config = replace(CONFIG, name="synthetic-source", api_key="PRIVATE_TOKEN")
-    return granola.GranolaProvider(config, client=client, sleep=clock.sleep, clock=clock), clock
+    return granola.GranolaProvider(
+        config, client=client, sleep=clock.sleep, clock=clock
+    ), clock
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("endpoint,operation", [("list", "list_notes"), ("summary", "get_note"), ("transcript", "get_transcript")])
-async def test_http_attempt_starts_at_sdk_boundary_and_ends_after_body_and_cleanup(caplog, endpoint, operation):
+@pytest.mark.parametrize(
+    "endpoint,operation",
+    [("list", "list_notes"), ("summary", "get_note"), ("transcript", "get_transcript")],
+)
+async def test_http_attempt_starts_at_sdk_boundary_and_ends_after_body_and_cleanup(
+    caplog, endpoint, operation
+):
     closed = []
 
     class Body(httpx.AsyncByteStream):
@@ -41,23 +55,49 @@ async def test_http_attempt_starts_at_sdk_boundary_and_ends_after_body_and_clean
         return httpx.Response(200, stream=Body())
 
     provider, _ = provider_for(handler)
-    path = "/notes" if endpoint == "list" else f"/notes/{NOTE_ID}" + ("/transcript" if endpoint == "transcript" else "")
+    path = (
+        "/notes"
+        if endpoint == "list"
+        else f"/notes/{NOTE_ID}" + ("/transcript" if endpoint == "transcript" else "")
+    )
     try:
-        with trigger_context(trigger="job", job_id=12, execution_id=34, request_id="synthetic", reason="scheduled_interval"):
-            assert await provider._request(path, params={"cursor": "PRIVATE_CURSOR"}) == {"PRIVATE_BODY": True}
+        with trigger_context(
+            trigger="job",
+            job_id=12,
+            execution_id=34,
+            request_id="synthetic",
+            reason="scheduled_interval",
+        ):
+            assert await provider._request(
+                path, params={"cursor": "PRIVATE_CURSOR"}
+            ) == {"PRIVATE_BODY": True}
     finally:
         await provider.aclose()
     before, after = records(caplog)
     assert before["event_id"] == after["event_id"] and after["outcome"] == "success"
-    assert (before["provider"], before["operation"], before["source"], before["attempt"]) == ("granola", operation, "synthetic-source", 1)
+    assert (
+        before["provider"],
+        before["operation"],
+        before["source"],
+        before["attempt"],
+    ) == ("granola", operation, "synthetic-source", 1)
     assert after["http_status"] == 200 and before["reason"] == "scheduled_interval"
-    assert before["request_id"] == "synthetic" and (before["job_id"], before["execution_id"]) == (12, 34)
+    assert before["request_id"] == "synthetic" and (
+        before["job_id"],
+        before["execution_id"],
+    ) == (12, 34)
     assert closed == [True] and current_trigger() == {}
-    assert "PRIVATE_" not in caplog.text and NOTE_ID not in caplog.text and "granola.ai" not in caplog.text
+    assert (
+        "PRIVATE_" not in caplog.text
+        and NOTE_ID not in caplog.text
+        and "granola.ai" not in caplog.text
+    )
 
 
 @pytest.mark.asyncio
-async def test_each_retried_http_or_network_attempt_gets_its_own_pair(caplog, monkeypatch):
+async def test_each_retried_http_or_network_attempt_gets_its_own_pair(
+    caplog, monkeypatch
+):
     calls = []
     monkeypatch.setattr(granola.random, "uniform", lambda *_: 1.0)
 
@@ -68,22 +108,34 @@ async def test_each_retried_http_or_network_attempt_gets_its_own_pair(caplog, mo
         if len(calls) == 1:
             raise httpx.ConnectError("PRIVATE_NETWORK", request=request)
         if len(calls) == 2:
-            return httpx.Response(429, headers={"Retry-After": "5"}, json={"error": "PRIVATE_BODY"})
+            return httpx.Response(
+                429, headers={"Retry-After": "5"}, json={"error": "PRIVATE_BODY"}
+            )
         if len(calls) == 3:
             return httpx.Response(503, json={"error": "PRIVATE_BODY"})
-        return httpx.Response(200, json=_note(title="PRIVATE_TITLE", summary_text="PRIVATE_SUMMARY"))
+        return httpx.Response(
+            200, json=_note(title="PRIVATE_TITLE", summary_text="PRIVATE_SUMMARY")
+        )
 
     provider, clock = provider_for(handler)
     try:
         with trigger_context(trigger="mcp", tool="meetings", request_id="synthetic"):
             summary = await provider.get_summary(NOTE_ID)
-        assert summary.title == "PRIVATE_TITLE" and summary.summary_text == "PRIVATE_SUMMARY"
+        assert (
+            summary.title == "PRIVATE_TITLE"
+            and summary.summary_text == "PRIVATE_SUMMARY"
+        )
     finally:
         await provider.aclose()
     result = records(caplog)
     assert len(calls) == 4 and clock.sleeps == [1.0, 5.0, 4.0]
     assert [event["attempt"] for event in result[::2]] == [1, 2, 3, 4]
-    assert [event["outcome"] for event in result[1::2]] == ["failed", "failed", "failed", "success"]
+    assert [event["outcome"] for event in result[1::2]] == [
+        "failed",
+        "failed",
+        "failed",
+        "success",
+    ]
     assert [event.get("http_status") for event in result[1::2]] == [None, 429, 503, 200]
     assert result[1]["error_type"] == "ConnectError"
     assert len({event["event_id"] for event in result[::2]}) == 4
@@ -92,9 +144,15 @@ async def test_each_retried_http_or_network_attempt_gets_its_own_pair(caplog, mo
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status,attempts", [(401, 1), (302, 1), (408, 4), (429, 4), (503, 4)])
-async def test_status_failure_logs_per_attempt_without_changing_public_error(caplog, status, attempts):
-    provider, _ = provider_for(lambda _: httpx.Response(status, json={"error": "PRIVATE_BODY"}))
+@pytest.mark.parametrize(
+    "status,attempts", [(401, 1), (302, 1), (408, 4), (429, 4), (503, 4)]
+)
+async def test_status_failure_logs_per_attempt_without_changing_public_error(
+    caplog, status, attempts
+):
+    provider, _ = provider_for(
+        lambda _: httpx.Response(status, json={"error": "PRIVATE_BODY"})
+    )
     try:
         with pytest.raises(MeetingProviderError) as raised:
             await provider.list_page()
@@ -103,13 +161,20 @@ async def test_status_failure_logs_per_attempt_without_changing_public_error(cap
     assert raised.value.status_code == status
     assert str(raised.value) == f"Granola request failed (HTTP {status})"
     assert len(records(caplog)) == attempts * 2
-    assert all(event["outcome"] == "failed" and event["http_status"] == status for event in records(caplog)[1::2])
+    assert all(
+        event["outcome"] == "failed" and event["http_status"] == status
+        for event in records(caplog)[1::2]
+    )
     assert "PRIVATE_" not in caplog.text
 
 
 @pytest.mark.asyncio
-async def test_missing_summary_is_an_accepted_response_but_missing_listing_fails(caplog):
-    provider, _ = provider_for(lambda _: httpx.Response(404, json={"error": "PRIVATE_BODY"}))
+async def test_missing_summary_is_an_accepted_response_but_missing_listing_fails(
+    caplog,
+):
+    provider, _ = provider_for(
+        lambda _: httpx.Response(404, json={"error": "PRIVATE_BODY"})
+    )
     try:
         assert await provider.get_summary(NOTE_ID) is None
         with pytest.raises(MeetingProviderError):
@@ -122,8 +187,12 @@ async def test_missing_summary_is_an_accepted_response_but_missing_listing_fails
 
 
 @pytest.mark.asyncio
-async def test_invalid_json_keeps_completed_http_success_and_application_failure(caplog):
-    provider, _ = provider_for(lambda _: httpx.Response(200, content="PRIVATE_INVALID_JSON"))
+async def test_invalid_json_keeps_completed_http_success_and_application_failure(
+    caplog,
+):
+    provider, _ = provider_for(
+        lambda _: httpx.Response(200, content="PRIVATE_INVALID_JSON")
+    )
     try:
         with pytest.raises(MeetingProviderError, match="invalid JSON"):
             await provider.list_page()
@@ -134,8 +203,13 @@ async def test_invalid_json_keeps_completed_http_success_and_application_failure
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kind,outcome", [(asyncio.CancelledError, "cancelled"), (KeyboardInterrupt, "cancelled")])
-async def test_interrupted_transport_preserves_exception_identity_and_context(caplog, kind, outcome):
+@pytest.mark.parametrize(
+    "kind,outcome",
+    [(asyncio.CancelledError, "cancelled"), (KeyboardInterrupt, "cancelled")],
+)
+async def test_interrupted_transport_preserves_exception_identity_and_context(
+    caplog, kind, outcome
+):
     failure = kind("PRIVATE_ERROR")
 
     def handler(_):
@@ -181,12 +255,17 @@ async def test_task_cancellation_at_actual_transport_closes_one_attempt(caplog):
         await asyncio.gather(task, return_exceptions=True)
         await provider.aclose()
     assert len(records(caplog)) == 2
-    assert records(caplog)[-1]["outcome"] == "cancelled" and records(caplog)[-1]["request_id"] == "cancelled"
+    assert (
+        records(caplog)[-1]["outcome"] == "cancelled"
+        and records(caplog)[-1]["request_id"] == "cancelled"
+    )
     assert current_trigger() == {}
 
 
 @pytest.mark.asyncio
-async def test_request_budget_timeout_logs_original_timeout_before_public_translation(monkeypatch, caplog):
+async def test_request_budget_timeout_logs_original_timeout_before_public_translation(
+    monkeypatch, caplog
+):
     monkeypatch.setattr(granola, "_REQUEST_BUDGET_SECONDS", 0.001)
 
     async def handler(_):
@@ -199,16 +278,24 @@ async def test_request_budget_timeout_logs_original_timeout_before_public_transl
     finally:
         await provider.aclose()
     assert len(records(caplog)) == 2
-    assert records(caplog)[-1]["outcome"] == "timeout" and records(caplog)[-1]["error_type"] == "TimeoutError"
+    assert (
+        records(caplog)[-1]["outcome"] == "timeout"
+        and records(caplog)[-1]["error_type"] == "TimeoutError"
+    )
 
 
 @pytest.mark.asyncio
 async def test_retry_budget_wait_does_not_fabricate_another_http_attempt(caplog):
-    provider, clock = provider_for(lambda _: httpx.Response(429, headers={"Retry-After": "120"}))
+    provider, clock = provider_for(
+        lambda _: httpx.Response(429, headers={"Retry-After": "120"})
+    )
     try:
         with pytest.raises(MeetingProviderError, match="retry budget"):
             await provider.list_page()
     finally:
         await provider.aclose()
     assert clock.sleeps == [] and len(records(caplog)) == 2
-    assert records(caplog)[-1]["http_status"] == 429 and records(caplog)[-1]["outcome"] == "failed"
+    assert (
+        records(caplog)[-1]["http_status"] == 429
+        and records(caplog)[-1]["outcome"] == "failed"
+    )

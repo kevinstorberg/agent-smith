@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from services.graphs.model_factory import build_chat_model
+from services.graphs.tool_observability import ActionLoggingMiddleware
 
 # Statuses the RubricMiddleware can end on that mean the run did not pass.
 TERMINAL_FAILURES = {"max_iterations_reached", "failed", "grader_error"}
@@ -41,13 +42,15 @@ def create_tool_agent(
     try:
         from langchain.agents import create_agent
     except ImportError as exc:
-        raise RuntimeError("langchain is required for graph agents. Install requirements.txt.") from exc
+        raise RuntimeError(
+            "langchain is required for graph agents. Install requirements.txt."
+        ) from exc
 
     return create_agent(
         build_chat_model(model_role, fallback_role=fallback_role),
         tools=tools or [],
         system_prompt=system_prompt,
-        middleware=middleware or [],
+        middleware=[ActionLoggingMiddleware(), *(middleware or [])],
     )
 
 
@@ -74,7 +77,9 @@ def create_rubric_agent(
         system_prompt=system_prompt,
         middleware=[
             FullContextRubricMiddleware(
-                model=build_chat_model(f"{model_role}_grader", fallback_role=model_role),
+                model=build_chat_model(
+                    f"{model_role}_grader", fallback_role=model_role
+                ),
                 system_prompt=grader_prompt,
                 max_iterations=max_iterations,
                 on_evaluation=on_evaluation,

@@ -9,12 +9,21 @@ from services.jobs import scheduler
 from services.observability import billable_operation, current_trigger, trigger_context
 
 
+pytestmark = pytest.mark.usefixtures("terminal_diagnostics")
+
+
 def events(caplog):
-    return [record.billable_event for record in caplog.records if hasattr(record, "billable_event")]
+    return [
+        record.billable_event
+        for record in caplog.records
+        if hasattr(record, "billable_event")
+    ]
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])
-def test_http_provider_context_uses_route_template_without_request_payload(caplog, asynchronous):
+def test_http_provider_context_uses_route_template_without_request_payload(
+    caplog, asynchronous
+):
     app = FastAPI(dependencies=[Depends(request_trigger)])
 
     def invoke_provider():
@@ -22,11 +31,13 @@ def test_http_provider_context_uses_route_template_without_request_payload(caplo
             return current_trigger()
 
     if asynchronous:
+
         @app.get("/api/probe/{item_id}")
         async def endpoint(item_id: str):
             await asyncio.sleep(0)
             return invoke_provider()
     else:
+
         @app.get("/api/probe/{item_id}")
         def endpoint(item_id: str):
             return invoke_provider()
@@ -42,7 +53,10 @@ def test_http_provider_context_uses_route_template_without_request_payload(caplo
     recorded = events(caplog)
     assert [event["phase"] for event in recorded] == ["START", "END", "START", "END"]
     assert all(event["source"] == "/api/probe/{item_id}" for event in recorded)
-    assert all("private-payload" not in str(event) and "private-query" not in str(event) for event in recorded)
+    assert all(
+        "private-payload" not in str(event) and "private-query" not in str(event)
+        for event in recorded
+    )
 
 
 def test_failed_http_request_closes_operation_and_does_not_leak_context(caplog):
@@ -66,7 +80,9 @@ def test_failed_http_request_closes_operation_and_does_not_leak_context(caplog):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("automatic", [False, True])
-async def test_job_provider_retains_parent_request_and_execution_context(monkeypatch, caplog, automatic):
+async def test_job_provider_retains_parent_request_and_execution_context(
+    monkeypatch, caplog, automatic
+):
     monkeypatch.setattr(scheduler, "create_execution", lambda **kwargs: 42)
     captured = []
 
@@ -76,8 +92,12 @@ async def test_job_provider_retains_parent_request_and_execution_context(monkeyp
         return {"success": True}
 
     monkeypatch.setattr(scheduler, "_run_graph_job", run)
-    with trigger_context(trigger="http.POST", source="/api/jobs/{id}/run", request_id="request-fixture"):
-        result = await scheduler.execute_job({"id": 7, "input_params": {"graph_type": "echo"}}, automatic=automatic)
+    with trigger_context(
+        trigger="http.POST", source="/api/jobs/{id}/run", request_id="request-fixture"
+    ):
+        result = await scheduler.execute_job(
+            {"id": 7, "input_params": {"graph_type": "echo"}}, automatic=automatic
+        )
         assert current_trigger()["trigger"] == "http.POST"
 
     assert result == {"success": True, "execution_id": 42}
@@ -90,7 +110,9 @@ async def test_job_provider_retains_parent_request_and_execution_context(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_cancelled_job_preserves_exception_and_cleans_trigger(monkeypatch, caplog):
+async def test_cancelled_job_preserves_exception_and_cleans_trigger(
+    monkeypatch, caplog
+):
     monkeypatch.setattr(scheduler, "create_execution", lambda **kwargs: 42)
     cancelled = asyncio.CancelledError()
 

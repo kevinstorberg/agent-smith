@@ -1,5 +1,8 @@
 import asyncio
-from concurrent.futures import CancelledError as FutureCancelledError, ThreadPoolExecutor
+from concurrent.futures import (
+    CancelledError as FutureCancelledError,
+    ThreadPoolExecutor,
+)
 from datetime import datetime, timedelta, timezone
 import json
 import logging
@@ -26,7 +29,7 @@ SECRET = "PRIVATE_PROMPT_PROPOSAL_RULE_CRITERIA_KEY_CANARY"
 
 @pytest.fixture(autouse=True)
 def capture_billable_logs(caplog):
-    caplog.set_level(logging.INFO, logger=LOGGER)
+    caplog.set_level(logging.DEBUG, logger=LOGGER)
 
 
 def records(caplog):
@@ -48,7 +51,9 @@ def test_before_is_visible_inside_provider_and_end_follows_completion(caplog):
         assert [event["phase"] for event in events(caplog)] == ["START"]
         return "provider-result"
 
-    with billable_operation("openai", "completion", model="test-model", sdk_retries=2) as event:
+    with billable_operation(
+        "openai", "completion", model="test-model", sdk_retries=2
+    ) as event:
         assert provider() == "provider-result"
         assert events(caplog)[0]["event_id"] == event.event_id
         assert [item["phase"] for item in events(caplog)] == ["START"]
@@ -66,20 +71,25 @@ def test_before_is_visible_inside_provider_and_end_follows_completion(caplog):
     for record in records(caplog):
         payload = record.billable_event
         assert_utc(payload["utc_timestamp"])
-        assert json.loads(record.getMessage().split(" ", 2)[2]) == payload
-        assert record.getMessage().startswith(f"BILLABLE {payload['phase']} ")
+        assert json.loads(record.getMessage().split("] ", 1)[1]) == payload
+        assert record.getMessage().startswith("MODEL GENERATE [BILLABLE] ")
 
 
-@pytest.mark.parametrize("error,outcome", [
-    (RuntimeError(SECRET), "failed"),
-    (TimeoutError(SECRET), "timeout"),
-    (asyncio.CancelledError(SECRET), "cancelled"),
-    (FutureCancelledError(SECRET), "cancelled"),
-    (GeneratorExit(SECRET), "cancelled"),
-    (KeyboardInterrupt(SECRET), "cancelled"),
-    (SystemExit(SECRET), "failed"),
-])
-def test_failed_provider_has_one_terminal_event_and_preserves_exception(caplog, error, outcome):
+@pytest.mark.parametrize(
+    "error,outcome",
+    [
+        (RuntimeError(SECRET), "failed"),
+        (TimeoutError(SECRET), "timeout"),
+        (asyncio.CancelledError(SECRET), "cancelled"),
+        (FutureCancelledError(SECRET), "cancelled"),
+        (GeneratorExit(SECRET), "cancelled"),
+        (KeyboardInterrupt(SECRET), "cancelled"),
+        (SystemExit(SECRET), "failed"),
+    ],
+)
+def test_failed_provider_has_one_terminal_event_and_preserves_exception(
+    caplog, error, outcome
+):
     with pytest.raises(type(error)) as caught:
         with billable_operation("anthropic", "messages.stream", streaming=True):
             assert [event["phase"] for event in events(caplog)] == ["START"]
@@ -125,14 +135,20 @@ def test_finish_records_only_safe_details_and_is_idempotent(caplog):
 
     error = ProviderFailure(SECRET)
     event = BillableEvent.start("openai", "completion")
-    assert event.finish("failed", error=error, tokens_input=12, tokens_output=4, total_tokens=16)
+    assert event.finish(
+        "failed", error=error, tokens_input=12, tokens_output=4, total_tokens=16
+    )
     assert not event.finish("success", http_status=200)
 
     start, end = events(caplog)
     assert end["event_id"] == start["event_id"]
     assert end["outcome"] == "failed" and end["http_status"] == 503
     assert end["error_type"] == "ProviderFailure"
-    assert (end["tokens_input"], end["tokens_output"], end["total_tokens"]) == (12, 4, 16)
+    assert (end["tokens_input"], end["tokens_output"], end["total_tokens"]) == (
+        12,
+        4,
+        16,
+    )
     assert SECRET not in caplog.text
     assert all(record.exc_info is None for record in records(caplog))
 
@@ -155,7 +171,12 @@ def test_trigger_is_a_snapshot_and_current_trigger_returns_an_independent_copy(c
     baseline = current_trigger()
     meeting_id = uuid4()
     source_time = datetime(2026, 11, 4, 9, 30, tzinfo=timezone(timedelta(hours=-5)))
-    with trigger_context(trigger="manual", meeting_id=meeting_id, requested_at=source_time, source_revision=3):
+    with trigger_context(
+        trigger="manual",
+        meeting_id=meeting_id,
+        requested_at=source_time,
+        source_revision=3,
+    ):
         snapshot = current_trigger()
         snapshot["trigger"] = "tampered-copy"
         assert current_trigger()["trigger"] == "manual"
@@ -187,9 +208,16 @@ def test_nested_operations_preserve_cause_and_record_parent_identity(caplog):
     assert current_trigger() == baseline
 
     start_outer, start_inner, end_inner, end_outer = events(caplog)
-    assert start_inner["parent_event_id"] == end_inner["parent_event_id"] == start_outer["event_id"]
+    assert (
+        start_inner["parent_event_id"]
+        == end_inner["parent_event_id"]
+        == start_outer["event_id"]
+    )
     assert end_outer["event_id"] == start_outer["event_id"]
-    assert all(item["request_id"] == "request-1" and item["trigger"] == "mcp" for item in events(caplog))
+    assert all(
+        item["request_id"] == "request-1" and item["trigger"] == "mcp"
+        for item in events(caplog)
+    )
 
 
 def test_concurrent_async_operations_do_not_share_trigger_fields(caplog):
@@ -224,7 +252,9 @@ def test_executor_submission_captures_trigger_before_later_context_changes(caplo
             return prefix + suffix, current_trigger()
 
     with ThreadPoolExecutor(max_workers=1) as executor:
-        with trigger_context(trigger="mcp", request_id="captured-request", attempt=0, streaming=False):
+        with trigger_context(
+            trigger="mcp", request_id="captured-request", attempt=0, streaming=False
+        ):
             future = submit_with_context(executor, work, "context-", suffix="copied")
         with trigger_context(trigger="scheduler", request_id="later-request"):
             release.set()
@@ -234,24 +264,42 @@ def test_executor_submission_captures_trigger_before_later_context_changes(caplo
     assert result == "context-copied"
     assert snapshot["request_id"] == "captured-request"
     assert snapshot["attempt"] == 0 and snapshot["streaming"] is False
-    assert all(item["trigger"] == "mcp" and item["request_id"] == "captured-request" for item in events(caplog))
+    assert all(
+        item["trigger"] == "mcp" and item["request_id"] == "captured-request"
+        for item in events(caplog)
+    )
 
 
-@pytest.mark.parametrize("field,value", [
-    ("prompt", SECRET), ("proposal", SECRET), ("content", SECRET), ("url", SECRET),
-    ("command", SECRET), ("criteria", SECRET), ("error", SECRET),
-    ("stage", {"payload": SECRET}), ("stage", [SECRET]), ("stage", RuntimeError(SECRET)),
-    ("requested_at", datetime(2026, 11, 4, 9, 30)),
-    ("count", float("nan")), ("count", float("inf")),
-])
-def test_unsafe_start_fields_are_rejected_before_any_billable_event(caplog, field, value):
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("prompt", SECRET),
+        ("proposal", SECRET),
+        ("content", SECRET),
+        ("url", SECRET),
+        ("command", SECRET),
+        ("criteria", SECRET),
+        ("error", SECRET),
+        ("stage", {"payload": SECRET}),
+        ("stage", [SECRET]),
+        ("stage", RuntimeError(SECRET)),
+        ("requested_at", datetime(2026, 11, 4, 9, 30)),
+        ("count", float("nan")),
+        ("count", float("inf")),
+    ],
+)
+def test_unsafe_start_fields_are_rejected_before_any_billable_event(
+    caplog, field, value
+):
     with pytest.raises(ValueError):
         BillableEvent.start("openai", "completion", **{field: value})
     assert records(caplog) == []
     assert SECRET not in caplog.text
 
 
-@pytest.mark.parametrize("field", ["trigger", "provider", "operation", "event_id", "request_id", "model"])
+@pytest.mark.parametrize(
+    "field", ["trigger", "provider", "operation", "event_id", "request_id", "model"]
+)
 def test_end_metadata_cannot_rewrite_original_cause(caplog, field):
     with trigger_context(trigger="manual", request_id="original-request"):
         event = BillableEvent.start("openai", "completion", model="original-model")
@@ -273,17 +321,33 @@ def test_invalid_trigger_scope_does_not_change_current_context(caplog):
     assert records(caplog) == []
 
 
-def test_cli_without_logging_setup_still_emits_paired_structured_records():
+@pytest.mark.parametrize("debug", [False, True])
+def test_cli_without_logging_setup_has_one_entry_and_opt_in_terminal_diagnostics(debug):
     program = """
+import logging
 from services.observability import billable_operation
+logging.getLogger('agent_smith.billable').setLevel(LEVEL)
 with billable_operation('openai', 'unit-test'):
     pass
-"""
+""".replace("LEVEL", "logging.DEBUG" if debug else "logging.INFO")
     completed = subprocess.run(
-        [sys.executable, "-c", program], cwd=Path(__file__).resolve().parents[1],
-        check=True, capture_output=True, text=True, timeout=10,
+        [sys.executable, "-c", program],
+        cwd=Path(__file__).resolve().parents[1],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
-    payloads = [json.loads(line.split(" ", 2)[2]) for line in completed.stderr.splitlines()]
-    assert [item["phase"] for item in payloads] == ["START", "END"]
-    assert payloads[0]["event_id"] == payloads[1]["event_id"]
-    assert payloads[1]["outcome"] == "success"
+    payloads = [
+        json.loads(line.split("] ", 1)[1]) for line in completed.stderr.splitlines()
+    ]
+    assert [item["phase"] for item in payloads] == (
+        ["START", "END"] if debug else ["START"]
+    )
+    assert (
+        "BILLABLE START" not in completed.stderr
+        and "BILLABLE END" not in completed.stderr
+    )
+    if debug:
+        assert payloads[0]["event_id"] == payloads[1]["event_id"]
+        assert payloads[1]["outcome"] == "success"

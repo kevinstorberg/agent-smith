@@ -1,23 +1,50 @@
 from __future__ import annotations
 
 from typing import Annotated, Literal
+import unicodedata
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from scripts.shared.validation import MAX_BODY_LENGTH, MAX_TITLE_LENGTH
 
 Status = Literal["open", "completed"]
 Sort = Literal["manual", "newest", "updated", "title", "completed"]
 PositiveInt = Annotated[int, Field(strict=True, gt=0)]
-Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_TITLE_LENGTH)]
+Title = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_TITLE_LENGTH),
+]
 Description = Annotated[str, StringConstraints(max_length=MAX_BODY_LENGTH)]
-Project = Annotated[str, StringConstraints(max_length=200)]
+MAX_PROJECT_NAME_LENGTH = 200
+Project = Annotated[str, StringConstraints(max_length=MAX_PROJECT_NAME_LENGTH)]
 Tags = Annotated[list[str], Field(max_length=20)]
 
 
 class Contract(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class ProjectCreate(Contract):
+    name: Annotated[
+        str, StringConstraints(min_length=1, max_length=MAX_PROJECT_NAME_LENGTH)
+    ]
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value):
+        if isinstance(value, str):
+            if any(unicodedata.category(character) == "Cc" for character in value):
+                raise ValueError("Project names cannot contain control characters")
+            return value.strip()
+        return value
 
 
 class ItemEditable(Contract):
@@ -38,7 +65,10 @@ class ItemEditable(Contract):
             return []
         if not isinstance(value, list) or len(value) > 20:
             raise ValueError("tags must be a list of at most 20 strings")
-        if any(not isinstance(tag, str) or not tag.strip() or len(tag.strip()) > 100 for tag in value):
+        if any(
+            not isinstance(tag, str) or not tag.strip() or len(tag.strip()) > 100
+            for tag in value
+        ):
             raise ValueError("each tag must contain 1-100 nonblank characters")
         return sorted({tag.strip().casefold() for tag in value})
 
@@ -56,7 +86,10 @@ class ProjectFields(Contract):
     @field_validator("project")
     @classmethod
     def normalize_project(cls, value):
-        return value.strip() or None if value is not None else None
+        if value is not None and "\0" in value:
+            raise ValueError("Project cannot contain NUL characters")
+        # Legacy exact names must reach catalog resolution before new-name normalization.
+        return None if value == "" else value
 
 
 class Editable(ItemEditable, ProjectFields):
@@ -111,7 +144,9 @@ class ItemQuery(Contract):
     limit: Annotated[int, Field(ge=1, le=100)] = 10
     offset: Annotated[int, Field(ge=0)] = 0
 
-    normalize_tags = field_validator("tags", mode="before")(ItemEditable.normalize_tags.__func__)
+    normalize_tags = field_validator("tags", mode="before")(
+        ItemEditable.normalize_tags.__func__
+    )
 
     @field_validator("q")
     @classmethod
@@ -125,9 +160,17 @@ class ItemQuery(Contract):
         if self.sort == "manual" and self.status != "open":
             raise ValueError("manual sort is only available for open action items")
         if self.sort == "completed" and self.status != "completed":
-            raise ValueError("completed sort is only available for completed action items")
+            raise ValueError(
+                "completed sort is only available for completed action items"
+            )
         return self
 
 
 class Query(ItemQuery, ProjectFields):
-    pass
+    unassigned: bool = False
+
+    @model_validator(mode="after")
+    def project_scope(self):
+        if self.unassigned and self.project is not None:
+            raise ValueError("project and unassigned cannot be used together")
+        return self

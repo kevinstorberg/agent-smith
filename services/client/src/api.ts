@@ -104,12 +104,20 @@ async function post<T>(
   );
 }
 
-async function put<T>(path: string, body: unknown): Promise<T> {
-  return request<T>(BASE + path, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+async function put<T>(
+  path: string,
+  body: unknown,
+  timeoutMs?: number,
+): Promise<T> {
+  return request<T>(
+    BASE + path,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    timeoutMs,
+  );
 }
 
 async function patch<T>(
@@ -1129,6 +1137,43 @@ export const api = {
       ),
   },
   harness: {
+    editor: {
+      descriptors: () =>
+        get<import('./types/harnessEditor').EditorDescriptors>(
+          '/harness/editor/descriptors',
+          undefined,
+          HARNESS_TIMEOUT_MS,
+        ),
+      decode: (kind: string, name: string, content: HarnessItem['content']) =>
+        post<import('./types/harnessEditor').HarnessDraft>(
+          `/harness/editor/${kind}/decode`,
+          { name, content },
+          HARNESS_TIMEOUT_MS,
+        ),
+      preview: (
+        kind: string,
+        body: import('./types/harnessEditor').HarnessEditorPayload,
+      ) =>
+        post<{
+          content: HarnessItem['content'];
+          draft: import('./types/harnessEditor').HarnessDraft;
+        }>(`/harness/editor/${kind}/preview`, body, HARNESS_TIMEOUT_MS),
+      create: (
+        kind: string,
+        body: import('./types/harnessEditor').HarnessEditorPayload,
+      ) =>
+        post<HarnessItem>(`/harness/editor/${kind}`, body, HARNESS_TIMEOUT_MS),
+      update: (
+        kind: string,
+        id: number,
+        body: import('./types/harnessEditor').HarnessEditorPayload,
+      ) =>
+        put<HarnessItem>(
+          `/harness/editor/${kind}/${id}`,
+          body,
+          HARNESS_TIMEOUT_MS,
+        ),
+    },
     assignableAgents: () => get<AssignableAgents>('/harness/agents/assignable'),
     rules: () => get<Rule[]>('/harness/rules'),
     skills: () => get<Skill[]>('/harness/skills'),

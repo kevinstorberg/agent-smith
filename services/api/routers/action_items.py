@@ -1,22 +1,61 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query as QueryParam, Request
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Path,
+    Query as QueryParam,
+    Request,
+)
 
 from services.action_items import db
-from services.action_items.contracts import Create, Delete, Move, Patch, Query
+from services.action_items.contracts import (
+    Create,
+    Delete,
+    Move,
+    Patch,
+    ProjectCreate,
+    Query,
+)
 from services.api.routers.shared.items import call_item as _call
 
 router = APIRouter()
 
 
-def _query(request: Request, q: str | None = None, status: str = "open", project: str | None = None,
-           tags: list[str] = QueryParam(default=[]), sort: str | None = None,
-           limit: int = 10, offset: int = 0) -> Query:
+def _query(
+    request: Request,
+    q: str | None = None,
+    status: str = "open",
+    project: str | None = None,
+    tags: list[str] = QueryParam(default=[]),
+    sort: str | None = None,
+    limit: int = 10,
+    offset: int = 0,
+    unassigned: bool = False,
+) -> Query:
     unknown = set(request.query_params) - Query.model_fields.keys()
     if unknown:
-        raise HTTPException(422, f"Unknown action item filters: {', '.join(sorted(unknown))}")
-    return _call(Query.model_validate, {"q": q, "status": status, "project": project, "tags": tags,
-                                       "sort": sort, "limit": limit, "offset": offset})
+        raise HTTPException(
+            422, f"Unknown action item filters: {', '.join(sorted(unknown))}"
+        )
+    if "unassigned" in request.query_params and request.query_params[
+        "unassigned"
+    ] not in {"true", "false"}:
+        raise HTTPException(422, "unassigned must be true or false")
+    return _call(
+        Query.model_validate,
+        {
+            "q": q,
+            "status": status,
+            "project": project,
+            "tags": tags,
+            "sort": sort,
+            "limit": limit,
+            "offset": offset,
+            "unassigned": unassigned,
+        },
+    )
 
 
 @router.get("")
@@ -27,6 +66,21 @@ def list_all(query: Query = Depends(_query)):
 @router.post("", status_code=201)
 def create(body: Create):
     return _call(db.create, body)
+
+
+@router.get("/projects")
+def list_projects():
+    return _call(db.list_projects)
+
+
+@router.post("/projects", status_code=201)
+def create_project(body: ProjectCreate):
+    return _call(db.create_project, body)
+
+
+@router.delete("/projects/{project_id}")
+def delete_project(project_id: int = Path(gt=0)):
+    return _call(db.delete_project, project_id)
 
 
 @router.get("/{item_id}")
