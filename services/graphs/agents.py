@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from services.graphs.model_factory import build_chat_model
+from services.graphs.tool_observability import ActionLoggingMiddleware
 
 # Statuses the RubricMiddleware can end on that mean the run did not pass.
 TERMINAL_FAILURES = {"max_iterations_reached", "failed", "grader_error"}
@@ -49,7 +50,7 @@ def create_tool_agent(
         build_chat_model(model_role, fallback_role=fallback_role),
         tools=tools or [],
         system_prompt=system_prompt,
-        middleware=middleware or [],
+        middleware=[ActionLoggingMiddleware(), *(middleware or [])],
     )
 
 

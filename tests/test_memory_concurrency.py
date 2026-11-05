@@ -38,7 +38,12 @@ def isolated_memory(monkeypatch):
 
 
 @pytest.mark.parametrize("device", ["cpu", "mps", "cuda:1"])
-def test_embedding_factory_constructs_once_and_forwards_device(monkeypatch, device):
+@pytest.mark.parametrize("offline", [False, True])
+def test_embedding_factory_constructs_once_and_forwards_device(
+    monkeypatch, device, offline
+):
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1" if offline else "0")
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
     entered, release = Event(), Event()
     lock = ObservedLock()
     calls = []
@@ -64,11 +69,19 @@ def test_embedding_factory_constructs_once_and_forwards_device(monkeypatch, devi
             release.set()
         results = [future.result(timeout=5) for future in futures]
     assert all(result is results[0] for result in results)
-    assert calls == [{"model_name": db.MODEL_NAME, "model_kwargs": {"device": device}}]
+    model_kwargs = {"device": device}
+    if offline:
+        model_kwargs["local_files_only"] = True
+    assert calls == [{"model_name": db.MODEL_NAME, "model_kwargs": model_kwargs}]
     assert results[0].embed_query("synthetic") == model.embed_query("synthetic")
 
 
-def test_failed_embedding_initialization_can_retry_without_fallback(monkeypatch):
+@pytest.mark.parametrize("offline", [False, True])
+def test_failed_embedding_initialization_can_retry_without_fallback(
+    monkeypatch, offline
+):
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1" if offline else "0")
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
     attempts = []
 
     def build(**kwargs):
@@ -83,7 +96,10 @@ def test_failed_embedding_initialization_can_retry_without_fallback(monkeypatch)
         db._get_embeddings()
     assert db._embeddings is None
     assert db._get_embeddings() is db._get_embeddings()
-    assert [attempt["model_kwargs"] for attempt in attempts] == [{"device": "mps"}] * 2
+    model_kwargs = {"device": "mps"}
+    if offline:
+        model_kwargs["local_files_only"] = True
+    assert [attempt["model_kwargs"] for attempt in attempts] == [model_kwargs] * 2
 
 
 def test_query_and_document_encodes_share_one_lock_and_recover_after_error():

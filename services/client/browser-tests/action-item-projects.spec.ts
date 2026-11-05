@@ -156,6 +156,126 @@ test('projects persist independently and assignment leaves tags and status filte
 });
 
 for (const scale of [1, 2]) {
+  test(`project folders sit above the table with one aligned toolbar at ${scale}x text`, async ({
+    page,
+    fixtureAPI,
+  }, testInfo) => {
+    await page.clock.install();
+    const items = Array.from({ length: 50 }, (_, index) => ({
+      id: index + 1,
+      name:
+        index === 25
+          ? 'A complete project name '.repeat(8)
+          : `Folder ${index + 1}`,
+      created_at: '2026-11-01T12:00:00Z',
+    }));
+    fixtureAPI.get('/api/action-items/projects', {
+      items,
+      total: items.length,
+    });
+    fixtureAPI.get('/api/action-items', { items: [actionItem(1)], total: 1 });
+    fixtureAPI.mock(
+      'POST',
+      '/api/action-items/projects',
+      { detail: 'Choose a different project name.' },
+      409,
+    );
+    await page.goto('/action-items');
+    const groups = page.getByRole('tablist', { name: 'Action item projects' });
+    await expect(groups.getByRole('tab')).toHaveCount(52);
+    await expect(
+      page.getByRole('button', { name: 'Task 1', exact: true }),
+    ).toBeVisible();
+    if (scale === 2) await enlargeComputedText(page);
+    const status = page.getByRole('tablist', { name: 'Action item status' });
+    const create = page.getByRole('button', {
+      name: 'New project',
+      exact: true,
+    });
+    const filters = page.locator('.profile-filters');
+    const table = page.locator('.action-items-container');
+    const [statusBox, createBox, filterBox, tabsBox, tableBox] =
+      await Promise.all([
+        status.boundingBox(),
+        create.boundingBox(),
+        filters.boundingBox(),
+        groups.boundingBox(),
+        table.boundingBox(),
+      ]);
+    expect(
+      statusBox && createBox && filterBox && tabsBox && tableBox,
+    ).toBeTruthy();
+    expect(
+      Math.abs(
+        statusBox!.y +
+          statusBox!.height / 2 -
+          createBox!.y -
+          createBox!.height / 2,
+      ),
+    ).toBeLessThanOrEqual(2);
+    expect(tabsBox!.y).toBeGreaterThanOrEqual(filterBox!.y + filterBox!.height);
+    expect(
+      Math.abs(tableBox!.y - tabsBox!.y - tabsBox!.height),
+    ).toBeLessThanOrEqual(2);
+    const active = groups.getByRole('tab', {
+      name: 'All projects',
+      exact: true,
+    });
+    const corners = await active.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return {
+        top: parseFloat(style.borderTopLeftRadius),
+        bottom: parseFloat(style.borderBottomLeftRadius),
+      };
+    });
+    expect(corners.top).toBeGreaterThan(0);
+    expect(corners.bottom).toBe(0);
+    await expectDocumentContained(page);
+    await expectMainContained(page);
+    if (
+      scale === 1 &&
+      ['chromium-1440', 'chromium-320'].includes(testInfo.project.name)
+    )
+      await page.screenshot({
+        path: testInfo.outputPath('project-folders.png'),
+      });
+    await create.click();
+    const name = page.getByLabel('Project name', { exact: true });
+    await expect(name).toBeFocused();
+    await name.fill('Retained project draft');
+    const before = fixtureAPI.requests.filter(
+      (entry) => new URL(entry.url).pathname === '/api/action-items',
+    ).length;
+    await page.clock.fastForward(15_000);
+    await expect
+      .poll(
+        () =>
+          fixtureAPI.requests.filter(
+            (entry) => new URL(entry.url).pathname === '/api/action-items',
+          ).length,
+      )
+      .toBeGreaterThan(before);
+    await expect(name).toBeFocused();
+    await expect(name).toHaveValue('Retained project draft');
+    await page
+      .getByRole('button', { name: 'Create project', exact: true })
+      .click();
+    const error = page.locator('.action-projects').getByRole('alert');
+    await expect(error).toHaveText('Choose a different project name.');
+    await expect(name).toHaveValue('Retained project draft');
+    const [errorBox, formBox, currentFilters] = await Promise.all([
+      error.boundingBox(),
+      page.locator('.action-project-create').boundingBox(),
+      filters.boundingBox(),
+    ]);
+    expect(errorBox!.y).toBeGreaterThanOrEqual(formBox!.y);
+    expect(errorBox!.y + errorBox!.height).toBeLessThanOrEqual(
+      currentFilters!.y,
+    );
+    await expectDocumentContained(page);
+    await expectMainContained(page);
+  });
+
   test(`all fifty project tabs remain keyboard reachable at ${scale}x text`, async ({
     page,
     fixtureAPI,

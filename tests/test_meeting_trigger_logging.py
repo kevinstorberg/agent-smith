@@ -37,8 +37,8 @@ STAMP = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 @pytest.fixture(autouse=True)
 def capture_work_logs(caplog):
-    caplog.set_level(logging.INFO, logger="agent_smith.work")
-    caplog.set_level(logging.INFO, logger="agent_smith.billable")
+    caplog.set_level(logging.DEBUG, logger="agent_smith.work")
+    caplog.set_level(logging.DEBUG, logger="agent_smith.billable")
 
 
 def decisions(caplog):
@@ -347,6 +347,7 @@ async def test_sync_logs_processed_references_without_renaming_api_statistics(
     source, caplog
 ):
     caplog.set_level(logging.INFO, logger=service.__name__)
+    caplog.set_level(logging.DEBUG, logger="agent_smith.work")
     result = await service.sync_source(
         source.name, provider=Provider([note(text=SECRET)])
     )

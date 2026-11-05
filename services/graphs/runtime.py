@@ -8,7 +8,7 @@ from types import ModuleType
 from typing import Any
 from uuid import uuid4
 
-from services.observability import current_trigger, trigger_context
+from services.observability import action_operation, current_trigger, trigger_context
 
 logger = logging.getLogger(__name__)
 
@@ -124,11 +124,14 @@ async def dispatch(graph_type: str, inputs: dict[str, Any]) -> str:
     validate_inputs(graph_type, inputs, registry)
 
     cause = current_trigger()
-    with trigger_context(
-        graph=graph_type,
-        graph_run_id=str(uuid4()),
-        trigger=cause.get("trigger") or "graph",
-        reason=cause.get("reason") or "unknown",
+    with (
+        trigger_context(
+            graph=graph_type,
+            graph_run_id=str(uuid4()),
+            trigger=cause.get("trigger") or "graph",
+            reason=cause.get("reason") or "unknown",
+        ),
+        action_operation("graphs", "run", owner="graph"),
     ):
         graph = registry[graph_type].build_graph()
         result = await graph.ainvoke(inputs)

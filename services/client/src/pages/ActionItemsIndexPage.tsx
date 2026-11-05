@@ -70,7 +70,7 @@ export function ActionItemsIndexPage() {
   });
   const { freezeControls } = queue;
   return (
-    <div>
+    <div className="action-items-index-page">
       <div className="page-header">
         <h2 className="page-title">Action items</h2>
         <Link
@@ -90,82 +90,96 @@ export function ActionItemsIndexPage() {
         onChange={(scope) => preferences.setFields(projectScopeFields(scope))}
         disabled={freezeControls}
         paused={queue.busy}
-      />
-      <div className="sub-tabs" role="tablist" aria-label="Action item status">
-        {ACTION_ITEM_STATUSES.map(([value, label]) => (
-          <button
-            key={value}
-            role="tab"
-            aria-selected={status === value}
-            className={status === value ? 'active' : ''}
-            disabled={freezeControls}
-            onClick={() => {
-              preferences.setFields({
-                status: value,
-                sort: defaultActionItemSort(value),
-              });
-            }}
+        toolbarAccessory={
+          <div
+            className="sub-tabs"
+            role="tablist"
+            aria-label="Action item status"
           >
-            {label}
-          </button>
-        ))}
-      </div>
-      <div className="profile-filters">
-        <label>
-          <span className="form-label">Search action items</span>
-          <input
-            className="input"
-            type="search"
-            maxLength={1000}
-            value={queryInput}
-            disabled={freezeControls}
-            onChange={(event) => preferences.setField('q', event.target.value)}
-            placeholder="Search title or description…"
-          />
-        </label>
-        <label>
-          <span className="form-label">Tags</span>
-          <input
-            className="input"
-            value={tagsInput}
-            disabled={freezeControls}
-            onChange={(event) =>
-              preferences.setField('tags', event.target.value)
-            }
-            placeholder="Tags, comma-separated"
-          />
-        </label>
-        <label>
-          <span className="form-label">Sort</span>
-          <select
-            className="input"
-            value={sort}
-            disabled={freezeControls}
-            onChange={(event) =>
-              preferences.setField(
-                'sort',
-                parseViewField('actionItems', 'sort', event.target.value),
-              )
-            }
-          >
-            {actionItemSortOptions(status).map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
+            {ACTION_ITEM_STATUSES.map(([value, label]) => (
+              <button
+                key={value}
+                role="tab"
+                aria-selected={status === value}
+                className={status === value ? 'active' : ''}
+                disabled={freezeControls}
+                onClick={() => {
+                  preferences.setFields({
+                    status: value,
+                    sort: defaultActionItemSort(value),
+                  });
+                }}
+              >
+                {label}
+              </button>
             ))}
-          </select>
-        </label>
-      </div>
-      {(status !== 'open' || sort !== 'manual') && (
-        <p className="text-muted-sm">
-          To drag items into order, use Open with Manual order; search and
-          filters can stay applied.
-        </p>
-      )}
-      <ActionItemDeadlineWindow
-        hours={dueHoursInput}
-        onChange={(hours) => preferences.setField('due_within_hours', hours)}
-        disabled={freezeControls}
+          </div>
+        }
+        beforeTabs={
+          <>
+            <div className="profile-filters">
+              <label>
+                <span className="form-label">Search action items</span>
+                <input
+                  className="input"
+                  type="search"
+                  maxLength={1000}
+                  value={queryInput}
+                  disabled={freezeControls}
+                  onChange={(event) =>
+                    preferences.setField('q', event.target.value)
+                  }
+                  placeholder="Search title or description…"
+                />
+              </label>
+              <label>
+                <span className="form-label">Tags</span>
+                <input
+                  className="input"
+                  value={tagsInput}
+                  disabled={freezeControls}
+                  onChange={(event) =>
+                    preferences.setField('tags', event.target.value)
+                  }
+                  placeholder="Tags, comma-separated"
+                />
+              </label>
+              <label>
+                <span className="form-label">Sort</span>
+                <select
+                  className="input"
+                  value={sort}
+                  disabled={freezeControls}
+                  onChange={(event) =>
+                    preferences.setField(
+                      'sort',
+                      parseViewField('actionItems', 'sort', event.target.value),
+                    )
+                  }
+                >
+                  {actionItemSortOptions(status).map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {(status !== 'open' || sort !== 'manual') && (
+              <p className="text-muted-sm">
+                To drag items into order, use Open with Manual order; search and
+                filters can stay applied.
+              </p>
+            )}
+            <ActionItemDeadlineWindow
+              hours={dueHoursInput}
+              onChange={(hours) =>
+                preferences.setField('due_within_hours', hours)
+              }
+              disabled={freezeControls}
+            />
+          </>
+        }
       />
       <ActionItemQueueTable
         queue={queue}
