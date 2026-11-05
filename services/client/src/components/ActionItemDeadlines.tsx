@@ -1,3 +1,4 @@
+import { FilterCheckbox } from './FilterCheckbox';
 import { useEffect, useId, useState } from 'react';
 import { DateCell } from './table';
 import {
@@ -110,20 +111,17 @@ export function ActionItemDeadlineWindow({
   }
   return (
     <>
-      <label className="checkbox-label filter-checkbox">
-        <input
-          className="form-checkbox"
-          type="checkbox"
-          aria-controls={`${id}-details`}
-          checked={hours !== null}
-          disabled={disabled}
-          onChange={(event) => {
-            setError(null);
-            onChange(event.target.checked ? 24 : null);
-          }}
-        />
+      <FilterCheckbox
+        aria-controls={`${id}-details`}
+        checked={hours !== null}
+        disabled={disabled}
+        onChange={(event) => {
+          setError(null);
+          onChange(event.target.checked ? 24 : null);
+        }}
+      >
         Deadline window
-      </label>
+      </FilterCheckbox>
       <section
         id={`${id}-details`}
         className="action-deadline-window"
