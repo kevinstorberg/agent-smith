@@ -8,6 +8,7 @@ import { FilterBar } from '../components/FilterBar';
 import { Pagination } from '../components/Pagination';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { usePagination } from '../hooks/usePagination';
+import { usePolling } from '../hooks/usePolling';
 import { makeRowClickable } from '../utils/a11y';
 import { EVAL_SUITE_SORT_OPTIONS } from '../constants';
 import { useViewPreferences } from '../hooks/useViewPreferences';
@@ -18,6 +19,8 @@ export function EvalSuitesPage() {
   const preferences = useViewPreferences('evalSuites');
   const { q: query, enabled, sort } = preferences.values;
   const [mutationError, setMutationError] = useState(false);
+  const [togglePending, setTogglePending] = useState(false);
+  const writing = useRef(false);
   const debouncedQuery = useDebouncedValue(query);
   const {
     items: suites,
@@ -54,8 +57,14 @@ export function EvalSuitesPage() {
       mounted.current = false;
     };
   }, []);
+  usePolling(() => refresh({ showLoading: false }), {
+    enabled: !loading && !togglePending && debouncedQuery === query,
+  });
 
   const toggleEnabled = async (suite: EvalSuite) => {
+    if (writing.current) return;
+    writing.current = true;
+    setTogglePending(true);
     setMutationError(false);
     try {
       await api.evalConfigs.suites.update(suite.id, {
@@ -64,6 +73,9 @@ export function EvalSuitesPage() {
       if (mounted.current) await latestRefresh.current({ showLoading: false });
     } catch {
       if (mounted.current) setMutationError(true);
+    } finally {
+      writing.current = false;
+      if (mounted.current) setTogglePending(false);
     }
   };
 
@@ -169,6 +181,7 @@ export function EvalSuitesPage() {
                 <td>
                   <EnabledToggleCell
                     enabled={suite.enabled}
+                    disabled={togglePending}
                     ariaLabel={`Enable ${suite.name}`}
                     onChange={() => toggleEnabled(suite)}
                   />

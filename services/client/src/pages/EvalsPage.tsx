@@ -9,6 +9,7 @@ import { FilterBar } from '../components/FilterBar';
 import { useApiRead } from '../hooks/useApiRead';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { usePagination } from '../hooks/usePagination';
+import { usePolling } from '../hooks/usePolling';
 import { RESULT_SORT_OPTIONS } from '../constants';
 import { useViewPreferences } from '../hooks/useViewPreferences';
 import { parseViewField } from '../utils/viewPreferences';
@@ -85,6 +86,26 @@ export function EvalsPage() {
       [chartMode, params],
     ),
     { enabled: query === debouncedQuery },
+  );
+  usePolling(
+    async () => {
+      await Promise.all([
+        refresh({ showLoading: false }),
+        chart.refresh({ showLoading: false }),
+        categories.refresh({ showLoading: false }),
+        subcategories.refresh({ showLoading: false }),
+        facets.refresh({ showLoading: false }),
+      ]);
+    },
+    {
+      enabled:
+        query === debouncedQuery &&
+        !loading &&
+        !chart.loading &&
+        !categories.loading &&
+        !subcategories.loading &&
+        !facets.loading,
+    },
   );
   const scenarios = [
     ...new Set([

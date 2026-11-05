@@ -3,8 +3,8 @@ import {
   mergeViewCookie,
   readViewCookie,
 } from '../../utils/viewPreferences';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { EvalsPage } from '../EvalsPage';
 
@@ -82,7 +82,7 @@ function makeRun(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   mockCategories.mockResolvedValue(['rules', 'skills']);
   mockSubcategories.mockResolvedValue(['core', 'advanced']);
   mockFacets.mockResolvedValue({
@@ -95,6 +95,220 @@ beforeEach(() => {
 });
 
 describe('EvalsPage', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('waits for initial Results reads before starting a polling cycle', async () => {
+    vi.useFakeTimers();
+    let finish!: (value: string[]) => void;
+    mockCategories.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await act(async () => {
+      renderWithProviders(<EvalsPage />, { initialEntries: ['/evals'] });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    [
+      mockList,
+      mockChartAverage,
+      mockCategories,
+      mockSubcategories,
+      mockFacets,
+    ].forEach((read) => expect(read).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      finish(['rules']);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    [
+      mockList,
+      mockChartAverage,
+      mockCategories,
+      mockSubcategories,
+      mockFacets,
+    ].forEach((read) => expect(read).toHaveBeenCalledTimes(2));
+  });
+
+  it('silently refreshes the current Results page, complete chart and filter options every 15 seconds', async () => {
+    vi.useFakeTimers();
+    document.cookie = mergeViewCookie('', 'results', {
+      ...defaultView('results'),
+      q: 'quality',
+      category: 'skills',
+      subcategory: 'core',
+      scenario: 'test_scenario',
+      model: 'gpt-4',
+      sort: 'score',
+      limit: 25,
+      offset: 50,
+    });
+    mockList.mockResolvedValue({ items: [makeRun()], total: 100 });
+    mockChartAverage.mockResolvedValue([
+      { timestamp: '2026-01-01T00:00:00Z', score: 0.8 },
+    ]);
+    let view!: ReturnType<typeof renderWithProviders>;
+    await act(async () => {
+      view = renderWithProviders(<EvalsPage />, { initialEntries: ['/evals'] });
+    });
+    const reads = [
+      mockList,
+      mockChartAverage,
+      mockCategories,
+      mockSubcategories,
+      mockFacets,
+    ];
+    reads.forEach((read) => read.mockClear());
+    let finish!: (value: unknown) => void;
+    mockList.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    mockCategories.mockResolvedValue(['rules', 'skills', 'New category']);
+    mockFacets.mockResolvedValue({
+      scenarios: ['new scenario'],
+      models: ['new model'],
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(14_999);
+    });
+    reads.forEach((read) => expect(read).not.toHaveBeenCalled());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    reads.forEach((read) => expect(read).toHaveBeenCalledTimes(1));
+    expect(mockList).toHaveBeenLastCalledWith({
+      eval_type: 'skills',
+      subcategory: 'core',
+      scenario: 'test_scenario',
+      model: 'gpt-4',
+      q: 'quality',
+      sort: 'score',
+      limit: '25',
+      offset: '50',
+    });
+    expect(mockChartAverage).toHaveBeenLastCalledWith({
+      eval_type: 'skills',
+      subcategory: 'core',
+      scenario: 'test_scenario',
+      model: 'gpt-4',
+      q: 'quality',
+    });
+    expect(mockFacets).toHaveBeenLastCalledWith({
+      eval_type: 'skills',
+      subcategory: 'core',
+      q: 'quality',
+    });
+    expect(
+      screen.getByRole('option', { name: 'New category' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: 'new scenario' }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('chart')).toBeVisible();
+    expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+    expect(screen.queryByText('Loading chart...')).not.toBeInTheDocument();
+    await act(async () => {
+      finish({
+        items: [makeRun({ scenario: 'New agent result' })],
+        total: 100,
+      });
+    });
+    expect(screen.getByText('New agent result')).toBeVisible();
+    view.unmount();
+    reads.forEach((read) => read.mockClear());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    reads.forEach((read) => expect(read).not.toHaveBeenCalled());
+  });
+
+  it.each(['list', 'chart', 'categories', 'subcategories', 'facets'] as const)(
+    'waits for the %s request before another grouped Results poll',
+    async (held) => {
+      vi.useFakeTimers();
+      await act(async () => {
+        renderWithProviders(<EvalsPage />, { initialEntries: ['/evals'] });
+      });
+      const reads = {
+        list: mockList,
+        chart: mockChartAverage,
+        categories: mockCategories,
+        subcategories: mockSubcategories,
+        facets: mockFacets,
+      };
+      Object.values(reads).forEach((read) => read.mockClear());
+      let finish!: (value: unknown) => void;
+      reads[held].mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      Object.values(reads).forEach((read) =>
+        expect(read).toHaveBeenCalledTimes(1),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      Object.values(reads).forEach((read) =>
+        expect(read).toHaveBeenCalledTimes(1),
+      );
+      const value =
+        held === 'list'
+          ? { items: [], total: 0 }
+          : held === 'facets'
+            ? { scenarios: [], models: [] }
+            : [];
+      await act(async () => {
+        finish(value);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      Object.values(reads).forEach((read) =>
+        expect(read).toHaveBeenCalledTimes(2),
+      );
+    },
+  );
+
+  it('keeps a later Results query when a prior poll completes last', async () => {
+    vi.useFakeTimers();
+    await act(async () => {
+      renderWithProviders(<EvalsPage />, { initialEntries: ['/evals'] });
+    });
+    let finish!: (value: unknown) => void;
+    mockList.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    mockList.mockResolvedValue({
+      items: [makeRun({ scenario: 'current result' })],
+      total: 1,
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search' }), {
+      target: { value: 'current' },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(screen.getByText('current result')).toBeVisible();
+    await act(async () => {
+      finish({ items: [makeRun({ scenario: 'stale result' })], total: 1 });
+    });
+    expect(screen.queryByText('stale result')).not.toBeInTheDocument();
+    expect(mockChartAverage).toHaveBeenLastCalledWith({ q: 'current' });
+  });
   it('restores the same filters before table, facet and chart reads and atomically clears dependent criteria', async () => {
     document.cookie = mergeViewCookie('', 'results', {
       ...defaultView('results'),

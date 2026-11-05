@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { useLocation } from 'react-router';
 import { MeetingsIndexPage } from '../MeetingsIndexPage';
@@ -60,6 +60,7 @@ function Location() {
 beforeEach(() => {
   document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.clearAllMocks();
+  mockList.mockReset();
   mockList.mockResolvedValue({ items: meetings, total: 2 });
   vi.mocked(api.meetings.vocabulary.list).mockResolvedValue({
     items: [],
@@ -68,6 +69,33 @@ beforeEach(() => {
 });
 
 describe('MeetingsIndexPage', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('refreshes the same filtered meeting page at 15 seconds without hiding rows', async () => {
+    vi.useFakeTimers();
+    mockList.mockResolvedValue({ items: meetings, total: 25 });
+    await act(async () => {
+      renderWithProviders(<MeetingsIndexPage />, {
+        initialEntries: ['/meetings?q=release&sort=updated'],
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    });
+    const lastParams = mockList.mock.calls.at(-1)![0];
+    expect(lastParams).toMatchObject({ q: 'release', offset: 10 });
+    mockList.mockClear().mockReturnValueOnce(new Promise(() => {}));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(14_999);
+    });
+    expect(mockList).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(mockList).toHaveBeenCalledExactlyOnceWith(lastParams);
+    expect(screen.getByText('Product planning')).toBeVisible();
+    expect(screen.queryByText('Loading meetings...')).not.toBeInTheDocument();
+  });
   it('keeps search, labels and sort controls available during loading and empty results', async () => {
     mockList.mockResolvedValue({ items: [], total: 0 });
     renderWithProviders(<MeetingsIndexPage />, {

@@ -1,5 +1,5 @@
 export const ALL_AGENTS = ['claude', 'codex', 'gemini'] as const;
-export const POLL_INTERVAL_MS = 60_000;
+export const POLL_INTERVAL_MS = 15_000;
 export const PAGE_LIMITS = [10, 25, 50] as const;
 export type PageLimit = (typeof PAGE_LIMITS)[number];
 export const HARNESS_SORT_OPTIONS = [

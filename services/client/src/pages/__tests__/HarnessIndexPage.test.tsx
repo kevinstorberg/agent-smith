@@ -8,6 +8,11 @@ import {
 } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { HarnessIndexPage } from '../HarnessIndexPage';
+import {
+  defaultView,
+  harnessViewKey,
+  mergeViewCookie,
+} from '../../utils/viewPreferences';
 
 const drag = vi.hoisted(() => ({ start: vi.fn(), end: vi.fn() }));
 vi.mock('@hello-pangea/dnd', () => ({
@@ -87,7 +92,7 @@ function makeItem(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   mockList.mockResolvedValue({ items: [makeItem()], total: 1 });
   mockUpdateMetadata.mockResolvedValue({});
   mockMove.mockResolvedValue({});
@@ -98,6 +103,177 @@ afterEach(() => {
 });
 
 describe('HarnessIndexPage', () => {
+  it.each(['rule', 'skill', 'tool', 'hook', 'agent'])(
+    'silently polls the current %s page at 15 seconds and stops on unmount',
+    async (type) => {
+      vi.useFakeTimers();
+      const key = harnessViewKey(type);
+      document.cookie = mergeViewCookie('', key, {
+        ...defaultView(key),
+        name: 'visible',
+        project: 'docs',
+        sort: 'updated',
+        limit: 25,
+        offset: 25,
+      });
+      mockList.mockResolvedValue({ items: [makeItem()], total: 100 });
+      let view!: ReturnType<typeof renderWithProviders>;
+      await act(async () => {
+        view = renderWithProviders(<HarnessIndexPage type={type} />, {
+          initialEntries: [
+            `/harness/${{ rule: 'rules', skill: 'skills', tool: 'tools', hook: 'hooks', agent: 'agents' }[type]}`,
+          ],
+        });
+      });
+      expect(mockList).toHaveBeenCalledExactlyOnceWith(type, {
+        limit: 25,
+        offset: 25,
+        name: 'visible',
+        project: 'docs',
+        sort: 'updated',
+      });
+      let finish!: (value: unknown) => void;
+      mockList.mockClear().mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(14_999);
+      });
+      expect(mockList).not.toHaveBeenCalled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(mockList).toHaveBeenCalledExactlyOnceWith(type, {
+        limit: 25,
+        offset: 25,
+        name: 'visible',
+        project: 'docs',
+        sort: 'updated',
+      });
+      expect(screen.getByText('test_rule')).toBeVisible();
+      expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      expect(mockList).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        finish({ items: [makeItem({ name: 'Agent update' })], total: 100 });
+      });
+      expect(screen.getByText('Agent update')).toBeVisible();
+      view.unmount();
+      mockList.mockClear();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(mockList).not.toHaveBeenCalled();
+    },
+  );
+
+  it('pauses polling during a drag and its save and recovery read', async () => {
+    vi.useFakeTimers();
+    const rows = [makeItem(), makeItem({ id: 2, name: 'second_rule' })];
+    mockList.mockResolvedValue({ items: rows, total: 2 });
+    let finishWrite!: (value: unknown) => void;
+    let finishRead!: (value: unknown) => void;
+    mockMove.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishWrite = resolve;
+      }),
+    );
+    await act(async () => {
+      renderWithProviders(<HarnessIndexPage type="rule" />, {
+        initialEntries: ['/harness/rules'],
+      });
+    });
+    act(() => {
+      drag.start();
+    });
+    mockList.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(mockList).not.toHaveBeenCalled();
+    let end!: Promise<void>;
+    act(() => {
+      end = drag.end({
+        draggableId: '1',
+        reason: 'DROP',
+        source: { index: 0 },
+        destination: { index: 1 },
+      });
+    });
+    expect(mockMove).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(mockList).not.toHaveBeenCalled();
+    mockList.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishRead = resolve;
+      }),
+    );
+    await act(async () => {
+      finishWrite({});
+    });
+    expect(mockList).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(mockList).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finishRead({ items: rows, total: 2 });
+      await end;
+    });
+    mockList.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(mockList).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an old poll after filters change and waits for settled criteria', async () => {
+    vi.useFakeTimers();
+    await act(async () => {
+      renderWithProviders(<HarnessIndexPage type="rule" />, {
+        initialEntries: ['/harness/rules'],
+      });
+    });
+    let finish!: (value: unknown) => void;
+    mockList.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    mockList.mockResolvedValue({
+      items: [makeItem({ name: 'current filtered item' })],
+      total: 1,
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search' }), {
+      target: { value: 'current' },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(screen.getByText('current filtered item')).toBeVisible();
+    await act(async () => {
+      finish({ items: [makeItem({ name: 'stale poll' })], total: 1 });
+    });
+    expect(screen.queryByText('stale poll')).not.toBeInTheDocument();
+    mockList.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(mockList).toHaveBeenCalledExactlyOnceWith(
+      'rule',
+      expect.objectContaining({ name: 'current', offset: 0 }),
+    );
+  });
+
   it.each(['enabled', 'clone_as_skill'] as const)(
     'refreshes server order after changing %s using the current filter and page',
     async (field) => {
@@ -153,6 +329,10 @@ describe('HarnessIndexPage', () => {
       mockList
         .mockResolvedValue({ items: [items[1], items[0]], total: 25 })
         .mockClear();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(mockList).not.toHaveBeenCalled();
       await act(async () => {
         finish({});
       });

@@ -5,6 +5,7 @@ import type { MeetingVocabulary as VocabularyTerm } from '../api';
 import { useApiRead } from '../hooks/useApiRead';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { usePagination } from '../hooks/usePagination';
+import { usePolling } from '../hooks/usePolling';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { Pagination } from './Pagination';
 import { useViewPreferences } from '../hooks/useViewPreferences';
@@ -118,6 +119,9 @@ export function MeetingVocabulary({ active = true }: { active?: boolean }) {
     },
   });
   const busy = Boolean(draft || removing || change.loading);
+  usePolling(() => list.refresh({ showLoading: false }), {
+    enabled: active && !list.loading && !busy && query === search.trim(),
+  });
   const start = (entry?: VocabularyTerm) => {
     setDraft({
       term: entry?.term || '',
