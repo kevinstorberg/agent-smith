@@ -5,11 +5,61 @@ failure must allow the main session to stop. The replacement metadata is
 [claude_memories.metadata.json](examples/claude_memories.metadata.json), which is
 the authoritative prompt and permission artifact.
 
-Draft each memory within 250 whitespace-separated words, retaining its supported scope and
-identifiers. Rewrite oversized drafts and do not pad shorter ones. The shared memory write
-boundary keeps the first 250 words before embedding and storage; capture evidence, source
-pages and receipts keep their existing contracts. The artifact updates guidance for future
-harness deployment and does not edit a live hook or skill.
+Each complete memory must fit **256 total embedding tokens**, including the
+current MiniLM encoder's two special tokens: **254 tokens for text**, including
+any source references. These are WordPiece tokens from the embedding tokenizer,
+not words or the generating model's tokens. A meeting's complete source/evidence
+footer further reduces its body allowance.
+
+Meeting staging and MCP `memory_add` or supplied-content `memory_update` reject
+oversized drafts without writing. Their feedback gives the measured allowance
+and count so the agent can rewrite a complete supported fact. Exact evidence
+quotes, source pages and capture receipts stay complete. The hook may revise a
+token-budget rejection within its existing three-addition-call budget; permission
+denials and other unsuccessful saves retain the existing failure procedure.
+
+Direct HTTP edits, CLI additions and shared database writes keep the authorized
+fitting-prefix fallback. They store and embed the identical verified prefix,
+return the stored text on HTTP readback, and log only original/final token counts.
+A touched oversized historical record can be shortened by that write; there is
+no corpus scan or automatic rewrite. Existing exact publication replays and
+frozen envelopes retain their compatibility contracts.
+
+This source artifact does not update the saved `memory` skill or
+`claude_memories` hook. Apply prompt guidance through the harness UI when ready.
+
+## Update the memory skill through the UI
+
+1. Open **Harness → Skills → memory → Edit → Guided**.
+2. In **Instructions**, add this paragraph under **Store**, preserving the
+   existing recall, project-scoping and tag instructions:
+
+   > Write each memory as one concise, self-contained supported fact or decision,
+   > preserving essential identifiers, scope and provenance. Keep its complete
+   > record within 256 total embedding tokens, including special tokens; the
+   > current MiniLM model leaves 254 tokens for text and any source references.
+   > These are embedding-tokenizer tokens, not your model's tokens. Use the
+   > memory tool's measured allowance and count feedback to rewrite oversized
+   > drafts into complete supported statements before saving. Never pad a short
+   > memory, shorten source evidence, or increase the embedding window.
+
+3. Save the skill; the backend assembles its Markdown frontmatter.
+4. Review its assignments, then run **Sync** when ready to distribute it.
+
+## Update the Claude hook through the UI
+
+1. Open **Harness → Hooks → claude_memories → Edit → Guided**.
+2. Under **Handlers**, keep the existing **agent** handler and edit its **Prompt**.
+3. Add the skill guidance above to its memory-writing procedure; permit a
+   rewrite after an explicit token-budget validation rejection only within the
+   existing three `memory_add` calls, and keep other failures on the existing
+   `FAIL` path.
+4. Preserve the existing event, model, timeout, helper, permissions, scope rules
+   and receipt procedure; compare with the reviewed source artifact.
+5. Save, review assignments, and run **Sync** when ready.
+
+The optional **Raw** tab shows the assembled structure. User-specific prompt
+content should be retained when applying this guidance.
 
 ## Deployment through the harness
 
@@ -57,7 +107,8 @@ the inspected sources currently have no additional complete records. Every read
 can return `busy` or a safe error. There is no background worker or automatic
 retry loop: later Stops resume pending coverage. The agent uses at most two
 pages, three additions, six searches, and one recent-memory listing per Stop;
-the hook timeout is 120 seconds. Budget exhaustion leaves work pending.
+the hook timeout is 120 seconds. The three calls include token-budget rejections;
+budget exhaustion leaves work pending.
 
 Acknowledgement checks file identity, scanned bytes, cursor coverage, and the
 scope/context hash. Source or scope drift rejects the acknowledgement; appended

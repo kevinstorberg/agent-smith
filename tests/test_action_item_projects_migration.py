@@ -21,9 +21,10 @@ def test_project_catalog_migration_backfills_every_exact_legacy_name_and_roundtr
     monkeypatch,
 ):
     migration = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
-    head = ScriptDirectory.from_config(migration).get_current_head()
-    assert head != PARENT, (
-        "Project catalog migration must extend the actual profile-topic schema"
+    head = "e7c4b9d2a6f1"
+    assert (
+        ScriptDirectory.from_config(migration).get_revision(head).down_revision
+        == PARENT
     )
     with temporary_postgres() as url:
         create_database(url)

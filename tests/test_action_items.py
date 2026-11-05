@@ -26,25 +26,73 @@ def client():
 
 
 def test_action_items_lifecycle_and_explicit_clears(client):
-    response = client.post("/api/action-items", json={"title": "  Follow up  ", "description": "Details", "project": " Work ", "tags": [" Security ", "security", "Product"]})
+    response = client.post(
+        "/api/action-items",
+        json={
+            "title": "  Follow up  ",
+            "description": "Details",
+            "project": " Work ",
+            "tags": [" Security ", "security", "Product"],
+        },
+    )
     assert response.status_code == 201
     first = response.json()
-    assert (first["title"], first["project"], first["tags"]) == ("Follow up", "Work", ["product", "security"])
-    assert first["status"] == "open" and first["completed_at"] is None and first["revision"] == 1
-    assert set(first) == {"id", "title", "description", "project", "tags", "status", "completed_at", "revision", "created_at", "updated_at", "priority"}
-    changed = client.patch(f"/api/action-items/{first['id']}", json={"expected_revision": 1, "project": None, "description": None, "tags": []}).json()
-    assert changed["title"] == "Follow up" and changed["project"] is None and changed["description"] == "" and changed["tags"] == []
+    assert (first["title"], first["project"], first["tags"]) == (
+        "Follow up",
+        "Work",
+        ["product", "security"],
+    )
+    assert (
+        first["status"] == "open"
+        and first["completed_at"] is None
+        and first["revision"] == 1
+    )
+    assert set(first) == {
+        "id",
+        "title",
+        "description",
+        "project",
+        "tags",
+        "status",
+        "completed_at",
+        "revision",
+        "created_at",
+        "updated_at",
+        "priority",
+        "due_at",
+    }
+    assert first["due_at"] is None
+    changed = client.patch(
+        f"/api/action-items/{first['id']}",
+        json={"expected_revision": 1, "project": None, "description": None, "tags": []},
+    ).json()
+    assert (
+        changed["title"] == "Follow up"
+        and changed["project"] is None
+        and changed["description"] == ""
+        and changed["tags"] == []
+    )
     assert changed["revision"] == 2
     complete = db.update(first["id"], {"expected_revision": 2, "status": "completed"})
     assert complete["completed_at"] and complete["revision"] == 3
-    assert db.update(first["id"], {"expected_revision": 3, "status": "completed"}) == complete
+    assert (
+        db.update(first["id"], {"expected_revision": 3, "status": "completed"})
+        == complete
+    )
     assert db.list_items()["total"] == 0
     assert db.list_items({"status": "completed"})["total"] == 1
     assert "description" not in db.list_items({"status": "all"})["items"][0]
     reopened = db.update(first["id"], {"expected_revision": 3, "status": "open"})
     assert reopened["completed_at"] is None and reopened["revision"] == 4
-    assert client.request("DELETE", f"/api/action-items/{first['id']}", json={"expected_revision": 1}).status_code == 409
-    assert client.request("DELETE", f"/api/action-items/{first['id']}", json={"expected_revision": 4}).json() == {"deleted": True, "id": first["id"]}
+    assert (
+        client.request(
+            "DELETE", f"/api/action-items/{first['id']}", json={"expected_revision": 1}
+        ).status_code
+        == 409
+    )
+    assert client.request(
+        "DELETE", f"/api/action-items/{first['id']}", json={"expected_revision": 4}
+    ).json() == {"deleted": True, "id": first["id"]}
     assert client.get(f"/api/action-items/{first['id']}").status_code == 404
     assert db.list_items({"status": "all"})["total"] == 0
 
@@ -52,7 +100,9 @@ def test_action_items_lifecycle_and_explicit_clears(client):
 def test_action_items_creation_replay_preserves_later_edits_and_tombstones():
     payload = {"title": "Original", "tags": [" Work "], "request_id": str(uuid4())}
     first = db.create(payload)
-    changed = db.update(first["id"], {"expected_revision": 1, "title": "Edited", "status": "completed"})
+    changed = db.update(
+        first["id"], {"expected_revision": 1, "title": "Edited", "status": "completed"}
+    )
     assert db.create({**payload, "tags": ["work"]}) == changed
     with pytest.raises(db.Conflict, match="different input"):
         db.create({**payload, "title": "Different"})
@@ -63,12 +113,24 @@ def test_action_items_creation_replay_preserves_later_edits_and_tombstones():
         db.create(payload)
 
 
-@pytest.mark.parametrize("payload", [
-    {}, {"title": " \n "}, {"title": "x" * 201}, {"title": 7}, {"title": "ok", "status": "pending"},
-    {"title": "ok", "request_id": "bad"}, {"title": "ok", "revision": 99}, {"title": "ok", "priority": 3}, {"title": "ok", "tags": [""]},
-    {"title": "ok", "tags": ["x" * 101]}, {"title": "ok", "tags": ["tag"] * 21},
-    {"title": "ok", "project": "x" * 201}, {"title": "ok", "description": "x" * 100001},
-])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"title": " \n "},
+        {"title": "x" * 201},
+        {"title": 7},
+        {"title": "ok", "status": "pending"},
+        {"title": "ok", "request_id": "bad"},
+        {"title": "ok", "revision": 99},
+        {"title": "ok", "priority": 3},
+        {"title": "ok", "tags": [""]},
+        {"title": "ok", "tags": ["x" * 101]},
+        {"title": "ok", "tags": ["tag"] * 21},
+        {"title": "ok", "project": "x" * 201},
+        {"title": "ok", "description": "x" * 100001},
+    ],
+)
 def test_action_items_create_validation_is_shared_and_atomic(client, payload):
     assert client.post("/api/action-items", json=payload).status_code == 422
     with pytest.raises((ValueError, ValidationError)):
@@ -76,20 +138,51 @@ def test_action_items_create_validation_is_shared_and_atomic(client, payload):
     assert db.list_items()["total"] == 0
 
 
-@pytest.mark.parametrize("payload", [
-    {"title": None}, {"status": None}, {"status": "pending"}, {"sort_key": 3}, {"priority": 3}, {"id": 3},
-    {"expected_revision": True}, {"expected_revision": "1"}, {"expected_revision": 0},
-])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"title": None},
+        {"status": None},
+        {"status": "pending"},
+        {"sort_key": 3},
+        {"priority": 3},
+        {"id": 3},
+        {"expected_revision": True},
+        {"expected_revision": "1"},
+        {"expected_revision": 0},
+    ],
+)
 def test_action_items_patch_rejects_invalid_inputs_without_mutation(client, payload):
     first = db.create({"title": "Task"})
-    assert client.patch(f"/api/action-items/{first['id']}", json={"expected_revision": 1, **payload}).status_code == 422
+    assert (
+        client.patch(
+            f"/api/action-items/{first['id']}", json={"expected_revision": 1, **payload}
+        ).status_code
+        == 422
+    )
     assert db.get(first["id"]) == first
 
 
 def test_action_items_search_filters_before_count_and_pagination():
     for index in range(12):
-        db.create({"title": f"Task {index:02}", "description": "Needle" if index % 2 else "Other", "project": "work" if index < 10 else "personal", "tags": ["product", "security"] if index % 2 else ["product"]})
-    result = db.list_items({"q": "NEEDLE", "project": "work", "tags": ["Product", "Security"], "sort": "title", "limit": 2, "offset": 2})
+        db.create(
+            {
+                "title": f"Task {index:02}",
+                "description": "Needle" if index % 2 else "Other",
+                "project": "work" if index < 10 else "personal",
+                "tags": ["product", "security"] if index % 2 else ["product"],
+            }
+        )
+    result = db.list_items(
+        {
+            "q": "NEEDLE",
+            "project": "work",
+            "tags": ["Product", "Security"],
+            "sort": "title",
+            "limit": 2,
+            "offset": 2,
+        }
+    )
     assert result["total"] == 5
     assert [item["title"] for item in result["items"]] == ["Task 05", "Task 07"]
     assert db.list_items({"q": "' OR true --"})["total"] == 0
@@ -100,28 +193,71 @@ def test_action_items_search_filters_before_count_and_pagination():
 
 
 def test_action_items_public_priority_tracks_the_global_open_queue(client):
-    created = [db.create({"title": f"Task {25 - index:02}", "project": "selected" if index in (2, 12, 23) else "other"})
-               for index in range(25)]
+    created = [
+        db.create(
+            {
+                "title": f"Task {25 - index:02}",
+                "project": "selected" if index in (2, 12, 23) else "other",
+            }
+        )
+        for index in range(25)
+    ]
     assert [item["priority"] for item in created] == list(range(1, 26))
     page = client.get("/api/action-items", params={"limit": 10, "offset": 10}).json()
     assert [item["priority"] for item in page["items"]] == list(range(11, 21))
-    filtered = client.get("/api/action-items", params={"project": "selected", "sort": "title"}).json()
+    filtered = client.get(
+        "/api/action-items", params={"project": "selected", "sort": "title"}
+    ).json()
     assert [item["priority"] for item in filtered["items"]] == [24, 13, 3]
-    assert client.get("/api/action-items", params={"project": "selected", "sort": "title", "limit": 1, "offset": 1}).json()["items"][0]["priority"] == 13
-    moved = db.move(created[0]["id"], {"expected_revision": 1, "after_id": created[9]["id"]})
+    assert (
+        client.get(
+            "/api/action-items",
+            params={"project": "selected", "sort": "title", "limit": 1, "offset": 1},
+        ).json()["items"][0]["priority"]
+        == 13
+    )
+    moved = db.move(
+        created[0]["id"], {"expected_revision": 1, "after_id": created[9]["id"]}
+    )
     assert moved["priority"] == 10
     assert db.get(created[1]["id"])["priority"] == 1
     assert db.get(created[1]["id"])["revision"] == 1
-    completed = client.patch(f"/api/action-items/{created[1]['id']}", json={"expected_revision": 1, "status": "completed"}).json()
+    completed = client.patch(
+        f"/api/action-items/{created[1]['id']}",
+        json={"expected_revision": 1, "status": "completed"},
+    ).json()
     assert completed["priority"] is None
     assert db.get(moved["id"])["priority"] == 9
-    assert client.get("/api/action-items", params={"status": "completed"}).json()["items"][0]["priority"] is None
-    reopened = db.update(completed["id"], {"expected_revision": completed["revision"], "status": "open"})
+    assert (
+        client.get("/api/action-items", params={"status": "completed"}).json()["items"][
+            0
+        ]["priority"]
+        is None
+    )
+    reopened = db.update(
+        completed["id"], {"expected_revision": completed["revision"], "status": "open"}
+    )
     assert reopened["priority"] == 25
-    assert db.create({"title": "Already complete", "status": "completed"})["priority"] is None
+    assert (
+        db.create({"title": "Already complete", "status": "completed"})["priority"]
+        is None
+    )
 
 
-@pytest.mark.parametrize("query", [{"limit": 0}, {"limit": 101}, {"offset": -1}, {"q": " "}, {"q": "x" * 1001}, {"status": "bad"}, {"sort": "DROP TABLE action_items"}, {"status": "completed", "sort": "manual"}, {"sort_key": 2}])
+@pytest.mark.parametrize(
+    "query",
+    [
+        {"limit": 0},
+        {"limit": 101},
+        {"offset": -1},
+        {"q": " "},
+        {"q": "x" * 1001},
+        {"status": "bad"},
+        {"sort": "DROP TABLE action_items"},
+        {"status": "completed", "sort": "manual"},
+        {"sort_key": 2},
+    ],
+)
 def test_action_items_invalid_queries(client, query):
     assert client.get("/api/action-items", params=query).status_code == 422
 
@@ -140,31 +276,70 @@ def test_action_items_stale_writes_and_rollback(monkeypatch):
 
     monkeypatch.setattr(db, "_read", failed_read)
     with pytest.raises(RuntimeError, match="Injected"):
-        db.update(first["id"], {"expected_revision": changed["revision"], "title": "Rolled back"})
+        db.update(
+            first["id"],
+            {"expected_revision": changed["revision"], "title": "Rolled back"},
+        )
     monkeypatch.setattr(db, "_read", original)
     assert db.get(first["id"]) == changed
 
 
-@pytest.mark.parametrize("side,source_index,anchor_index,expected", [
-    ("after_id", 0, 1, [0, 1, 2, 3, 4, 6, 7, 5, 8, 9, 10, 11]),
-    ("before_id", 1, 0, [0, 1, 2, 3, 4, 7, 5, 6, 8, 9, 10, 11]),
-])
-def test_action_items_filtered_page_move_preserves_every_unmoved_row(client, side, source_index, anchor_index, expected):
-    created = [db.create({"title": f"{'Selected' if index % 2 else 'Hidden'} task {index}",
-                          "project": "Work" if index % 2 else "Other", "tags": ["security"] if index % 2 else []})
-               for index in range(12)]
-    params = {"q": "Selected", "project": "Work", "tags": "security", "status": "open", "sort": "manual", "limit": 2, "offset": 2}
+@pytest.mark.parametrize(
+    "side,source_index,anchor_index,expected",
+    [
+        ("after_id", 0, 1, [0, 1, 2, 3, 4, 6, 7, 5, 8, 9, 10, 11]),
+        ("before_id", 1, 0, [0, 1, 2, 3, 4, 7, 5, 6, 8, 9, 10, 11]),
+    ],
+)
+def test_action_items_filtered_page_move_preserves_every_unmoved_row(
+    client, side, source_index, anchor_index, expected
+):
+    created = [
+        db.create(
+            {
+                "title": f"{'Selected' if index % 2 else 'Hidden'} task {index}",
+                "project": "Work" if index % 2 else "Other",
+                "tags": ["security"] if index % 2 else [],
+            }
+        )
+        for index in range(12)
+    ]
+    params = {
+        "q": "Selected",
+        "project": "Work",
+        "tags": "security",
+        "status": "open",
+        "sort": "manual",
+        "limit": 2,
+        "offset": 2,
+    }
     page = client.get("/api/action-items", params=params).json()
     assert page["total"] == 6
-    assert [row["id"] for row in page["items"]] == [created[index]["id"] for index in (5, 7)]
+    assert [row["id"] for row in page["items"]] == [
+        created[index]["id"] for index in (5, 7)
+    ]
     source, anchor = page["items"][source_index], page["items"][anchor_index]
     before = db.list_items({"limit": 100})["items"]
-    response = client.post(f"/api/action-items/{source['id']}/move", json={"expected_revision": source["revision"], side: anchor["id"]})
+    response = client.post(
+        f"/api/action-items/{source['id']}/move",
+        json={"expected_revision": source["revision"], side: anchor["id"]},
+    )
     assert response.status_code == 200
     after = db.list_items({"limit": 100})["items"]
     assert [row["id"] for row in after] == [created[index]["id"] for index in expected]
-    assert [{key: value for key, value in row.items() if key != "priority"} for row in before if row["id"] != source["id"]] == [
-        {key: value for key, value in row.items() if key != "priority"} for row in after if row["id"] != source["id"]]
+    assert [
+        {key: value for key, value in row.items() if key != "priority"}
+        for row in before
+        if row["id"] != source["id"]
+    ] == [
+        {key: value for key, value in row.items() if key != "priority"}
+        for row in after
+        if row["id"] != source["id"]
+    ]
     refreshed = client.get("/api/action-items", params=params).json()
-    expected_visible = [anchor["id"], source["id"]] if side == "after_id" else [source["id"], anchor["id"]]
+    expected_visible = (
+        [anchor["id"], source["id"]]
+        if side == "after_id"
+        else [source["id"], anchor["id"]]
+    )
     assert [row["id"] for row in refreshed["items"]] == expected_visible

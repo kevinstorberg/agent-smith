@@ -11,6 +11,7 @@ from psycopg2.extras import Json, RealDictCursor
 from pydantic import TypeAdapter
 
 from services.action_items.contracts import (
+    Contract,
     Create,
     Delete,
     Move,
@@ -58,7 +59,7 @@ class _Scope:
 
     def columns(self, *, detail: bool) -> str:
         return (_PUBLIC if detail else _LIST) + (
-            ", a.profile_id::text AS profile_id" if self.profile_id else ""
+            ", a.profile_id::text AS profile_id" if self.profile_id else ", a.due_at"
         )
 
 
@@ -280,9 +281,21 @@ class Queue:
                 raise ValueError("Queue profile_id must be a UUID string or None")
             object.__setattr__(self, "profile_id", str(UUID(self.profile_id)))
 
+    def _validate_scope_fields(self, request: Contract) -> None:
+        if self.profile_id is not None and request.model_fields_set & {
+            "due_at",
+            "due_within_hours",
+        }:
+            raise ValueError("Profile discussion topics do not support deadline fields")
+
     def create(self, payload: Create | dict) -> dict:
         request = Create.model_validate(payload)
+        self._validate_scope_fields(request)
         original = request.model_dump(exclude={"request_id"})
+        # Historical creation receipts have no deadline key; their original bytes remain authoritative.
+        deadline = original.pop("due_at")
+        if deadline is not None:
+            original["due_at"] = deadline.isoformat()
         with _cursor(self.profile_id, write=True) as (cursor, scope):
             if request.request_id is not None:
                 cursor.execute(
@@ -312,8 +325,8 @@ class Queue:
             original["project"] = _project_name(cursor, request.project)
             project = _ensure_project(cursor, original["project"])
             cursor.execute(
-                """INSERT INTO action_items(title,description,project_id,tags,status,completed_at,sort_key,request_id,create_payload,profile_id)
-                VALUES (%s,%s,%s,%s,%s,CASE WHEN %s='completed' THEN clock_timestamp() ELSE NULL END,%s,%s,%s,%s) RETURNING id""",
+                """INSERT INTO action_items(title,description,project_id,tags,status,completed_at,sort_key,request_id,create_payload,profile_id,due_at)
+                VALUES (%s,%s,%s,%s,%s,CASE WHEN %s='completed' THEN clock_timestamp() ELSE NULL END,%s,%s,%s,%s,%s) RETURNING id""",
                 (
                     request.title,
                     request.description,
@@ -327,6 +340,7 @@ class Queue:
                     request.request_id,
                     Json(original) if request.request_id else None,
                     scope.profile_id,
+                    request.due_at,
                 ),
             )
             return _read(cursor, cursor.fetchone()["id"], scope)
@@ -338,6 +352,7 @@ class Queue:
 
     def list_items(self, payload: Query | dict | None = None) -> dict:
         query = Query.model_validate(payload or {})
+        self._validate_scope_fields(query)
         predicates, values = ["a.scope_key=%s", "a.deleted_at IS NULL"], []
         if query.status != "all":
             predicates.append("a.status=%s")
@@ -350,6 +365,11 @@ class Queue:
             values.extend([f"%{escaped}%"] * 2)
         if query.unassigned:
             predicates.append("a.project_id IS NULL")
+        if query.due_within_hours is not None:
+            predicates.append(
+                "a.due_at <= CURRENT_TIMESTAMP + make_interval(hours => %s)"
+            )
+            values.append(query.due_within_hours)
         if query.tags:
             predicates.append("a.tags @> %s::text[]")
             values.append(query.tags)
@@ -385,6 +405,7 @@ class Queue:
 
     def update(self, item_id: int, payload: Patch | dict) -> dict:
         item_id, patch = _id(item_id), Patch.model_validate(payload)
+        self._validate_scope_fields(patch)
         changes = patch.model_dump(exclude_unset=True, exclude={"expected_revision"})
         with _cursor(self.profile_id, write=True) as (cursor, scope):
             before = _live(cursor, item_id, scope, patch.expected_revision)

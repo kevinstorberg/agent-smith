@@ -15,7 +15,12 @@ from langchain_core.documents import Document
 from scripts.shared.validation import validate_memory_id
 from services.config import MEMORY_STORE_PATH
 from services.memory.backends import (
-    TIMESTAMP_FIELDS, access_datetime, build_row, canonical_metadata, memory_ids, metadata_datetime,
+    TIMESTAMP_FIELDS,
+    access_datetime,
+    build_row,
+    canonical_metadata,
+    memory_ids,
+    metadata_datetime,
 )
 
 STORE_PATH = Path(MEMORY_STORE_PATH)
@@ -46,19 +51,27 @@ def _prepare_table():
         table = _get_table()
         if table is not None:
             metadata_type = table.schema.field("metadata").type
-            missing = [pa.field(name, pa.string()) for name in ("source_type", "source_id") if name not in metadata_type.names]
+            missing = [
+                pa.field(name, pa.string())
+                for name in ("source_type", "source_id")
+                if name not in metadata_type.names
+            ]
             if missing:
                 table.add_columns(pa.schema([pa.field("metadata", pa.struct(missing))]))
         return table
 
 
 class _UpsertingLanceDBVectorStore(LanceDBVectorStore):
-    def similarity_search_with_score(self, query: str, k: int = 4, **kwargs: Any) -> list[tuple[Document, float]]:
+    def similarity_search_with_score(
+        self, query: str, k: int = 4, **kwargs: Any
+    ) -> list[tuple[Document, float]]:
         if _get_table() is None:
             return []
         return super().similarity_search_with_score(query, k=k, **kwargs)
 
-    def similarity_search(self, query: str, k: int = 4, **kwargs: Any) -> list[Document]:
+    def similarity_search(
+        self, query: str, k: int = 4, **kwargs: Any
+    ) -> list[Document]:
         if _get_table() is None:
             return []
         return super().similarity_search(query, k=k, **kwargs)
@@ -68,7 +81,9 @@ class _UpsertingLanceDBVectorStore(LanceDBVectorStore):
             return self._add_documents(documents, **kwargs)
 
     def _add_documents(self, documents: list[Document], **kwargs: Any) -> list[str]:
-        ids = memory_ids(kwargs.get("ids") or [doc.metadata.get("id") for doc in documents])
+        ids = memory_ids(
+            kwargs.get("ids") or [doc.metadata.get("id") for doc in documents]
+        )
         if len(ids) != len(documents):
             raise ValueError("Every LanceDB memory document must have one unique UUID")
         kwargs["ids"] = ids
@@ -76,19 +91,34 @@ class _UpsertingLanceDBVectorStore(LanceDBVectorStore):
         for document in sanitized:
             document.metadata = canonical_metadata(document.metadata)
         table = _prepare_table()
-        metadata_type = table.schema.field("metadata").type if table is not None else None
+        metadata_type = (
+            table.schema.field("metadata").type if table is not None else None
+        )
         for document in sanitized:
             for field in TIMESTAMP_FIELDS:
                 if document.metadata.get(field) is None:
                     continue
-                field_type = metadata_type.field(field).type if metadata_type is not None and field in metadata_type.names else None
-                if (field_type is not None and pa.types.is_timestamp(field_type)) or (table is None and field == "last_accessed_at"):
-                    document.metadata[field] = metadata_datetime(document.metadata[field], field)
+                field_type = (
+                    metadata_type.field(field).type
+                    if metadata_type is not None and field in metadata_type.names
+                    else None
+                )
+                if (field_type is not None and pa.types.is_timestamp(field_type)) or (
+                    table is None and field == "last_accessed_at"
+                ):
+                    document.metadata[field] = metadata_datetime(
+                        document.metadata[field], field
+                    )
         existing_rows: list[dict] = []
         if table:
             for id, document in zip(ids, sanitized, strict=True):
                 validate_memory_id(id)
-                rows = table.search().where(f"id = '{id}'", prefilter=True).limit(1).to_list()
+                rows = (
+                    table.search()
+                    .where(f"id = '{id}'", prefilter=True)
+                    .limit(1)
+                    .to_list()
+                )
                 if rows:
                     existing_rows.extend(deepcopy(rows))
                     old_access = rows[0].get("metadata", {}).get("last_accessed_at")
@@ -96,16 +126,23 @@ class _UpsertingLanceDBVectorStore(LanceDBVectorStore):
                     if old_access is not None:
                         latest = metadata_datetime(old_access, "last_accessed_at")
                         if new_access is not None:
-                            latest = max(latest, metadata_datetime(new_access, "last_accessed_at"))
+                            latest = max(
+                                latest,
+                                metadata_datetime(new_access, "last_accessed_at"),
+                            )
                         access_type = metadata_type.field("last_accessed_at").type
-                        document.metadata["last_accessed_at"] = latest if pa.types.is_timestamp(access_type) else latest.isoformat()
+                        document.metadata["last_accessed_at"] = (
+                            latest
+                            if pa.types.is_timestamp(access_type)
+                            else latest.isoformat()
+                        )
                     table.delete(f"id = '{id}'")
 
         try:
             return super().add_documents(sanitized, **kwargs)
         except Exception:
             current_table = _get_table()
-            if current_table and existing_rows:
+            if current_table is not None and existing_rows:
                 current_table.add(existing_rows)
             raise
 
@@ -133,11 +170,14 @@ def list_rows(repo: str | None = None, limit: int = 20) -> list[dict]:
     rows = tbl.search().limit(int(limit) * 5).to_list()
     if repo:
         rows = [r for r in rows if r.get("metadata", {}).get("repo") == repo]
-    return _canonical_rows(rows[:int(limit)])
+    return _canonical_rows(rows[: int(limit)])
 
 
 def _canonical_rows(rows: list[dict]) -> list[dict]:
-    return [build_row(row["id"], row.get("text", ""), row.get("metadata", {})) for row in rows]
+    return [
+        build_row(row["id"], row.get("text", ""), row.get("metadata", {}))
+        for row in rows
+    ]
 
 
 def get_row(id: str) -> dict | None:
@@ -152,7 +192,15 @@ def get_rows(ids: list[str]) -> list[dict]:
     tbl = _get_table()
     if not tbl:
         return []
-    rows = {row["id"]: row for row in _canonical_rows(tbl.search().where(_ids_filter(ids), prefilter=True).limit(len(ids)).to_list())}
+    rows = {
+        row["id"]: row
+        for row in _canonical_rows(
+            tbl.search()
+            .where(_ids_filter(ids), prefilter=True)
+            .limit(len(ids))
+            .to_list()
+        )
+    }
     return [rows[id] for id in ids if id in rows]
 
 
@@ -175,23 +223,47 @@ def _touch_accessed(ids: list[str], stamp: datetime) -> dict[str, str]:
     with _schema_lock:
         metadata_type = table.schema.field("metadata").type
         if "last_accessed_at" not in metadata_type.names:
-            table.add_columns(pa.schema([pa.field("metadata", pa.struct([pa.field("last_accessed_at", pa.string())]))]))
+            table.add_columns(
+                pa.schema(
+                    [
+                        pa.field(
+                            "metadata",
+                            pa.struct([pa.field("last_accessed_at", pa.string())]),
+                        )
+                    ]
+                )
+            )
         elif pa.types.is_null(metadata_type.field("last_accessed_at").type):
-            raise ValueError("LanceDB memory last_accessed_at has a null-only schema; migrate it to a timestamp or ISO string column")
+            raise ValueError(
+                "LanceDB memory last_accessed_at has a null-only schema; migrate it to a timestamp or ISO string column"
+            )
         metadata_type = table.schema.field("metadata").type
     field_type = metadata_type.field("last_accessed_at").type
-    if not (pa.types.is_timestamp(field_type) or pa.types.is_string(field_type) or pa.types.is_large_string(field_type)):
-        raise ValueError("LanceDB memory last_accessed_at must be a timestamp or ISO string column")
+    if not (
+        pa.types.is_timestamp(field_type)
+        or pa.types.is_string(field_type)
+        or pa.types.is_large_string(field_type)
+    ):
+        raise ValueError(
+            "LanceDB memory last_accessed_at must be a timestamp or ISO string column"
+        )
     latest = f"GREATEST(CAST(metadata.last_accessed_at AS TIMESTAMP), TIMESTAMP '{stamp.isoformat()}')"
     if not pa.types.is_timestamp(field_type):
         latest = f"to_char({latest}, '%Y-%m-%dT%H:%M:%S%.6f+00:00')"
     fields = []
     for field in metadata_type:
         key = "'" + field.name.replace("'", "''") + "'"
-        value = latest if field.name == "last_accessed_at" else f"get_field(metadata, {key})"
+        value = (
+            latest
+            if field.name == "last_accessed_at"
+            else f"get_field(metadata, {key})"
+        )
         fields.extend((key, value))
     # Nested assignments are unsupported; current-row expressions preserve sibling metadata.
-    table.update(where=_ids_filter(ids), values_sql={"metadata": "named_struct(" + ", ".join(fields) + ")"})
+    table.update(
+        where=_ids_filter(ids),
+        values_sql={"metadata": "named_struct(" + ", ".join(fields) + ")"},
+    )
     return {row["id"]: row["metadata"]["last_accessed_at"] for row in get_rows(ids)}
 
 

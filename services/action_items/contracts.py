@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import re
 from typing import Annotated, Literal
 import unicodedata
 from uuid import UUID
 
 from pydantic import (
     BaseModel,
+    AwareDatetime,
     ConfigDict,
     Field,
     StringConstraints,
+    TypeAdapter,
     field_validator,
     model_validator,
 )
@@ -24,6 +28,7 @@ Title = Annotated[
 ]
 Description = Annotated[str, StringConstraints(max_length=MAX_BODY_LENGTH)]
 MAX_PROJECT_NAME_LENGTH = 200
+MAX_DUE_WINDOW_HOURS = 168
 Project = Annotated[str, StringConstraints(max_length=MAX_PROJECT_NAME_LENGTH)]
 Tags = Annotated[list[str], Field(max_length=20)]
 
@@ -92,7 +97,40 @@ class ProjectFields(Contract):
         return None if value == "" else value
 
 
-class Editable(ItemEditable, ProjectFields):
+class DueFields(Contract):
+    due_at: datetime | None = Field(
+        default=None,
+        description="Timezone-aware deadline with microsecond precision, at most six fractional digits.",
+    )
+
+    @field_validator("due_at", mode="before")
+    @classmethod
+    def utc_deadline(cls, value: object) -> datetime | None:
+        if value is None:
+            return None
+        if (
+            not isinstance(value, (str, datetime))
+            or isinstance(value, str)
+            and "T" not in value
+        ):
+            raise ValueError("due_at must be an ISO datetime with an explicit timezone")
+        if isinstance(value, str):
+            fraction = re.search(r"[.,](\d+)", value)
+            if fraction is not None and len(fraction.group(1)) > 6:
+                raise ValueError("due_at supports at most six fractional second digits")
+        try:
+            return (
+                TypeAdapter(AwareDatetime)
+                .validate_python(value)
+                .astimezone(timezone.utc)
+            )
+        except (ValueError, OverflowError) as error:
+            raise ValueError(
+                "due_at must be a valid timezone-aware datetime within the UTC calendar"
+            ) from error
+
+
+class Editable(ItemEditable, ProjectFields, DueFields):
     pass
 
 
@@ -109,7 +147,7 @@ class ItemCreate(ItemEditable):
         return str(UUID(value)) if value is not None else None
 
 
-class Create(ItemCreate, ProjectFields):
+class Create(ItemCreate, ProjectFields, DueFields):
     pass
 
 
@@ -117,7 +155,7 @@ class ItemPatch(ItemEditable):
     expected_revision: PositiveInt
 
 
-class Patch(ItemPatch, ProjectFields):
+class Patch(ItemPatch, ProjectFields, DueFields):
     pass
 
 
@@ -168,6 +206,9 @@ class ItemQuery(Contract):
 
 class Query(ItemQuery, ProjectFields):
     unassigned: bool = False
+    due_within_hours: (
+        Annotated[int, Field(strict=True, ge=1, le=MAX_DUE_WINDOW_HOURS)] | None
+    ) = None
 
     @model_validator(mode="after")
     def project_scope(self):

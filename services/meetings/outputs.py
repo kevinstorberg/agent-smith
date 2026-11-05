@@ -2,11 +2,23 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from services.meetings.profile_fields import METADATA_CHOICES
-from services.meetings.topics import MemoryKind as MemoryKind, TOPIC_LENGTH, TOPIC_LIMIT, normalize_topics
-from services.memory.content import MAX_MEMORY_WORDS, normalize_memory_content
+from services.meetings.topics import (
+    MemoryKind as MemoryKind,
+    TOPIC_LENGTH,
+    TOPIC_LIMIT,
+    normalize_topics,
+)
+from services.memory.content import MAX_MEMORY_TOKENS
 
 
 def _nonblank(value: str) -> str:
@@ -16,7 +28,19 @@ def _nonblank(value: str) -> str:
 
 
 _Content = Annotated[str, AfterValidator(_nonblank)]
-ProfileCategory = Literal["driver", "strength", "development_area", "role", "priority", "communication", "decision_pattern", "perception", "interaction", "relationship", "uncertainty"]
+ProfileCategory = Literal[
+    "driver",
+    "strength",
+    "development_area",
+    "role",
+    "priority",
+    "communication",
+    "decision_pattern",
+    "perception",
+    "interaction",
+    "relationship",
+    "uncertainty",
+]
 ProfileEpistemic = Literal["self_report", "observed", "inference"]
 ProfileConfidence = Literal["low", "medium", "high"]
 ProfileReviewStatus = Literal["active", "corrected", "rejected"]
@@ -33,16 +57,20 @@ class Evidence(_Output):
 
 
 class MemoryItem(_Output):
-    content: _Content = Field(min_length=1, max_length=4000,
-                             description=f"A self-contained memory of at most {MAX_MEMORY_WORDS} whitespace-separated words")
+    content: _Content = Field(
+        min_length=1,
+        max_length=4000,
+        description=(
+            f"One concise self-contained memory; its complete publication, including "
+            f"source/evidence footer and model special tokens, must fit {MAX_MEMORY_TOKENS} "
+            "embedding tokens. Rewrite oversized drafts using staging feedback."
+        ),
+    )
     kind: MemoryKind
-    tags: list[Annotated[str, Field(min_length=1, max_length=TOPIC_LENGTH)]] = Field(min_length=1, max_length=TOPIC_LIMIT)
+    tags: list[Annotated[str, Field(min_length=1, max_length=TOPIC_LENGTH)]] = Field(
+        min_length=1, max_length=TOPIC_LIMIT
+    )
     evidence: list[Evidence] = Field(min_length=1, max_length=10)
-
-    @field_validator("content")
-    @classmethod
-    def bounded_memory(cls, value: str) -> str:
-        return normalize_memory_content(value)
 
     @field_validator("tags")
     @classmethod
@@ -53,7 +81,9 @@ class MemoryItem(_Output):
 class MemorySubmission(_Output):
     items: list[MemoryItem] = Field(max_length=20)
     reason: str = Field(default="", max_length=2000)
-    context_labels: list[Annotated[str, Field(min_length=1, max_length=TOPIC_LENGTH)]] = Field(default_factory=list, max_length=TOPIC_LIMIT)
+    context_labels: list[
+        Annotated[str, Field(min_length=1, max_length=TOPIC_LENGTH)]
+    ] = Field(default_factory=list, max_length=TOPIC_LIMIT)
 
     @field_validator("context_labels")
     @classmethod
@@ -81,16 +111,28 @@ class ProfileClaim(_Output):
         if self.target_id == self.subject_id:
             raise ValueError("A directed claim must target a different participant")
         if self.category in {"perception", "relationship"} and self.target_id is None:
-            raise ValueError("Perception and relationship claims require a directed target participant")
-        if self.epistemic == "inference" and (self.confidence == "high" or not self.rationale):
-            raise ValueError("Inferences require a rationale and low or medium confidence")
+            raise ValueError(
+                "Perception and relationship claims require a directed target participant"
+            )
+        if self.epistemic == "inference" and (
+            self.confidence == "high" or not self.rationale
+        ):
+            raise ValueError(
+                "Inferences require a rationale and low or medium confidence"
+            )
         return self
 
 
 class ProfileMetadataPatch(_Output):
     subject_id: str = Field(min_length=1, max_length=200)
-    fields: dict[str, str] = Field(min_length=1, max_length=7, description="Explicitly supported optional metadata. "
-                                 + "; ".join(f"{key}: {', '.join(choices)}" for key, choices in METADATA_CHOICES.items()))
+    fields: dict[str, str] = Field(
+        min_length=1,
+        max_length=7,
+        description="Explicitly supported optional metadata. "
+        + "; ".join(
+            f"{key}: {', '.join(choices)}" for key, choices in METADATA_CHOICES.items()
+        ),
+    )
     evidence: list[Evidence] = Field(min_length=1, max_length=10)
 
     @field_validator("fields")
@@ -98,7 +140,9 @@ class ProfileMetadataPatch(_Output):
     def valid_fields(cls, value: dict[str, str]) -> dict[str, str]:
         from services.meetings import profile_fields
 
-        result = profile_fields.fields(value, profile_fields.METADATA_FIELDS, "metadata")
+        result = profile_fields.fields(
+            value, profile_fields.METADATA_FIELDS, "metadata"
+        )
         if any(not item for item in result.values()):
             raise ValueError("Agent metadata fields must be nonblank")
         return result
@@ -106,5 +150,7 @@ class ProfileMetadataPatch(_Output):
 
 class ProfileSubmission(_Output):
     items: list[ProfileClaim] = Field(max_length=20)
-    metadata_updates: list[ProfileMetadataPatch] = Field(default_factory=list, max_length=20)
+    metadata_updates: list[ProfileMetadataPatch] = Field(
+        default_factory=list, max_length=20
+    )
     reason: str = Field(default="", max_length=2000)

@@ -24,8 +24,22 @@ def _embedding(x: float, y: float = 0.0) -> list[float]:
 
 class FakeEmbeddings(Embeddings):
     def __init__(self, *, fail_on: str | None = None, dimension: int = 384):
+        from tests.embedding_fakes import FakeEmbeddingClient
+
         self.fail_on = fail_on
         self.dimension = dimension
+        self._client = FakeEmbeddingClient()
+        self.encode_kwargs = {}
+        self.multi_process = False
+
+    def memory_token_budget(self):
+        from services.memory.content import MemoryTokenBudget
+        from services.memory.embedding_budget import EmbeddingTokenCounter
+
+        counter = EmbeddingTokenCounter(self)
+        return MemoryTokenBudget(
+            counter.max_tokens, counter.special_tokens, counter.count
+        )
 
     def _embed(self, text: str) -> list[float]:
         if self.fail_on and self.fail_on in text:
@@ -228,8 +242,6 @@ def test_high_level_search_applies_repo_and_tag_filters():
     )
     memory_db.add("Python testing", repo="other", tags=["python"])
 
-    results = memory_db.search(
-        "Python", repo="agent-smith", tags=["architecture"]
-    )
+    results = memory_db.search("Python", repo="agent-smith", tags=["architecture"])
 
     assert [result["id"] for result in results] == [matching_id]
