@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -30,10 +31,17 @@ def test_costs_route_caches_repeated_polls_and_returns_safe_scope(
     client, monkeypatch, tmp_path
 ):
     monkeypatch.setenv("AWS_COSTS_ENABLED", "true")
+    monkeypatch.setenv("AWS_COSTS_ACCOUNT_ID", "123456789012")
     monkeypatch.setenv("COSTS_CACHE_PATH", str(tmp_path))
     calls = []
 
-    def collect(now, profile):
+    identity_calls = []
+
+    def prepare(profile, *, expected_account):
+        identity_calls.append(expected_account)
+        return SimpleNamespace(account_id=expected_account, profile_name=profile)
+
+    def collect(now, profile, *, prepared):
         calls.append(1)
         return CostReport(
             provider="aws",
@@ -43,15 +51,18 @@ def test_costs_route_caches_repeated_polls_and_returns_safe_scope(
             total="1.23",
             estimated=True,
             scope="AWS account 123456789012",
+            account_id=prepared.account_id,
             fetched_at=now,
         )
 
     monkeypatch.setattr(service, "fetch_aws", collect)
+    monkeypatch.setattr(service, "prepare_aws", prepare)
     for _ in range(4):
         data = client.get("/api/costs/aws").json()
         assert data["state"] == "ready"
         assert data["report"]["total"] == "1.23"
     assert calls == [1]
+    assert identity_calls == ["123456789012"] * 4
 
 
 def test_costs_route_rejects_unknown_provider_and_invalid_configuration(

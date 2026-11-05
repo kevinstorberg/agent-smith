@@ -221,6 +221,12 @@ def test_costs_aws_paginates_and_preserves_refunds_with_real_decimal_math():
     assert data.daily == [{"label": "2026-11-04", "amount": "0.07"}]
     assert client.calls[1]["NextPageToken"] == "next"
     assert client.calls[0]["Metrics"] == ["UnblendedCost"]
+    assert all(
+        request["Filter"]
+        == {"Dimensions": {"Key": "LINKED_ACCOUNT", "Values": ["123456789012"]}}
+        for request in client.calls
+    )
+    assert data.scope == "AWS account 123456789012"
 
 
 @pytest.mark.parametrize("bad", ["NaN", "Infinity", "not-a-cost"])
@@ -304,6 +310,9 @@ def test_costs_native_sdk_clients_are_closed_after_refresh(monkeypatch):
                 "Granularity": "DAILY",
                 "Metrics": ["UnblendedCost"],
                 "GroupBy": [{"Type": "DIMENSION", "Key": "SERVICE"}],
+                "Filter": {
+                    "Dimensions": {"Key": "LINKED_ACCOUNT", "Values": ["123456789012"]}
+                },
             },
         )
         assert fetch_aws(NOW).total == "1.25"

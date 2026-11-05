@@ -8,14 +8,19 @@ from decimal import Decimal, InvalidOperation
 from datetime import timedelta
 from pathlib import Path
 
-from services.costs.aws import fetch_aws, month_window
+from services.costs.aws import fetch_aws, month_window, prepare_aws
 from services.costs.cache import SnapshotCache
 from services.costs.pinecone_pricing import (
     STANDARD_MONTHLY_MINIMUM_USD,
     optional_setting,
 )
 from services.costs.pinecone_usage import PriceBook, build_usage, resolve_price_book
-from services.costs.contracts import require_utc
+from services.costs.contracts import (
+    CostReport,
+    ProviderFailure,
+    require_utc,
+    valid_aws_account,
+)
 
 
 def _enabled(name: str, values=None) -> bool:
@@ -42,24 +47,54 @@ def cache_directory(values=None) -> Path:
 def read_aws_costs(now: datetime | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
     try:
-        if not _enabled("AWS_COSTS_ENABLED"):
+        now = require_utc(now)
+        values = dict(os.environ)
+        if not _enabled("AWS_COSTS_ENABLED", values):
             return {
                 "state": "disabled",
                 "report": None,
                 "error": None,
                 "message": "Enable AWS_COSTS_ENABLED=true and configure read-only AWS billing credentials; Cost Explorer charges $0.01 per API page.",
             }
-        profile = (
-            os.environ.get("AWS_COSTS_PROFILE") or os.environ.get("AWS_PROFILE") or None
-        )
+        expected = values.get("AWS_COSTS_ACCOUNT_ID", "")
+        if not valid_aws_account(expected):
+            raise ProviderFailure(
+                "not_configured",
+                "Set AWS_COSTS_ACCOUNT_ID to the verified application account's 12-digit ID before enabling billing reads.",
+            )
+        profile = values.get("AWS_COSTS_PROFILE") or None
         if profile is not None and (
             len(profile) > 256 or any(ord(character) < 32 for character in profile)
         ):
             raise ValueError("AWS_COSTS_PROFILE must be a valid AWS profile name")
-        scope = f"{profile or 'default-chain'}:{os.environ.get('AWS_CONFIG_FILE', '')}:{os.environ.get('AWS_SHARED_CREDENTIALS_FILE', '')}:{month_window(now)[0]}"
-        return SnapshotCache(cache_directory(), "aws", scope).read_or_refresh(
-            now, lambda: fetch_aws(now, profile)
-        )
+        prepared = prepare_aws(profile, expected_account=expected)
+        scope = f"account-v1:{prepared.account_id}:target:{expected}:{prepared.profile_name or 'default-chain'}:{values.get('AWS_CONFIG_FILE', '')}:{values.get('AWS_SHARED_CREDENTIALS_FILE', '')}:{month_window(now)[0]}"
+        cache = SnapshotCache(cache_directory(values), "aws", scope)
+
+        def validate(report: dict | None) -> None:
+            if report is not None and report.get("account_id") != expected:
+                raise ProviderFailure(
+                    "invalid_snapshot",
+                    "AWS cost snapshot account does not match the verified application account; the report was not displayed.",
+                )
+
+        def collect() -> CostReport:
+            report = fetch_aws(now, profile, prepared=prepared)
+            validate(report.model_dump(mode="json"))
+            return report
+
+        validate(cache.read()["report"])
+        result = cache.read_or_refresh(now, collect)
+        validate(result["report"])
+        return result
+    except ProviderFailure as error:
+        return {
+            "state": "not_configured"
+            if error.code in {"not_configured", "account_mismatch"}
+            else "failed",
+            "report": None,
+            "error": {"code": error.code, "message": error.message},
+        }
     except (ValueError, OSError):
         return {
             "state": "not_configured",
