@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query as QueryParam, Request
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Path,
+    Query as QueryParam,
+    Request,
+)
 
 from services.action_items import db
 from services.action_items.contracts import Create, Delete, Move, Patch, Query
@@ -9,14 +16,33 @@ from services.api.routers.shared.items import call_item as _call
 router = APIRouter()
 
 
-def _query(request: Request, q: str | None = None, status: str = "open", project: str | None = None,
-           tags: list[str] = QueryParam(default=[]), sort: str | None = None,
-           limit: int = 10, offset: int = 0) -> Query:
+def _query(
+    request: Request,
+    q: str | None = None,
+    status: str = "open",
+    project: str | None = None,
+    tags: list[str] = QueryParam(default=[]),
+    sort: str | None = None,
+    limit: int = 10,
+    offset: int = 0,
+) -> Query:
     unknown = set(request.query_params) - Query.model_fields.keys()
     if unknown:
-        raise HTTPException(422, f"Unknown action item filters: {', '.join(sorted(unknown))}")
-    return _call(Query.model_validate, {"q": q, "status": status, "project": project, "tags": tags,
-                                       "sort": sort, "limit": limit, "offset": offset})
+        raise HTTPException(
+            422, f"Unknown action item filters: {', '.join(sorted(unknown))}"
+        )
+    return _call(
+        Query.model_validate,
+        {
+            "q": q,
+            "status": status,
+            "project": project,
+            "tags": tags,
+            "sort": sort,
+            "limit": limit,
+            "offset": offset,
+        },
+    )
 
 
 @router.get("")
