@@ -10,6 +10,18 @@ import { ActionItemStatusButton } from './ActionItemStatusButton';
 import { ActionItemDueDate } from './ActionItemDeadlines';
 import './actionItemQueue.css';
 
+function containProjectCue(cue: HTMLSpanElement | null) {
+  if (!cue) return;
+  cue.style.left = '0px';
+  const rect = cue.getBoundingClientRect();
+  const margin = 8;
+  const offset = Math.max(
+    margin - rect.left,
+    Math.min(0, document.documentElement.clientWidth - margin - rect.right),
+  );
+  cue.style.left = `${offset}px`;
+}
+
 function ActionItemDescription({
   item,
   get,
@@ -197,6 +209,7 @@ export function ActionItemQueueTable({
                                   <td>
                                     {state.isDragging && snapshot?.project && (
                                       <span
+                                        ref={(cue) => containProjectCue(cue)}
                                         className="tag tag-project action-item-project-drop-cue"
                                         aria-hidden="true"
                                         title={`Move to ${snapshot.project}`}

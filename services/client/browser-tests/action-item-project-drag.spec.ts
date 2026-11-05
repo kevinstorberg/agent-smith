@@ -471,17 +471,7 @@ test('project pointer targeting remains usable at doubled text size', async ({
 }, testInfo) => {
   const writes = projectFixture(fixtureAPI);
   await page.goto('/action-items');
-  await enlargeComputedText(page, 2);
-  await page.evaluate(() => {
-    // The typography helper suppresses transitions, but SDK drops finish on transitionend.
-    for (const style of document.querySelectorAll('style')) {
-      if (
-        style.textContent ===
-        '*, *::before, *::after { transition: none !important; animation: none !important; }'
-      )
-        style.remove();
-    }
-  });
+  await enlargeComputedText(page, 2, { preserveMotion: true });
   await page
     .getByRole('tab', { name: 'Work', exact: true })
     .scrollIntoViewIfNeeded();
@@ -492,6 +482,34 @@ test('project pointer targeting remains usable at doubled text size', async ({
       path: `/private/tmp/agent-smith-project-drag-${testInfo.project.name}-1740.png`,
       fullPage: false,
     });
+  }
+  await page.mouse.up();
+  await expect
+    .poll(() => writes)
+    .toEqual([{ expected_revision: 1, project: 'Work' }]);
+});
+
+test('repeated pointer project choices and tab scrolling keep the cue contained without navigating', async ({
+  page,
+  fixtureAPI,
+}) => {
+  const writes = projectFixture(fixtureAPI);
+  await page.goto('/action-items');
+  await page
+    .getByRole('tab', { name: 'Work', exact: true })
+    .scrollIntoViewIfNeeded();
+  await liftPointer(page);
+  for (const name of ['Work', 'Source', 'Other', 'Work']) {
+    await page
+      .getByRole('tab', { name, exact: true })
+      .evaluate((button) =>
+        button.scrollIntoView({ block: 'nearest', inline: 'nearest' }),
+      );
+    await pointAtProject(page, name);
+    await expect(
+      page.getByRole('tab', { name: 'All projects', exact: true }),
+    ).toHaveAttribute('aria-selected', 'true');
+    expect(writes).toEqual([]);
   }
   await page.mouse.up();
   await expect
