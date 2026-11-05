@@ -215,6 +215,7 @@ export type ActionItemMove = { expected_revision: number } & (
 export interface ActionItemFilters extends PaginationParams {
   q?: string;
   project?: string;
+  unassigned?: boolean;
   tags?: string[];
   status?: ActionItemStatus | 'all';
   sort?: ActionItemSort;
@@ -231,7 +232,16 @@ export interface ProfileDiscussionTopicPage extends Paginated<ProfileDiscussionT
 }
 export type ProfileDiscussionTopicCreate = Omit<ActionItemCreate, 'project'>;
 export type ProfileDiscussionTopicPatch = Omit<ActionItemPatch, 'project'>;
-export type ProfileDiscussionTopicFilters = Omit<ActionItemFilters, 'project'>;
+export type ProfileDiscussionTopicFilters = Omit<
+  ActionItemFilters,
+  'project' | 'unassigned'
+>;
+
+export interface ActionItemProject {
+  id: number;
+  name: string;
+  created_at: string;
+}
 
 const ACTION_ITEM_TIMEOUT_MS = 30_000;
 const HARNESS_TIMEOUT_MS = 30_000;
@@ -1107,10 +1117,31 @@ export const api = {
   costs: {
     get: (provider: string) => get<CostResponse>(`/costs/${provider}`),
   },
+  actionItemProjects: {
+    list: () =>
+      get<Paginated<ActionItemProject>>(
+        '/action-items/projects',
+        undefined,
+        ACTION_ITEM_TIMEOUT_MS,
+      ),
+    create: (name: string) =>
+      post<ActionItemProject>(
+        '/action-items/projects',
+        { name },
+        ACTION_ITEM_TIMEOUT_MS,
+      ),
+    remove: (id: number) =>
+      del<{ deleted: boolean; id: number }>(
+        `/action-items/projects/${id}`,
+        undefined,
+        ACTION_ITEM_TIMEOUT_MS,
+      ),
+  },
   actionItems: {
     list: (filters: ActionItemFilters = {}) => {
       const params = itemFilterParams(filters);
       if (filters.project) params.project = filters.project;
+      if (filters.unassigned) params.unassigned = 'true';
       return get<Paginated<ActionItemRow>>(
         '/action-items',
         params,

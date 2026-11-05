@@ -46,3 +46,7 @@ test('Navigation stays compact on mobile and supports keyboard recovery', async 
   await expectDocumentContained(page);
   await expectMainContained(page);
 });
+
+test.beforeEach(async ({ fixtureAPI }) => {
+  fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
+});
