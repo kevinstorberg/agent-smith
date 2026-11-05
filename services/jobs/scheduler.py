@@ -42,6 +42,7 @@ from services.jobs.models.job import list_jobs
 from services.jobs.schedule import parse_interval
 from services.jobs.scoping import job_runs_on_device
 from services.observability import (
+    action_operation,
     billable_operation,
     current_trigger,
     trigger_context,
@@ -167,11 +168,14 @@ async def execute_job(job: dict, *, automatic: bool = False) -> dict:
             "skipped": True,
         }
 
-    with trigger_context(
-        trigger="job.scheduled" if automatic else "job.manual",
-        origin=current_trigger().get("trigger", "unknown"),
-        job_id=job_id,
-        execution_id=exec_id,
+    with (
+        trigger_context(
+            trigger="job.scheduled" if automatic else "job.manual",
+            origin=current_trigger().get("trigger", "unknown"),
+            job_id=job_id,
+            execution_id=exec_id,
+        ),
+        action_operation("jobs", "run", owner="job") as operation,
     ):
         work_decision("job_started")
         # Defense in depth for rows created before validate_input_params existed.
@@ -191,6 +195,7 @@ async def execute_job(job: dict, *, automatic: bool = False) -> dict:
         work_decision(
             "job_finished", outcome="success" if result.get("success") else "failed"
         )
+        operation.finish("success" if result.get("success") else "failed")
     return {**result, "execution_id": exec_id}
 
 

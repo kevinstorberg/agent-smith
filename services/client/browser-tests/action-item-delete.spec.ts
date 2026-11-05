@@ -96,3 +96,7 @@ for (const scale of [1, 2]) {
     await expectMainContained(page);
   });
 }
+
+test.beforeEach(async ({ fixtureAPI }) => {
+  fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
+});

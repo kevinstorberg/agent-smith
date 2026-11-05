@@ -22,6 +22,7 @@ from services.memory.backends import (
 )
 from services.memory.content import normalize_memory_content
 from services.config import MEMORY_EMBEDDING_DEVICE, MEMORY_EMBEDDING_MODEL
+from services.observability import action_operation
 
 MODEL_NAME = MEMORY_EMBEDDING_MODEL
 DECAY_RATE = float(os.environ.get("MEMORY_DECAY_RATE", "0.01"))
@@ -61,10 +62,24 @@ def _get_embeddings() -> Embeddings:
     if _embeddings is None:
         with _embeddings_lock:
             if _embeddings is None:
-                model = HuggingFaceEmbeddings(
-                    model_name=MODEL_NAME,
-                    model_kwargs={"device": MEMORY_EMBEDDING_DEVICE},
+                offline = any(
+                    os.environ.get(key, "").upper() in {"1", "ON", "YES", "TRUE"}
+                    for key in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE")
                 )
+                model_kwargs = {"device": MEMORY_EMBEDDING_DEVICE}
+                if offline:
+                    model_kwargs["local_files_only"] = True
+                with action_operation(
+                    "hugging_face",
+                    "load",
+                    owner="embedding",
+                    local_only=offline,
+                    model_role="memory_embedding",
+                    reason="offline_cache" if offline else "cache_or_download",
+                ):
+                    model = HuggingFaceEmbeddings(
+                        model_name=MODEL_NAME, model_kwargs=model_kwargs
+                    )
                 _embeddings = _SerializedEmbeddings(model)
     return _embeddings
 
