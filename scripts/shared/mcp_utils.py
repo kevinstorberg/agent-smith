@@ -9,19 +9,36 @@ from pathlib import Path
 import tomli_w
 
 from scripts.shared.agents import AGENT_TARGETS, _read_config
+from scripts.shared.claude_repo_scope import resolve_repo
 from scripts.shared.env import env_references, expand_env, read_env_file
 from scripts.shared.fs import atomic_write
 from scripts.shared.paths import REPO_ROOT
 
 SECRET_NAME = re.compile(r"TOKEN|KEY|SECRET|PASSWORD")
+LOCAL_TOOL_REFERENCES = frozenset({"AGENT_SMITH_ROOT", "AGENT_SMITH_PYTHON"})
 
 
-def unusable_env_references(server: dict, environ: Mapping[str, str], defaults: Mapping[str, str]) -> list[str]:
+def _local_tool_environment(server: dict) -> dict[str, str]:
+    environ = dict(os.environ)
+    if env_references(server) & LOCAL_TOOL_REFERENCES:
+        scope = resolve_repo(str(REPO_ROOT), (Path(REPO_ROOT.anchor),))
+        root = Path(scope["canonical_root"]) if scope else REPO_ROOT
+        environ.update(
+            AGENT_SMITH_ROOT=str(root),
+            AGENT_SMITH_PYTHON=str(root / ".venv/bin/python"),
+        )
+    return environ
+
+
+def unusable_env_references(
+    server: dict, environ: Mapping[str, str], defaults: Mapping[str, str]
+) -> list[str]:
     """The ${VAR}s a server config needs that are unset, or are secrets still holding their .env.default placeholder."""
     return sorted(
         name
         for name in env_references(server)
-        if not environ.get(name) or (SECRET_NAME.search(name) and environ[name] == defaults.get(name))
+        if not environ.get(name)
+        or (SECRET_NAME.search(name) and environ[name] == defaults.get(name))
     )
 
 
@@ -36,14 +53,15 @@ def sync_mcp(agent: str, dry_run: bool) -> list[str]:
     app_env = os.environ.get("APP_ENV", "development")
     servers, errors = {}, []
     for name, srv in collect_tools_from_db(agent).items():
-        unusable = unusable_env_references(srv, os.environ, defaults)
+        environ = _local_tool_environment(srv)
+        unusable = unusable_env_references(srv, environ, defaults)
         if unusable:
             errors.append(
                 f"{name} not deployed to {agent}: set {', '.join(unusable)} in .env.{app_env} "
                 "(unset, or still the .env.default placeholder)"
             )
         else:
-            servers[name] = expand_env(srv)
+            servers[name] = expand_env(srv, environ)
     for error in errors:
         print(f"  ERROR {error}")
 
