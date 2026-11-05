@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 
-def contained_path(root: Path, relative: str) -> Path:
+def relative_parts(relative: str) -> tuple[str, ...]:
     if not isinstance(relative, str) or not relative or "\0" in relative:
         raise ValueError(
             "path must be a nonempty relative string without null characters"
@@ -16,11 +16,16 @@ def contained_path(root: Path, relative: str) -> Path:
         raise ValueError(
             f"path must identify a child without parent traversal: {relative!r}"
         )
+    return portable.parts
+
+
+def contained_path(root: Path, relative: str) -> Path:
+    parts = relative_parts(relative)
 
     try:
         root = Path(root).resolve()
         candidate = root
-        for component in portable.parts:
+        for component in parts:
             candidate = candidate / component
             if candidate.is_symlink():
                 raise ValueError(f"path contains a symbolic link: {candidate}")
