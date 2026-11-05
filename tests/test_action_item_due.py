@@ -98,6 +98,9 @@ def test_undated_old_callers_remain_accessible_and_equivalent_instants_are_noops
         {},
         "0001-01-01T00:00:00+14:00",
         "9999-12-31T23:59:59-14:00",
+        "2026-07-01T13:15:30.1234567Z",
+        "2026-07-01T13:15:30.123456789Z",
+        "2026-07-01T13:15:30.1234560+00:00",
     ],
 )
 def test_due_inputs_reject_naive_coerced_or_invalid_values_without_phantom_projects(
@@ -347,6 +350,10 @@ async def test_due_mcp_validates_before_coercion_and_matches_rest(client):
     assert cleared["due_at"] is None
     for tool, arguments in [
         ("action_item_create", {"title": "Rejected", "due_at": "2026-07-01T01:00:00"}),
+        (
+            "action_item_create",
+            {"title": "Rejected precision", "due_at": "2026-07-01T13:15:30.123456789Z"},
+        ),
         ("action_item_list", {"due_within_hours": True}),
         ("action_item_list", {"due_within_hours": "5"}),
     ]:

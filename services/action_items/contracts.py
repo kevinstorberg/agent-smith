@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from typing import Annotated, Literal
 import unicodedata
 from uuid import UUID
@@ -97,7 +98,10 @@ class ProjectFields(Contract):
 
 
 class DueFields(Contract):
-    due_at: datetime | None = None
+    due_at: datetime | None = Field(
+        default=None,
+        description="Timezone-aware deadline with microsecond precision, at most six fractional digits.",
+    )
 
     @field_validator("due_at", mode="before")
     @classmethod
@@ -110,6 +114,10 @@ class DueFields(Contract):
             and "T" not in value
         ):
             raise ValueError("due_at must be an ISO datetime with an explicit timezone")
+        if isinstance(value, str):
+            fraction = re.search(r"[.,](\d+)", value)
+            if fraction is not None and len(fraction.group(1)) > 6:
+                raise ValueError("due_at supports at most six fractional second digits")
         try:
             return (
                 TypeAdapter(AwareDatetime)
