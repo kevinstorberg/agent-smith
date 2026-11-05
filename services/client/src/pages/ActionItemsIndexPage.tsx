@@ -14,6 +14,7 @@ import { parseViewField } from '../utils/viewPreferences';
 import { ActionItemProjectTabs } from '../components/ActionItemProjects';
 import { projectScope, projectScopeFields } from '../utils/actionItemProjects';
 import { ActionItemDeadlineWindow } from '../components/ActionItemDeadlines';
+import { FilterCheckbox } from '../components/FilterCheckbox';
 
 export function ActionItemsIndexPage() {
   const navigate = useNavigate();
@@ -117,7 +118,7 @@ export function ActionItemsIndexPage() {
         }
         beforeTabs={
           <>
-            <div className="profile-filters">
+            <div className="profile-filters action-item-filters">
               <label>
                 <span className="form-label">Search action items</span>
                 <input
@@ -164,6 +165,23 @@ export function ActionItemsIndexPage() {
                   ))}
                 </select>
               </label>
+              <FilterCheckbox
+                checked={unassigned}
+                disabled={freezeControls || Boolean(project)}
+                title={
+                  project
+                    ? 'Select All projects to filter unassigned items.'
+                    : undefined
+                }
+                onChange={(event) =>
+                  preferences.setFields({
+                    project: '',
+                    unassigned: event.target.checked,
+                  })
+                }
+              >
+                Unassigned only
+              </FilterCheckbox>
               <ActionItemDeadlineWindow
                 hours={dueHoursInput}
                 onChange={(hours) =>

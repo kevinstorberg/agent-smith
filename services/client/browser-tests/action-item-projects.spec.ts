@@ -137,7 +137,13 @@ test('projects persist independently and assignment leaves tags and status filte
   ).toBeVisible();
   await page.goto('/action-items?unassigned=true&tags=urgent');
   await expect(
+    page.getByRole('checkbox', { name: 'Unassigned only' }),
+  ).toBeChecked();
+  await expect(
     groups.getByRole('tab', { name: 'Unassigned', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    groups.getByRole('tab', { name: 'All projects', exact: true }),
   ).toHaveAttribute('aria-selected', 'true');
   await expect(
     groups.getByRole('tab', { name: 'Project: Unassigned', exact: true }),
@@ -156,6 +162,118 @@ test('projects persist independently and assignment leaves tags and status filte
 });
 
 for (const scale of [1, 2]) {
+  test(`Unassigned only filters All projects in the shared control row at ${scale}x text`, async ({
+    page,
+    fixtureAPI,
+  }, testInfo) => {
+    fixtureAPI.get('/api/action-items/projects', {
+      items: [{ id: 1, name: 'Work', created_at: '2026-11-01T12:00:00Z' }],
+      total: 1,
+    });
+    const rows = [actionItem(1), actionItem(2, { project: null })];
+    fixtureAPI.get('/api/action-items', ({ url }: APIRequest) => {
+      const items = rows.filter(
+        (row) =>
+          (url.searchParams.get('unassigned') !== 'true' ||
+            row.project === null) &&
+          (!url.searchParams.get('project') ||
+            row.project === url.searchParams.get('project')),
+      );
+      return { items, total: items.length };
+    });
+    await page.goto(
+      '/action-items?unassigned=true&tags=security&due_within_hours=5',
+    );
+    if (scale === 2) await enlargeComputedText(page);
+    const checkbox = page.getByRole('checkbox', { name: 'Unassigned only' });
+    const all = page.getByRole('tab', { name: 'All projects', exact: true });
+    const deadline = page.getByRole('checkbox', { name: 'Deadline window' });
+    const sort = page.getByRole('combobox', { name: 'Sort', exact: true });
+    const filters = page.locator('.profile-filters');
+    await expect(checkbox).toBeChecked();
+    await expect(all).toHaveAttribute('aria-selected', 'true');
+    await expect(
+      page.getByRole('tab', { name: 'Unassigned', exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: 'Task 2', exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Task 1', exact: true }),
+    ).toHaveCount(0);
+    expect(
+      await checkbox.evaluate((element) =>
+        Boolean(element.closest('.profile-filters')),
+      ),
+    ).toBe(true);
+    const box = await checkbox.boundingBox();
+    expect(box!.width).toBe(18);
+    expect(box!.height).toBe(18);
+    for (const control of [checkbox, deadline])
+      await expectControlContained(control.locator('..'), filters);
+    if (page.viewportSize()!.width === 1440 && scale === 1) {
+      const boxes = await Promise.all([
+        sort.boundingBox(),
+        checkbox.locator('..').boundingBox(),
+        deadline.locator('..').boundingBox(),
+      ]);
+      for (const current of boxes.slice(1))
+        expect(
+          Math.abs(
+            current!.y + current!.height - boxes[0]!.y - boxes[0]!.height,
+          ),
+        ).toBeLessThanOrEqual(2);
+      await page.screenshot({
+        path: testInfo.outputPath(`unassigned-filter-${scale}x.png`),
+      });
+      await page.setViewportSize({ width: 1101, height: 900 });
+      await expectMainContained(page);
+      await expectDocumentContained(page);
+      await page.setViewportSize({ width: 1440, height: 900 });
+    }
+    await sort.focus();
+    await page.keyboard.press('Tab');
+    await expect(checkbox).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(checkbox).not.toBeChecked();
+    await expect(
+      page.getByRole('button', { name: 'Task 1', exact: true }),
+    ).toBeVisible();
+    const lastRead = () =>
+      fixtureAPI.requests
+        .filter((entry) => new URL(entry.url).pathname === '/api/action-items')
+        .at(-1);
+    await expect
+      .poll(() => new URL(lastRead()!.url).searchParams.get('unassigned'))
+      .toBeNull();
+    expect(new URL(lastRead()!.url).searchParams.get('due_within_hours')).toBe(
+      '5',
+    );
+    expect(new URL(lastRead()!.url).searchParams.getAll('tags')).toEqual([
+      'security',
+    ]);
+    await page.getByRole('tab', { name: 'Work', exact: true }).click();
+    await expect(checkbox).toBeDisabled();
+    await expect(checkbox).not.toBeChecked();
+    await page.keyboard.press('Home');
+    await expect(all).toBeFocused();
+    await expect(checkbox).toBeEnabled();
+    await checkbox.check();
+    await page.emulateMedia({ forcedColors: 'active' });
+    await expect(checkbox).toBeChecked();
+    expect(
+      await checkbox.evaluate(
+        (element) => getComputedStyle(element).appearance,
+      ),
+    ).toBe('auto');
+    await page.emulateMedia({ forcedColors: 'none' });
+    await expectDocumentContained(page);
+    await expectMainContained(page);
+    await page.screenshot({
+      path: testInfo.outputPath(`unassigned-filter-final-${scale}x.png`),
+    });
+  });
+
   test(`project folders sit above the table with one aligned toolbar at ${scale}x text`, async ({
     page,
     fixtureAPI,
@@ -182,7 +300,7 @@ for (const scale of [1, 2]) {
     );
     await page.goto('/action-items');
     const groups = page.getByRole('tablist', { name: 'Action item projects' });
-    await expect(groups.getByRole('tab')).toHaveCount(52);
+    await expect(groups.getByRole('tab')).toHaveCount(51);
     await expect(
       page.getByRole('button', { name: 'Task 1', exact: true }),
     ).toBeVisible();
@@ -292,7 +410,7 @@ for (const scale of [1, 2]) {
     fixtureAPI.get('/api/action-items', { items: [], total: 0 });
     await page.goto('/action-items');
     const groups = page.getByRole('tablist', { name: 'Action item projects' });
-    await expect(groups.getByRole('tab')).toHaveCount(52);
+    await expect(groups.getByRole('tab')).toHaveCount(51);
     if (scale === 2) await enlargeComputedText(page);
     await groups
       .getByRole('tab', { name: 'All projects', exact: true })

@@ -146,12 +146,15 @@ describe('first-class project navigation', () => {
     expect(api.actionItemProjects.list).toHaveBeenCalledTimes(1);
   });
 
-  it('distinguishes built-in Unassigned from real projects with navigation names', async () => {
+  it('distinguishes the Unassigned only checkbox from real projects with navigation names', async () => {
     renderPage();
     const tabs = await screen.findByRole('tablist', {
       name: 'Action item projects',
     });
-    fireEvent.click(within(tabs).getByRole('tab', { name: 'Unassigned' }));
+    expect(
+      within(tabs).queryByRole('tab', { name: 'Unassigned' }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Unassigned only' }));
     await waitFor(() =>
       expect(api.actionItems.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ unassigned: true, project: undefined }),
@@ -177,6 +180,110 @@ describe('first-class project navigation', () => {
         expect.objectContaining({ project: 'All projects' }),
       ),
     );
+  });
+
+  it('restores old Unassigned links under All projects and preserves the active tab and checkbox focus', async () => {
+    renderPage('/action-items?unassigned=true');
+    const all = await screen.findByRole('tab', {
+      name: 'All projects',
+    });
+    const checkbox = screen.getByRole('checkbox', { name: 'Unassigned only' });
+    expect(all).toHaveAttribute('aria-selected', 'true');
+    expect(checkbox).toBeChecked();
+    await userEvent.click(all);
+    expect(all).toHaveFocus();
+    expect(screen.getByRole('tab', { name: 'All projects' })).toBe(all);
+    expect(checkbox).toBeChecked();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(screen.getByRole('tab', { name: 'Work' })).toHaveFocus();
+    expect(checkbox).not.toBeChecked();
+    expect(checkbox).toBeDisabled();
+    await waitFor(() =>
+      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ project: 'Work' }),
+      ),
+    );
+    await userEvent.keyboard('{Home}');
+    expect(all).toHaveFocus();
+    expect(all).toHaveAttribute('aria-selected', 'true');
+    expect(checkbox).toBeEnabled();
+    expect(checkbox).not.toBeChecked();
+    await userEvent.click(checkbox);
+    expect(checkbox).toHaveFocus();
+    expect(all).toBe(screen.getByRole('tab', { name: 'All projects' }));
+  });
+
+  it('restores saved Unassigned filters and only resets pagination when toggled', async () => {
+    document.cookie = mergeViewCookie('', 'actionItems', {
+      ...defaultView('actionItems'),
+      unassigned: true,
+      status: 'completed',
+      sort: 'title',
+      tags: 'security',
+      due_within_hours: 5,
+      offset: 25,
+      limit: 25,
+    });
+    renderPage();
+    const checkbox = await screen.findByRole('checkbox', {
+      name: 'Unassigned only',
+    });
+    expect(checkbox).toBeChecked();
+    expect(screen.getByRole('tab', { name: 'All projects' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await waitFor(() =>
+      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          unassigned: true,
+          project: undefined,
+          status: 'completed',
+          sort: 'title',
+          tags: ['security'],
+          due_within_hours: 5,
+          offset: 25,
+          limit: 25,
+        }),
+      ),
+    );
+    await userEvent.click(checkbox);
+    await waitFor(() =>
+      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          project: undefined,
+          status: 'completed',
+          sort: 'title',
+          tags: ['security'],
+          due_within_hours: 5,
+          offset: 0,
+          limit: 25,
+        }),
+      ),
+    );
+    expect(
+      vi.mocked(api.actionItems.list).mock.lastCall?.[0]?.unassigned,
+    ).not.toBe(true);
+    expect(screen.getByLabelText('Tags')).toHaveValue('security');
+    expect(screen.getByLabelText('Hours')).toHaveValue(5);
+  });
+
+  it('normalizes a conflicting legacy URL to its named project', async () => {
+    renderPage('/action-items?project=Work&unassigned=true');
+    expect(await screen.findByRole('tab', { name: 'Work' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    const checkbox = screen.getByRole('checkbox', { name: 'Unassigned only' });
+    expect(checkbox).not.toBeChecked();
+    expect(checkbox).toBeDisabled();
+    expect(checkbox).toHaveAttribute(
+      'title',
+      'Select All projects to filter unassigned items.',
+    );
+    expect(
+      vi.mocked(api.actionItems.list).mock.lastCall?.[0]?.unassigned,
+    ).not.toBe(true);
   });
 
   it('creates an empty project, selects it and retains it after reload', async () => {
@@ -273,7 +380,7 @@ describe('first-class project navigation', () => {
       name: 'Action item projects',
     });
     await waitFor(() =>
-      expect(within(tabs).getAllByRole('tab')).toHaveLength(52),
+      expect(within(tabs).getAllByRole('tab')).toHaveLength(51),
     );
     within(tabs).getByRole('tab', { name: 'All projects' }).focus();
     await userEvent.keyboard('{End}');
