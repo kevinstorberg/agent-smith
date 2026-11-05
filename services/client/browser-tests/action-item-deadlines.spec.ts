@@ -207,9 +207,18 @@ test('hours window stays independent and filtered keyboard drag retains visible 
     .focus();
   await page.keyboard.press('Space');
   await expect(slider).toBeDisabled();
+  await expect(
+    page.getByRole('checkbox', { name: 'Deadline window' }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole('spinbutton', { name: 'Hours', exact: true }),
+  ).toBeDisabled();
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Space');
   await expect(page.getByLabel('Priority 6', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('checkbox', { name: 'Deadline window' }),
+  ).toBeEnabled();
   await expect(
     page.getByRole('tab', { name: 'Work', exact: true }),
   ).toHaveAttribute('aria-selected', 'true');
@@ -219,20 +228,106 @@ test('hours window stays independent and filtered keyboard drag retains visible 
 });
 
 for (const scale of [1, 2]) {
-  test(`deadline controls remain reachable at ${scale}x text`, async ({
+  test(`deadline controls align with filters and remain reachable at ${scale}x text`, async ({
     page,
     fixtureAPI,
-  }) => {
+  }, testInfo) => {
     fixtureAPI.get('/api/action-items', { items: [], total: 0 });
     await page.goto('/action-items?due_within_hours=24');
     if (scale === 2) await enlargeComputedText(page);
+    const checkbox = page.getByRole('checkbox', { name: 'Deadline window' });
+    const label = checkbox.locator('..');
+    const sort = page.getByRole('combobox', { name: 'Sort', exact: true });
+    expect
+      .soft(
+        await checkbox.evaluate((element) =>
+          Boolean(element.closest('.profile-filters')),
+        ),
+      )
+      .toBe(true);
+    if (scale === 1) {
+      const style = await checkbox.evaluate((element) => {
+        const input = getComputedStyle(element);
+        return {
+          appearance: input.appearance,
+          width: input.width,
+          height: input.height,
+          gap: getComputedStyle(element.parentElement!).gap,
+        };
+      });
+      expect.soft(style).toEqual({
+        appearance: 'none',
+        width: '18px',
+        height: '18px',
+        gap: '8px',
+      });
+    }
+    expect(
+      await checkbox.evaluate((element) => {
+        const sort = element
+          .closest('.profile-filters')
+          ?.querySelector('select');
+        return Boolean(
+          sort &&
+          sort.compareDocumentPosition(element) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+        );
+      }),
+    ).toBe(true);
+    const details = page.getByRole('region', { name: 'Deadline filter' });
+    await expect(details).toHaveAttribute(
+      'id',
+      (await checkbox.getAttribute('aria-controls'))!,
+    );
+    await expect(details).toHaveCSS('grid-column-start', '1');
+    await expect(details).toHaveCSS('grid-column-end', '-1');
+    if (page.viewportSize()!.width >= 1024) {
+      const [sortBox, labelBox] = await Promise.all([
+        sort.boundingBox(),
+        label.boundingBox(),
+      ]);
+      expect(
+        Math.abs(sortBox!.y + sortBox!.height - labelBox!.y - labelBox!.height),
+      ).toBeLessThanOrEqual(2);
+      const detailBox = (await details.boundingBox())!;
+      expect(detailBox.y).toBeGreaterThanOrEqual(
+        labelBox!.y + labelBox!.height,
+      );
+    }
+    await expectControlReachable(checkbox);
     for (const control of await page
       .getByRole('region', { name: 'Deadline filter' })
       .locator('input')
       .all())
       await expectControlReachable(control);
+    const hours = page.getByRole('spinbutton', { name: 'Hours', exact: true });
+    await hours.fill('169');
+    await hours.blur();
+    await expect(details.getByRole('alert')).toContainText(
+      'current window remains 24 hours',
+    );
+    await expect(hours).toHaveValue('24');
+    await sort.focus();
+    await page.keyboard.press('Tab');
+    await expect(checkbox).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(checkbox).not.toBeChecked();
+    await expect(details).toBeHidden();
+    await expect(checkbox).toHaveCSS('outline-style', 'solid');
+    await page.keyboard.press('Space');
+    await expect(checkbox).toBeChecked();
+    await expect(details).toBeVisible();
+    await expect(details.getByRole('alert')).toHaveCount(0);
+    await page.emulateMedia({ forcedColors: 'active' });
+    await expect(checkbox).toHaveCSS('appearance', 'auto');
+    await expectControlReachable(checkbox);
+    await page.emulateMedia({ forcedColors: 'none' });
     await expectDocumentContained(page);
     await expectMainContained(page);
+    await testInfo.attach(`deadline-filter-${scale}x.png`, {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: 'image/png',
+    });
     await page.goto('/action-items/new');
     if (scale === 2) await enlargeComputedText(page);
     await page.getByLabel('Due date and time').fill('2026-12-01T09:15');

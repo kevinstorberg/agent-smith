@@ -109,10 +109,12 @@ export function ActionItemDeadlineWindow({
       : null;
   }
   return (
-    <section className="action-deadline-window" aria-label="Deadline filter">
-      <label className="filter-checkbox">
+    <>
+      <label className="checkbox-label filter-checkbox">
         <input
+          className="form-checkbox"
           type="checkbox"
+          aria-controls={`${id}-details`}
           checked={hours !== null}
           disabled={disabled}
           onChange={(event) => {
@@ -122,61 +124,68 @@ export function ActionItemDeadlineWindow({
         />
         Deadline window
       </label>
-      {hours !== null && (
-        <>
-          <div className="action-deadline-window-inputs">
-            <label htmlFor={`${id}-range`}>Upcoming hours</label>
-            <input
-              id={`${id}-range`}
-              type="range"
-              min={1}
-              max={MAX_DUE_WINDOW_HOURS}
-              step={1}
-              value={hours}
-              disabled={disabled}
-              onChange={(event) => {
-                const number = validHours(event.target.value);
-                if (number !== null) {
-                  setError(null);
-                  onChange(number);
-                }
-              }}
-            />
-            <label htmlFor={`${id}-hours`}>Hours</label>
-            <input
-              id={`${id}-hours`}
-              className="input"
-              type="number"
-              min={1}
-              max={MAX_DUE_WINDOW_HOURS}
-              step={1}
-              value={draft}
-              disabled={disabled}
-              onChange={(event) => {
-                setDraft(event.target.value);
-                const number = validHours(event.target.value);
-                if (number !== null) {
-                  setError(null);
-                  onChange(number);
-                }
-              }}
-              onBlur={() => {
-                if (validHours(draft) === null) {
-                  setDraft(String(hours));
-                  setError(
-                    `Enter a whole number from 1 through ${MAX_DUE_WINDOW_HOURS}. The current window remains ${hours} hours.`,
-                  );
-                }
-              }}
-            />
-          </div>
-          <p className="text-muted-sm">
-            Past deadlines and deadlines in the next {hours} hours; status,
-            project and tags still apply.
-          </p>
-        </>
-      )}
-      {error && <p role="alert">{error}</p>}
-    </section>
+      <section
+        id={`${id}-details`}
+        className="action-deadline-window"
+        aria-label="Deadline filter"
+        hidden={hours === null && !error}
+      >
+        {hours !== null && (
+          <>
+            <div className="action-deadline-window-inputs">
+              <label htmlFor={`${id}-range`}>Upcoming hours</label>
+              <input
+                id={`${id}-range`}
+                type="range"
+                min={1}
+                max={MAX_DUE_WINDOW_HOURS}
+                step={1}
+                value={hours}
+                disabled={disabled}
+                onChange={(event) => {
+                  const number = validHours(event.target.value);
+                  if (number !== null) {
+                    setError(null);
+                    onChange(number);
+                  }
+                }}
+              />
+              <label htmlFor={`${id}-hours`}>Hours</label>
+              <input
+                id={`${id}-hours`}
+                className="input"
+                type="number"
+                min={1}
+                max={MAX_DUE_WINDOW_HOURS}
+                step={1}
+                value={draft}
+                disabled={disabled}
+                onChange={(event) => {
+                  setDraft(event.target.value);
+                  const number = validHours(event.target.value);
+                  if (number !== null) {
+                    setError(null);
+                    onChange(number);
+                  }
+                }}
+                onBlur={() => {
+                  if (validHours(draft) === null) {
+                    setDraft(String(hours));
+                    setError(
+                      `Enter a whole number from 1 through ${MAX_DUE_WINDOW_HOURS}. The current window remains ${hours} hours.`,
+                    );
+                  }
+                }}
+              />
+            </div>
+            <p className="text-muted-sm">
+              Past deadlines and deadlines in the next {hours} hours; status,
+              project and tags still apply.
+            </p>
+          </>
+        )}
+        {error && <p role="alert">{error}</p>}
+      </section>
+    </>
   );
 }
