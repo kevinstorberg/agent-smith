@@ -3,14 +3,24 @@ from __future__ import annotations
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from scripts.shared.validation import MAX_BODY_LENGTH, MAX_TITLE_LENGTH
 
 Status = Literal["open", "completed"]
 Sort = Literal["manual", "newest", "updated", "title", "completed"]
 PositiveInt = Annotated[int, Field(strict=True, gt=0)]
-Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_TITLE_LENGTH)]
+Title = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_TITLE_LENGTH),
+]
 Description = Annotated[str, StringConstraints(max_length=MAX_BODY_LENGTH)]
 Project = Annotated[str, StringConstraints(max_length=200)]
 Tags = Annotated[list[str], Field(max_length=20)]
@@ -38,7 +48,10 @@ class ItemEditable(Contract):
             return []
         if not isinstance(value, list) or len(value) > 20:
             raise ValueError("tags must be a list of at most 20 strings")
-        if any(not isinstance(tag, str) or not tag.strip() or len(tag.strip()) > 100 for tag in value):
+        if any(
+            not isinstance(tag, str) or not tag.strip() or len(tag.strip()) > 100
+            for tag in value
+        ):
             raise ValueError("each tag must contain 1-100 nonblank characters")
         return sorted({tag.strip().casefold() for tag in value})
 
@@ -111,7 +124,9 @@ class ItemQuery(Contract):
     limit: Annotated[int, Field(ge=1, le=100)] = 10
     offset: Annotated[int, Field(ge=0)] = 0
 
-    normalize_tags = field_validator("tags", mode="before")(ItemEditable.normalize_tags.__func__)
+    normalize_tags = field_validator("tags", mode="before")(
+        ItemEditable.normalize_tags.__func__
+    )
 
     @field_validator("q")
     @classmethod
@@ -125,7 +140,9 @@ class ItemQuery(Contract):
         if self.sort == "manual" and self.status != "open":
             raise ValueError("manual sort is only available for open action items")
         if self.sort == "completed" and self.status != "completed":
-            raise ValueError("completed sort is only available for completed action items")
+            raise ValueError(
+                "completed sort is only available for completed action items"
+            )
         return self
 
 
