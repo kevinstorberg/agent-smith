@@ -90,6 +90,35 @@ def test_no_change_save_keeps_source_id_version_and_exact_content():
     assert len(get_version_history("skill", item["name"], item["project"])) == 1
 
 
+@pytest.mark.parametrize("enabled", [True, False])
+def test_editor_preserves_legacy_unassigned_agent_audience(enabled):
+    from services.api.models.shared.harness import create_item
+
+    item_id = create_item(
+        "rule",
+        "editor_unassigned_legacy",
+        {"body": "Legacy complete instructions.\r\n", "metadata": {"keep": False}},
+        agents=[],
+        enabled=enabled,
+    )
+    item = client.get(f"/api/harness/editor/rule/{item_id}").json()["item"]
+    request = update_payload(item, fields={}, extensions={})
+    request["common"].update(
+        project=item["project"], sort_key=item["sort_key"], agents=[], enabled=enabled
+    )
+    response = client.put(f"/api/harness/editor/rule/{item_id}", json=request)
+    assert response.status_code == 200, response.text
+    assert response.json() == item
+
+
+def test_editor_accepts_unassigned_items_without_forcing_target_agents():
+    request = payload("editor_unassigned_new")
+    request["common"]["agents"] = []
+    response = client.post("/api/harness/editor/skill", json=request)
+    assert response.status_code == 201, response.text
+    assert response.json()["agents"] == []
+
+
 def test_editor_update_preserves_live_configs_unknown_fields_and_common_metadata():
     item = created()
     create_config(
