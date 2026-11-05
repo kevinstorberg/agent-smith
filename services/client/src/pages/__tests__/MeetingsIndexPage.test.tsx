@@ -175,7 +175,19 @@ describe('MeetingsIndexPage', () => {
   });
 
   it('retains meeting search, pagination and an unsaved vocabulary edit across tab changes', async () => {
-    mockList.mockResolvedValue({ items: meetings, total: 25 });
+    const filteredPage = {
+      items: [{ ...meetingFixture, title: 'Filtered release meeting' }],
+      total: 25,
+    };
+    let resolveSearch!: (response: typeof filteredPage) => void;
+    const searchResponse = new Promise<typeof filteredPage>((resolve) => {
+      resolveSearch = resolve;
+    });
+    mockList.mockImplementation((params) =>
+      params?.q === 'release'
+        ? searchResponse
+        : Promise.resolve({ items: meetings, total: 25 }),
+    );
     vi.mocked(api.meetings.vocabulary.list).mockResolvedValue({
       items: [term],
       total: 1,
@@ -195,7 +207,14 @@ describe('MeetingsIndexPage', () => {
         sort: 'newest',
       }),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('Loading meetings...')).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: 'Next' }),
+    ).not.toBeInTheDocument();
+    resolveSearch(filteredPage);
+    expect(await screen.findByText('Filtered release meeting')).toBeVisible();
+    expect(screen.getByText('Showing 1–10 of 25')).toBeVisible();
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
     await waitFor(() =>
       expect(mockList).toHaveBeenLastCalledWith({
         limit: 10,
@@ -204,6 +223,7 @@ describe('MeetingsIndexPage', () => {
         sort: 'newest',
       }),
     );
+    expect(await screen.findByText('Showing 11–20 of 25')).toBeVisible();
     fireEvent.click(screen.getByRole('link', { name: 'Vocabulary' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Edit LTV' }));
     fireEvent.change(screen.getByLabelText('Meaning / definition (optional)'), {
