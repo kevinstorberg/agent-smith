@@ -9,9 +9,11 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from typing import TypeVar
 from uuid import uuid4
 
+from scripts.shared.owned_thread import run_owned_thread
 from services.meetings import db
 from services.meetings.config import SourceConfig, list_source_names, load_source_config
 from services.meetings.factory import build_meeting_provider
@@ -149,26 +151,10 @@ async def sync_sources(
 
 
 async def run_db(function: Callable[..., T], *args, **kwargs) -> T:
-    task = asyncio.create_task(asyncio.to_thread(function, *args, **kwargs))
-    try:
-        return await asyncio.shield(task)
-    except asyncio.CancelledError as cancelled:
-        # The SQL thread still owns its transaction after its await is cancelled.
-        while not task.done():
-            try:
-                await asyncio.shield(task)
-            except asyncio.CancelledError:
-                continue
-            except Exception:
-                break
-        if task.done() and not task.cancelled():
-            try:
-                task.result()
-            except Exception as error:
-                cancelled.add_note(
-                    f"In-flight meeting DB operation failed: {type(error).__name__}"
-                )
-        raise cancelled
+    return await run_owned_thread(
+        partial(function, *args, **kwargs),
+        failure_context="In-flight meeting DB operation failed",
+    )
 
 
 @dataclass
