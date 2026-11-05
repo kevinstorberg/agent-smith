@@ -15,6 +15,12 @@ import { actionItemTags } from '../utils/actionItems';
 import { ActionItemStatusButton } from '../components/ActionItemStatusButton';
 import { ActionItemProjectPicker } from '../components/ActionItemProjects';
 import { parseViewField } from '../utils/viewPreferences';
+import {
+  ActionItemDeadlineField,
+  ActionItemDueDate,
+} from '../components/ActionItemDeadlines';
+import { deadlineDraft, deadlineFields } from '../utils/actionItemDeadlines';
+import type { DeadlineDraft } from '../utils/actionItemDeadlines';
 
 interface Draft {
   title: string;
@@ -22,6 +28,7 @@ interface Draft {
   project: string;
   tags: string;
   revision: number;
+  due: DeadlineDraft;
 }
 
 export function ActionItemDetailPage() {
@@ -67,6 +74,7 @@ function ActionItemDetail({ id }: { id?: string }) {
       project: initialProject.current,
       tags: '',
       revision: 0,
+      due: deadlineDraft(),
     });
   }, [isNew, beginEditing]);
   const mounted = useRef(false);
@@ -160,6 +168,7 @@ function ActionItemDetail({ id }: { id?: string }) {
       project: item.project || '',
       tags: item.tags.join(', '),
       revision: item.revision,
+      due: deadlineDraft(item.due_at),
     });
   }, [item, saving, read.error, beginEditing]);
 
@@ -200,11 +209,19 @@ function ActionItemDetail({ id }: { id?: string }) {
       );
       return;
     }
+    let due: Pick<ActionItemFields, 'due_at'>;
+    try {
+      due = deadlineFields(editValues.due ?? deadlineDraft());
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+      return;
+    }
     const fields = {
       title,
       description: editValues.description || '',
       project: editValues.project || null,
       tags: actionItemTags(editValues.tags || ''),
+      ...due,
     } satisfies ActionItemFields;
     setNotice(null);
     if (isNew) {
@@ -309,6 +326,11 @@ function ActionItemDetail({ id }: { id?: string }) {
               />
             </label>
           </div>
+          <ActionItemDeadlineField
+            value={editValues.due ?? deadlineDraft()}
+            disabled={saving || uncertainCreate}
+            onChange={(value) => setEditValue('due', value)}
+          />
           <label className="form-label" htmlFor="action-description">
             Description
           </label>
@@ -352,6 +374,7 @@ function ActionItemDetail({ id }: { id?: string }) {
               ) : (
                 <>
                   <strong>{item!.title}</strong>
+                  <ActionItemDueDate value={item!.due_at} />
                   <p className="text-muted-sm">
                     Project: {item!.project || 'None'}
                     {' · Tags: '}
@@ -401,6 +424,7 @@ function ActionItemDetail({ id }: { id?: string }) {
             )}
           </div>
           <div className="card markdown-content">
+            <ActionItemDueDate value={item!.due_at} />
             <ReactMarkdown>
               {item!.description || 'No description added.'}
             </ReactMarkdown>

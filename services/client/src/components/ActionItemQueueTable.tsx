@@ -7,6 +7,7 @@ import { useApiRead } from '../hooks/useApiRead';
 import { DateCell } from './table';
 import { Pagination } from './Pagination';
 import { ActionItemStatusButton } from './ActionItemStatusButton';
+import { ActionItemDueDate } from './ActionItemDeadlines';
 import './actionItemQueue.css';
 
 function ActionItemDescription({
@@ -53,6 +54,7 @@ export function ActionItemQueueTable({
   noun = 'action item',
   plural = 'action items',
   showProject = true,
+  showDueDate = false,
   scope = 'action-items',
   status,
 }: {
@@ -61,6 +63,7 @@ export function ActionItemQueueTable({
   noun?: string;
   plural?: string;
   showProject?: boolean;
+  showDueDate?: boolean;
   scope?: string;
   status: string;
 }) {
@@ -237,6 +240,9 @@ export function ActionItemQueueTable({
                                       </span>
                                       {item.title}
                                     </button>
+                                    {showDueDate && (
+                                      <ActionItemDueDate value={item.due_at} />
+                                    )}
                                   </td>
                                   <td>
                                     {showProject && item.project && (

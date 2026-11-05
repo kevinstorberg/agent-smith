@@ -13,6 +13,7 @@ import { useViewPreferences } from '../hooks/useViewPreferences';
 import { parseViewField } from '../utils/viewPreferences';
 import { ActionItemProjectTabs } from '../components/ActionItemProjects';
 import { projectScope, projectScopeFields } from '../utils/actionItemProjects';
+import { ActionItemDeadlineWindow } from '../components/ActionItemDeadlines';
 
 export function ActionItemsIndexPage() {
   const navigate = useNavigate();
@@ -23,12 +24,16 @@ export function ActionItemsIndexPage() {
     q: queryInput,
     project,
     unassigned,
+    due_within_hours: dueHoursInput,
     tags: tagsInput,
   } = preferences.values;
   const query = useDebouncedValue(queryInput.trim());
   const tags = useDebouncedValue(tagsInput.trim());
+  const dueHours = useDebouncedValue(dueHoursInput);
   const criteriaPending =
-    queryInput.trim() !== query || tagsInput.trim() !== tags;
+    queryInput.trim() !== query ||
+    tagsInput.trim() !== tags ||
+    dueHoursInput !== dueHours;
   const queue = useActionItemQueue({
     source: api.actionItems,
     removeRow: api.actionItems.remove,
@@ -38,15 +43,25 @@ export function ActionItemsIndexPage() {
       q: query || undefined,
       project: project || undefined,
       ...(unassigned ? { unassigned: true } : {}),
+      ...(dueHours !== null ? { due_within_hours: dueHours } : {}),
       tags: actionItemTags(tags),
     },
-    criteria: JSON.stringify([status, sort, query, project, unassigned, tags]),
+    criteria: JSON.stringify([
+      status,
+      sort,
+      query,
+      project,
+      unassigned,
+      dueHours,
+      tags,
+    ]),
     viewKey: JSON.stringify([
       status,
       sort,
       queryInput,
       project,
       unassigned,
+      dueHoursInput,
       tagsInput,
     ]),
     reorderableView: status === 'open' && sort === 'manual',
@@ -147,9 +162,15 @@ export function ActionItemsIndexPage() {
           filters can stay applied.
         </p>
       )}
+      <ActionItemDeadlineWindow
+        hours={dueHoursInput}
+        onChange={(hours) => preferences.setField('due_within_hours', hours)}
+        disabled={freezeControls}
+      />
       <ActionItemQueueTable
         queue={queue}
         status={status}
+        showDueDate
         onEdit={(item) => navigate(`/action-items/${item.id}?edit=1`)}
       />
     </div>

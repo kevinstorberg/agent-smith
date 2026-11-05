@@ -80,6 +80,51 @@ describe('Harness anchored moves', () => {
 });
 
 describe('action items', () => {
+  it('preserves exact deadline and revision values through create, edit and clear requests', async () => {
+    globalThis.fetch = mockFetch({});
+    const due_at = '2026-07-01T13:15:30.123456+00:00';
+    const body = {
+      title: 'Deadline task',
+      due_at,
+      request_id: '9d773b2b-9ab3-4a56-925e-ac41634522fa',
+    };
+    await api.actionItems.create(body);
+    await api.actionItems.update(7, { expected_revision: 4, due_at });
+    await api.actionItems.update(7, { expected_revision: 5, due_at: null });
+    expect(
+      vi
+        .mocked(globalThis.fetch)
+        .mock.calls.map(([, options]) => JSON.parse(String(options?.body))),
+    ).toEqual([
+      body,
+      { expected_revision: 4, due_at },
+      { expected_revision: 5, due_at: null },
+    ]);
+  });
+
+  it('serializes the deadline window alongside independent task filters', async () => {
+    globalThis.fetch = mockFetch({ items: [], total: 0 });
+    await api.actionItems.list({
+      due_within_hours: 48,
+      project: 'Café / family & QA',
+      tags: ['security'],
+      status: 'completed',
+      limit: 25,
+      offset: 50,
+    });
+    const query = new URL(String(vi.mocked(globalThis.fetch).mock.calls[0][0]))
+      .searchParams;
+    expect(Object.fromEntries(query)).toMatchObject({
+      due_within_hours: '48',
+      project: 'Café / family & QA',
+      tags: 'security',
+      status: 'completed',
+      limit: '25',
+      offset: '50',
+    });
+    expect(query.has('unassigned')).toBe(false);
+  });
+
   it('uses the first-class project catalog routes and immutable deletion ID', async () => {
     globalThis.fetch = mockFetch({});
     const timeout = vi.spyOn(AbortSignal, 'timeout');
