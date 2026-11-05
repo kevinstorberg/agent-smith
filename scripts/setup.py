@@ -16,20 +16,35 @@ from scripts.shared.processes import instance_lock
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Install native Agent Smith dependencies once")
-    parser.add_argument("--refresh", action="store_true", help="Refresh Python and npm dependencies")
+    parser = argparse.ArgumentParser(
+        description="Install native Agent Smith dependencies once"
+    )
+    parser.add_argument(
+        "--refresh", action="store_true", help="Refresh Python and npm dependencies"
+    )
     args = parser.parse_args()
     if sys.version_info[:2] != (3, 13):
-        raise SystemExit("Setup requires Python 3.13. Install it or set PYTHON_BIN to its executable.")
+        raise SystemExit(
+            "Setup requires Python 3.13. Install it or set PYTHON_BIN to its executable."
+        )
     with ExitStack() as stack:
         for app_env in ("production", "development"):
             stack.enter_context(instance_lock(ROOT, app_env))
         python = ROOT / ".venv/bin/python"
         if not python.exists():
             venv.EnvBuilder(with_pip=True).create(ROOT / ".venv")
-        version = subprocess.check_output([str(python), "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"], text=True).strip()
+        version = subprocess.check_output(
+            [
+                str(python),
+                "-c",
+                "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')",
+            ],
+            text=True,
+        ).strip()
         if version != "3.13":
-            raise SystemExit("Existing .venv uses a different Python version; recreate it with Python 3.13 before setup")
+            raise SystemExit(
+                "Existing .venv uses a different Python version; recreate it with Python 3.13 before setup"
+            )
         requirements = ROOT / "requirements.txt"
         fingerprint = hashlib.sha256(requirements.read_bytes()).hexdigest()
         stamp = ROOT / ".venv/.agent-smith-requirements-hash"
@@ -40,7 +55,9 @@ def main() -> None:
             subprocess.run(command, check=True)
             stamp.write_text(fingerprint)
         install_frontend(force=args.refresh)
-    print("Native dependencies ready. Configure .env.development/.env.production, then run ./run.sh dev or ./run.sh.")
+    print(
+        "Native dependencies ready. Configure .env.development/.env.production, then run ./run.sh dev or ./run.sh."
+    )
 
 
 if __name__ == "__main__":
