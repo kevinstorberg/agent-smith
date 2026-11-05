@@ -40,10 +40,14 @@ def scan_library() -> dict[str, ModuleType]:
             logger.warning("graphs: skipping %s: import failed: %s", info.name, e)
             continue
         if not hasattr(mod, "INPUT_SCHEMA") or not isinstance(mod.INPUT_SCHEMA, dict):
-            logger.warning("graphs: skipping %s: missing or invalid INPUT_SCHEMA", info.name)
+            logger.warning(
+                "graphs: skipping %s: missing or invalid INPUT_SCHEMA", info.name
+            )
             continue
         if not hasattr(mod, "build_graph") or not callable(mod.build_graph):
-            logger.warning("graphs: skipping %s: missing or non-callable build_graph", info.name)
+            logger.warning(
+                "graphs: skipping %s: missing or non-callable build_graph", info.name
+            )
             continue
         registry[info.name] = mod
     return registry
@@ -71,7 +75,9 @@ def build_tool_description(registry: dict[str, ModuleType] | None = None) -> str
 
 
 def validate_inputs(
-    graph_type: str, inputs: dict[str, Any], registry: dict[str, ModuleType] | None = None
+    graph_type: str,
+    inputs: dict[str, Any],
+    registry: dict[str, ModuleType] | None = None,
 ) -> None:
     """Validate inputs against a graph's INPUT_SCHEMA without running it.
 
@@ -87,7 +93,11 @@ def validate_inputs(
     mod = registry[graph_type]
     for field, type_name in mod.INPUT_SCHEMA.items():
         optional = isinstance(type_name, str) and type_name.endswith("?")
-        py_type = _PRIMITIVE_TYPES.get(type_name.removesuffix("?")) if isinstance(type_name, str) else None
+        py_type = (
+            _PRIMITIVE_TYPES.get(type_name.removesuffix("?"))
+            if isinstance(type_name, str)
+            else None
+        )
         if py_type is None:
             raise ValueError(
                 f"graph '{graph_type}' has unsupported input type '{type_name}' for field '{field}'"
@@ -105,7 +115,9 @@ def validate_inputs(
 
 async def dispatch(graph_type: str, inputs: dict[str, Any]) -> str:
     """Validate inputs, run the graph, and return a string-serialized result."""
-    assert isinstance(graph_type, str) and graph_type, "graph type must be a non-empty string"
+    assert isinstance(graph_type, str) and graph_type, (
+        "graph type must be a non-empty string"
+    )
     assert isinstance(inputs, dict), "inputs must be a dict"
 
     registry = scan_library()
@@ -113,8 +125,10 @@ async def dispatch(graph_type: str, inputs: dict[str, Any]) -> str:
 
     cause = current_trigger()
     with trigger_context(
-        graph=graph_type, graph_run_id=str(uuid4()),
-        trigger=cause.get("trigger") or "graph", reason=cause.get("reason") or "unknown",
+        graph=graph_type,
+        graph_run_id=str(uuid4()),
+        trigger=cause.get("trigger") or "graph",
+        reason=cause.get("reason") or "unknown",
     ):
         graph = registry[graph_type].build_graph()
         result = await graph.ainvoke(inputs)

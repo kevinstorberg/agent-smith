@@ -14,7 +14,12 @@ from langchain_classic.retrievers.time_weighted_retriever import (
 )
 from langchain_huggingface import HuggingFaceEmbeddings
 
-from services.memory.backends import TIMESTAMP_FIELDS, canonical_metadata, get_backend, metadata_datetime
+from services.memory.backends import (
+    TIMESTAMP_FIELDS,
+    canonical_metadata,
+    get_backend,
+    metadata_datetime,
+)
 from services.memory.content import normalize_memory_content
 from services.config import MEMORY_EMBEDDING_DEVICE, MEMORY_EMBEDDING_MODEL
 
@@ -94,8 +99,15 @@ def _get_retriever() -> TimeWeightedVectorStoreRetriever:
                 metadata={
                     **meta,
                     "id": row.get("id") or meta.get("id"),
-                    **({"last_accessed_at": metadata_datetime(meta["last_accessed_at"], "last_accessed_at")}
-                       if meta.get("last_accessed_at") is not None else {}),
+                    **(
+                        {
+                            "last_accessed_at": metadata_datetime(
+                                meta["last_accessed_at"], "last_accessed_at"
+                            )
+                        }
+                        if meta.get("last_accessed_at") is not None
+                        else {}
+                    ),
                     "buffer_idx": i,
                 },
             )
@@ -140,7 +152,13 @@ def _filter_and_sort(
         out = [r for r in out if r.get("repo") == repo]
     if tags:
         wanted = set(tags)
-        out = [r for r in out if wanted.issubset(set(r.get("tags") or []) | set(r.get("context_tags") or []))]
+        out = [
+            r
+            for r in out
+            if wanted.issubset(
+                set(r.get("tags") or []) | set(r.get("context_tags") or [])
+            )
+        ]
     if sort in _SORT_KEYS:
         field, reverse = _SORT_KEYS[sort]
         out = sorted(out, key=lambda r: r.get(field) or "", reverse=reverse)
@@ -182,7 +200,9 @@ def _to_row(*, content: str, id: str, meta: dict) -> dict:
         "id": id,
         "content": content,
         "repo": meta.get("repo") or None,
-        "tags": [tag for tag in tags if not _meeting_origin_tag(tag)] if source_type == "meeting" else tags,
+        "tags": [tag for tag in tags if not _meeting_origin_tag(tag)]
+        if source_type == "meeting"
+        else tags,
         "source_type": source_type,
         "source_id": source_id,
         "from_meeting": source_type == "meeting",
@@ -191,12 +211,20 @@ def _to_row(*, content: str, id: str, meta: dict) -> dict:
 
 
 def _doc_to_row(doc: Document) -> dict:
-    return _to_row(content=doc.page_content, id=doc.metadata.get("id") or doc.id or "", meta=doc.metadata)
+    return _to_row(
+        content=doc.page_content,
+        id=doc.metadata.get("id") or doc.id or "",
+        meta=doc.metadata,
+    )
 
 
 def _raw_to_row(record: dict) -> dict:
     meta = record.get("metadata", {})
-    return _to_row(content=record.get("text", ""), id=record.get("id", meta.get("id", "")), meta=meta)
+    return _to_row(
+        content=record.get("text", ""),
+        id=record.get("id", meta.get("id", "")),
+        meta=meta,
+    )
 
 
 def _with_context_tags(rows: list[dict]) -> list[dict]:
@@ -214,8 +242,18 @@ def _with_context_tags(rows: list[dict]) -> list[dict]:
     try:
         labels = labels_db.for_memories(list(set(sources.values()))) if sources else {}
     except MeetingStorageError:
-        raise MemoryContextUnavailable("Meeting context labels could not be read; retry when the database is available") from None
-    return [{**row, "context_tags": labels.get(sources.get(row.get("source_id")), []) if row.get("from_meeting") else []} for row in rows]
+        raise MemoryContextUnavailable(
+            "Meeting context labels could not be read; retry when the database is available"
+        ) from None
+    return [
+        {
+            **row,
+            "context_tags": labels.get(sources.get(row.get("source_id")), [])
+            if row.get("from_meeting")
+            else [],
+        }
+        for row in rows
+    ]
 
 
 def _record_access(rows: list[dict]) -> list[dict]:
@@ -230,8 +268,16 @@ def _record_access(rows: list[dict]) -> list[dict]:
                     continue
                 stamp = metadata_datetime(stamp, "last_accessed_at")
                 previous = document.metadata.get("last_accessed_at")
-                document.metadata["last_accessed_at"] = max(stamp, metadata_datetime(previous, "last_accessed_at")) if previous is not None else stamp
-    return [{**row, "last_accessed_at": accessed[row["id"]]} for row in rows if row["id"] in accessed]
+                document.metadata["last_accessed_at"] = (
+                    max(stamp, metadata_datetime(previous, "last_accessed_at"))
+                    if previous is not None
+                    else stamp
+                )
+    return [
+        {**row, "last_accessed_at": accessed[row["id"]]}
+        for row in rows
+        if row["id"] in accessed
+    ]
 
 
 def _page(rows: list[dict], limit: int | None, offset: int) -> tuple[list[dict], int]:
@@ -239,18 +285,34 @@ def _page(rows: list[dict], limit: int | None, offset: int) -> tuple[list[dict],
         raise ValueError("Memory offset must be a nonnegative integer")
     if limit is not None and (type(limit) is not int or limit < 1):
         raise ValueError("Memory limit must be a positive integer")
-    return rows[offset:offset + limit] if limit is not None else rows[offset:], len(rows)
+    return rows[offset : offset + limit] if limit is not None else rows[offset:], len(
+        rows
+    )
 
 
 def _refresh_rows(rows: list[dict]) -> list[dict]:
     if not rows:
         return []
-    current = {row["id"]: row["metadata"].get("last_accessed_at") for row in get_backend().get_rows([row["id"] for row in rows])}
-    return [{**row, "last_accessed_at": current[row["id"]]} for row in rows if row["id"] in current]
+    current = {
+        row["id"]: row["metadata"].get("last_accessed_at")
+        for row in get_backend().get_rows([row["id"] for row in rows])
+    }
+    return [
+        {**row, "last_accessed_at": current[row["id"]]}
+        for row in rows
+        if row["id"] in current
+    ]
 
 
 def _cached_index(retriever: TimeWeightedVectorStoreRetriever, id: str) -> int | None:
-    return next((index for index, item in enumerate(retriever.memory_stream) if item.metadata.get("id") == id), None)
+    return next(
+        (
+            index
+            for index, item in enumerate(retriever.memory_stream)
+            if item.metadata.get("id") == id
+        ),
+        None,
+    )
 
 
 def _persist_document(
@@ -268,11 +330,17 @@ def _persist_document(
     memory_document.metadata.setdefault("last_accessed_at", current_time)
     memory_document.metadata.setdefault("created_at", current_time)
     next_index = len(retriever.memory_stream) if retriever is not None else 0
-    memory_document.metadata["buffer_idx"] = next_index if replace_index is None else replace_index
+    memory_document.metadata["buffer_idx"] = (
+        next_index if replace_index is None else replace_index
+    )
 
     # Persist a separate copy first. Vector-store adapters may sanitize metadata,
     # and a failed write must not corrupt or remove the live memory-stream entry.
-    vectorstore = retriever.vectorstore if retriever is not None else get_backend().get_vectorstore(_get_embeddings())
+    vectorstore = (
+        retriever.vectorstore
+        if retriever is not None
+        else get_backend().get_vectorstore(_get_embeddings())
+    )
     vectorstore.add_documents(
         [deepcopy(memory_document)], ids=[id], current_time=current_time
     )
@@ -283,20 +351,36 @@ def _persist_document(
         if current_index is None:
             retriever.memory_stream.append(memory_document)
         else:
-            previous = retriever.memory_stream[current_index].metadata.get("last_accessed_at")
+            previous = retriever.memory_stream[current_index].metadata.get(
+                "last_accessed_at"
+            )
             if previous is not None:
                 memory_document.metadata["last_accessed_at"] = max(
                     metadata_datetime(previous, "last_accessed_at"),
-                    metadata_datetime(memory_document.metadata["last_accessed_at"], "last_accessed_at"),
+                    metadata_datetime(
+                        memory_document.metadata["last_accessed_at"], "last_accessed_at"
+                    ),
                 )
             retriever.memory_stream[current_index] = memory_document
 
 
-def _memory_document(id: str, content: str, repo: str | None, tags: list[str] | None, created_at: str, updated_at: str,
-                     *, source_type: str | None = None, source_id: str | None = None) -> Document:
+def _memory_document(
+    id: str,
+    content: str,
+    repo: str | None,
+    tags: list[str] | None,
+    created_at: str,
+    updated_at: str,
+    *,
+    source_type: str | None = None,
+    source_id: str | None = None,
+) -> Document:
     metadata = {
-        "id": id, "repo": repo or "", "tags": json.dumps(tags or []),
-        "created_at": created_at, "updated_at": updated_at,
+        "id": id,
+        "repo": repo or "",
+        "tags": json.dumps(tags or []),
+        "created_at": created_at,
+        "updated_at": updated_at,
     }
     metadata.update(source_type=source_type or "general", source_id=source_id or id)
     return Document(page_content=normalize_memory_content(content), metadata=metadata)
@@ -305,7 +389,10 @@ def _memory_document(id: str, content: str, repo: str | None, tags: list[str] | 
 def _validate_scope(repo: str | None, tags: list[str] | None) -> None:
     if repo is not None and (not isinstance(repo, str) or (repo and not repo.strip())):
         raise ValueError("Memory repo must be a string or null")
-    if tags is not None and (not isinstance(tags, list) or any(not isinstance(tag, str) or not tag.strip() for tag in tags)):
+    if tags is not None and (
+        not isinstance(tags, list)
+        or any(not isinstance(tag, str) or not tag.strip() for tag in tags)
+    ):
         raise ValueError("Memory tags must be a list of nonblank strings")
 
 
@@ -315,12 +402,22 @@ def _publication_time(value: str) -> datetime:
     except ValueError:
         result = None
     if result is None or result.utcoffset() is None:
-        raise ValueError("Memory created_at must be an ISO timestamp with a timezone") from None
+        raise ValueError(
+            "Memory created_at must be an ISO timestamp with a timezone"
+        ) from None
     return result.astimezone(timezone.utc)
 
 
-def publish(id: str, content: str, repo: str | None = None, tags: list[str] | None = None, *, created_at: str,
-            source_type: str | None = None, source_id: str | None = None) -> str:
+def publish(
+    id: str,
+    content: str,
+    repo: str | None = None,
+    tags: list[str] | None = None,
+    *,
+    created_at: str,
+    source_type: str | None = None,
+    source_id: str | None = None,
+) -> str:
     """Publish frozen content without rewriting a conflicting memory."""
     try:
         id = str(uuid.UUID(id))
@@ -331,7 +428,9 @@ def publish(id: str, content: str, repo: str | None = None, tags: list[str] | No
     _validate_scope(repo, tags)
     if source_type is not None or source_id is not None:
         if source_type != "meeting":
-            raise ValueError("Memory publication source_type must be meeting when provenance is supplied")
+            raise ValueError(
+                "Memory publication source_type must be meeting when provenance is supplied"
+            )
         try:
             source_id = str(uuid.UUID(source_id))
         except (ValueError, TypeError, AttributeError):
@@ -344,23 +443,45 @@ def publish(id: str, content: str, repo: str | None = None, tags: list[str] | No
             same_time = _publication_time(existing.get("created_at")) == stamp
         except ValueError:
             same_time = False
-        same_fields = (same_time and existing["repo"] == (repo or None)
-                and _stored_tags(raw.get("metadata", {})) == (tags or [])
-                and (source_type is None or (existing.get("source_type"), existing.get("source_id")) == (source_type, source_id)))
+        same_fields = (
+            same_time
+            and existing["repo"] == (repo or None)
+            and _stored_tags(raw.get("metadata", {})) == (tags or [])
+            and (
+                source_type is None
+                or (existing.get("source_type"), existing.get("source_id"))
+                == (source_type, source_id)
+            )
+        )
         if same_fields and existing["content"] == content:
             return id
     content = normalize_memory_content(content)
     if existing is not None:
-        if (not same_fields or existing["content"] != content):
-            raise MemoryConflictError(f"Memory {id} differs from its frozen publication") from None
+        if not same_fields or existing["content"] != content:
+            raise MemoryConflictError(
+                f"Memory {id} differs from its frozen publication"
+            ) from None
         return id
-    doc = _memory_document(id, content, repo, tags, stamp.isoformat(), stamp.isoformat(), source_type=source_type, source_id=source_id)
+    doc = _memory_document(
+        id,
+        content,
+        repo,
+        tags,
+        stamp.isoformat(),
+        stamp.isoformat(),
+        source_type=source_type,
+        source_id=source_id,
+    )
     replace_index = _cached_index(_retriever, id) if _retriever is not None else None
-    _persist_document(_retriever, doc, id=id, current_time=stamp, replace_index=replace_index)
+    _persist_document(
+        _retriever, doc, id=id, current_time=stamp, replace_index=replace_index
+    )
     return id
 
 
-def search_fresh(query: str, repo: str | None = None, tags: list[str] | None = None, limit: int = 10) -> list[dict]:
+def search_fresh(
+    query: str, repo: str | None = None, tags: list[str] | None = None, limit: int = 10
+) -> list[dict]:
     """Search the backend directly; scope filters apply to at most 200 candidates."""
     if not isinstance(query, str) or not query.strip() or len(query) > 1000:
         raise ValueError("Memory query must contain 1-1000 nonblank characters")
@@ -370,8 +491,9 @@ def search_fresh(query: str, repo: str | None = None, tags: list[str] | None = N
     vectorstore = get_backend().get_vectorstore(_get_embeddings())
     docs = vectorstore.similarity_search(query, k=min(200, max(20, limit * 5)))
     rows = _with_context_tags([_doc_to_row(doc) for doc in docs])
-    return _record_access(_filter_and_sort(rows, repo=repo, tags=tags, sort=None)[:limit])
-
+    return _record_access(
+        _filter_and_sort(rows, repo=repo, tags=tags, sort=None)[:limit]
+    )
 
 
 def init() -> None:
@@ -397,7 +519,9 @@ def _ranked_rows(retriever: TimeWeightedVectorStoreRetriever, query: str) -> lis
             for document in retriever.memory_stream[-SEARCH_FETCH_CEILING:]
             if document.metadata.get("id")
         }
-    hits = retriever.vectorstore.similarity_search_with_relevance_scores(query, **retriever.search_kwargs)
+    hits = retriever.vectorstore.similarity_search_with_relevance_scores(
+        query, **retriever.search_kwargs
+    )
     for document, score in hits:
         id = document.metadata.get("id") or document.id
         if id:
@@ -411,12 +535,21 @@ def _ranked_rows(retriever: TimeWeightedVectorStoreRetriever, query: str) -> lis
             continue
         metadata = dict(record["metadata"])
         ranking_access = metadata.get("last_accessed_at") or metadata.get("created_at")
-        metadata["last_accessed_at"] = metadata_datetime(ranking_access, "last_accessed_at") if ranking_access is not None else datetime(1970, 1, 1, tzinfo=timezone.utc)
+        metadata["last_accessed_at"] = (
+            metadata_datetime(ranking_access, "last_accessed_at")
+            if ranking_access is not None
+            else datetime(1970, 1, 1, tzinfo=timezone.utc)
+        )
         document = Document(page_content=record["text"], metadata=metadata)
         # Native invoke uses local time and changes cache before storage acknowledges access.
         score = retriever._get_combined_score(document, relevance, now)
         ranked.append((_raw_to_row(record), score))
-    return [row for row, _ in sorted(ranked, key=lambda item: item[1], reverse=True)[:SEARCH_FETCH_CEILING]]
+    return [
+        row
+        for row, _ in sorted(ranked, key=lambda item: item[1], reverse=True)[
+            :SEARCH_FETCH_CEILING
+        ]
+    ]
 
 
 def search_page(
@@ -436,7 +569,9 @@ def search_page(
 
     retriever = _get_retriever()
     rows = _with_context_tags(_ranked_rows(retriever, query))
-    result = _filter_and_sort(rows, repo=repo, tags=tags, sort=sort, meeting_only=meeting_only)
+    result = _filter_and_sort(
+        rows, repo=repo, tags=tags, sort=sort, meeting_only=meeting_only
+    )
     selected, total = _page(result, limit, offset)
     return _record_access(selected), total
 
@@ -449,7 +584,9 @@ def search(
     limit: int | None = None,
     meeting_only: bool = False,
 ) -> list[dict]:
-    return search_page(query, repo=repo, tags=tags, sort=sort, limit=limit, meeting_only=meeting_only)[0]
+    return search_page(
+        query, repo=repo, tags=tags, sort=sort, limit=limit, meeting_only=meeting_only
+    )[0]
 
 
 def list_page(
@@ -464,7 +601,9 @@ def list_page(
     with _retriever_lock:
         rows = [_doc_to_row(doc) for doc in retriever.memory_stream]
     rows = _with_context_tags(rows)
-    result = _filter_and_sort(rows, repo=repo, tags=tags, sort=sort, meeting_only=meeting_only)
+    result = _filter_and_sort(
+        rows, repo=repo, tags=tags, sort=sort, meeting_only=meeting_only
+    )
     selected, total = _page(result, limit, offset)
     # Polling the feed observes stored access without itself counting as memory use.
     return _refresh_rows(selected), total
@@ -477,7 +616,9 @@ def list_memories(
     limit: int | None = None,
     meeting_only: bool = False,
 ) -> list[dict]:
-    return list_page(repo=repo, tags=tags, sort=sort, limit=limit, meeting_only=meeting_only)[0]
+    return list_page(
+        repo=repo, tags=tags, sort=sort, limit=limit, meeting_only=meeting_only
+    )[0]
 
 
 def get(id: str, *, record_access: bool = True) -> dict | None:
@@ -499,8 +640,7 @@ def delete(id: str) -> None:
     with _retriever_lock:
         if _retriever:
             _retriever.memory_stream = [
-                doc for doc in _retriever.memory_stream
-                if doc.metadata.get("id") != id
+                doc for doc in _retriever.memory_stream if doc.metadata.get("id") != id
             ]
             for i, doc in enumerate(_retriever.memory_stream):
                 doc.metadata["buffer_idx"] = i
@@ -529,8 +669,16 @@ def update(
     now_dt = _utcnow()
     now_str = now_dt.isoformat()
 
-    doc = _memory_document(id, new_content, new_repo, new_tags, existing.get("created_at", now_str), now_str,
-                           source_type=existing.get("source_type"), source_id=existing.get("source_id"))
+    doc = _memory_document(
+        id,
+        new_content,
+        new_repo,
+        new_tags,
+        existing.get("created_at", now_str),
+        now_str,
+        source_type=existing.get("source_type"),
+        source_id=existing.get("source_id"),
+    )
 
     retriever = _get_retriever()
     replace_index = _cached_index(retriever, id)

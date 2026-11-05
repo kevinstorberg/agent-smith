@@ -10,6 +10,7 @@ CONTRACT: this hook is pure observation. It ALWAYS exits 0 and writes nothing to
 stdout, so a missing dashboard, a slow network, or a malformed payload can never
 block or alter the agent's tool call (fail-open).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -90,7 +91,10 @@ def _cap(value):
     if isinstance(value, list):
         return [_cap(v) for v in value]
     if isinstance(value, str) and len(value) > MAX_FIELD_CHARS:
-        return value[:MAX_FIELD_CHARS] + f"...[truncated {len(value) - MAX_FIELD_CHARS} chars]"
+        return (
+            value[:MAX_FIELD_CHARS]
+            + f"...[truncated {len(value) - MAX_FIELD_CHARS} chars]"
+        )
     return value
 
 
@@ -98,7 +102,10 @@ def _correlation_key(native_id, session_id: str, tool_name: str, tool_input) -> 
     if native_id:
         return str(native_id)
     canonical = json.dumps(
-        [session_id, tool_name, tool_input], sort_keys=True, separators=(",", ":"), default=str
+        [session_id, tool_name, tool_input],
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
