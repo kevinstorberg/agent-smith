@@ -29,6 +29,20 @@ def test_costs_window_is_current_utc_month_even_for_local_timezone():
     assert (start, end) == ("2026-11-01", "2026-11-02")
 
 
+def test_costs_aws_provider_labels_explain_chargeable_and_free_requests():
+    from scripts.shared.operation_logging import provider_label
+
+    assert (
+        provider_label("aws_cost_explorer", "get_cost_and_usage").prefix
+        == "AWS COST EXPLORER READ [BILLABLE]"
+    )
+    assert (
+        provider_label("aws_sts", "get_caller_identity").prefix
+        == "AWS IDENTITY READ [NONBILLABLE]"
+    )
+    assert provider_label("aws_sts", "unknown_operation").billing == "unknown"
+
+
 def test_costs_cache_survives_restart_and_ui_polls_do_not_fetch(tmp_path):
     calls = []
 
@@ -120,6 +134,50 @@ def test_costs_contended_refresh_returns_pending_without_second_fetch(tmp_path):
         result = cache.read_or_refresh(NOW, lambda: calls.append(1))
     assert result["state"] == "pending"
     assert not calls
+
+
+def test_costs_active_refresh_is_pending_for_both_read_paths(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    cache = SnapshotCache(tmp_path, "aws", "scope")
+    entered, release = Event(), Event()
+
+    def fetch():
+        entered.set()
+        assert release.wait(5)
+        return report()
+
+    with ThreadPoolExecutor(max_workers=1) as workers:
+        future = workers.submit(cache.read_or_refresh, NOW, fetch)
+        assert entered.wait(5)
+        try:
+            assert cache.read()["state"] == "pending"
+            assert (
+                SnapshotCache(tmp_path, "aws", "scope").read_or_refresh(
+                    NOW + timedelta(seconds=15),
+                    lambda: pytest.fail("second provider call"),
+                )["state"]
+                == "pending"
+            )
+        finally:
+            release.set()
+        assert future.result(5)["state"] == "ready"
+    assert cache.read()["state"] == "ready"
+
+
+def test_costs_exhausted_daily_budget_reports_next_utc_day(tmp_path):
+    cache = SnapshotCache(tmp_path, "aws", "scope")
+
+    def failure():
+        raise ProviderFailure("unavailable", "Provider temporarily unavailable.")
+
+    for minutes in (0, 30, 60, 90):
+        result = cache.read_or_refresh(NOW + timedelta(minutes=minutes), failure)
+    assert result["state"] == "failed"
+    assert datetime.fromisoformat(result["next_refresh_at"]) == datetime(
+        2026, 11, 6, tzinfo=timezone.utc
+    )
 
 
 class Client:

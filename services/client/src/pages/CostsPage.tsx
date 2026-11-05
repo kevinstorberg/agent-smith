@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { CostResponse } from '../types/costs';
-import { usePageVisible } from '../hooks/usePageVisible';
 import { usePolling } from '../hooks/usePolling';
 
 function money(value: string, currency: string) {
@@ -53,7 +52,6 @@ export function CostsPage() {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const request = useRef(0);
-  const visible = usePageVisible();
   const load = useCallback(async () => {
     const sequence = ++request.current;
     try {
@@ -73,7 +71,7 @@ export function CostsPage() {
       request.current += 1;
     };
   }, [load]);
-  usePolling(load, { enabled: visible });
+  usePolling(load);
   const report = data?.report;
   const stale = data?.state === 'stale' || (failed && report);
 
