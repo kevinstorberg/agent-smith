@@ -30,6 +30,7 @@ _BASE_LABELS = {"index_name", "cloud", "region", "capacity_mode"}
 MAX_RESPONSE = 2_000_000
 MAX_TOTAL = 8_000_000
 MAX_TARGETS = 32
+MAX_POINTS = 4000
 DEADLINE_SECONDS = 30
 
 
@@ -117,7 +118,7 @@ def parse_metrics(text: str) -> MetricSample:
                 target[identity] = point
                 if labels["capacity_mode"] != "serverless":
                     unsupported.add(point.group)
-        if not counters or len(counters) + len(storage) > 4000:
+        if not counters or len(counters) + len(storage) > MAX_POINTS:
             raise failure(
                 "metrics_missing",
                 "Pinecone usage counters are unavailable; no usage or costs were inferred.",
@@ -266,6 +267,11 @@ def collect_metrics(project_id: str, api_key: str, *, client=None) -> MetricSamp
                         raise failure()
                     target[identity] = point
             unsupported.update(sample.unsupported)
+            if len(counters) + len(storage) > MAX_POINTS:
+                raise failure(
+                    "metrics_limit",
+                    "Pinecone monitoring exceeded its metric series limit.",
+                )
         return MetricSample(counters, storage, frozenset(unsupported))
     except (httpx.HTTPError, ValueError, UnicodeError, TypeError):
         raise failure(

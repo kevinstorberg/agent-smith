@@ -1,5 +1,6 @@
 from decimal import Decimal
 import importlib
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -140,4 +141,68 @@ def test_redirects_are_never_followed_with_credentials():
                 "PRIVATE_TEST_KEY",
                 client=client,
             )
+    assert len(requests) == 1
+
+
+def test_metric_point_limit_applies_to_the_complete_collection(monkeypatch):
+    metrics = module()
+    monkeypatch.setattr(metrics, "MAX_POINTS", 4, raising=False)
+
+    def respond(request):
+        if request.url.host == "api.pinecone.io":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "targets": ["one.pinecone.io", "two.pinecone.io"],
+                        "labels": {},
+                    }
+                ],
+            )
+        return httpx.Response(200, text=source(instance=request.url.host))
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        with pytest.raises(ProviderFailure) as raised:
+            metrics.collect_metrics("project-test", "PRIVATE_TEST_KEY", client=client)
+    assert raised.value.code == "metrics_limit"
+
+
+@pytest.mark.parametrize("limit", ["MAX_RESPONSE", "MAX_TOTAL"])
+def test_body_limits_fail_without_exposing_credentials(monkeypatch, limit):
+    metrics = module()
+    monkeypatch.setattr(metrics, limit, 100)
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        if request.url.host == "api.pinecone.io":
+            return httpx.Response(
+                200, json=[{"targets": ["one.pinecone.io"], "labels": {}}]
+            )
+        return httpx.Response(200, text=source())
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        with pytest.raises(ProviderFailure) as raised:
+            metrics.collect_metrics("project-test", "PRIVATE_TEST_KEY", client=client)
+    assert raised.value.code == "metrics_limit"
+    assert len(requests) == 2
+    assert "PRIVATE" not in str(raised.value) + raised.value.message
+
+
+def test_expired_collection_does_not_start_another_http_request(monkeypatch):
+    metrics = module()
+    ticks = iter([0, 0, 31])
+    monkeypatch.setattr(metrics, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(
+            200, json=[{"targets": ["one.pinecone.io"], "labels": {}}]
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        with pytest.raises(ProviderFailure) as raised:
+            metrics.collect_metrics("project-test", "PRIVATE_TEST_KEY", client=client)
+    assert raised.value.code == "metrics_limit"
     assert len(requests) == 1

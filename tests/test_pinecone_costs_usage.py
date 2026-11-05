@@ -252,6 +252,8 @@ def test_browser_fixture_is_exact_native_backend_output():
     assert fixture["baseline"] == first.report.model_dump(mode="json")
     assert fixture["observed"] == second.report.model_dump(mode="json")
     assert fixture["no_price"] == unpriced.report.model_dump(mode="json")
-    boundary=datetime.fromisoformat("2026-11-01T00:15:00+00:00")
-    book=prices().model_copy(update={"as_of":boundary.date()})
-    assert fixture["utc_boundary"]==module().build_usage(boundary,parse_metrics(source()),None,book,Decimal("50")).report.model_dump(mode="json")
+    boundary = datetime.fromisoformat("2026-11-01T00:15:00+00:00")
+    book = prices().model_copy(update={"as_of": boundary.date()})
+    assert fixture["utc_boundary"] == module().build_usage(
+        boundary, parse_metrics(source()), None, book, Decimal("50")
+    ).report.model_dump(mode="json")
