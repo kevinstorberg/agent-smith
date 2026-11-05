@@ -59,7 +59,9 @@ def test_action_items_lifecycle_and_explicit_clears(client):
         "created_at",
         "updated_at",
         "priority",
+        "due_at",
     }
+    assert first["due_at"] is None
     changed = client.patch(
         f"/api/action-items/{first['id']}",
         json={"expected_revision": 1, "project": None, "description": None, "tags": []},
