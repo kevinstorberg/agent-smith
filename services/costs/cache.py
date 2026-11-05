@@ -94,7 +94,25 @@ class SnapshotCache:
         }
 
     def read(self) -> dict:
-        return self._view(self._load())
+        return self._current_view(self._load())
+
+    def _current_view(self, snapshot: Snapshot | None) -> dict:
+        if (
+            not snapshot
+            or not snapshot.error
+            or snapshot.error.get("code") != "interrupted_refresh"
+        ):
+            return self._view(snapshot)
+        try:
+            with exclusive_file_lock(self.lock_path, "Cost collection"):
+                return self._view(self._load())
+        except RuntimeError as error:
+            if (
+                str(error)
+                != "Cost collection is already running; retry after it finishes"
+            ):
+                raise
+            return self._view(self._load(), pending=True)
 
     def read_or_refresh(self, now: datetime, fetch: Callable[[], CostReport]) -> dict:
         return self._read_or_collect(
@@ -116,7 +134,7 @@ class SnapshotCache:
         now = require_utc(now)
         existing = self._load()
         if existing and now < existing.next_attempt_at:
-            return self._view(existing)
+            return self._current_view(existing)
         try:
             with exclusive_file_lock(self.lock_path, "Cost collection"):
                 existing = self._load()
@@ -128,6 +146,10 @@ class SnapshotCache:
                     else 0
                 )
                 if attempts >= self.daily_attempt_limit:
+                    existing.next_attempt_at = (now + timedelta(days=1)).replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
+                    atomic_write_json(self.path, existing.model_dump(mode="json"))
                     return self._view(existing)
                 pending = Snapshot(
                     cache_key=self.key,

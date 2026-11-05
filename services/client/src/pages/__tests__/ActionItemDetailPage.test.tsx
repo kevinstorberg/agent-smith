@@ -28,6 +28,7 @@ vi.mock('react-router', async (original) => {
 vi.mock('../../api', async (original) => ({
   ...(await original<typeof import('../../api')>()),
   api: {
+    actionItemProjects: { list: vi.fn(), create: vi.fn(), remove: vi.fn() },
     actionItems: {
       get: vi.fn(),
       create: vi.fn(),
@@ -59,6 +60,13 @@ function RouteLocation() {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(api.actionItemProjects.list).mockResolvedValue({
+    items: [
+      { id: 1, name: 'Work', created_at: '2026-11-01T12:00:00Z' },
+      { id: 2, name: 'Paralign', created_at: '2026-11-01T12:00:00Z' },
+    ],
+    total: 2,
+  });
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   routing.real = false;
   vi.mocked(api.actionItems.get).mockResolvedValue(actionItem(1));
@@ -180,8 +188,9 @@ describe('ActionItemDetailPage', () => {
     fireEvent.change(screen.getByLabelText('Title'), {
       target: { value: '  Follow up  ' },
     });
+    await screen.findByRole('option', { name: 'Work' });
     fireEvent.change(screen.getByLabelText('Project'), {
-      target: { value: ' Work ' },
+      target: { value: 'Work' },
     });
     fireEvent.change(screen.getByLabelText('Tags'), {
       target: { value: 'product, security' },

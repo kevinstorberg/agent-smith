@@ -1,14 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import ReactMarkdown from 'react-markdown';
-import MDEditor from '@uiw/react-md-editor';
 import { api } from '../api';
 import type { HarnessItem, HarnessConfig } from '../api';
-import { AgentCheckboxes } from '../components/AgentCheckboxes';
 import { CopyButton } from '../components/CopyButton';
 import { ConfigForm } from '../components/ConfigForm';
 import { DetailPageHeader } from '../components/DetailPageHeader';
-import { useDetailPageEdit } from '../hooks/useDetailPageEdit';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { usePageLifetime } from '../hooks/usePageLifetime';
 import { useNotification } from '../context/useNotification';
@@ -16,15 +13,11 @@ import {
   ALL_AGENTS,
   TYPE_PATHS,
   isMarkdownType,
-  toggleArrayItem,
   formatError,
-  MAX_NAME_LENGTH,
-  nameError,
   isValidRepo,
 } from '../constants';
-import { FieldError } from '../components/FieldError';
 import { harnessStyles as styles } from '../styles/harness';
-import { validators } from '../utils/validation';
+import { HarnessEditor } from '../components/HarnessEditor';
 
 function formatBody(item: HarnessItem, type: string): string {
   if (!item.content) return '';
@@ -41,16 +34,6 @@ function formatTimestamp(ts: string): string {
   });
 }
 
-interface HarnessEditValues {
-  name: string;
-  project: string;
-  sort_key: string;
-  agents: string[];
-  enabled: boolean;
-  clone_as_skill: boolean;
-  body: string;
-}
-
 export function HarnessDetailPage() {
   const { type = '', id = '' } = useParams<{ type: string; id: string }>();
   const navigate = useNavigate();
@@ -61,27 +44,8 @@ export function HarnessDetailPage() {
   const [item, setItem] = useState<HarnessItem | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const {
-    editing,
-    saving,
-    editValues,
-    setEditValue,
-    startEditing: startEdit,
-    cancelEditing: cancelEdit,
-    setSaving,
-  } = useDetailPageEdit<HarnessEditValues>({
-    initialData: item
-      ? {
-          name: item.name,
-          project: item.project || '',
-          sort_key: String(item.sort_key ?? 0),
-          agents: [...item.agents],
-          enabled: item.enabled,
-          clone_as_skill: !!item.clone_as_skill,
-          body: formatBody(item, type),
-        }
-      : undefined,
-  });
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const [history, setHistory] = useState<HarnessItem[]>([]);
   const [previewVersion, setPreviewVersion] = useState<HarnessItem | null>(
@@ -142,100 +106,8 @@ export function HarnessDetailPage() {
   }, [loadItem, loadHistory]);
 
   const startEditing = () => {
-    if (!item) return;
-    startEdit({
-      name: item.name,
-      project: item.project || '',
-      sort_key: String(item.sort_key ?? 0),
-      agents: [...item.agents],
-      enabled: item.enabled,
-      clone_as_skill: !!item.clone_as_skill,
-      body: formatBody(item, type),
-    });
+    setEditing(true);
     setPreviewVersion(null);
-  };
-
-  const save = async () => {
-    if (!item) return;
-
-    const name = editValues.name?.trim() ?? '';
-    const project = editValues.project ?? '';
-    const sortKey = editValues.sort_key ?? '';
-    const agents = editValues.agents ?? [];
-    const enabled = editValues.enabled ?? true;
-    const cloneAsSkill = editValues.clone_as_skill ?? false;
-    const body = editValues.body ?? '';
-
-    const nameErr = nameError(name);
-    if (nameErr) {
-      notify(nameErr, 'error');
-      return;
-    }
-    if (agents.length === 0) {
-      notify('At least one agent must be selected.', 'error');
-      return;
-    }
-
-    if (!isMarkdownType(type)) {
-      const jsonError = validators.json(body);
-      if (jsonError) {
-        notify('Invalid JSON in metadata field.', 'error');
-        return;
-      }
-    }
-
-    setSaving(true);
-    try {
-      const originalBody = formatBody(item, type);
-      const bodyChanged = body !== originalBody;
-      const sortKeyNum = sortKey ? parseInt(sortKey, 10) : 0;
-      const metadataChanged =
-        name !== item.name ||
-        enabled !== item.enabled ||
-        cloneAsSkill !== !!item.clone_as_skill ||
-        sortKeyNum !== (item.sort_key || 0) ||
-        (project || null) !== item.project ||
-        JSON.stringify(agents.sort()) !==
-          JSON.stringify([...item.agents].sort());
-
-      let currentId = item.id;
-
-      if (bodyChanged) {
-        const newContent = isMarkdownType(type)
-          ? { body, metadata: item.content?.metadata ?? {} }
-          : { body: item.content?.body ?? '', metadata: JSON.parse(body) };
-        const updated = await api.harness.items.updateContent(
-          type,
-          currentId,
-          newContent,
-        );
-        currentId = updated.id;
-      }
-
-      if (metadataChanged) {
-        await api.harness.items.updateMetadata(type, currentId, {
-          name,
-          project: project || null,
-          sort_key: sortKeyNum,
-          agents,
-          enabled,
-          ...(type === 'rule' ? { clone_as_skill: cloneAsSkill } : {}),
-        });
-      }
-
-      if (!isCurrent()) return;
-      cancelEdit();
-      if (currentId !== item.id) {
-        navigate(`/harness/${type}/${currentId}`, { replace: true });
-      } else {
-        await loadItem();
-        await loadHistory();
-      }
-    } catch (err) {
-      if (isCurrent()) notify(`Save failed: ${formatError(err)}`, 'error');
-    } finally {
-      setSaving(false);
-    }
   };
 
   const restoreVersion = async (oldItem: HarnessItem) => {
@@ -246,11 +118,6 @@ export function HarnessDetailPage() {
     } finally {
       setSaving(false);
     }
-  };
-
-  const toggleAgent = (agent: string) => {
-    const current = editValues.agents ?? [];
-    setEditValue('agents', toggleArrayItem(current, agent));
   };
 
   const handleDelete = async () => {
@@ -341,6 +208,26 @@ export function HarnessDetailPage() {
   if (loading) return <div className="loading">Loading...</div>;
   if (!item) return <div className="loading">Item not found</div>;
 
+  if (editing)
+    return (
+      <HarnessEditor
+        key={`${type}:${item.id}`}
+        kind={type}
+        item={item}
+        onCancel={() => setEditing(false)}
+        onSaved={(updated) => {
+          if (!isCurrent()) return;
+          setEditing(false);
+          if (updated.id !== item.id)
+            navigate(`/harness/${type}/${updated.id}`, { replace: true });
+          else {
+            void loadItem();
+            void loadHistory();
+          }
+        }}
+      />
+    );
+
   const displayItem = previewVersion || item;
   const displayBody = formatBody(displayItem, type);
   const backPath = `/harness/${TYPE_PATHS[type] || type}`;
@@ -352,52 +239,21 @@ export function HarnessDetailPage() {
         editing={editing}
         saving={saving}
         onEdit={startEditing}
-        onSave={save}
-        onCancel={cancelEdit}
         onDelete={!previewVersion ? handleDelete : undefined}
         deleteConfirmMessage={`Delete ${type} "${displayItem.name}"?`}
         showActions={!previewVersion}
       />
 
-      {editing ? (
-        <div style={{ marginBottom: 12 }}>
-          <label className="form-label" htmlFor="harness-edit-name">
-            Name
-          </label>
-          <input
-            id="harness-edit-name"
-            className="input detail-title-input"
-            aria-invalid={Boolean(
-              editValues.name && nameError(editValues.name),
-            )}
-            aria-describedby={
-              editValues.name && nameError(editValues.name)
-                ? 'harness-edit-name-error'
-                : undefined
-            }
-            value={editValues.name ?? ''}
-            onChange={(e) => setEditValue('name', e.target.value)}
-            maxLength={MAX_NAME_LENGTH}
-          />
-          <FieldError
-            id="harness-edit-name-error"
-            error={editValues.name ? nameError(editValues.name) : null}
-            maxLength={MAX_NAME_LENGTH}
-            currentLength={editValues.name?.length ?? 0}
-          />
-        </div>
-      ) : (
-        <h2 className="page-title" style={{ marginBottom: 8 }}>
-          {displayItem.name}
-          {previewVersion && (
-            <span
-              style={{ fontSize: 13, color: 'var(--warning)', marginLeft: 12 }}
-            >
-              (viewing v{previewVersion.version})
-            </span>
-          )}
-        </h2>
-      )}
+      <h2 className="page-title" style={{ marginBottom: 8 }}>
+        {displayItem.name}
+        {previewVersion && (
+          <span
+            style={{ fontSize: 13, color: 'var(--warning)', marginLeft: 12 }}
+          >
+            (viewing v{previewVersion.version})
+          </span>
+        )}
+      </h2>
 
       <div style={styles.badges}>
         <span className="tag" style={{ fontFamily: 'var(--mono)' }}>
@@ -430,117 +286,20 @@ export function HarnessDetailPage() {
         ))}
       </div>
 
-      {editing && (
-        <>
-          <div className="form-grid" style={{ marginBottom: 16 }}>
-            <div>
-              <label className="form-label" htmlFor="harness-edit-project">
-                Project
-              </label>
-              <input
-                id="harness-edit-project"
-                className="input"
-                value={editValues.project ?? ''}
-                onChange={(e) => setEditValue('project', e.target.value)}
-                placeholder="Empty = shared/global"
-              />
-            </div>
-            <div>
-              <label className="form-label" htmlFor="harness-edit-sort">
-                Sort Order
-              </label>
-              <input
-                type="number"
-                min={0}
-                id="harness-edit-sort"
-                className="input"
-                value={editValues.sort_key ?? ''}
-                onChange={(e) => setEditValue('sort_key', e.target.value)}
-                placeholder="e.g. 5"
-              />
-            </div>
-          </div>
-          <div style={styles.checkboxRow}>
-            <label style={styles.checkboxLabel}>
-              <input
-                type="checkbox"
-                className="form-checkbox"
-                checked={editValues.enabled ?? true}
-                onChange={() =>
-                  setEditValue('enabled', !(editValues.enabled ?? true))
-                }
-              />
-              Enabled
-            </label>
-            {type === 'rule' && (
-              <label style={styles.checkboxLabel}>
-                <input
-                  type="checkbox"
-                  className="form-checkbox"
-                  checked={editValues.clone_as_skill ?? false}
-                  onChange={() =>
-                    setEditValue(
-                      'clone_as_skill',
-                      !(editValues.clone_as_skill ?? false),
-                    )
-                  }
-                />
-                Clone as Skill
-              </label>
-            )}
-          </div>
-          <fieldset className="form-group">
-            <legend className="form-label">Agents</legend>
-            <div style={styles.checkboxRow}>
-              <AgentCheckboxes
-                selected={editValues.agents ?? []}
-                onToggle={toggleAgent}
-              />
-            </div>
-          </fieldset>
-        </>
-      )}
-
       <div className="card" style={{ marginBottom: 24 }}>
-        {editing && (
-          <label className="form-label" htmlFor="harness-edit-body">
-            {isMarkdownType(type) ? 'Body' : 'Configuration (JSON)'}
-          </label>
-        )}
-        {editing ? (
-          isMarkdownType(type) ? (
-            <div data-color-mode="dark">
-              <MDEditor
-                textareaProps={{ id: 'harness-edit-body' }}
-                value={editValues.body ?? ''}
-                onChange={(val) => setEditValue('body', val || '')}
-                height={400}
-              />
+        <div style={{ position: 'relative' }}>
+          <CopyButton
+            text={displayBody}
+            style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }}
+          />
+          {isMarkdownType(type) ? (
+            <div className="markdown-content">
+              <ReactMarkdown>{displayBody}</ReactMarkdown>
             </div>
           ) : (
-            <textarea
-              id="harness-edit-body"
-              style={styles.textarea}
-              value={editValues.body ?? ''}
-              onChange={(e) => setEditValue('body', e.target.value)}
-              spellCheck={false}
-            />
-          )
-        ) : (
-          <div style={{ position: 'relative' }}>
-            <CopyButton
-              text={displayBody}
-              style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }}
-            />
-            {isMarkdownType(type) ? (
-              <div className="markdown-content">
-                <ReactMarkdown>{displayBody}</ReactMarkdown>
-              </div>
-            ) : (
-              <pre>{displayBody}</pre>
-            )}
-          </div>
-        )}
+            <pre>{displayBody}</pre>
+          )}
+        </div>
       </div>
 
       {previewVersion && (

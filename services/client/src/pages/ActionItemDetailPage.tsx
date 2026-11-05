@@ -13,6 +13,8 @@ import { useNotification } from '../context/useNotification';
 import { MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from '../constants';
 import { actionItemTags } from '../utils/actionItems';
 import { ActionItemStatusButton } from '../components/ActionItemStatusButton';
+import { ActionItemProjectPicker } from '../components/ActionItemProjects';
+import { parseViewField } from '../utils/viewPreferences';
 
 interface Draft {
   title: string;
@@ -52,6 +54,21 @@ function ActionItemDetail({ id }: { id?: string }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [uncertainCreate, setUncertainCreate] = useState(false);
   const submission = useRef<ActionItemCreate | null>(null);
+  const initialProject = useRef(
+    parseViewField('actionItems', 'project', searchParams.get('project')),
+  );
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (!isNew || seeded.current) return;
+    seeded.current = true;
+    beginEditing({
+      title: '',
+      description: '',
+      project: initialProject.current,
+      tags: '',
+      revision: 0,
+    });
+  }, [isNew, beginEditing]);
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -186,7 +203,7 @@ function ActionItemDetail({ id }: { id?: string }) {
     const fields = {
       title,
       description: editValues.description || '',
-      project: editValues.project?.trim() || null,
+      project: editValues.project || null,
       tags: actionItemTags(editValues.tags || ''),
     } satisfies ActionItemFields;
     setNotice(null);
@@ -276,19 +293,11 @@ function ActionItemDetail({ id }: { id?: string }) {
             autoFocus
           />
           <div className="filters" style={{ marginTop: 16 }}>
-            <label>
-              <span className="form-label">Project</span>
-              <input
-                className="input"
-                maxLength={200}
-                value={editValues.project || ''}
-                disabled={saving || uncertainCreate}
-                onChange={(event) =>
-                  setEditValue('project', event.target.value)
-                }
-                placeholder="No project"
-              />
-            </label>
+            <ActionItemProjectPicker
+              value={editValues.project || ''}
+              disabled={saving || uncertainCreate}
+              onChange={(value) => setEditValue('project', value)}
+            />
             <label>
               <span className="form-label">Tags</span>
               <input

@@ -282,6 +282,10 @@ def agent_action(name: str) -> tuple[str, str]:
 
 
 def provider_label(provider: str, operation: str) -> ActionLabel:
+    if (provider, operation) == ("aws_cost_explorer", "get_cost_and_usage"):
+        return ActionLabel("AWS COST EXPLORER", "READ", "billable")
+    if (provider, operation) == ("aws_sts", "get_caller_identity"):
+        return ActionLabel("AWS IDENTITY", "READ", "nonbillable")
     if provider in _MODEL_PROVIDERS:
         return action_label("model", "generate")
     if provider == "pinecone":
