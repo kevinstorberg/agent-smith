@@ -20,7 +20,11 @@ from tests.test_graph_model_factory import (
 
 
 def records(caplog):
-    return [record.billable_event for record in caplog.records if hasattr(record, "billable_event")]
+    return [
+        record.billable_event
+        for record in caplog.records
+        if hasattr(record, "billable_event")
+    ]
 
 
 class LoggedReply(_FixedReplyModel):
@@ -31,7 +35,10 @@ class LoggedReply(_FixedReplyModel):
         if self.observer is not None:
             self.observer()
         result = super()._generate(*args, **kwargs)
-        result.llm_output = {"token_usage": self.reported_usage, "private": "PRIVATE_PROVIDER_METADATA"}
+        result.llm_output = {
+            "token_usage": self.reported_usage,
+            "private": "PRIVATE_PROVIDER_METADATA",
+        }
         return result
 
     def _stream(self, *args, **kwargs):
@@ -67,51 +74,91 @@ async def invoke(model, mode):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["sync", "async", "stream", "async_stream"])
-async def test_native_model_dispatch_pairs_before_after_and_reports_actual_usage(observed_guard, caplog, mode):
+async def test_native_model_dispatch_pairs_before_after_and_reports_actual_usage(
+    observed_guard, caplog, mode
+):
     streaming = "stream" in mode
     guard = observed_guard(streaming)
-    usage = {"input_tokens": 3, "output_tokens": 4, "total_tokens": 7} if streaming else {
-        "prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7,
-    }
+    usage = (
+        {"input_tokens": 3, "output_tokens": 4, "total_tokens": 7}
+        if streaming
+        else {
+            "prompt_tokens": 3,
+            "completion_tokens": 4,
+            "total_tokens": 7,
+        }
+    )
 
     def provider_started():
         assert [record["phase"] for record in records(caplog)] == ["START"]
 
-    model = LoggedReply(finish_reason="stop", streaming=streaming, callbacks=[guard],
-                        reported_usage=usage, observer=provider_started)
-    with trigger_context(trigger="job", job_id=12, execution_id=34, graph="opinion", reason="scheduled_interval"):
+    model = LoggedReply(
+        finish_reason="stop",
+        streaming=streaming,
+        callbacks=[guard],
+        reported_usage=usage,
+        observer=provider_started,
+    )
+    with trigger_context(
+        trigger="job",
+        job_id=12,
+        execution_id=34,
+        graph="opinion",
+        reason="scheduled_interval",
+    ):
         assert await invoke(model, mode) == "partial"
 
     before, after = records(caplog)
     assert before["phase"] == "START" and after["phase"] == "END"
     assert before["event_id"] == after["event_id"]
     assert before["provider"] == "bedrock" and before["operation"] == "chat_completion"
-    assert before["model_role"] == "opinion" and before["model"] == "us.moonshotai.kimi-k3"
+    assert (
+        before["model_role"] == "opinion" and before["model"] == "us.moonshotai.kimi-k3"
+    )
     assert before["streaming"] is streaming and before["sdk_retries"] == 6
-    assert (before["job_id"], before["execution_id"], before["reason"]) == (12, 34, "scheduled_interval")
-    assert before["input_messages"] == 1 and before["input_characters"] == len("PRIVATE_INPUT")
+    assert (before["job_id"], before["execution_id"], before["reason"]) == (
+        12,
+        34,
+        "scheduled_interval",
+    )
+    assert before["input_messages"] == 1 and before["input_characters"] == len(
+        "PRIVATE_INPUT"
+    )
     UUID(before["model_run_id"])
     assert after["outcome"] == "success" and after["finish_reason"] == "stop"
-    assert {key: after[key] for key in ("tokens_input", "tokens_output", "total_tokens")} == {
-        "tokens_input": 3, "tokens_output": 4, "total_tokens": 7,
+    assert {
+        key: after[key] for key in ("tokens_input", "tokens_output", "total_tokens")
+    } == {
+        "tokens_input": 3,
+        "tokens_output": 4,
+        "total_tokens": 7,
     }
     assert after["duration_ms"] >= 0 and after["completion"] == "sdk_call"
-    assert "PRIVATE_INPUT" not in caplog.text and "PRIVATE_PROVIDER_METADATA" not in caplog.text
+    assert (
+        "PRIVATE_INPUT" not in caplog.text
+        and "PRIVATE_PROVIDER_METADATA" not in caplog.text
+    )
     assert guard._events == {}
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["sync", "async", "stream", "async_stream"])
-async def test_completed_but_truncated_provider_response_has_one_successful_end(observed_guard, caplog, mode):
+async def test_completed_but_truncated_provider_response_has_one_successful_end(
+    observed_guard, caplog, mode
+):
     guard = observed_guard("stream" in mode)
-    model = LoggedReply(finish_reason="length", streaming="stream" in mode, callbacks=[guard])
+    model = LoggedReply(
+        finish_reason="length", streaming="stream" in mode, callbacks=[guard]
+    )
 
     with pytest.raises(model_factory.ModelOutputTruncatedError):
         await invoke(model, mode)
 
     before, after = records(caplog)
     assert after["outcome"] == "success" and after["finish_reason"] == "length"
-    guard.on_llm_error(RuntimeError("PRIVATE_LATE_ERROR"), run_id=UUID(before["model_run_id"]))
+    guard.on_llm_error(
+        RuntimeError("PRIVATE_LATE_ERROR"), run_id=UUID(before["model_run_id"])
+    )
     assert len(records(caplog)) == 2 and guard._events == {}
     assert "PRIVATE_LATE_ERROR" not in caplog.text
 
@@ -119,7 +166,11 @@ async def test_completed_but_truncated_provider_response_has_one_successful_end(
 def test_paid_call_guard_prevents_provider_start_and_invocation(model_env, caplog):
     provider_calls = []
     guard = model_factory._ModelGuard(load_model_config("opinion"))
-    model = LoggedReply(finish_reason="stop", callbacks=[guard], observer=lambda: provider_calls.append(True))
+    model = LoggedReply(
+        finish_reason="stop",
+        callbacks=[guard],
+        observer=lambda: provider_calls.append(True),
+    )
 
     with pytest.raises(PaidModelCallBlocked):
         model.invoke("PRIVATE_INPUT")
@@ -127,7 +178,9 @@ def test_paid_call_guard_prevents_provider_start_and_invocation(model_env, caplo
     assert provider_calls == [] and records(caplog) == [] and guard._events == {}
 
 
-def test_provider_failure_logs_only_safe_error_type_and_cleans_state(observed_guard, caplog):
+def test_provider_failure_logs_only_safe_error_type_and_cleans_state(
+    observed_guard, caplog
+):
     class FailedReply(_FixedReplyModel):
         def _generate(self, *args, **kwargs):
             raise RuntimeError("PRIVATE_PROVIDER_FAILURE")
@@ -140,14 +193,23 @@ def test_provider_failure_logs_only_safe_error_type_and_cleans_state(observed_gu
     before, after = records(caplog)
     assert before["event_id"] == after["event_id"] and after["outcome"] == "failed"
     assert after["error_type"] == "RuntimeError" and guard._events == {}
-    assert "PRIVATE_PROVIDER_FAILURE" not in caplog.text and "PRIVATE_INPUT" not in caplog.text
+    assert (
+        "PRIVATE_PROVIDER_FAILURE" not in caplog.text
+        and "PRIVATE_INPUT" not in caplog.text
+    )
 
 
 def test_usage_and_finish_reason_do_not_log_untrusted_values(observed_guard, caplog):
     guard = observed_guard()
-    model = LoggedReply(finish_reason="PRIVATE_REASON", callbacks=[guard], reported_usage={
-        "prompt_tokens": True, "completion_tokens": "PRIVATE_USAGE", "total_tokens": -1,
-    })
+    model = LoggedReply(
+        finish_reason="PRIVATE_REASON",
+        callbacks=[guard],
+        reported_usage={
+            "prompt_tokens": True,
+            "completion_tokens": "PRIVATE_USAGE",
+            "total_tokens": -1,
+        },
+    )
     model.invoke("PRIVATE_INPUT")
 
     after = records(caplog)[1]
@@ -156,55 +218,98 @@ def test_usage_and_finish_reason_do_not_log_untrusted_values(observed_guard, cap
     assert "PRIVATE_REASON" not in caplog.text and "PRIVATE_USAGE" not in caplog.text
 
 
-def test_message_counts_include_system_user_and_tool_text_without_serializing_payloads(observed_guard, caplog):
+def test_message_counts_include_system_user_and_tool_text_without_serializing_payloads(
+    observed_guard, caplog
+):
     guard = observed_guard()
     model = LoggedReply(finish_reason="stop", callbacks=[guard])
-    model.invoke([
-        SystemMessage(content="PRIVATE_SYSTEM"),
-        HumanMessage(content=[{"type": "text", "text": "PRIVATE_USER"},
-                              {"type": "image_url", "image_url": {"url": "https://never-contact.invalid/private"}}]),
-        ToolMessage(content="PRIVATE_TOOL", tool_call_id="tool-id"),
-    ])
+    model.invoke(
+        [
+            SystemMessage(content="PRIVATE_SYSTEM"),
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": "PRIVATE_USER"},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "https://never-contact.invalid/private"},
+                    },
+                ]
+            ),
+            ToolMessage(content="PRIVATE_TOOL", tool_call_id="tool-id"),
+        ]
+    )
 
     before = records(caplog)[0]
     assert before["input_messages"] == 3
-    assert before["input_characters"] == sum(map(len, ("PRIVATE_SYSTEM", "PRIVATE_USER", "PRIVATE_TOOL")))
+    assert before["input_characters"] == sum(
+        map(len, ("PRIVATE_SYSTEM", "PRIVATE_USER", "PRIVATE_TOOL"))
+    )
     assert "PRIVATE_" not in caplog.text and "never-contact" not in caplog.text
 
 
-def test_native_callback_identity_and_repeated_error_finish_once(observed_guard, caplog):
+def test_native_callback_identity_and_repeated_error_finish_once(
+    observed_guard, caplog
+):
     guard = observed_guard()
     run_id, parent_id = uuid4(), uuid4()
-    guard.on_chat_model_start({}, [[HumanMessage(content="PRIVATE_INPUT")]], run_id=run_id, parent_run_id=parent_id,
-                              invocation_params={"stream": True})
+    guard.on_chat_model_start(
+        {},
+        [[HumanMessage(content="PRIVATE_INPUT")]],
+        run_id=run_id,
+        parent_run_id=parent_id,
+        invocation_params={"stream": True},
+    )
     guard.on_llm_error(TimeoutError("PRIVATE_TIMEOUT"), run_id=run_id)
     guard.on_llm_error(TimeoutError("PRIVATE_TIMEOUT"), run_id=run_id)
 
     before, after = records(caplog)
-    assert before["model_run_id"] == str(run_id) and before["parent_model_run_id"] == str(parent_id)
+    assert before["model_run_id"] == str(run_id) and before[
+        "parent_model_run_id"
+    ] == str(parent_id)
     assert before["streaming"] is True and after["outcome"] == "timeout"
     assert guard._events == {} and "PRIVATE_TIMEOUT" not in caplog.text
 
 
 @pytest.mark.asyncio
-async def test_actual_adapter_cancellation_cleans_only_its_concurrent_invocation(observed_guard, model_env, monkeypatch, caplog):
+async def test_actual_adapter_cancellation_cleans_only_its_concurrent_invocation(
+    observed_guard, model_env, monkeypatch, caplog
+):
     entered = asyncio.Queue()
     release = asyncio.Event()
 
     async def respond(request):
         entered.put_nowait(True)
         await release.wait()
-        return httpx.Response(200, json={
-            "id": "scripted-reply", "object": "chat.completion", "created": 1, "model": "scripted",
-            "choices": [{"index": 0, "message": {"role": "assistant", "content": "PRIVATE_REPLY"}, "finish_reason": "stop"}],
-            "usage": {"prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7},
-        })
+        return httpx.Response(
+            200,
+            json={
+                "id": "scripted-reply",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "scripted",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "PRIVATE_REPLY"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 3,
+                    "completion_tokens": 4,
+                    "total_tokens": 7,
+                },
+            },
+        )
 
     adapter = model_factory._ObservedChatCompletionsTransportAdapter
     model_env.setenv("OPINION_MODEL_MAX_RETRIES", "0")
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
-        monkeypatch.setattr(model_factory, "_ObservedChatCompletionsTransportAdapter",
-                            lambda **kwargs: adapter(http_async_client=client, **kwargs))
+        monkeypatch.setattr(
+            model_factory,
+            "_ObservedChatCompletionsTransportAdapter",
+            lambda **kwargs: adapter(http_async_client=client, **kwargs),
+        )
         model = model_factory.build_chat_model("opinion")
         guard = model.callbacks[0]
 
@@ -241,7 +346,9 @@ async def test_actual_adapter_cancellation_cleans_only_its_concurrent_invocation
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
-async def test_closing_native_stream_early_records_cancellation(observed_guard, caplog, asynchronous):
+async def test_closing_native_stream_early_records_cancellation(
+    observed_guard, caplog, asynchronous
+):
     guard = observed_guard(True)
     model = LoggedReply(finish_reason="stop", streaming=True, callbacks=[guard])
     if asynchronous:
@@ -259,7 +366,9 @@ async def test_closing_native_stream_early_records_cancellation(observed_guard, 
     assert guard._events == {}
 
 
-def test_factory_suppresses_full_rubric_info_payload_but_keeps_warnings(model_env, captured_adapter_kwargs, caplog):
+def test_factory_suppresses_full_rubric_info_payload_but_keeps_warnings(
+    model_env, captured_adapter_kwargs, caplog
+):
     vendor = logging.getLogger("deepagents.middleware.rubric")
     previous = vendor.level
     try:
