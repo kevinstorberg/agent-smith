@@ -56,7 +56,7 @@ def test_profile_discussion_migration_preserves_old_tasks_scopes_constraints_and
                 )
             cursor.execute(f"SELECT {LEGACY_COLUMNS} FROM action_items ORDER BY id")
             before = cursor.fetchall()
-        command.upgrade(migration, "head")
+        command.upgrade(migration, REVISION)
         profile_a, profile_b = str(uuid4()), str(uuid4())
         with psycopg2.connect(url) as connection, connection.cursor() as cursor:
             cursor.execute(f"SELECT {LEGACY_COLUMNS} FROM action_items ORDER BY id")
@@ -121,7 +121,7 @@ def test_profile_discussion_migration_preserves_old_tasks_scopes_constraints_and
             assert cursor.fetchone() == (profile_a, "completed")
             cursor.execute("DELETE FROM action_items WHERE profile_id IS NOT NULL")
         command.downgrade(migration, PARENT)
-        command.upgrade(migration, "head")
+        command.upgrade(migration, REVISION)
         with psycopg2.connect(url) as connection, connection.cursor() as cursor:
             cursor.execute(f"SELECT {LEGACY_COLUMNS} FROM action_items ORDER BY id")
             assert cursor.fetchall() == before

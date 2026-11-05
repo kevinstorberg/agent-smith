@@ -79,7 +79,7 @@ async def test_action_items_actual_mounted_mcp_and_rest_share_one_resource():
         assert {tool["name"] for tool in tools} == {
             f"action_item_{suffix}"
             for suffix in ("list", "get", "create", "update", "delete", "move")
-        }
+        } | {f"action_item_project_{suffix}" for suffix in ("list", "create", "delete")}
         assert all(
             tool["inputSchema"]["additionalProperties"] is False for tool in tools
         )

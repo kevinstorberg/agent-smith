@@ -16,6 +16,7 @@ from services.action_items.contracts import (
     Move,
     Patch,
     PositiveInt,
+    ProjectCreate,
     Query,
 )
 from services.db import get_connection
@@ -23,14 +24,15 @@ from services.meetings import profile_db
 from services.meetings.db import MeetingStorageError
 
 _WRITE_LOCK = "agent-smith:action-items-write"
-_PUBLIC = "id, title, description, project, tags, status, completed_at, revision, created_at, updated_at, sort_key AS priority"
-_LIST = _PUBLIC.replace("description, ", "")
+_PROJECT_ROWS = "action_items a LEFT JOIN action_item_projects p ON p.id=a.project_id"
+_PUBLIC = "a.id, a.title, a.description, p.name AS project, a.tags, a.status, a.completed_at, a.revision, a.created_at, a.updated_at, a.sort_key AS priority"
+_LIST = _PUBLIC.replace("a.description, ", "")
 _SORTS = {
-    "manual": "sort_key, id",
-    "newest": "created_at DESC, id DESC",
-    "updated": "updated_at DESC, id DESC",
-    "title": "lower(title), id",
-    "completed": "completed_at DESC, id DESC",
+    "manual": "a.sort_key, a.id",
+    "newest": "a.created_at DESC, a.id DESC",
+    "updated": "a.updated_at DESC, a.id DESC",
+    "title": "lower(a.title), a.id",
+    "completed": "a.completed_at DESC, a.id DESC",
 }
 
 
@@ -56,7 +58,7 @@ class _Scope:
 
     def columns(self, *, detail: bool) -> str:
         return (_PUBLIC if detail else _LIST) + (
-            ", profile_id::text AS profile_id" if self.profile_id else ""
+            ", a.profile_id::text AS profile_id" if self.profile_id else ""
         )
 
 
@@ -125,9 +127,91 @@ def _record(row: dict) -> dict:
     }
 
 
+def _find_project(cursor, name: str) -> dict | None:
+    cursor.execute(
+        "SELECT id,name,created_at FROM action_item_projects WHERE name=%s", (name,)
+    )
+    row = cursor.fetchone()
+    return dict(row) if row is not None else None
+
+
+def _project_name(cursor, value: str | None) -> str | None:
+    if value is None:
+        return None
+    existing = _find_project(cursor, value)
+    if existing is not None:
+        return existing["name"]
+    if not value.strip():
+        return None
+    return ProjectCreate.model_validate({"name": value}).name
+
+
+def _ensure_project(cursor, name: str | None) -> dict | None:
+    if name is None:
+        return None
+    existing = _find_project(cursor, name)
+    if existing is not None:
+        return existing
+    cursor.execute(
+        "INSERT INTO action_item_projects(name) VALUES(%s) ON CONFLICT(name) DO NOTHING RETURNING id,name,created_at",
+        (name,),
+    )
+    row = cursor.fetchone()
+    return dict(row) if row is not None else _find_project(cursor, name)
+
+
+def _same_creation(stored: dict, supplied: dict) -> bool:
+    candidate = dict(supplied)
+    original = stored.get("project")
+    incoming = candidate.get("project")
+    # Historical receipts own their normalization even when a new exact legacy name now exists.
+    if isinstance(incoming, str) and (
+        original is None or isinstance(original, str) and original == original.strip()
+    ):
+        normalized = incoming.strip() or None
+        if normalized == original:
+            candidate["project"] = normalized
+    return stored == candidate
+
+
+def list_projects() -> dict:
+    with _cursor(None, write=False) as (cursor, _):
+        cursor.execute(
+            "SELECT id,name,created_at FROM action_item_projects ORDER BY lower(name),name,id"
+        )
+        rows = [_record(row) for row in cursor.fetchall()]
+        return {"items": rows, "total": len(rows)}
+
+
+def create_project(payload: ProjectCreate | dict) -> dict:
+    request = ProjectCreate.model_validate(payload)
+    with _cursor(None, write=True) as (cursor, _):
+        return _record(_ensure_project(cursor, request.name))
+
+
+def delete_project(project_id: int) -> dict:
+    project_id = _id(project_id)
+    with _cursor(None, write=True) as (cursor, _):
+        cursor.execute(
+            "SELECT id FROM action_item_projects WHERE id=%s FOR UPDATE", (project_id,)
+        )
+        if cursor.fetchone() is None:
+            raise NotFound("Project not found")
+        cursor.execute(
+            "SELECT EXISTS(SELECT 1 FROM action_items WHERE project_id=%s) AS referenced",
+            (project_id,),
+        )
+        if cursor.fetchone()["referenced"]:
+            raise Conflict(
+                "Project is still referenced by action items, including deleted items"
+            )
+        cursor.execute("DELETE FROM action_item_projects WHERE id=%s", (project_id,))
+        return {"deleted": True, "id": project_id}
+
+
 def _live(cursor, item_id: int, scope: _Scope, expected_revision: int) -> dict:
     cursor.execute(
-        "SELECT * FROM action_items WHERE id=%s AND scope_key=%s AND deleted_at IS NULL FOR UPDATE",
+        f"SELECT a.*,p.name AS project FROM {_PROJECT_ROWS} WHERE a.id=%s AND a.scope_key=%s AND a.deleted_at IS NULL FOR UPDATE OF a",
         (item_id, scope.key),
     )
     row = cursor.fetchone()
@@ -142,7 +226,7 @@ def _live(cursor, item_id: int, scope: _Scope, expected_revision: int) -> dict:
 
 def _read(cursor, item_id: int, scope: _Scope) -> dict:
     cursor.execute(
-        f"SELECT {scope.columns(detail=True)} FROM action_items WHERE id=%s AND scope_key=%s AND deleted_at IS NULL",
+        f"SELECT {scope.columns(detail=True)} FROM {_PROJECT_ROWS} WHERE a.id=%s AND a.scope_key=%s AND a.deleted_at IS NULL",
         (item_id, scope.key),
     )
     row = cursor.fetchone()
@@ -211,7 +295,7 @@ class Queue:
                         raise Conflict(
                             "This creation request belongs to a deleted action item. Use a new request_id for a new item."
                         )
-                    if previous["create_payload"] != original:
+                    if not _same_creation(previous["create_payload"], original):
                         raise Conflict(
                             "This request_id was already used with different input. Replay the original input or use a new request_id."
                         )
@@ -225,13 +309,15 @@ class Queue:
                     raise Conflict(
                         "This request_id belongs to a different queue. Use a new request_id for a new item."
                     )
+            original["project"] = _project_name(cursor, request.project)
+            project = _ensure_project(cursor, original["project"])
             cursor.execute(
-                """INSERT INTO action_items(title,description,project,tags,status,completed_at,sort_key,request_id,create_payload,profile_id)
+                """INSERT INTO action_items(title,description,project_id,tags,status,completed_at,sort_key,request_id,create_payload,profile_id)
                 VALUES (%s,%s,%s,%s,%s,CASE WHEN %s='completed' THEN clock_timestamp() ELSE NULL END,%s,%s,%s,%s) RETURNING id""",
                 (
                     request.title,
                     request.description,
-                    request.project,
+                    project["id"] if project else None,
                     request.tags,
                     request.status,
                     request.status,
@@ -252,23 +338,21 @@ class Queue:
 
     def list_items(self, payload: Query | dict | None = None) -> dict:
         query = Query.model_validate(payload or {})
-        predicates, values = ["scope_key=%s", "deleted_at IS NULL"], []
+        predicates, values = ["a.scope_key=%s", "a.deleted_at IS NULL"], []
         if query.status != "all":
-            predicates.append("status=%s")
+            predicates.append("a.status=%s")
             values.append(query.status)
         if query.q is not None:
-            predicates.append("(title ILIKE %s OR description ILIKE %s)")
+            predicates.append("(a.title ILIKE %s OR a.description ILIKE %s)")
             escaped = (
                 query.q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             )
             values.extend([f"%{escaped}%"] * 2)
-        if query.project is not None:
-            predicates.append("project=%s")
-            values.append(query.project)
+        if query.unassigned:
+            predicates.append("a.project_id IS NULL")
         if query.tags:
-            predicates.append("tags @> %s::text[]")
+            predicates.append("a.tags @> %s::text[]")
             values.append(query.tags)
-        where = " AND ".join(predicates)
         order = _SORTS[
             query.sort
             or {"open": "manual", "completed": "completed", "all": "newest"}[
@@ -276,13 +360,19 @@ class Queue:
             ]
         ]
         with _cursor(self.profile_id, write=False) as (cursor, scope):
+            if query.project is not None:
+                name = _project_name(cursor, query.project)
+                if name is not None:
+                    predicates.append("p.name=%s")
+                    values.append(name)
+            where = " AND ".join(predicates)
             values = [scope.key, *values]
             cursor.execute(
-                f"SELECT COUNT(*) AS total FROM action_items WHERE {where}", values
+                f"SELECT COUNT(*) AS total FROM {_PROJECT_ROWS} WHERE {where}", values
             )
             total = cursor.fetchone()["total"]
             cursor.execute(
-                f"SELECT {scope.columns(detail=False)} FROM action_items WHERE {where} ORDER BY {order} LIMIT %s OFFSET %s",
+                f"SELECT {scope.columns(detail=False)} FROM {_PROJECT_ROWS} WHERE {where} ORDER BY {order} LIMIT %s OFFSET %s",
                 (*values, query.limit, query.offset),
             )
             result = {
@@ -298,11 +388,16 @@ class Queue:
         changes = patch.model_dump(exclude_unset=True, exclude={"expected_revision"})
         with _cursor(self.profile_id, write=True) as (cursor, scope):
             before = _live(cursor, item_id, scope, patch.expected_revision)
+            if "project" in changes:
+                changes["project"] = _project_name(cursor, changes["project"])
             changes = {
                 key: value for key, value in changes.items() if value != before[key]
             }
             if not changes:
                 return _read(cursor, item_id, scope)
+            if "project" in changes:
+                project = _ensure_project(cursor, changes.pop("project"))
+                changes["project_id"] = project["id"] if project else None
             if "status" in changes:
                 if changes["status"] == "completed":
                     changes["sort_key"] = None

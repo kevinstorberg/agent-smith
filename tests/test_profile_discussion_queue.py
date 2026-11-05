@@ -226,7 +226,7 @@ def test_profile_discussion_queue_keeps_pre_scope_creation_payload_replays_compa
     request_id = str(uuid4())
     with get_connection() as connection, connection.cursor() as cursor:
         cursor.execute(
-            """INSERT INTO action_items(title,description,project,tags,status,sort_key,request_id,create_payload)
+            """INSERT INTO action_items(title,description,project_id,tags,status,sort_key,request_id,create_payload)
             VALUES(%s,%s,%s,%s,%s,1,%s,%s) RETURNING id""",
             (
                 payload["title"],

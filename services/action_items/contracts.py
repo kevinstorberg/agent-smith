@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Annotated, Literal
+import unicodedata
 from uuid import UUID
 
 from pydantic import (
@@ -22,12 +23,28 @@ Title = Annotated[
     StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_TITLE_LENGTH),
 ]
 Description = Annotated[str, StringConstraints(max_length=MAX_BODY_LENGTH)]
-Project = Annotated[str, StringConstraints(max_length=200)]
+MAX_PROJECT_NAME_LENGTH = 200
+Project = Annotated[str, StringConstraints(max_length=MAX_PROJECT_NAME_LENGTH)]
 Tags = Annotated[list[str], Field(max_length=20)]
 
 
 class Contract(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class ProjectCreate(Contract):
+    name: Annotated[
+        str, StringConstraints(min_length=1, max_length=MAX_PROJECT_NAME_LENGTH)
+    ]
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value):
+        if isinstance(value, str):
+            if any(unicodedata.category(character) == "Cc" for character in value):
+                raise ValueError("Project names cannot contain control characters")
+            return value.strip()
+        return value
 
 
 class ItemEditable(Contract):
@@ -69,7 +86,10 @@ class ProjectFields(Contract):
     @field_validator("project")
     @classmethod
     def normalize_project(cls, value):
-        return value.strip() or None if value is not None else None
+        if value is not None and "\0" in value:
+            raise ValueError("Project cannot contain NUL characters")
+        # Legacy exact names must reach catalog resolution before new-name normalization.
+        return None if value == "" else value
 
 
 class Editable(ItemEditable, ProjectFields):
@@ -147,4 +167,10 @@ class ItemQuery(Contract):
 
 
 class Query(ItemQuery, ProjectFields):
-    pass
+    unassigned: bool = False
+
+    @model_validator(mode="after")
+    def project_scope(self):
+        if self.unassigned and self.project is not None:
+            raise ValueError("project and unassigned cannot be used together")
+        return self
