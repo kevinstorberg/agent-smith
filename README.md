@@ -257,6 +257,13 @@ inside the task transaction. `unassigned=true` selects tasks without a project a
 combine with `project`. `DELETE /api/action-items/projects/{id}` and
 `action_item_project_delete` remove only projects with no references, including deleted tasks.
 
+The Projects tab strip offers **All projects**, **Unassigned**, and every saved group,
+independently of status and tags. Use **New project** to create an empty group; select a
+group to see **Delete project**. Arrow keys, Home, and End navigate the horizontally
+scrolling groups. Real groups named "Unassigned" or "All projects" use a **Project:** prefix.
+New tasks default to the selected group, and task editors offer the same project picker.
+Project scope persists with the other view preferences and can be shared in the URL.
+
 The project-catalog migration exactly backfills legacy names, then replaces stored task
 names with project IDs. Deploy the schema and updated backend together; the previous
 backend still expects the old column. Downgrade restores the original project strings.

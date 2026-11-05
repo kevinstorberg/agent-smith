@@ -64,6 +64,7 @@ export interface ViewSettings extends Record<
   actionItems: {
     q: string;
     project: string;
+    unassigned: boolean;
     tags: string;
     status: (typeof ACTION_ITEM_STATUSES)[number][0];
     sort: (typeof ACTION_ITEM_SORT_OPTIONS)[number]['value'];
@@ -185,6 +186,14 @@ const boolean: Field<boolean> = {
           ? false
           : undefined,
 };
+const projectName: Field<string> = {
+  parse: (value) =>
+    typeof value === 'string' &&
+    [...value].length <= 200 &&
+    !value.includes('\0')
+      ? value
+      : undefined,
+};
 function choice<const T extends string>(values: readonly T[]): Field<T> {
   return { parse: (value) => values.find((candidate) => candidate === value) };
 }
@@ -232,6 +241,7 @@ const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
     defaults: {
       q: '',
       project: '',
+      unassigned: false,
       tags: '',
       status: 'open',
       sort: 'manual',
@@ -240,19 +250,23 @@ const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
     },
     fields: {
       q: text,
-      project: text,
+      project: projectName,
+      unassigned: boolean,
       tags: text,
       status: choice(ACTION_ITEM_STATUSES.map((option) => option[0])),
       sort: choice(ACTION_ITEM_SORT_OPTIONS.map((option) => option.value)),
       limit: pageLimit,
       offset: pageOffset,
     },
-    normalize: (values) =>
-      actionItemSortOptions(values.status).some(
+    normalize: (values) => ({
+      ...values,
+      unassigned: !values.project && values.unassigned,
+      sort: actionItemSortOptions(values.status).some(
         (option) => option.value === values.sort,
       )
-        ? values
-        : { ...values, sort: defaultActionItemSort(values.status) },
+        ? values.sort
+        : defaultActionItemSort(values.status),
+    }),
   },
   profiles: {
     pathname: '/profiles',
@@ -611,6 +625,13 @@ export function resolveView<K extends ViewKey>(
     (entry) => entry.key === key && entry.scope === scope,
   );
   const values: Record<string, unknown> = { ...saved?.values };
+  if (
+    key === 'actionItems' &&
+    (params.has('project') || params.has('unassigned'))
+  ) {
+    values.project = '';
+    values.unassigned = false;
+  }
   let criteriaPresent = false;
   for (const field of viewFields(key)) {
     if (!params.has(String(field))) continue;

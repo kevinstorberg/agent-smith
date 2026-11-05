@@ -1,58 +1,39 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { HarnessCreatePage } from '../HarnessCreatePage';
+import { ApiError } from '../../api';
+import { editorFixtures, harnessKinds } from './harnessEditorFixtures';
 
-vi.mock('@uiw/react-md-editor', () => ({
-  default: (props: any) => (
-    <textarea
-      data-testid="md-editor"
-      value={props.value}
-      onChange={(e: any) => props.onChange?.(e.target.value)}
-    />
-  ),
+const { mockNavigate, mockLocation, editor, legacyCreate, legacyMetadata } =
+  vi.hoisted(() => ({
+    mockNavigate: vi.fn(),
+    mockLocation: { pathname: '/harness/rule/new' },
+    editor: {
+      descriptors: vi.fn(),
+      decode: vi.fn(),
+      preview: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
+    legacyCreate: vi.fn(),
+    legacyMetadata: vi.fn(),
+  }));
+vi.mock('react-router', async (original) => ({
+  ...(await original<typeof import('react-router')>()),
+  useNavigate: () => mockNavigate,
+  useLocation: () => mockLocation,
 }));
-
-const { mockNavigate, mockLocation } = vi.hoisted(() => ({
-  mockNavigate: vi.fn(),
-  mockLocation: { pathname: '/harness/rule/new' },
-}));
-
-vi.mock('react-router', async () => {
-  const actual = await vi.importActual<typeof import('react-router')>('react-router');
-  return {
-    ...actual,
-    useNavigate: () => mockNavigate,
-    useLocation: () => mockLocation,
-  };
-});
-
-const { mockNotify } = vi.hoisted(() => ({
-  mockNotify: vi.fn(),
-}));
-
-vi.mock('../../context/useNotification', async () => {
-  const actual = await vi.importActual<typeof import('../../context/useNotification')>('../../context/useNotification');
-  return {
-    ...actual,
-    useNotification: () => ({ notify: mockNotify, notifications: [], dismiss: vi.fn() }),
-  };
-});
-
-const { mockCreate, mockUpdateMetadata, mockAssignableAgents } = vi.hoisted(() => ({
-  mockCreate: vi.fn(),
-  mockUpdateMetadata: vi.fn(),
-  mockAssignableAgents: vi.fn(),
-}));
-
-vi.mock('../../api', () => ({
+vi.mock('../../api', async (original) => ({
+  ...(await original<typeof import('../../api')>()),
   api: {
     harness: {
-      assignableAgents: mockAssignableAgents,
-      items: {
-        create: mockCreate,
-        updateMetadata: mockUpdateMetadata,
-      },
+      editor,
+      assignableAgents: vi.fn().mockResolvedValue({
+        agents: ['claude', 'codex', 'gemini'],
+        virtual_agents: ['opinion'],
+      }),
+      items: { create: legacyCreate, updateMetadata: legacyMetadata },
     },
   },
 }));
@@ -60,161 +41,130 @@ vi.mock('../../api', () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mockLocation.pathname = '/harness/rule/new';
-  mockCreate.mockResolvedValue({ id: 99 });
-  mockUpdateMetadata.mockResolvedValue({});
-  mockAssignableAgents.mockResolvedValue({
-    agents: ['claude', 'codex', 'gemini'],
-    virtual_agents: ['opinion'],
-  });
+  editor.descriptors.mockResolvedValue(editorFixtures.descriptors);
+  editor.create.mockImplementation(
+    async (kind: keyof typeof editorFixtures.cases) =>
+      editorFixtures.cases[kind].item,
+  );
 });
 
-describe('HarnessCreatePage', () => {
-  it('derives type from URL path - rule', () => {
-    mockLocation.pathname = '/harness/rule/new';
-    renderWithProviders(<HarnessCreatePage />);
-    expect(screen.getByText('New Rule')).toBeInTheDocument();
-  });
-
-  it('renders virtual agents from the API, unchecked by default', async () => {
-    renderWithProviders(<HarnessCreatePage />);
-    const opinionCheckbox = await screen.findByLabelText(/opinion/);
-    expect(opinionCheckbox).not.toBeChecked();
-    expect(screen.getByLabelText('claude')).toBeChecked();
-  });
-
-  it('derives type from URL path - tool', () => {
-    mockLocation.pathname = '/harness/tool/new';
-    renderWithProviders(<HarnessCreatePage />);
-    expect(screen.getByText('New Tool')).toBeInTheDocument();
-  });
-
-  it('derives type from URL path - hook', () => {
-    mockLocation.pathname = '/harness/hook/new';
-    renderWithProviders(<HarnessCreatePage />);
-    expect(screen.getByText('New Hook')).toBeInTheDocument();
-  });
-
-  it('validates name is required', () => {
-    renderWithProviders(<HarnessCreatePage />);
-    fireEvent.click(screen.getByText('Create Rule'));
-    expect(mockNotify).toHaveBeenCalledWith('Name is required.', 'error');
-    expect(mockCreate).not.toHaveBeenCalled();
-  });
-
-  it('validates name format - lowercase only', () => {
-    renderWithProviders(<HarnessCreatePage />);
-
-    const nameInput = document.querySelector('input[maxlength]') as HTMLInputElement;
-    fireEvent.change(nameInput, { target: { value: 'Invalid-Name' } });
-
-    fireEvent.click(screen.getByText('Create Rule'));
-
-    expect(mockNotify).toHaveBeenCalledWith(
-      'Name must be lowercase letters, digits, and underscores only.',
-      'error',
-    );
-    expect(mockCreate).not.toHaveBeenCalled();
-  });
-
-  it('validates at least one agent is selected', () => {
-    renderWithProviders(<HarnessCreatePage />);
-
-    const nameInput = document.querySelector('input[maxlength]') as HTMLInputElement;
-    fireEvent.change(nameInput, { target: { value: 'valid_name' } });
-
-    // Uncheck all agents
-    const agentCheckboxes = screen.getAllByRole('checkbox').filter(cb => {
-      const label = cb.closest('label');
-      return label?.textContent && ['claude', 'codex', 'gemini'].includes(label.textContent.trim());
-    });
-    agentCheckboxes.forEach(cb => {
-      if ((cb as HTMLInputElement).checked) fireEvent.click(cb);
-    });
-
-    fireEvent.click(screen.getByText('Create Rule'));
-
-    expect(mockNotify).toHaveBeenCalledWith('At least one agent must be selected.', 'error');
-    expect(mockCreate).not.toHaveBeenCalled();
-  });
-
-  it('shows markdown editor for rule type', () => {
-    mockLocation.pathname = '/harness/rule/new';
-    renderWithProviders(<HarnessCreatePage />);
-    expect(screen.getByTestId('md-editor')).toBeInTheDocument();
-    expect(screen.getByText('Body')).toBeInTheDocument();
-  });
-
-  it('shows JSON textarea for tool type', () => {
-    mockLocation.pathname = '/harness/tool/new';
-    renderWithProviders(<HarnessCreatePage />);
-    expect(screen.queryByTestId('md-editor')).not.toBeInTheDocument();
-    expect(screen.getByText('Configuration (JSON)')).toBeInTheDocument();
-  });
-
-  it('shows JSON textarea for hook type', () => {
-    mockLocation.pathname = '/harness/hook/new';
-    renderWithProviders(<HarnessCreatePage />);
-    expect(screen.queryByTestId('md-editor')).not.toBeInTheDocument();
-    expect(screen.getByText('Configuration (JSON)')).toBeInTheDocument();
-  });
-
-  it('creates a rule and navigates to detail page', async () => {
-    renderWithProviders(<HarnessCreatePage />);
-
-    const nameInput = document.querySelector('input[maxlength]') as HTMLInputElement;
-    fireEvent.change(nameInput, { target: { value: 'my_new_rule' } });
-
-    fireEvent.click(screen.getByText('Create Rule'));
-
-    await waitFor(() => {
-      expect(mockCreate).toHaveBeenCalledWith(
-        'rule',
-        expect.objectContaining({ name: 'my_new_rule' }),
+describe('HarnessCreatePage guided routes', () => {
+  it.each(harnessKinds)(
+    'uses independent backend-described fields for %s',
+    async (kind) => {
+      mockLocation.pathname = `/harness/${kind}/new`;
+      renderWithProviders(<HarnessCreatePage />);
+      const definition = editorFixtures.descriptors.types[kind];
+      expect(
+        await screen.findByRole('heading', { name: `New ${definition.label}` }),
+      ).toBeVisible();
+      expect(screen.getByRole('tab', { name: 'Guided' })).toHaveAttribute(
+        'aria-selected',
+        'true',
       );
-      expect(mockNavigate).toHaveBeenCalledWith('/harness/rule/99');
+      expect(screen.getByRole('tab', { name: 'Raw' })).toBeVisible();
+      const mainField = definition.fields.find(
+        (field) => field.key === editorFixtures.cases[kind].changed_field,
+      )!;
+      expect(
+        screen.getByLabelText(mainField.label, { exact: true }),
+      ).toHaveAttribute('placeholder', mainField.placeholder);
+      expect(
+        screen.queryByLabelText('Configuration (JSON)'),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it.each(harnessKinds)(
+    'submits %s through one atomic editor API without frontend assembly',
+    async (kind) => {
+      mockLocation.pathname = `/harness/${kind}/new`;
+      renderWithProviders(<HarnessCreatePage />);
+      const name = await screen.findByLabelText('Name', { exact: true });
+      fireEvent.change(name, { target: { value: `new_${kind}` } });
+      fireEvent.change(screen.getByLabelText('Initial device'), {
+        target: { value: 'my-laptop' },
+      });
+      fireEvent.change(screen.getByLabelText('Initial repository'), {
+        target: { value: '/projects/harness' },
+      });
+      fireEvent.submit(name.closest('form')!);
+      await waitFor(() => expect(editor.create).toHaveBeenCalledTimes(1));
+      expect(editor.create).toHaveBeenCalledWith(
+        kind,
+        expect.objectContaining({
+          common: expect.objectContaining({
+            name: `new_${kind}`,
+            project: null,
+            device: 'my-laptop',
+            repo: '/projects/harness',
+          }),
+          mode: 'guided',
+        }),
+      );
+      expect(editor.create.mock.calls[0][1]).not.toHaveProperty('content');
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(legacyMetadata).not.toHaveBeenCalled();
+      expect(mockNavigate).toHaveBeenCalledWith(
+        `/harness/${kind}/${editorFixtures.cases[kind].item.id}`,
+        { replace: false },
+      );
+    },
+  );
+
+  it('keeps rule cloning in the atomic create payload', async () => {
+    renderWithProviders(<HarnessCreatePage />);
+    const name = await screen.findByLabelText('Name', { exact: true });
+    fireEvent.change(name, { target: { value: 'review_rule' } });
+    fireEvent.click(screen.getByLabelText('Publish as a skill'));
+    fireEvent.change(screen.getByLabelText('Skill description / when to use'), {
+      target: { value: 'Use when reviewing changes.' },
     });
+    fireEvent.submit(name.closest('form')!);
+    await waitFor(() => expect(editor.create).toHaveBeenCalled());
+    expect(editor.create.mock.calls[0][1]).toMatchObject({
+      common: { clone_as_skill: true },
+      fields: { clone_description: 'Use when reviewing changes.' },
+    });
+    expect(legacyMetadata).not.toHaveBeenCalled();
   });
 
-  it('calls updateMetadata for clone_as_skill when checked for rules', async () => {
+  it('uses backend agent choices including virtual agents', async () => {
     renderWithProviders(<HarnessCreatePage />);
-
-    const nameInput = document.querySelector('input[maxlength]') as HTMLInputElement;
-    fireEvent.change(nameInput, { target: { value: 'my_rule' } });
-
-    const cloneCheckbox = screen.getAllByRole('checkbox').find(cb => {
-      const label = cb.closest('label');
-      return label?.textContent?.trim() === 'Clone as Skill';
-    });
-    expect(cloneCheckbox).toBeDefined();
-    fireEvent.click(cloneCheckbox!);
-
-    fireEvent.click(screen.getByText('Create Rule'));
-
-    await waitFor(() => {
-      expect(mockCreate).toHaveBeenCalled();
-      expect(mockUpdateMetadata).toHaveBeenCalledWith('rule', 99, { clone_as_skill: true });
-    });
+    expect(
+      await screen.findByLabelText('opinion', { exact: true }),
+    ).not.toBeChecked();
+    expect(screen.getByLabelText('claude', { exact: true })).toBeChecked();
+    fireEvent.click(screen.getByLabelText('opinion', { exact: true }));
+    fireEvent.submit(
+      screen.getByLabelText('Name', { exact: true }).closest('form')!,
+    );
+    await waitFor(() => expect(editor.create).toHaveBeenCalled());
+    expect(editor.create.mock.calls[0][1].common.agents).toContain('opinion');
   });
 
-  it('validates JSON for non-markdown types', () => {
-    mockLocation.pathname = '/harness/tool/new';
+  it('shows a field-specific server validation error and preserves the draft', async () => {
+    editor.create.mockRejectedValueOnce(
+      new ApiError(
+        'common.name must use lowercase letters, digits, and underscores',
+        422,
+      ),
+    );
     renderWithProviders(<HarnessCreatePage />);
-
-    const nameInput = document.querySelector('input[maxlength]') as HTMLInputElement;
-    fireEvent.change(nameInput, { target: { value: 'my_api' } });
-
-    const textarea = document.querySelector('textarea[spellcheck="false"]') as HTMLTextAreaElement;
-    fireEvent.change(textarea, { target: { value: 'not json' } });
-
-    fireEvent.click(screen.getByText('Create Tool'));
-
-    expect(mockNotify).toHaveBeenCalledWith('Invalid JSON in metadata field.', 'error');
-    expect(mockCreate).not.toHaveBeenCalled();
+    const name = await screen.findByLabelText('Name', { exact: true });
+    fireEvent.change(name, { target: { value: 'Invalid-Name' } });
+    fireEvent.submit(name.closest('form')!);
+    await screen.findAllByRole('alert');
+    expect(name).toHaveValue('Invalid-Name');
+    expect(name).toHaveAttribute('aria-invalid', 'true');
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('navigates back on cancel', () => {
+  it.each(harnessKinds)('cancels %s creation to its list', async (kind) => {
+    mockLocation.pathname = `/harness/${kind}/new`;
     renderWithProviders(<HarnessCreatePage />);
-    fireEvent.click(screen.getByText('Cancel'));
-    expect(mockNavigate).toHaveBeenCalledWith('/harness/rules');
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(mockNavigate).toHaveBeenCalledWith(`/harness/${kind}s`);
+    expect(editor.create).not.toHaveBeenCalled();
   });
 });
