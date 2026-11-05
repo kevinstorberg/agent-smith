@@ -1,0 +1,51 @@
+.action-projects {
+  margin-bottom: 1rem;
+  min-width: 0;
+}
+
+.action-projects-heading,
+.action-project-create {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.action-project-create .input {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.action-project-tabs {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  max-width: 100%;
+  padding: 0.25rem 0 0.5rem;
+}
+
+.action-project-tabs button {
+  flex: 0 0 auto;
+  max-width: min(24rem, 85vw);
+  overflow-wrap: anywhere;
+  white-space: normal;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.action-project-tabs button.active {
+  color: var(--text);
+  border-color: var(--info);
+  background: var(--accent);
+}
+
+.action-project-tabs button:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
+}

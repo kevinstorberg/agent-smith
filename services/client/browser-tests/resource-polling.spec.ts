@@ -245,3 +245,7 @@ test('Chat retains its two-second visible polling interval', async ({
   await page.clock.runFor(1);
   await expect.poll(reads).toBe(2);
 });
+
+test.beforeEach(async ({ fixtureAPI }) => {
+  fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
+});
