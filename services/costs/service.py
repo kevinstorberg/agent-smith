@@ -10,7 +10,11 @@ from pathlib import Path
 
 from services.costs.aws import fetch_aws, month_window
 from services.costs.cache import SnapshotCache
-from services.costs.pinecone_usage import PriceBook, build_usage
+from services.costs.pinecone_pricing import (
+    STANDARD_MONTHLY_MINIMUM_USD,
+    optional_setting,
+)
+from services.costs.pinecone_usage import PriceBook, build_usage, resolve_price_book
 from services.costs.contracts import require_utc
 
 
@@ -73,6 +77,7 @@ class PineconeConfiguration:
     api_key: str = field(repr=False)
     prices: PriceBook | None
     minimum: Decimal
+    pricing_note: str | None = None
 
 
 def _pinecone_operation(now, operation):
@@ -86,21 +91,27 @@ def _pinecone_operation(now, operation):
                 "error": None,
                 "message": "Enable PINECONE_COSTS_ENABLED=true and configure PINECONE_PROJECT_ID and PINECONE_API_KEY to observe usage going forward.",
             }
-        project = values.get("PINECONE_PROJECT_ID", "")
-        key = values.get("PINECONE_API_KEY", "")
+        project = optional_setting(values.get("PINECONE_PROJECT_ID")) or ""
+        key = optional_setting(values.get("PINECONE_API_KEY")) or ""
+        if not re.fullmatch(r"[A-Za-z0-9_-]{3,128}", project):
+            raise ValueError(
+                "Set PINECONE_PROJECT_ID to the existing project's ID for monitoring."
+            )
         if (
-            not re.fullmatch(r"[A-Za-z0-9_-]{3,128}", project)
-            or not key
+            not key
             or key != key.strip()
             or len(key) > 4096
             or any(ord(character) < 32 for character in key)
         ):
             raise ValueError(
-                "Configure a valid PINECONE_PROJECT_ID and PINECONE_API_KEY."
+                "Configure a valid server-side PINECONE_API_KEY for the project."
             )
-        prices = PriceBook.from_env(values, now)
+        pricing = resolve_price_book(values, now)
         try:
-            minimum = Decimal(values.get("PINECONE_COSTS_MONTHLY_MINIMUM_USD", "50"))
+            minimum = Decimal(
+                optional_setting(values.get("PINECONE_COSTS_MONTHLY_MINIMUM_USD"))
+                or str(STANDARD_MONTHLY_MINIMUM_USD)
+            )
         except InvalidOperation:
             raise ValueError(
                 "PINECONE_COSTS_MONTHLY_MINIMUM_USD must be a finite nonnegative amount."
@@ -109,7 +120,13 @@ def _pinecone_operation(now, operation):
             raise ValueError(
                 "PINECONE_COSTS_MONTHLY_MINIMUM_USD must be a finite nonnegative amount."
             )
-        config = PineconeConfiguration(project, key, prices, minimum)
+        config = PineconeConfiguration(
+            project_id=project,
+            api_key=key,
+            prices=pricing.book,
+            minimum=minimum,
+            pricing_note=pricing.note,
+        )
         from services.config import APP_ENV
 
         cache = SnapshotCache(
@@ -173,7 +190,12 @@ def collect_pinecone_costs(now: datetime | None = None) -> dict:
                 )
                 collected_at = now or datetime.now(timezone.utc)
                 return build_usage(
-                    collected_at, sample, state, config.prices, config.minimum
+                    collected_at,
+                    sample,
+                    state,
+                    config.prices,
+                    config.minimum,
+                    pricing_note=config.pricing_note,
                 )
 
         return cache.read_or_collect(at, provider)

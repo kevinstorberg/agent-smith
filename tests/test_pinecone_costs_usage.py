@@ -169,8 +169,8 @@ def test_stale_price_date_is_visible_and_unsupported_capacity_is_never_priced():
     assert any("capacity" in note.lower() for note in result.report.notes)
 
 
-def test_config_is_explicit_dated_and_rejects_negative_nonfinite_or_future_rates():
-    assert module().PriceBook.from_env({}, NOW) is None
+def test_default_reference_and_overrides_reject_negative_nonfinite_or_future_values():
+    assert module().PriceBook.from_env({}, NOW).as_of == NOW.date()
     for value in ("-1", "NaN", "Infinity"):
         with pytest.raises(ValueError):
             module().PriceBook.from_env(

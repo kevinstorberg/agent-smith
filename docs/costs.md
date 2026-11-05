@@ -22,19 +22,20 @@ Private snapshots use the existing atomic JSON writer and cross-process lock in 
 
 The Pinecone provider uses the [documented Prometheus monitoring interface](https://docs.pinecone.io/guides/production/monitoring), available on Standard, without CSV imports or an Enterprise upgrade. It observes counters going forward; it cannot retrieve historical invoices or usage before monitoring began.
 
-Put these settings in the selected environment file, such as `.env.production`, and restart through the normal launcher after installing the updated requirements:
+Put these settings in the selected environment file, such as `.env.production`, and restart through the normal launcher:
 
 1. Set `PINECONE_COSTS_ENABLED=true`.
 2. Set `PINECONE_PROJECT_ID` to the ID from your Pinecone project's settings/list, and set the existing server-side `PINECONE_API_KEY` for that project.
-3. Optionally set `PINECONE_COSTS_RATES_JSON` with the verified read/write prices per million units for every observed cloud/region, plus `PINECONE_COSTS_PRICE_DATE=YYYY-MM-DD` and `PINECONE_COSTS_PRICE_SOURCE=https://www.pinecone.io/pricing/`.
 
-The rate-map structure is:
+Pricing settings are not required. The [bundled catalog](../services/costs/pinecone_pricing.py) is the application's authoritative reference for [Pinecone Standard cloud/region rates](https://www.pinecone.io/pricing/), checked on **2026-11-05**, in USD per million units. It uses the region-specific Standard table, rather than Enterprise rates or the pricing page's general summary range.
 
-```text
-PINECONE_COSTS_RATES_JSON={"aws/us-east-1":{"read_usd_per_million":"COPY_VERIFIED_RATE","write_usd_per_million":"COPY_VERIFIED_RATE"}}
-```
+This versioned reference is part of the application; collection does not scrape prices at runtime. Unpublished regions retain observed quantities with an explicit missing-price notice and no dollar total. The dashboard warns when a reference is more than 30 days old.
 
-Replace both placeholders using the current [applicable Pinecone prices](https://www.pinecone.io/pricing/); they are deliberately not example numeric prices. Add entries for other cloud/region combinations as needed. Prices must be finite and nonnegative, the verification date cannot be in the future, and the dashboard warns when prices are more than 30 days old. Without configured rates, observed quantities remain available and dollar estimates stay unavailable.
+Advanced overrides remain optional: `PINECONE_COSTS_RATES_JSON` replaces the complete rate map, for example `{"aws/us-east-1":{"read_usd_per_million":"16","write_usd_per_million":"4"}}`. Rates must be finite and nonnegative. `PINECONE_COSTS_PRICE_DATE` defaults to the fixed bundled reference date, and `PINECONE_COSTS_PRICE_SOURCE` defaults to the public pricing page; an explicitly supplied date must be valid and nonfuture. The date is reference metadata, not independent verification of custom rates, which the dashboard identifies as user-supplied. Each interval retains its original pricing stamp, so changing overrides never reprices older observations.
+
+Complete unfilled `REPLACE_WITH_...` price templates, including their date and minimum placeholders, use the bundled defaults. Partially filled or malformed real overrides fail visibly instead of silently falling back.
+
+The project ID is still required. Pinecone's [project API keys cannot access project settings](https://docs.pinecone.io/admin/projects/understanding-projects), and the documented [index metadata](https://docs.pinecone.io/reference/api/2025-10/control-plane/describe_index) does not include a project ID. The application does not guess it from hostnames or request another credential; a missing or placeholder `PINECONE_PROJECT_ID` displays a specific configuration message before any monitoring request.
 
 One app-owned collector checks the durable snapshot every five minutes; dashboard polling every 15 seconds reads only that snapshot. The collector uses authenticated read-only discovery and metric requests, with provider HTTPS target validation, bounded responses and deadlines, and no redirects. It does not issue vector searches, mutations, embedding requests or model calls. Shutdown waits for an active bounded collection before releasing its worker.
 

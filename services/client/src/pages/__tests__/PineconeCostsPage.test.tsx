@@ -61,6 +61,8 @@ describe('Pinecone observed usage view', () => {
     expect(
       screen.getByRole('link', { name: 'Configured pricing source' }),
     ).toHaveAttribute('href', 'https://www.pinecone.io/pricing/');
+    expect(screen.getByText(/rate reference date: 2026-11-05/i)).toBeVisible();
+    expect(screen.queryByText(/verified 2026-11-05/i)).not.toBeInTheDocument();
   });
 
   it('shows baseline history and costs unavailable without inventing zero', async () => {
