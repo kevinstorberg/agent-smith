@@ -500,9 +500,14 @@ test('project pointer targeting remains usable at doubled text size', async ({
     contentType: 'application/json',
   });
   if (['chromium-1440', 'chromium-320'].includes(testInfo.project.name)) {
+    const screenshotPath = testInfo.outputPath('project-drag-2x.png');
     await page.screenshot({
-      path: `/private/tmp/agent-smith-project-drag-${testInfo.project.name}-1740.png`,
+      path: screenshotPath,
       fullPage: false,
+    });
+    await testInfo.attach('project-drag-2x', {
+      path: screenshotPath,
+      contentType: 'image/png',
     });
   }
   await page.mouse.up();
