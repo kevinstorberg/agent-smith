@@ -8,6 +8,9 @@ from services.jobs.models.job import create_job
 from services.observability import current_trigger, trigger_context
 from tests.conftest import jobs_cleanup
 
+
+pytestmark = pytest.mark.usefixtures("terminal_diagnostics")
+
 _clean = jobs_cleanup("BILLABLECMD %")
 
 

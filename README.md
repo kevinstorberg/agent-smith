@@ -59,19 +59,33 @@ that startup has begun; inspect `.runtime/<environment>.log` for readiness/failu
 Use separate checkouts for active development and production so dependency refreshes
 and frontend builds cannot alter the deployed checkout.
 
-### Paid operation logs
+### Action logs
 
-Potentially billable model, evaluation, Pinecone, Granola HTTP and command-job operations
-emit `BILLABLE START` before submission and `BILLABLE END` after completion, failure,
-timeout or cancellation. Both records share an `event_id`; `END` adds `outcome` and
-`duration_ms`. Graph-model and Pinecone adapters include provider usage counts when
-returned. These are operation records, not dollar charges: a logical SDK call can
-include its configured retries, and a command job may run other paid services outside this process.
+Meaningful HTTP, MCP, graph, agent-tool, job and provider calls log before the
+attempt using `TOOL ACTION [BILLABLE|NONBILLABLE|BILLABLE?]`:
+
+```text
+MEMORY SEARCH [BILLABLE]
+PINECONE QUERY [BILLABLE]
+ACTION ITEM CREATE [NONBILLABLE]
+MODEL GENERATE [BILLABLE]
+JOB RUN [BILLABLE?]
+COMMAND RUN [BILLABLE?]
+```
+
+Each line also carries safe trigger and correlation metadata. `[BILLABLE]` means
+potentially chargeable, not a confirmed dollar charge. Known local CRUD calls are
+`[NONBILLABLE]`; unknown tools, mixed job costs and unclassified future actions stay
+`[BILLABLE?]`. Memory operations capture their backend for the operation: Pinecone
+is potentially billable; local LanceDB and PostgreSQL vector work are nonbillable.
+Adapters avoid repeating the same logical action, while every real provider
+attempt remains visible beneath it. SDK calls can include configured retries,
+and a command may invoke services outside this process.
 
 Logs appear in the server terminal, or `.runtime/production.log` after `./run.sh -d`:
 
 ```sh
-tail -f .runtime/production.log | rg 'BILLABLE (START|END)|WORK DECISION'
+tail -f .runtime/production.log | rg '\[(BILLABLE\??|NONBILLABLE)\]'
 ```
 
 Follow `request_id`, `graph_run_id`, `job_id` / `execution_id`, or `meeting_id` to
@@ -79,16 +93,27 @@ identify the caller. `trigger`, `origin`, `stage`, `reason`, `attempt` and
 `parent_event_id` explain the cause when available. MCP calls include their tool
 and advertised client name; stateless clients may remain `unknown`. Old meeting
 requests without recorded cause also remain `unknown` rather than inventing a reason.
-`WORK DECISION` records show stage eligibility, starts, completion and skips;
+`WORK` decision records explain eligibility and skips;
 meeting import `processed_refs` counts provider references, not model calls.
 
-An unmatched `START` means no terminal observation was recorded; it does not prove
-success or failure. A stopped process can lose its terminal log, and an asynchronous
-Pinecone result remains pending until its consumer observes completion. Wait timeouts
-on still-running futures do not emit a false terminal failure. Model truncation or
-application validation may reject a response after a successful SDK operation.
+Routine completion records are DEBUG, with the same action prefix; normal INFO
+output has no `BILLABLE START` or `BILLABLE END` prefixes or duplicate success lines.
+Safe failure/timeout diagnostics remain warnings. Enable DEBUG for
+`agent_smith.billable`, `agent_smith.action` and `agent_smith.work` in the logging
+configuration to inspect terminal outcomes, duration and returned provider usage.
+Structured phase/correlation attributes remain available to log handlers.
+
+An action entry proves an attempt, not success. A stopped process can lose its
+terminal observation, and an asynchronous Pinecone result remains pending until
+its consumer observes completion. Wait timeouts on still-running futures do not
+emit a false terminal failure. Model truncation or application validation may
+reject a response after a successful SDK operation.
 Events contain identifiers, counts and status codes, never prompts, meeting text,
 memory content, command strings, tool arguments, response bodies or exception text.
+Cold Hugging Face initialization is local-only when offline mode is enabled;
+otherwise cache-versus-download cost stays unknown, without implying paid remote
+embedding generation. Standalone audit-hook POSTs use the same labels, remain
+stdlib-only and fail-open, and keep stdout empty.
 
 ### Startup recovery
 
