@@ -8,11 +8,7 @@ from uuid import UUID
 
 from services.meetings.windows import WINDOW_CHARS
 from services.meetings.types import transcript_hash
-from services.memory.content import (
-    MAX_MEMORY_WORDS,
-    memory_word_count,
-    normalize_memory_content,
-)
+from services.memory.content import MemoryTokenBudget, MemoryTokenLimitError
 
 
 class SummaryMemoryRetryRequired(ValueError):
@@ -67,19 +63,61 @@ def summary_sections(snapshot: dict, *, max_chars: int = WINDOW_CHARS) -> list[d
 
 
 def memory_content(snapshot: dict, item: dict) -> str:
+    if "source_url" not in snapshot:
+        raise ValueError("Original memory publication context is unavailable")
+    source_url = snapshot["source_url"]
     references = ", ".join(evidence["segment_id"] for evidence in item["evidence"])
     source = (
         "Granola summary (" + references + ")"
         if item.get("source") == "summary"
         else references
     )
-    footer = f"\n\nMeeting source: {snapshot['source_url']}\nEvidence: {source}"
-    body_words = MAX_MEMORY_WORDS - memory_word_count(footer)
-    if body_words < 1:
-        raise ValueError(
-            "Memory source and evidence footer leaves no room for content within the word limit"
+    footer = f"\n\nMeeting source: {source_url}\nEvidence: {source}"
+    return item["content"] + footer
+
+
+def publication_token_error(
+    snapshot: dict, item: dict, budget: MemoryTokenBudget
+) -> str | None:
+    try:
+        budget.require(memory_content(snapshot, item))
+    except MemoryTokenLimitError as error:
+        footer_tokens = budget.total_tokens(
+            memory_content(snapshot, {**item, "content": ""})
         )
-    return normalize_memory_content(item["content"], max_words=body_words) + footer
+        allowance = max(0, budget.max_tokens - footer_tokens)
+        return (
+            f"Memory body allowance is {allowance} embedding tokens after mandatory provenance; "
+            f"complete draft uses {error.total_tokens} total tokens (maximum {budget.max_tokens}, "
+            f"including {budget.special_tokens} special tokens and "
+            f"{footer_tokens - budget.special_tokens} footer tokens). "
+            "Rewrite the complete memory concisely, preserving its supported identifiers and scope; "
+            "use fewer sufficient citations when appropriate. Never shorten exact evidence quotes."
+        )
+    return None
+
+
+def require_publication_room(
+    snapshot: dict, segment_ids, budget: MemoryTokenBudget, source="summary"
+) -> None:
+    minimum = min(
+        budget.total_tokens(
+            memory_content(
+                snapshot,
+                {
+                    "content": "x",
+                    "source": source,
+                    "evidence": [{"segment_id": segment_id}],
+                },
+            )
+        )
+        for segment_id in segment_ids
+    )
+    if minimum > budget.max_tokens:
+        raise ValueError(
+            f"Memory source and evidence footer leaves no room for a nonblank body within "
+            f"the {budget.max_tokens}-token embedding budget"
+        )
 
 
 def publication_payload(

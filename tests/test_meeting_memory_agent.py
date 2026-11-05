@@ -36,6 +36,7 @@ SNAPSHOT = {
     "project": "test-project",
     "memory_source": "summary",
     "summary_text": SUMMARY,
+    "source_url": "https://example.test/source",
 }
 SEGMENTS = [{"id": "summary-4", "text": SUMMARY}]
 ITEM = {
@@ -369,7 +370,8 @@ async def test_memory_agent_projects_summary_context_without_checkpoint_transcri
         }
     ]
     assert data["meeting_snapshot"] == {
-        key: SNAPSHOT[key] for key in ("id", "title", "project", "memory_source")
+        key: SNAPSHOT[key]
+        for key in ("id", "title", "project", "memory_source", "source_url")
     } | {
         "scheduled_start_time": "2026-11-02T11:00:00+00:00",
         "scheduled_end_time": "2026-11-02T12:00:00+00:00",
@@ -528,34 +530,36 @@ async def test_staging_before_search_returns_feedback_and_can_be_corrected(
 
 
 @pytest.mark.asyncio
-async def test_actual_memory_prompt_and_staging_apply_word_limit_without_clipping_evidence(
+async def test_actual_memory_prompt_requires_a_supported_rewrite_without_clipping_evidence(
     backend, model
 ):
     body = " ".join(f"word{index}" for index in range(250))
     quote = body + " EVIDENCE_TAIL_MUST_SURVIVE"
     snapshot = {**SNAPSHOT, "summary_text": quote}
     sections = [{"id": "summary-4", "text": quote}]
-    item = {
+    oversized = {
         **ITEM,
         "content": body + " DISCARD_BODY_TAIL",
         "evidence": [{"segment_id": "summary-4", "quote": quote}],
     }
+    item = {**oversized, "content": "The team confirmed the complete release decision."}
     instance, _ = model(
         [
             call("search_previous_memories", query="word"),
+            call("stage_memories", items=[oversized]),
             call("stage_memories", items=[item]),
             AIMessage(content="Done"),
         ]
     )
     result = await analyze_memories(snapshot, sections, [])
-    assert result["items"][0]["content"] == body
+    assert result["items"][0]["content"] == item["content"]
     assert result["items"][0]["evidence"] == item["evidence"]
     system = next(
         message.content
         for message in instance.seen[0]
         if isinstance(message, SystemMessage)
     )
-    assert "at most 250 whitespace-separated words" in system
+    assert "256-token maximum" in system and "embedding tokenizer" in system
     assert "Rewrite oversized drafts" in system and "never pad" in system
     quoted = next(
         message.content

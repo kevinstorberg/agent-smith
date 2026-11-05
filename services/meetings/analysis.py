@@ -26,7 +26,11 @@ from services.meetings.outputs import (
     MemorySubmission as MemorySubmission,
 )
 from services.meetings.service import run_db
-from services.memory.content import MAX_MEMORY_WORDS
+from services.meetings.memory_pass import (
+    publication_token_error,
+    require_publication_room,
+)
+from services.memory.db import get_memory_token_budget
 
 _KINDS = MemoryKind
 MODEL_CALL_LIMIT = 20
@@ -52,11 +56,15 @@ task or deliverable, supported owner, due date or original due phrase, dependenc
 status when the {source} supplies them. Distinguish proposals from agreed commitments.
 Never invent an owner or deadline. Preserve relative dates unless the actual meeting date
 and timezone make the meaning unambiguous; provider_updated_at is not a meeting date.
-Keep each memory concise and self-contained, with at most {max_memory_words} whitespace-separated words.
+Keep each memory concise and self-contained. The plain content allowance is {content_tokens}
+embedding tokens; the complete record has a {max_memory_tokens}-token maximum including
+{special_tokens} model special tokens. These are the embedding tokenizer's tokens, not your own.
 Capture one useful fact, decision or commitment with its supported identifiers and project
 scope. Rewrite oversized drafts before staging; never pad a short memory to reach the limit.
-The stored {max_memory_words}-word maximum includes its meeting source and evidence footer, so leave room
-for that attribution. Avoid retelling the discussion or greetings.
+The meeting source and evidence footer further reduces the available body allowance.
+Use the tool's measured allowance and count feedback to rewrite a complete supported memory
+until it fits; do not clip a sentence or remove essential identifiers or provenance.
+Avoid retelling the discussion or greetings.
 
 Call stage_memories with at most 20 items covering distinct useful facts, decisions,
 commitments, constraints, preferences, lessons or questions. Each item needs 1-8 meaningful
@@ -605,6 +613,15 @@ async def analyze_memories(
     context = AnalysisContext(
         _memory_snapshot(snapshot), sections, _memory_previous(previous)
     )
+    budget = await run_db(get_memory_token_budget)
+    await run_db(
+        require_publication_room, context.snapshot, texts, budget, context.source
+    )
+
+    def validate_tokens(item: MemoryItem) -> str | None:
+        return publication_token_error(
+            context.snapshot, {**item.model_dump(), "source": context.source}, budget
+        )
 
     @tool(args_schema=MemorySubmission)
     async def stage_memories(
@@ -620,7 +637,7 @@ async def analyze_memories(
                     "error": "Include 1-8 context_labels for the meeting's whole purpose and subject"
                 }
             )
-        result = context.stage(items, reason)
+        result = context.stage(items, reason, validate_tokens)
         if context.collector:
             context.collector["context_labels"] = context_labels
         return result
@@ -631,7 +648,9 @@ async def analyze_memories(
         system_prompt=_SYSTEM_PROMPT.format(
             source=context.source,
             attribution=_ATTRIBUTION[context.source],
-            max_memory_words=MAX_MEMORY_WORDS,
+            max_memory_tokens=budget.max_tokens,
+            special_tokens=budget.special_tokens,
+            content_tokens=budget.max_tokens - budget.special_tokens,
         ),
         tools=[
             *context.research_tools(),
