@@ -24,6 +24,7 @@ from scripts.shared.database_safety import (
     validate_memory_target,
 )
 from scripts.shared.env import environment
+from scripts.shared.backend_dependencies import ensure_backend_dependencies
 from scripts.shared.local_postgres import temporary_postgres
 from scripts.shared.processes import (
     InstanceRunningError,
@@ -380,6 +381,11 @@ def launch_prepared_application(
         )
         return 0
     with instance_lock(ROOT, MODES[args.mode]):
+        stage("DEPENDENCIES", port)
+        try:
+            ensure_backend_dependencies(ROOT, python)
+        except (OSError, RuntimeError, ValueError) as error:
+            raise StartupError("DEPENDENCIES", str(error)) from None
         assert_port_clear(port)
         if MODES[args.mode] == "production":
             stage("MIGRATING", port)
