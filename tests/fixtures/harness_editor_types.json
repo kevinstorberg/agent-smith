@@ -32,7 +32,7 @@
         "label": "Available to agents",
         "kind": "multiselect",
         "placeholder": "Choose the agents that can use this item",
-        "required": true,
+        "required": false,
         "choices": [
           "claude",
           "codex",

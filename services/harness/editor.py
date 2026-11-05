@@ -61,7 +61,6 @@ def descriptors() -> dict:
                 "Available to agents",
                 "multiselect",
                 "Choose the agents that can use this item",
-                required=True,
                 choices=[*AGENT_TARGETS, *VIRTUAL_AGENTS],
                 default=list(AGENT_TARGETS),
             ),

@@ -21,7 +21,7 @@ class EditorCommon(Contract):
     name: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
     project: str | None = None
     sort_key: int = Field(default=0, ge=0)
-    agents: list[str] = Field(min_length=1)
+    agents: list[str]
     subagents: list[str] = Field(default_factory=list)
     enabled: bool = True
     clone_as_skill: bool = False
