@@ -9,6 +9,9 @@ from services.jobs import scheduler
 from services.observability import billable_operation, current_trigger, trigger_context
 
 
+pytestmark = pytest.mark.usefixtures("terminal_diagnostics")
+
+
 def events(caplog):
     return [
         record.billable_event

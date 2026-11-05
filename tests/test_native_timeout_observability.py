@@ -12,6 +12,9 @@ from tests.test_eval_call_observability import scripted_runner as scripted_runne
 from tests.test_graph_model_factory import model_env as model_env
 from tests.test_granola_observability import provider_for
 
+
+pytestmark = pytest.mark.usefixtures("terminal_diagnostics")
+
 SECRET = "PRIVATE_NATIVE_TIMEOUT_CONTENT"
 
 

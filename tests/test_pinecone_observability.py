@@ -17,6 +17,9 @@ from services.observability import current_trigger, trigger_context
 from tests.test_memory_access_backends import PineconeRecords
 
 
+pytestmark = pytest.mark.usefixtures("terminal_diagnostics")
+
+
 def records(caplog):
     return [
         record.billable_event
