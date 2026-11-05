@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from copy import deepcopy
 from datetime import datetime, timedelta
 from hashlib import sha256
 import json
@@ -10,7 +11,13 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from scripts.shared.atomic_json import atomic_write_json, exclusive_file_lock
-from services.costs.contracts import CostReport, ProviderFailure, Snapshot, require_utc
+from services.costs.contracts import (
+    CollectionResult,
+    CostReport,
+    ProviderFailure,
+    Snapshot,
+    require_utc,
+)
 
 
 class SnapshotCache:
@@ -90,6 +97,22 @@ class SnapshotCache:
         return self._view(self._load())
 
     def read_or_refresh(self, now: datetime, fetch: Callable[[], CostReport]) -> dict:
+        return self._read_or_collect(
+            now, lambda _report, state: CollectionResult(fetch(), state)
+        )
+
+    def read_or_collect(
+        self,
+        now: datetime,
+        collector: Callable[[CostReport | None, dict | None], CollectionResult],
+    ) -> dict:
+        return self._read_or_collect(now, collector)
+
+    def _read_or_collect(
+        self,
+        now: datetime,
+        collector: Callable[[CostReport | None, dict | None], CollectionResult],
+    ) -> dict:
         now = require_utc(now)
         existing = self._load()
         if existing and now < existing.next_attempt_at:
@@ -112,6 +135,7 @@ class SnapshotCache:
                     attempt_day=now.date(),
                     attempts=attempts + 1,
                     report=existing.report if existing else None,
+                    state=deepcopy(existing.state) if existing else None,
                     error={
                         "code": "interrupted_refresh",
                         "message": "The last refresh did not finish. Collection will retry after the displayed time.",
@@ -119,15 +143,27 @@ class SnapshotCache:
                 )
                 atomic_write_json(self.path, pending.model_dump(mode="json"))
                 try:
-                    fresh = fetch()
+                    fresh = collector(
+                        deepcopy(existing.report) if existing else None,
+                        deepcopy(existing.state) if existing else None,
+                    )
                     if (
-                        not isinstance(fresh, CostReport)
-                        or fresh.provider != self.provider
+                        not isinstance(fresh, CollectionResult)
+                        or not isinstance(fresh.report, CostReport)
+                        or fresh.report.provider != self.provider
                     ):
                         raise ProviderFailure(
                             "invalid_response",
                             "Provider returned an invalid cost report.",
                         )
+                    if fresh.state is not None:
+                        if not isinstance(fresh.state, dict):
+                            raise ValueError("Collection state must be a JSON object")
+                        encoded = json.dumps(
+                            fresh.state, ensure_ascii=False, indent=2, allow_nan=False
+                        )
+                        if len(encoded.encode("utf-8")) > 8_000_000:
+                            raise ValueError("Collection state exceeds its size limit")
                 except Exception as error:
                     safe = (
                         error
@@ -142,7 +178,8 @@ class SnapshotCache:
                         "%s COST REFRESH FAILED: %s", self.provider.upper(), safe.code
                     )
                 else:
-                    pending.report = fresh
+                    pending.report = deepcopy(fresh.report)
+                    pending.state = deepcopy(fresh.state)
                     pending.error = None
                     pending.next_attempt_at = now + self.success_interval
                 atomic_write_json(self.path, pending.model_dump(mode="json"))

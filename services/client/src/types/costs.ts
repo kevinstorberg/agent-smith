@@ -14,6 +14,8 @@ export interface CostReport {
   usage: { label: string; amount: string; unit: string }[];
   notes: string[];
   coverage_start?: string | null;
+  pricing_source?: string | null;
+  pricing_as_of?: string | null;
 }
 
 export interface CostResponse {

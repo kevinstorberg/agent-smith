@@ -1,0 +1,183 @@
+{
+  "synthetic": true,
+  "pricing_is_test_only": true,
+  "baseline": {
+    "provider": "pinecone",
+    "period_start": "2026-11-01",
+    "period_end": "2026-11-06",
+    "currency": "USD",
+    "total": null,
+    "estimated": true,
+    "scope": "Configured Pinecone project: observed serverless usage only",
+    "fetched_at": "2026-11-05T15:00:00Z",
+    "daily": [],
+    "breakdown": [],
+    "usage": [
+      {
+        "label": "Observed read units",
+        "amount": "Unavailable",
+        "unit": "RU"
+      },
+      {
+        "label": "Observed write units",
+        "amount": "Unavailable",
+        "unit": "WU"
+      },
+      {
+        "label": "Current stored data",
+        "amount": "4096",
+        "unit": "bytes"
+      }
+    ],
+    "notes": [
+      "History before the monitoring baseline is unavailable.",
+      "Storage is a current quantity only; storage cost is excluded.",
+      "Backups, egress, inference, Assistant and dedicated read-node charges are excluded.",
+      "Standard monthly commitment: USD 50. Shown separately from this observed usage estimate.",
+      "Observed usage estimates cover collected intervals, not the complete month or final invoice.",
+      "Configured price date: 2026-11-05; source: https://www.pinecone.io/pricing/"
+    ],
+    "coverage_start": "2026-11-05T15:00:00Z",
+    "data_through": null,
+    "cost_basis": "Observed RU/WU at configured prices",
+    "pricing_source": "https://www.pinecone.io/pricing/",
+    "pricing_as_of": "2026-11-05"
+  },
+  "observed": {
+    "provider": "pinecone",
+    "period_start": "2026-11-01",
+    "period_end": "2026-11-06",
+    "currency": "USD",
+    "total": "0.00006",
+    "estimated": true,
+    "scope": "Configured Pinecone project: observed serverless usage only",
+    "fetched_at": "2026-11-05T15:05:00Z",
+    "daily": [
+      {
+        "label": "2026-11-05",
+        "amount": "0.00006"
+      }
+    ],
+    "breakdown": [
+      {
+        "label": "aws/us-east-1",
+        "amount": "0.00006"
+      }
+    ],
+    "usage": [
+      {
+        "label": "Observed read units",
+        "amount": "10",
+        "unit": "RU"
+      },
+      {
+        "label": "Observed write units",
+        "amount": "10",
+        "unit": "WU"
+      },
+      {
+        "label": "Current stored data",
+        "amount": "4096",
+        "unit": "bytes"
+      }
+    ],
+    "notes": [
+      "History before the monitoring baseline is unavailable.",
+      "Storage is a current quantity only; storage cost is excluded.",
+      "Backups, egress, inference, Assistant and dedicated read-node charges are excluded.",
+      "Standard monthly commitment: USD 50. Shown separately from this observed usage estimate.",
+      "Observed usage estimates cover collected intervals, not the complete month or final invoice.",
+      "Configured price date: 2026-11-05; source: https://www.pinecone.io/pricing/"
+    ],
+    "coverage_start": "2026-11-05T15:00:00Z",
+    "data_through": null,
+    "cost_basis": "Observed RU/WU at configured prices",
+    "pricing_source": "https://www.pinecone.io/pricing/",
+    "pricing_as_of": "2026-11-05"
+  },
+  "no_price": {
+    "provider": "pinecone",
+    "period_start": "2026-11-01",
+    "period_end": "2026-11-06",
+    "currency": "USD",
+    "total": null,
+    "estimated": true,
+    "scope": "Configured Pinecone project: observed serverless usage only",
+    "fetched_at": "2026-11-05T15:05:00Z",
+    "daily": [],
+    "breakdown": [],
+    "usage": [
+      {
+        "label": "Observed read units",
+        "amount": "10",
+        "unit": "RU"
+      },
+      {
+        "label": "Observed write units",
+        "amount": "10",
+        "unit": "WU"
+      },
+      {
+        "label": "Current stored data",
+        "amount": "4096",
+        "unit": "bytes"
+      }
+    ],
+    "notes": [
+      "History before the monitoring baseline is unavailable.",
+      "Storage is a current quantity only; storage cost is excluded.",
+      "Backups, egress, inference, Assistant and dedicated read-node charges are excluded.",
+      "Standard monthly commitment: USD 50. Shown separately from this observed usage estimate.",
+      "Observed usage estimates cover collected intervals, not the complete month or final invoice.",
+      "Configure dated cloud/region prices to calculate dollar estimates; usage remains visible.",
+      "Some observed usage has no applicable configured price and is excluded from the dollar estimate."
+    ],
+    "coverage_start": "2026-11-05T15:00:00Z",
+    "data_through": null,
+    "cost_basis": "Observed RU/WU at configured prices",
+    "pricing_source": null,
+    "pricing_as_of": null
+  },
+  "utc_boundary": {
+    "provider": "pinecone",
+    "period_start": "2026-11-01",
+    "period_end": "2026-11-02",
+    "currency": "USD",
+    "total": null,
+    "estimated": true,
+    "scope": "Configured Pinecone project: observed serverless usage only",
+    "fetched_at": "2026-11-01T00:15:00Z",
+    "daily": [],
+    "breakdown": [],
+    "usage": [
+      {
+        "label": "Observed read units",
+        "amount": "Unavailable",
+        "unit": "RU"
+      },
+      {
+        "label": "Observed write units",
+        "amount": "Unavailable",
+        "unit": "WU"
+      },
+      {
+        "label": "Current stored data",
+        "amount": "4096",
+        "unit": "bytes"
+      }
+    ],
+    "notes": [
+      "History before the monitoring baseline is unavailable.",
+      "Storage is a current quantity only; storage cost is excluded.",
+      "Backups, egress, inference, Assistant and dedicated read-node charges are excluded.",
+      "Standard monthly commitment: USD 50. Shown separately from this observed usage estimate.",
+      "Observed usage estimates cover collected intervals, not the complete month or final invoice.",
+      "Configured price date: 2026-11-01; source: https://www.pinecone.io/pricing/"
+    ],
+    "coverage_start": "2026-11-01T00:15:00Z",
+    "data_through": null,
+    "cost_basis": "Observed RU/WU at configured prices",
+    "pricing_source": "https://www.pinecone.io/pricing/",
+    "pricing_as_of": "2026-11-01"
+  }
+}
