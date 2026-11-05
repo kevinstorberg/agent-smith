@@ -162,6 +162,23 @@ services/
   memory/            # vector memory + MCP tools (pgvector, LanceDB, or Pinecone)
 ```
 
+## Repository cleanup
+
+Preview GitHub-confirmed merged branches and linked worktrees with
+`python scripts/repos.py /absolute/repository/path`.
+Add `--execute` to remove eligible targets, `--force` to include dirty merged
+worktrees, and `--delete-remote` to include origin branches.
+JSON results go to stdout; each attempted removal and its result go to stderr.
+Keep redirected reports outside worktrees being removed.
+
+Git, authenticated `gh`, and `lsof` are required. Cleanup preserves protected and
+current checkouts, active processes, referenced dependencies, locked or symbolic
+worktrees, open/unmerged PRs, and tips outside the final merged proof.
+Force changes only the dirty-file check, including ignored files.
+Live checks and expected-head leases reject changed targets; the report records
+skips and partial failures without retrying. Superseded experimental snapshots
+can remain even when their patches resemble merged work.
+
 ## Harness
 
 Rules, skills, tools, hooks, and sub-agents are stored in Postgres with versioning and

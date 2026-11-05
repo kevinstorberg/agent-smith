@@ -141,6 +141,45 @@ async function renderReady() {
 }
 
 describe('ActionItemsIndexPage', () => {
+  it('refreshes the saved action item page at 15 seconds without writing', async () => {
+    vi.useFakeTimers();
+    document.cookie = mergeViewCookie('', 'actionItems', {
+      ...defaultView('actionItems'),
+      q: 'Task',
+      project: 'Work',
+      limit: 25,
+      offset: 50,
+    });
+    vi.mocked(api.actionItems.list).mockResolvedValue({
+      items: rows,
+      total: 100,
+    });
+    await act(async () => {
+      renderWithProviders(<ActionItemsIndexPage />, {
+        initialEntries: ['/action-items'],
+      });
+    });
+    const read = vi.mocked(api.actionItems.list);
+    const params = read.mock.calls.at(-1)![0];
+    expect(params).toMatchObject({
+      q: 'Task',
+      project: 'Work',
+      limit: 25,
+      offset: 50,
+    });
+    read.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(14_999);
+    });
+    expect(read).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(read).toHaveBeenCalledExactlyOnceWith(params);
+    expect(api.actionItems.update).not.toHaveBeenCalled();
+    expect(api.actionItems.move).not.toHaveBeenCalled();
+    expect(api.actionItems.remove).not.toHaveBeenCalled();
+  });
   it('restores filtered manual ordering and preserves saved criteria during ordinary sort changes', async () => {
     document.cookie = mergeViewCookie('', 'actionItems', {
       ...defaultView('actionItems'),
