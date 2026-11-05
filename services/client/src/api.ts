@@ -1,3 +1,5 @@
+import type { CostResponse } from './types/costs';
+
 const BASE = '/api';
 
 export class ApiError extends Error {
@@ -1112,6 +1114,9 @@ function topicPath(profileId: string, id?: number): string {
 }
 
 export const api = {
+  costs: {
+    get: (provider: string) => get<CostResponse>(`/costs/${provider}`),
+  },
   actionItemProjects: {
     list: () =>
       get<Paginated<ActionItemProject>>(

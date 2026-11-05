@@ -88,7 +88,7 @@ describe('Sidebar', () => {
     );
   });
 
-  it('orders named groups by workspace, harness and operations, retaining all 16 alphabetized links', () => {
+  it('orders named groups by workspace, harness and operations, retaining all 17 alphabetized links', () => {
     renderSidebar();
     expect(
       screen
@@ -101,11 +101,11 @@ describe('Sidebar', () => {
         .map((link) => link.textContent),
     );
     expect(sections).toEqual([
-      ['Action items', 'Chat', 'Meetings', 'Plans', 'Profiles'],
+      ['Action items', 'Chat', 'Costs', 'Meetings', 'Plans', 'Profiles'],
       ['Agents', 'Hooks', 'Memory', 'Rules', 'Skills', 'Tools'],
       ['Audit', 'Evals', 'Jobs', 'Proposals', 'Results'],
     ]);
-    expect(screen.getAllByRole('link')).toHaveLength(16);
+    expect(screen.getAllByRole('link')).toHaveLength(17);
   });
 
   it('supports mouse, Enter and Space disclosure while removing collapsed links from keyboard navigation', async () => {
