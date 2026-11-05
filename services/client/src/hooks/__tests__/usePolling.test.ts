@@ -30,9 +30,12 @@ describe('usePolling', () => {
   it('skips ticks while the previous callback is still running', async () => {
     vi.useFakeTimers();
     let resolveCallback: () => void = () => undefined;
-    const callback = vi.fn(() => new Promise<void>(resolve => {
-      resolveCallback = resolve;
-    }));
+    const callback = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveCallback = resolve;
+        }),
+    );
 
     renderHook(() => usePolling(callback));
 
@@ -58,9 +61,12 @@ describe('usePolling', () => {
   it('stops polling when disabled', () => {
     vi.useFakeTimers();
     const callback = vi.fn();
-    const { rerender } = renderHook(({ enabled }) => usePolling(callback, { enabled }), {
-      initialProps: { enabled: true },
-    });
+    const { rerender } = renderHook(
+      ({ enabled }) => usePolling(callback, { enabled }),
+      {
+        initialProps: { enabled: true },
+      },
+    );
 
     act(() => {
       vi.advanceTimersByTime(POLL_INTERVAL_MS);
@@ -91,7 +97,8 @@ describe('usePolling', () => {
 
   it('contains callback errors and keeps polling', async () => {
     vi.useFakeTimers();
-    const callback = vi.fn()
+    const callback = vi
+      .fn()
       .mockRejectedValueOnce(new Error('network'))
       .mockResolvedValue(undefined);
 
@@ -112,7 +119,8 @@ describe('usePolling', () => {
   it('rejects invalid intervals', () => {
     const callback = vi.fn();
 
-    expect(() => renderHook(() => usePolling(callback, { intervalMs: 0 })))
-      .toThrow(/positive finite/);
+    expect(() =>
+      renderHook(() => usePolling(callback, { intervalMs: 0 })),
+    ).toThrow(/positive finite/);
   });
 });

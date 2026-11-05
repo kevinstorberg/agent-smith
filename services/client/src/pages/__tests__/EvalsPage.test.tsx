@@ -1,4 +1,8 @@
-import { defaultView, mergeViewCookie, readViewCookie } from '../../utils/viewPreferences';
+import {
+  defaultView,
+  mergeViewCookie,
+  readViewCookie,
+} from '../../utils/viewPreferences';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
@@ -21,14 +25,22 @@ vi.mock('react-chartjs-2', () => ({
 
 const mockNavigate = vi.fn();
 vi.mock('react-router', async () => {
-  const actual = await vi.importActual<typeof import('react-router')>('react-router');
+  const actual =
+    await vi.importActual<typeof import('react-router')>('react-router');
   return {
     ...actual,
     useNavigate: () => mockNavigate,
   };
 });
 
-const { mockCategories, mockSubcategories, mockFacets, mockList, mockChart, mockChartAverage } = vi.hoisted(() => ({
+const {
+  mockCategories,
+  mockSubcategories,
+  mockFacets,
+  mockList,
+  mockChart,
+  mockChartAverage,
+} = vi.hoisted(() => ({
   mockCategories: vi.fn(),
   mockSubcategories: vi.fn(),
   mockFacets: vi.fn(),
@@ -73,7 +85,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockCategories.mockResolvedValue(['rules', 'skills']);
   mockSubcategories.mockResolvedValue(['core', 'advanced']);
-  mockFacets.mockResolvedValue({ scenarios: ['test_scenario'], models: ['gpt-4'] });
+  mockFacets.mockResolvedValue({
+    scenarios: ['test_scenario'],
+    models: ['gpt-4'],
+  });
   mockList.mockResolvedValue({ items: [], total: 0 });
   mockChartAverage.mockResolvedValue([]);
   mockChart.mockResolvedValue([]);
@@ -81,38 +96,110 @@ beforeEach(() => {
 
 describe('EvalsPage', () => {
   it('restores the same filters before table, facet and chart reads and atomically clears dependent criteria', async () => {
-    document.cookie = mergeViewCookie('', 'results', { ...defaultView('results'), q: 'quality', category: 'skills', subcategory: 'core', scenario: 'test_scenario', model: 'gpt-4', sort: 'score', limit: 25, offset: 50 });
+    document.cookie = mergeViewCookie('', 'results', {
+      ...defaultView('results'),
+      q: 'quality',
+      category: 'skills',
+      subcategory: 'core',
+      scenario: 'test_scenario',
+      model: 'gpt-4',
+      sort: 'score',
+      limit: 25,
+      offset: 50,
+    });
     mockList.mockResolvedValue({ items: [], total: 100 });
     renderWithProviders(<EvalsPage />, { initialEntries: ['/evals?keep=1'] });
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
-    expect(mockList).toHaveBeenCalledWith({ eval_type: 'skills', subcategory: 'core', scenario: 'test_scenario', model: 'gpt-4', q: 'quality', sort: 'score', limit: '25', offset: '50' });
-    expect(mockChartAverage).toHaveBeenCalledWith({ eval_type: 'skills', subcategory: 'core', scenario: 'test_scenario', model: 'gpt-4', q: 'quality' });
-    expect(mockFacets).toHaveBeenCalledWith({ eval_type: 'skills', subcategory: 'core', q: 'quality' });
+    expect(mockList).toHaveBeenCalledWith({
+      eval_type: 'skills',
+      subcategory: 'core',
+      scenario: 'test_scenario',
+      model: 'gpt-4',
+      q: 'quality',
+      sort: 'score',
+      limit: '25',
+      offset: '50',
+    });
+    expect(mockChartAverage).toHaveBeenCalledWith({
+      eval_type: 'skills',
+      subcategory: 'core',
+      scenario: 'test_scenario',
+      model: 'gpt-4',
+      q: 'quality',
+    });
+    expect(mockFacets).toHaveBeenCalledWith({
+      eval_type: 'skills',
+      subcategory: 'core',
+      q: 'quality',
+    });
     mockList.mockClear();
-    fireEvent.change(screen.getByLabelText('Result category'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Result category'), {
+      target: { value: '' },
+    });
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
-    expect(mockList).toHaveBeenCalledWith({ q: 'quality', sort: 'score', limit: '25', offset: '0' });
-    expect(readViewCookie(document.cookie)[0].values).toEqual({ q: 'quality', sort: 'score', limit: 25 });
-    fireEvent.change(screen.getByLabelText('Sort results'), { target: { value: 'newest' } });
-    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ q: 'quality', sort: 'newest', limit: '25', offset: '0' }));
-    expect(readViewCookie(document.cookie)).toEqual([{ key: 'results', values: { q: 'quality', limit: 25 } }]);
+    expect(mockList).toHaveBeenCalledWith({
+      q: 'quality',
+      sort: 'score',
+      limit: '25',
+      offset: '0',
+    });
+    expect(readViewCookie(document.cookie)[0].values).toEqual({
+      q: 'quality',
+      sort: 'score',
+      limit: 25,
+    });
+    fireEvent.change(screen.getByLabelText('Sort results'), {
+      target: { value: 'newest' },
+    });
+    await waitFor(() =>
+      expect(mockList).toHaveBeenLastCalledWith({
+        q: 'quality',
+        sort: 'newest',
+        limit: '25',
+        offset: '0',
+      }),
+    );
+    expect(readViewCookie(document.cookie)).toEqual([
+      { key: 'results', values: { q: 'quality', limit: 25 } },
+    ]);
   });
 
   it('requests all result categories by default across the table, facets and chart', async () => {
     renderWithProviders(<EvalsPage />, { initialEntries: ['/evals'] });
     await waitFor(() => expect(mockList).toHaveBeenCalled());
     expect(screen.getByLabelText('Result category')).toHaveValue('');
-    expect(mockList).toHaveBeenCalledWith({ sort: 'newest', limit: '10', offset: '0' });
+    expect(mockList).toHaveBeenCalledWith({
+      sort: 'newest',
+      limit: '10',
+      offset: '0',
+    });
     expect(mockSubcategories).toHaveBeenCalledWith({});
     expect(mockFacets).toHaveBeenCalledWith({});
     expect(mockChartAverage).toHaveBeenCalledWith({});
   });
 
   it('can return from an explicit category to all categories and clear dependent filters', async () => {
-    renderWithProviders(<EvalsPage />, { initialEntries: ['/evals?category=rules&subcategory=core&scenario=test_scenario&model=gpt-4&q=check'] });
-    await waitFor(() => expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ eval_type: 'rules', q: 'check' })));
-    fireEvent.change(screen.getByLabelText('Result category'), { target: { value: '' } });
-    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ q: 'check', sort: 'newest', limit: '10', offset: '0' }));
+    renderWithProviders(<EvalsPage />, {
+      initialEntries: [
+        '/evals?category=rules&subcategory=core&scenario=test_scenario&model=gpt-4&q=check',
+      ],
+    });
+    await waitFor(() =>
+      expect(mockList).toHaveBeenCalledWith(
+        expect.objectContaining({ eval_type: 'rules', q: 'check' }),
+      ),
+    );
+    fireEvent.change(screen.getByLabelText('Result category'), {
+      target: { value: '' },
+    });
+    await waitFor(() =>
+      expect(mockList).toHaveBeenLastCalledWith({
+        q: 'check',
+        sort: 'newest',
+        limit: '10',
+        offset: '0',
+      }),
+    );
     expect(screen.getByLabelText('Result subcategory')).toHaveValue('');
     expect(screen.getByLabelText('Result scenario')).toHaveValue('');
     expect(screen.getByLabelText('Result model')).toHaveValue('');
@@ -127,8 +214,8 @@ describe('EvalsPage', () => {
     });
 
     const options = screen.getAllByRole('option');
-    expect(options.some(o => o.textContent === 'rules')).toBe(true);
-    expect(options.some(o => o.textContent === 'skills')).toBe(true);
+    expect(options.some((o) => o.textContent === 'rules')).toBe(true);
+    expect(options.some((o) => o.textContent === 'skills')).toBe(true);
   });
 
   it('renders subcategory filter options', async () => {
@@ -140,11 +227,13 @@ describe('EvalsPage', () => {
 
     expect(screen.getByText('All subcategories')).toBeInTheDocument();
     const options = screen.getAllByRole('option');
-    expect(options.some(o => o.textContent === 'core')).toBe(true);
+    expect(options.some((o) => o.textContent === 'core')).toBe(true);
   });
 
   it('updates category filter and clears dependent filters', async () => {
-    renderWithProviders(<EvalsPage />, { initialEntries: ['/evals?category=rules'] });
+    renderWithProviders(<EvalsPage />, {
+      initialEntries: ['/evals?category=rules'],
+    });
 
     await waitFor(() => {
       expect(mockCategories).toHaveBeenCalled();
@@ -183,7 +272,12 @@ describe('EvalsPage', () => {
 
   it('renders score badge with pass/fail class', async () => {
     const passingRun = makeRun({ id: 1, score_avg: 0.85, threshold: 0.7 });
-    const failingRun = makeRun({ id: 2, score_avg: 0.5, threshold: 0.7, scenario: 'fail_scenario' });
+    const failingRun = makeRun({
+      id: 2,
+      score_avg: 0.5,
+      threshold: 0.7,
+      scenario: 'fail_scenario',
+    });
     mockList.mockResolvedValue({ items: [passingRun, failingRun], total: 2 });
 
     renderWithProviders(<EvalsPage />, { initialEntries: ['/evals'] });
@@ -239,7 +333,7 @@ describe('EvalsPage', () => {
 
     // Click the table cell (not the select option)
     const cells = screen.getAllByText('test_scenario');
-    const tableCell = cells.find(el => el.closest('td'));
+    const tableCell = cells.find((el) => el.closest('td'));
     fireEvent.click(tableCell!);
     expect(mockNavigate).toHaveBeenCalledWith('/evals/42');
   });
