@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { test, expect, type APIRequest } from './fixtures';
+import { test, expect } from './fixtures';
 import type { CostReport } from '../src/types/costs';
 import {
   expectDocumentContained,
@@ -145,11 +145,7 @@ test('Pinecone selection rejects a delayed response from the previous AWS view',
   const deferred = new Promise((resolve) => {
     release = resolve;
   });
-  fixtureAPI.mock(
-    'GET',
-    '/api/costs/aws',
-    async (_request: APIRequest) => await deferred,
-  );
+  fixtureAPI.mock('GET', '/api/costs/aws', async () => await deferred);
   fixtureAPI.get('/api/costs/pinecone', ready(fixture.observed));
   await page.goto('/costs');
   await page.getByRole('button', { name: 'Pinecone', exact: true }).click();
