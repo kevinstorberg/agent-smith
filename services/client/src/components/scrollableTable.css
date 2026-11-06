@@ -1,0 +1,5 @@
+.scrollable-table-empty-state {
+  position: sticky;
+  left: 0;
+  width: 100%;
+}
