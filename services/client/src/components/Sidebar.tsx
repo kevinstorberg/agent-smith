@@ -15,6 +15,7 @@ const NAV_SECTIONS = [
       { path: '/meetings', label: 'Meetings' },
       { path: '/plans', label: 'Plans' },
       { path: '/profiles', label: 'Profiles' },
+      { path: '/projects', label: 'Projects' },
     ],
   },
   {

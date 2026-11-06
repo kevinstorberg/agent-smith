@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode, Ref } from 'react';
+import { ButtonLink } from './ButtonLink';
 import { api } from '../api';
 import { useActionItemProjects } from '../hooks/useActionItemProjects';
 import { useApiMutation } from '../hooks/useApiMutation';
@@ -79,6 +80,39 @@ export function ActionItemProjectTabs({
   const catalog = useActionItemProjects(paused || creating || mutation.loading);
   const busy = disabled || mutation.loading;
   const projects = catalog.data?.items ?? [];
+  const selectedIdentity = useRef<{ id: number; name: string } | null>(null);
+  useEffect(() => {
+    if (scope.kind !== 'named') {
+      selectedIdentity.current = null;
+      return;
+    }
+    const previous = selectedIdentity.current;
+    const tracked =
+      previous?.name === scope.name
+        ? catalog.data?.items.find((project) => project.id === previous.id)
+        : undefined;
+    if (tracked && tracked.name !== scope.name) {
+      if (paused || busy || catalog.loading || catalog.error) return;
+      selectedIdentity.current = { id: tracked.id, name: tracked.name };
+      onChange({ kind: 'named', name: tracked.name });
+      return;
+    }
+    const exact = catalog.data?.items.find(
+      (project) => project.name === scope.name,
+    );
+    if (exact) {
+      selectedIdentity.current = { id: exact.id, name: exact.name };
+      return;
+    }
+  }, [
+    scope,
+    catalog.data,
+    catalog.loading,
+    catalog.error,
+    paused,
+    busy,
+    onChange,
+  ]);
   const names = projects.map((project) => project.name);
   if (scope.kind === 'named' && !names.includes(scope.name))
     names.push(scope.name);
@@ -133,6 +167,16 @@ export function ActionItemProjectTabs({
           aria-label="Project management"
         >
           {!toolbarAccessory && <strong>Projects</strong>}
+          <ButtonLink
+            className="btn-sm"
+            to="/projects"
+            aria-disabled={busy}
+            onClick={(event) => {
+              if (busy) event.preventDefault();
+            }}
+          >
+            Manage projects
+          </ButtonLink>
           <button
             className="btn btn-sm"
             disabled={busy}

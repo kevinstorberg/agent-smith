@@ -19,9 +19,16 @@ from services.action_items.contracts import (
     Patch,
     PositiveInt,
     ProjectCreate,
+    ProjectMetadataCreate,
+    ProjectPatch,
+    ProjectQuery,
     Query,
 )
-from services.api.models.shared.listing import bidirectional_sorts
+from services.api.models.shared.listing import (
+    bidirectional_sorts,
+    search_pattern,
+    sort_clause,
+)
 from services.db import get_connection
 from services.meetings import profile_db
 from services.meetings.db import MeetingStorageError
@@ -45,6 +52,14 @@ _SORTS = {
     "newest": "a.created_at DESC, a.id DESC",
     "completed": "a.completed_at DESC, a.id DESC",
 }
+_PROJECT_DETAIL = "id,name,description,revision,created_at,updated_at"
+_PROJECT_SORTS = bidirectional_sorts(
+    {
+        ("name_asc", "name_desc"): ("lower(name)",),
+        ("description_asc", "description_desc"): ("NULLIF(lower(description),'')",),
+        ("updated_asc", "updated_desc"): ("updated_at",),
+    }
+)
 
 
 class NotFound(LookupError):
@@ -157,15 +172,15 @@ def _project_name(cursor, value: str | None) -> str | None:
     return ProjectCreate.model_validate({"name": value}).name
 
 
-def _ensure_project(cursor, name: str | None) -> dict | None:
+def _ensure_project(cursor, name: str | None, description: str = "") -> dict | None:
     if name is None:
         return None
     existing = _find_project(cursor, name)
     if existing is not None:
         return existing
     cursor.execute(
-        "INSERT INTO action_item_projects(name) VALUES(%s) ON CONFLICT(name) DO NOTHING RETURNING id,name,created_at",
-        (name,),
+        "INSERT INTO action_item_projects(name,description) VALUES(%s,%s) ON CONFLICT(name) DO NOTHING RETURNING id,name,created_at",
+        (name, description),
     )
     row = cursor.fetchone()
     return dict(row) if row is not None else _find_project(cursor, name)
@@ -198,6 +213,89 @@ def create_project(payload: ProjectCreate | dict) -> dict:
     request = ProjectCreate.model_validate(payload)
     with _cursor(None, write=True) as (cursor, _):
         return _record(_ensure_project(cursor, request.name))
+
+
+def _project_details(cursor, project_id: int) -> dict:
+    cursor.execute(
+        f"SELECT {_PROJECT_DETAIL} FROM action_item_projects WHERE id=%s", (project_id,)
+    )
+    row = cursor.fetchone()
+    if row is None:
+        raise NotFound("Project not found")
+    return _record(row)
+
+
+def get_project_details(project_id: int) -> dict:
+    project_id = _id(project_id)
+    with _cursor(None, write=False) as (cursor, _):
+        return _project_details(cursor, project_id)
+
+
+def list_project_details(payload: ProjectQuery | dict) -> dict:
+    query = ProjectQuery.model_validate(payload)
+    order, pattern = sort_clause(query.sort, _PROJECT_SORTS), search_pattern(query.q)
+    where = "WHERE name ILIKE %s OR description ILIKE %s" if pattern else ""
+    values = (pattern, pattern) if pattern else ()
+    with _cursor(None, write=False) as (cursor, _):
+        cursor.execute(
+            f"SELECT COUNT(*) AS total FROM action_item_projects {where}", values
+        )
+        total = cursor.fetchone()["total"]
+        cursor.execute(
+            f"SELECT {_PROJECT_DETAIL} FROM action_item_projects {where} ORDER BY {order} LIMIT %s OFFSET %s",
+            (*values, query.limit, query.offset),
+        )
+        return {"items": [_record(row) for row in cursor.fetchall()], "total": total}
+
+
+def create_project_details(payload: ProjectMetadataCreate | dict) -> dict:
+    request = ProjectMetadataCreate.model_validate(payload)
+    with _cursor(None, write=True) as (cursor, _):
+        project = _ensure_project(cursor, request.name, request.description)
+        result = _project_details(cursor, project["id"])
+        if (
+            "description" in request.model_fields_set
+            and result["description"] != request.description
+        ):
+            raise Conflict(
+                "A project with this name already exists. Edit that project to change its description."
+            )
+        return result
+
+
+def update_project_details(project_id: int, payload: ProjectPatch | dict) -> dict:
+    project_id, patch = _id(project_id), ProjectPatch.model_validate(payload)
+    with _cursor(None, write=True) as (cursor, _):
+        before = _project_details(cursor, project_id)
+        if before["revision"] != patch.expected_revision:
+            raise Conflict(
+                "Project changed. Review the current saved version before saving again."
+            )
+        changes = {
+            key: value
+            for key, value in patch.model_dump(
+                exclude_unset=True, exclude={"expected_revision"}
+            ).items()
+            if before[key] != value
+        }
+        if not changes:
+            return before
+        if "name" in changes:
+            if _find_project(cursor, changes["name"]) is not None:
+                raise Conflict(
+                    "A project with this name already exists. Choose a different name."
+                )
+            # Existing item editors submit name-based assignments captured at their revision.
+            cursor.execute(
+                "UPDATE action_items SET revision=revision+1 WHERE project_id=%s AND deleted_at IS NULL",
+                (project_id,),
+            )
+        columns = ", ".join(f"{key}=%s" for key in changes)
+        cursor.execute(
+            f"UPDATE action_item_projects SET {columns},revision=revision+1,updated_at=clock_timestamp() WHERE id=%s",
+            (*changes.values(), project_id),
+        )
+        return _project_details(cursor, project_id)
 
 
 def delete_project(project_id: int) -> dict:

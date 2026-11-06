@@ -14,6 +14,8 @@ import { PlansIndexPage } from './pages/PlansIndexPage';
 import { PlanDetailPage } from './pages/PlanDetailPage';
 import { ActionItemsIndexPage } from './pages/ActionItemsIndexPage';
 import { ActionItemDetailPage } from './pages/ActionItemDetailPage';
+import { ProjectsIndexPage } from './pages/ProjectsIndexPage';
+import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { JobsIndexPage } from './pages/JobsIndexPage';
 import { JobDetailPage } from './pages/JobDetailPage';
 import { ProposalsIndexPage } from './pages/ProposalsIndexPage';
@@ -104,6 +106,8 @@ export default function App() {
             />
             <Route path="/memory" element={<MemoryPage />} />
             <Route path="/action-items" element={<ActionItemsIndexPage />} />
+            <Route path="/projects" element={<ProjectsIndexPage />} />
+            <Route path="/projects/:id" element={<ProjectDetailPage />} />
             <Route
               path="/action-items/new"
               element={<ActionItemDetailPage />}

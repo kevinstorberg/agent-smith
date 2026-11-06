@@ -43,6 +43,7 @@ from services.api.routers import (
     memory,
     plans,
     profile_topics,
+    projects,
     profiles,
     proposals,
 )
@@ -123,6 +124,7 @@ app.include_router(
     tags=["manual meeting analysis"],
 )
 app.include_router(profiles.router, prefix="/api/profiles", tags=["profiles"])
+app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(
     profile_topics.router, prefix="/api/profiles", tags=["profile discussion topics"]
 )

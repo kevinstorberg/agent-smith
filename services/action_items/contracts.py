@@ -41,6 +41,9 @@ Title = Annotated[
 ]
 Description = Annotated[str, StringConstraints(max_length=MAX_BODY_LENGTH)]
 MAX_PROJECT_NAME_LENGTH = 200
+ProjectName = Annotated[
+    str, StringConstraints(min_length=1, max_length=MAX_PROJECT_NAME_LENGTH)
+]
 MAX_DUE_WINDOW_HOURS = 168
 Project = Annotated[str, StringConstraints(max_length=MAX_PROJECT_NAME_LENGTH)]
 Tags = Annotated[list[str], Field(max_length=20)]
@@ -51,9 +54,7 @@ class Contract(BaseModel):
 
 
 class ProjectCreate(Contract):
-    name: Annotated[
-        str, StringConstraints(min_length=1, max_length=MAX_PROJECT_NAME_LENGTH)
-    ]
+    name: ProjectName
 
     @field_validator("name", mode="before")
     @classmethod
@@ -63,6 +64,44 @@ class ProjectCreate(Contract):
                 raise ValueError("Project names cannot contain control characters")
             return value.strip()
         return value
+
+
+class ProjectMetadataCreate(ProjectCreate):
+    description: Description = ""
+
+    @field_validator("description")
+    @classmethod
+    def reject_nul(cls, value):
+        if "\0" in value:
+            raise ValueError("Project description cannot contain NUL characters")
+        return value
+
+
+class ProjectPatch(ProjectMetadataCreate):
+    name: ProjectName | None = None
+    expected_revision: PositiveInt
+
+    @model_validator(mode="after")
+    def require_changes(self):
+        if not self.model_fields_set & {"name", "description"}:
+            raise ValueError("Provide a project name or description to update")
+        if "name" in self.model_fields_set and self.name is None:
+            raise ValueError("Project name cannot be null")
+        return self
+
+
+class ProjectQuery(Contract):
+    q: Annotated[str, Field(max_length=1000)] | None = None
+    sort: Literal[
+        "name_asc",
+        "name_desc",
+        "description_asc",
+        "description_desc",
+        "updated_asc",
+        "updated_desc",
+    ] = "name_asc"
+    limit: Annotated[int, Field(ge=1, le=100)] = 10
+    offset: Annotated[int, Field(ge=0)] = 0
 
 
 class ItemEditable(Contract):

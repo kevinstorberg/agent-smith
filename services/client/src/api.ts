@@ -256,6 +256,19 @@ export interface ActionItemProject {
   created_at: string;
 }
 
+export interface Project extends ActionItemProject {
+  description: string;
+  revision: number;
+  updated_at: string;
+}
+export interface ProjectFields {
+  name: string;
+  description: string;
+}
+export type ProjectPatch = Partial<ProjectFields> & {
+  expected_revision: number;
+};
+
 const ACTION_ITEM_TIMEOUT_MS = 30_000;
 const HARNESS_TIMEOUT_MS = 30_000;
 
@@ -1127,6 +1140,20 @@ function topicPath(profileId: string, id?: number): string {
 }
 
 export const api = {
+  projects: {
+    list: (params?: ResourceListParams) =>
+      get<Paginated<Project>>(
+        '/projects',
+        resourceListParams(params),
+        ACTION_ITEM_TIMEOUT_MS,
+      ),
+    get: (id: number) =>
+      get<Project>(`/projects/${id}`, undefined, ACTION_ITEM_TIMEOUT_MS),
+    create: (fields: ProjectFields) =>
+      post<Project>('/projects', fields, ACTION_ITEM_TIMEOUT_MS),
+    update: (id: number, fields: ProjectPatch) =>
+      patch<Project>(`/projects/${id}`, fields, ACTION_ITEM_TIMEOUT_MS),
+  },
   costs: {
     get: (provider: string) => get<CostResponse>(`/costs/${provider}`),
   },
