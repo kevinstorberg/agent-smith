@@ -46,9 +46,7 @@ async def test_native_mcp_create_and_read_log_parameters_before_database_call(
     original = db.create
 
     def create(values):
-        assert (
-            entries(caplog)[-1].getMessage().startswith("unknown action_item_create ")
-        )
+        assert entries(caplog)[-1].getMessage().startswith("MCP action_item_create ")
         return original(values)
 
     monkeypatch.setattr(db, "create", create)
@@ -119,7 +117,7 @@ async def test_graph_adapter_deduplicates_mcp_but_retains_each_model_attempt(
         return await runtime.dispatch(type, inputs)
 
     await server.call_tool("run_graph", {"type": "opinion", "inputs": {"text": SECRET}})
-    assert entries(caplog)[0].getMessage().startswith("unknown run_graph ")
+    assert entries(caplog)[0].getMessage().startswith("MCP run_graph ")
     assert entries(caplog)[0].operation_event["billing"] == "billable"
     assert entries(caplog)[0].operation_event["params"] == {
         "type": "opinion",
@@ -205,7 +203,7 @@ async def test_unmapped_mcp_tool_cannot_inherit_local_crud_classification(
 
     await server.call_tool(name, {})
     assert len(entries(caplog)) == 1
-    assert entries(caplog)[0].getMessage().startswith(f"unknown {name} ")
+    assert entries(caplog)[0].getMessage().startswith(f"MCP {name} ")
     assert entries(caplog)[0].operation_event["billing"] == "unknown"
 
 
@@ -261,9 +259,7 @@ async def test_concurrent_native_mcp_actions_capture_separate_requests(
     )
     assert len(entries(caplog)) == 2
     assert len({r.operation_event["request_id"] for r in entries(caplog)}) == 2
-    assert all(
-        r.getMessage().startswith("unknown memory_search ") for r in entries(caplog)
-    )
+    assert all(r.getMessage().startswith("MCP memory_search ") for r in entries(caplog))
     assert all(r.operation_event["billing"] == "nonbillable" for r in entries(caplog))
     assert all(
         r.operation_event["params"] == {"query": SECRET} for r in entries(caplog)

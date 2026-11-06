@@ -185,3 +185,27 @@ def test_non_json_cycles_and_nonfinite_values_cannot_break_tool_execution():
         "nan": "[NONFINITE]",
         "cycle": "[CIRCULAR]",
     }
+
+
+@pytest.mark.parametrize(
+    "tool,expected",
+    [
+        ("memory_search", "MCP memory_search"),
+        ("future_tool_exact_name", "MCP future_tool_exact_name"),
+        ("search\nFORGED\r", r"MCP search\nFORGED\r"),
+    ],
+)
+def test_explicit_display_source_preserves_tool_identity_and_safe_single_lines(
+    tool, expected
+):
+    invocation = capture({"query": "complete query"}, agent="codex", tool=tool)
+    assert invocation.format_prefix("MCP") == expected
+    assert invocation.prefix == expected.replace("MCP ", "codex ", 1)
+    assert "\n" not in invocation.format_prefix("MCP")
+    assert "\r" not in invocation.format_prefix("MCP")
+
+
+def test_explicit_display_source_keeps_tool_credentials_masked():
+    invocation = capture({}, tool="password=tool-private")
+    assert invocation.format_prefix("MCP").startswith("MCP ")
+    assert "private" not in invocation.format_prefix("MCP")

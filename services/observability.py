@@ -393,7 +393,12 @@ def action_operation(
                     "tool": invocation.tool,
                     "params": json.loads(invocation.params_json),
                 }
-                prefix, display_json = invocation.prefix, invocation.params_json
+                prefix = (
+                    invocation.format_prefix("MCP")
+                    if owner == "mcp"
+                    else invocation.prefix
+                )
+                display_json = invocation.params_json
             _write_log(
                 record,
                 prefix,

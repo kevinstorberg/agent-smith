@@ -45,8 +45,8 @@ def invocation_entries(caplog):
     ]
 
 
-def assert_invocation(record, agent, tool, arguments):
-    prefix = f"{agent} {tool} "
+def assert_invocation(record, agent, tool, arguments, *, mcp=True):
+    prefix = f"MCP {tool} " if mcp else f"{agent} {tool} "
     assert record.getMessage().startswith(prefix)
     assert json.loads(record.getMessage()[len(prefix) :]) == arguments
     assert record.operation_event["agent"] == agent
@@ -136,7 +136,7 @@ async def test_exact_names_and_json_controls_cannot_forge_multiline_logs(
 
     await server.call_tool("memory_search", arguments)
     record = invocation_entries(caplog)[0]
-    prefix = "codex\\nFORGED memory_search "
+    prefix = "MCP memory_search "
     assert record.getMessage().startswith(prefix)
     assert json.loads(record.getMessage()[len(prefix) :]) == arguments
     assert "\n" not in record.getMessage()
@@ -369,7 +369,7 @@ async def test_redaction_preserves_search_semantics_and_original_arguments(
     await server.call_tool("memory_search", arguments)
     assert arguments == original
     entry = invocation_entries(caplog)[0]
-    displayed = json.loads(entry.getMessage().removeprefix("codex memory_search "))
+    displayed = json.loads(entry.getMessage().removeprefix("MCP memory_search "))
     assert entry.operation_event["params"] == displayed
     assert displayed["query"] == original["query"]
     assert displayed["tags"] == original["tags"]
@@ -403,7 +403,11 @@ async def test_native_agent_logs_role_and_submitted_arguments_without_provider_l
     def search(query: str, tags: list[str]) -> str:
         """Read prior memories for a scripted offline agent."""
         assert_invocation(
-            invocation_entries(caplog)[0], "curator", "search_memories", arguments
+            invocation_entries(caplog)[0],
+            "curator",
+            "search_memories",
+            arguments,
+            mcp=False,
         )
         assert {"query": query, "tags": tags} == arguments
         with observability.billable_operation("pinecone", "query"):
@@ -436,8 +440,9 @@ async def test_native_agent_logs_role_and_submitted_arguments_without_provider_l
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("with_tags", [False, True])
 async def test_http_memory_tools_call_logs_exact_submission_without_live_search(
-    monkeypatch, caplog
+    monkeypatch, caplog, with_tags
 ):
     from services.api.mcp_transport import MCPSSECompletionMiddleware
     from services.memory import db
@@ -455,10 +460,10 @@ async def test_http_memory_tools_call_logs_exact_submission_without_live_search(
     arguments = {
         "query": "HTTP semantic query café 東京 " * 80 + "HTTP_COMPLETE_SUFFIX",
         "repo": "agent-smith",
-        "tags": ["architecture", "memory"],
-        "meeting_only": True,
         "limit": 7,
     }
+    if with_tags:
+        arguments.update(tags=["architecture", "memory"], meeting_only=True)
     searched = []
 
     def search(**submitted):
@@ -504,7 +509,13 @@ async def test_http_memory_tools_call_logs_exact_submission_without_live_search(
     payload = _json_rpc_payload(response)["result"]
     assert payload.get("isError") is not True
     assert "HTTP_RESULT_ONLY" in str(payload)
-    assert searched == [arguments]
+    assert searched == [
+        {
+            **arguments,
+            "tags": arguments.get("tags"),
+            "meeting_only": arguments.get("meeting_only", False),
+        }
+    ]
     assert len(invocation_entries(caplog)) == 1
     assert "HTTP_RESULT_ONLY" not in caplog.text
     assert_params_are_entry_only(caplog)
