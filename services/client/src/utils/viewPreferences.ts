@@ -31,10 +31,13 @@ export const VIEW_COOKIE_NAME = 'agent-smith.ui.v1';
 export const MAX_COOKIE_BYTES = 3000;
 export const MAX_VIEW_ENTRIES = 12;
 export const COOKIE_MAX_AGE = 30 * 24 * 60 * 60;
+export const JOB_SORT_COLUMNS = {
+  name: { ascending: 'name', descending: 'name_desc' },
+  updated: { ascending: 'updated_asc', descending: 'updated', defaultDirection: 'descending' },
+} as const;
 export const JOB_SORT_OPTIONS = [
-  { value: 'updated', label: 'Recently updated' },
+  ...columnSortOptions(JOB_SORT_COLUMNS),
   { value: 'newest', label: 'Newest first' },
-  { value: 'name', label: 'Name' },
 ] as const;
 export const PLAN_SORT_COLUMNS = {
   title: { ascending: 'title', descending: 'title_desc' },

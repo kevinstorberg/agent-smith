@@ -1,7 +1,13 @@
-import type { AuditEvent, EvalRun, EvalScenario, EvalSuite, Proposal } from '../src/api';
+import type { AuditEvent, EvalRun, EvalScenario, EvalSuite, Job, Proposal } from '../src/api';
 
 const stamp = '2026-11-03T12:00:00Z';
 export const reviewTitle = 'Review release ownership, security decisions, and next steps with engineering and product teams';
+
+export function jobFixture(): Job {
+  return { id: 1, name: 'Release job', description: null, schedule_enabled: true,
+    schedule_config: { hours: 1 }, input_params: {}, version: 1,
+    created_at: stamp, updated_at: stamp };
+}
 
 export function auditFixture(): AuditEvent {
   return { id: 1, agent: 'claude', tool_name: 'mcp__release_review__capture_context',
