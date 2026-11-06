@@ -106,6 +106,36 @@ afterEach(() => {
 });
 
 describe('first-class project navigation', () => {
+  it('follows a renamed selected project by catalog identity after polling', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderPage('/action-items?project=Work');
+    await screen.findByRole('tab', { name: 'Other' });
+    await screen.findByText(rows[0].title);
+    expect(
+      screen.getByRole('link', { name: 'Manage projects' }),
+    ).toHaveAttribute('href', '/projects');
+    catalog = catalog.map((item) =>
+      item.id === 1 ? { ...item, name: 'Renamed work' } : item,
+    );
+    catalog.push(project(8, 'Work'));
+    await act(async () => {
+      vi.advanceTimersByTime(POLL_INTERVAL_MS);
+    });
+    await waitFor(() =>
+      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ project: 'Renamed work' }),
+      ),
+    );
+    expect(screen.getByRole('tab', { name: 'Renamed work' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.getByRole('tab', { name: 'Work' })).toHaveAttribute(
+      'aria-selected',
+      'false',
+    );
+  });
+
   it('keeps catalog tabs independent of status and tag filters', async () => {
     renderPage();
     const tabs = await screen.findByRole('tablist', {

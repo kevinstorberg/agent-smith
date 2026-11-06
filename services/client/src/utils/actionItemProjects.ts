@@ -35,9 +35,13 @@ export function projectLabel(name: string) {
     : name;
 }
 
+export const MAX_PROJECT_NAME_LENGTH = 200;
+
 export function newProjectName(value: string): string | null {
   const name = value.trim();
-  return name && [...name].length <= 200 && !/\p{Cc}/u.test(value)
+  return name &&
+    [...name].length <= MAX_PROJECT_NAME_LENGTH &&
+    !/\p{Cc}/u.test(value)
     ? name
     : null;
 }

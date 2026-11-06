@@ -58,6 +58,16 @@ export const PLAN_SORT_OPTIONS = [
   { value: 'newest', label: 'Newest first' },
 ] as const;
 export const PLAN_STATUSES = ['all', 'draft', 'final'] as const;
+export const PROJECT_SORT_COLUMNS = {
+  name: { ascending: 'name_asc', descending: 'name_desc' },
+  description: { ascending: 'description_asc', descending: 'description_desc' },
+  updated: {
+    ascending: 'updated_asc',
+    descending: 'updated_desc',
+    defaultDirection: 'descending',
+  },
+} as const;
+const PROJECT_SORT_OPTIONS = columnSortOptions(PROJECT_SORT_COLUMNS);
 export const SCHEDULING_OPTIONS = [
   { value: '', label: 'All states' },
   { value: 'true', label: 'Enabled' },
@@ -129,6 +139,12 @@ export interface ViewSettings extends Record<
     project: string;
     status: (typeof PLAN_STATUSES)[number];
     sort: (typeof PLAN_SORT_OPTIONS)[number]['value'];
+    limit: PageLimit;
+    offset: number;
+  };
+  projects: {
+    q: string;
+    sort: (typeof PROJECT_SORT_OPTIONS)[number]['value'];
     limit: PageLimit;
     offset: number;
   };
@@ -266,6 +282,16 @@ function harnessSpec(type: string): ViewSpec<HarnessViewSettings> {
 }
 
 const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
+  projects: {
+    pathname: '/projects',
+    defaults: { q: '', sort: 'name_asc', limit: 10, offset: 0 },
+    fields: {
+      q: text,
+      sort: choice(PROJECT_SORT_OPTIONS.map((option) => option.value)),
+      limit: pageLimit,
+      offset: pageOffset,
+    },
+  },
   'harness.rule': harnessSpec('rule'),
   'harness.skill': harnessSpec('skill'),
   'harness.tool': harnessSpec('tool'),

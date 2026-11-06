@@ -1,0 +1,22 @@
+.scrollable-table .table.projects-table {
+  table-layout: fixed;
+  min-width: max(600px, 40em);
+}
+
+.projects-table .project-name-column {
+  width: 30%;
+}
+.projects-table .project-date-column {
+  width: 12em;
+}
+.projects-table td {
+  overflow-wrap: anywhere;
+}
+
+.project-description-preview {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
