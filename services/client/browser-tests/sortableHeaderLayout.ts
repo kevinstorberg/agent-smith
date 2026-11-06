@@ -130,6 +130,32 @@ export async function expectSortableHeaderLayout(
       ).toBeLessThanOrEqual(16);
       await expectControlReachable(button);
       if (options.fullyVisibleHeaders?.includes(name)) {
+        const [initialControl, initialViewport] = await Promise.all([
+          button.boundingBox(),
+          options.scrollRegion.boundingBox(),
+        ]);
+        expect(
+          initialControl!.width,
+          `${name} must fit the scroll viewport`,
+        ).toBeLessThanOrEqual(initialViewport!.width);
+        const element = await button.elementHandle();
+        try {
+          await options.scrollRegion.evaluate((region, control) => {
+            if (!control || !region.contains(control))
+              throw new Error(
+                'Sortable header must belong to its scroll region',
+              );
+            const target = control.getBoundingClientRect();
+            const viewport = region.getBoundingClientRect();
+            region.scrollLeft +=
+              target.left +
+              target.width / 2 -
+              viewport.left -
+              viewport.width / 2;
+          }, element);
+        } finally {
+          await element?.dispose();
+        }
         const [control, viewport] = await Promise.all([
           button.boundingBox(),
           options.scrollRegion.boundingBox(),

@@ -74,15 +74,15 @@ const cases = [
       },
       { limit: 25, offset: 50 },
     ],
-    sortLabel: 'Sort',
-    nextSort: 'oldest',
+    sortLabel: 'Duration',
+    nextSort: 'duration_asc',
     updatedExpected: [
       {
         q: 'Read',
         project: 'repo',
         agent: 'codex',
         status: 'error',
-        sort: 'oldest',
+        sort: 'duration_asc',
       },
       { limit: 25, offset: 0 },
     ],
@@ -168,9 +168,12 @@ describe('Operations preference consumers', () => {
       renderWithProviders(view, { initialEntries: [route] });
       await waitFor(() => expect(list).toHaveBeenCalledTimes(1));
       expect(list).toHaveBeenCalledWith(...expected);
-      fireEvent.change(screen.getByRole('combobox', { name: sortLabel }), {
-        target: { value: nextSort },
-      });
+      if (route === '/audit')
+        fireEvent.click(screen.getByRole('button', { name: sortLabel }));
+      else
+        fireEvent.change(screen.getByRole('combobox', { name: sortLabel }), {
+          target: { value: nextSort },
+        });
       await waitFor(() =>
         expect(list).toHaveBeenLastCalledWith(...updatedExpected),
       );
