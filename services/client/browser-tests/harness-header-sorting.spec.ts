@@ -178,140 +178,150 @@ test('Harness Name sorting resets a committed page and survives stale completion
   );
 });
 
-test('Harness headers preserve whole words, arrow spacing and local scrolling at doubled text size', async ({
-  page,
-  fixtureAPI,
-}, testInfo) => {
-  fixtureAPI.get('/api/harness/items/rule', {
-    items: [harnessFixture()],
-    total: 1,
-  });
-  await page.goto('/harness/rules');
-  await expect(page.getByText('release_review', { exact: true })).toBeVisible();
-  const initialFonts = new Map<string, number>();
-  for (const scale of [1, 2]) {
-    if (scale === 2) await enlargeComputedText(page);
-    for (const [name] of pairs) {
-      const header = page.getByRole('columnheader', { name, exact: true });
-      const control = header.getByRole('button');
-      await control.scrollIntoViewIfNeeded();
-      const geometry = await header.evaluate((node) => {
-        const label = node.querySelector<HTMLElement>(
-          '.sortable-header-label',
-        )!;
-        const icon = node
-          .querySelector('.sortable-header-icon')!
-          .getBoundingClientRect();
-        const range = document.createRange();
-        const text = label.firstChild!;
-        const words = [...label.textContent!.matchAll(/\S+/g)].map((word) => {
-          range.setStart(text, word.index!);
-          range.setEnd(text, word.index! + word[0].length);
+for (const fontFamily of [undefined, 'Arial']) {
+  test(`Harness headers preserve whole words, arrow spacing and local scrolling at doubled text size${fontFamily ? ' with sans-serif fallback' : ''}`, async ({
+    page,
+    fixtureAPI,
+  }, testInfo) => {
+    fixtureAPI.get('/api/harness/items/rule', {
+      items: [harnessFixture()],
+      total: 1,
+    });
+    await page.goto('/harness/rules');
+    await expect(
+      page.getByText('release_review', { exact: true }),
+    ).toBeVisible();
+    if (fontFamily)
+      await page.addStyleTag({
+        content: `.harness-list-table { font-family: ${fontFamily}, sans-serif; }`,
+      });
+    const initialFonts = new Map<string, number>();
+    for (const scale of [1, 2]) {
+      if (scale === 2) await enlargeComputedText(page);
+      for (const [name] of pairs) {
+        const header = page.getByRole('columnheader', { name, exact: true });
+        const control = header.getByRole('button');
+        await control.scrollIntoViewIfNeeded();
+        const geometry = await header.evaluate((node) => {
+          const label = node.querySelector<HTMLElement>(
+            '.sortable-header-label',
+          )!;
+          const icon = node
+            .querySelector('.sortable-header-icon')!
+            .getBoundingClientRect();
+          const range = document.createRange();
+          const text = label.firstChild!;
+          const words = [...label.textContent!.matchAll(/\S+/g)].map((word) => {
+            range.setStart(text, word.index!);
+            range.setEnd(text, word.index! + word[0].length);
+            return {
+              word: word[0],
+              fragments: Array.from(range.getClientRects(), (rect) => ({
+                right: rect.right,
+                left: rect.left,
+              })),
+            };
+          });
           return {
-            word: word[0],
-            fragments: Array.from(range.getClientRects(), (rect) => ({
-              right: rect.right,
-              left: rect.left,
-            })),
+            words,
+            iconLeft: icon.left,
+            labelRight: label.getBoundingClientRect().right,
+            font: parseFloat(getComputedStyle(label).fontSize),
           };
         });
+        expect(
+          geometry.iconLeft - geometry.labelRight,
+          `${name} arrow must stay beside its label`,
+        ).toBeLessThanOrEqual(16);
+        if (scale === 1) initialFonts.set(name, geometry.font);
+        expect(geometry.font).toBeCloseTo(initialFonts.get(name)! * scale, 1);
+        for (const word of geometry.words) {
+          expect(
+            word.fragments,
+            `${name} must not split ${word.word} at ${scale}x`,
+          ).toHaveLength(1);
+          expect(word.fragments[0].right).toBeLessThanOrEqual(
+            geometry.iconLeft + 0.5,
+          );
+        }
+        await expectControlReachable(control);
+        if (name === 'Updated') {
+          const [controlBox, regionBox] = await Promise.all([
+            control.boundingBox(),
+            page
+              .getByRole('region', { name: 'Rules list', exact: true })
+              .boundingBox(),
+          ]);
+          expect(controlBox!.x).toBeGreaterThanOrEqual(regionBox!.x);
+          expect(controlBox!.x + controlBox!.width).toBeLessThanOrEqual(
+            regionBox!.x + regionBox!.width,
+          );
+        }
+      }
+      const grid = await page.getByRole('table').evaluate((node) => {
+        const geometry = (elements: Element[]) =>
+          elements.map((element) => {
+            const box = element.getBoundingClientRect();
+            return { x: box.x, width: box.width };
+          });
+        const header = node.querySelector<HTMLElement>('.harness-list-header')!;
+        const row = node.querySelector<HTMLElement>('.harness-list-row')!;
         return {
-          words,
-          iconLeft: icon.left,
-          labelRight: label.getBoundingClientRect().right,
-          font: parseFloat(getComputedStyle(label).fontSize),
+          headers: geometry([...header.children]),
+          cells: geometry([...row.children]),
+          tableWidth: node.getBoundingClientRect().width,
+          viewportWidth: node.parentElement!.clientWidth,
+          scrollWidth: node.parentElement!.scrollWidth,
+          headerFont: parseFloat(getComputedStyle(header).fontSize),
+          rowFont: parseFloat(getComputedStyle(row).fontSize),
         };
       });
-      expect(
-        geometry.iconLeft - geometry.labelRight,
-        `${name} arrow must stay beside its label`,
-      ).toBeLessThanOrEqual(16);
-      if (scale === 1) initialFonts.set(name, geometry.font);
-      expect(geometry.font).toBeCloseTo(initialFonts.get(name)! * scale, 1);
-      for (const word of geometry.words) {
+      if (scale === 1 && page.viewportSize()!.width === 1440) {
         expect(
-          word.fragments,
-          `${name} must not split ${word.word} at ${scale}x`,
-        ).toHaveLength(1);
-        expect(word.fragments[0].right).toBeLessThanOrEqual(
-          geometry.iconLeft + 0.5,
-        );
+          grid.tableWidth,
+          'Normal desktop must show every Harness column without horizontal panning',
+        ).toBeLessThanOrEqual(grid.viewportWidth + 0.5);
+        expect(grid.scrollWidth).toBeLessThanOrEqual(grid.viewportWidth);
       }
-      await expectControlReachable(control);
-      if (name === 'Updated') {
-        const [controlBox, regionBox] = await Promise.all([
-          control.boundingBox(),
-          page
-            .getByRole('region', { name: 'Rules list', exact: true })
-            .boundingBox(),
-        ]);
-        expect(controlBox!.x).toBeGreaterThanOrEqual(regionBox!.x);
-        expect(controlBox!.x + controlBox!.width).toBeLessThanOrEqual(
-          regionBox!.x + regionBox!.width,
+      expect(grid.cells).toHaveLength(grid.headers.length);
+      grid.headers.forEach((header, index) => {
+        expect(Math.abs(header.x - grid.cells[index].x)).toBeLessThanOrEqual(
+          0.5,
         );
-      }
-    }
-    const grid = await page.getByRole('table').evaluate((node) => {
-      const geometry = (elements: Element[]) =>
-        elements.map((element) => {
-          const box = element.getBoundingClientRect();
-          return { x: box.x, width: box.width };
+        expect(
+          Math.abs(header.width - grid.cells[index].width),
+        ).toBeLessThanOrEqual(0.5);
+      });
+      expect(grid.headerFont).toBe(grid.rowFont);
+      await testInfo.attach(`harness-grid-${scale}x.json`, {
+        body: JSON.stringify(grid),
+        contentType: 'application/json',
+      });
+      await expectDocumentContained(page);
+      await page
+        .getByRole('region', { name: 'Rules list', exact: true })
+        .evaluate((node) => {
+          node.scrollLeft = 0;
         });
-      const header = node.querySelector<HTMLElement>('.harness-list-header')!;
-      const row = node.querySelector<HTMLElement>('.harness-list-row')!;
-      return {
-        headers: geometry([...header.children]),
-        cells: geometry([...row.children]),
-        tableWidth: node.getBoundingClientRect().width,
-        viewportWidth: node.parentElement!.clientWidth,
-        scrollWidth: node.parentElement!.scrollWidth,
-        headerFont: parseFloat(getComputedStyle(header).fontSize),
-        rowFont: parseFloat(getComputedStyle(row).fontSize),
-      };
-    });
-    if (scale === 1 && page.viewportSize()!.width === 1440) {
-      expect(
-        grid.tableWidth,
-        'Normal desktop must show every Harness column without horizontal panning',
-      ).toBeLessThanOrEqual(grid.viewportWidth + 0.5);
-      expect(grid.scrollWidth).toBeLessThanOrEqual(grid.viewportWidth);
+      const path = testInfo.outputPath(`harness-sort-headers-${scale}x.png`);
+      await page.screenshot({ path });
+      await testInfo.attach(`harness-sort-headers-${scale}x.png`, {
+        path,
+        contentType: 'image/png',
+      });
+      await page
+        .getByRole('region', { name: 'Rules list', exact: true })
+        .evaluate((node) => {
+          node.scrollLeft = node.scrollWidth;
+        });
+      const endPath = testInfo.outputPath(
+        `harness-sort-headers-end-${scale}x.png`,
+      );
+      await page.screenshot({ path: endPath });
+      await testInfo.attach(`harness-sort-headers-end-${scale}x.png`, {
+        path: endPath,
+        contentType: 'image/png',
+      });
     }
-    expect(grid.cells).toHaveLength(grid.headers.length);
-    grid.headers.forEach((header, index) => {
-      expect(Math.abs(header.x - grid.cells[index].x)).toBeLessThanOrEqual(0.5);
-      expect(
-        Math.abs(header.width - grid.cells[index].width),
-      ).toBeLessThanOrEqual(0.5);
-    });
-    expect(grid.headerFont).toBe(grid.rowFont);
-    await testInfo.attach(`harness-grid-${scale}x.json`, {
-      body: JSON.stringify(grid),
-      contentType: 'application/json',
-    });
-    await expectDocumentContained(page);
-    await page
-      .getByRole('region', { name: 'Rules list', exact: true })
-      .evaluate((node) => {
-        node.scrollLeft = 0;
-      });
-    const path = testInfo.outputPath(`harness-sort-headers-${scale}x.png`);
-    await page.screenshot({ path });
-    await testInfo.attach(`harness-sort-headers-${scale}x.png`, {
-      path,
-      contentType: 'image/png',
-    });
-    await page
-      .getByRole('region', { name: 'Rules list', exact: true })
-      .evaluate((node) => {
-        node.scrollLeft = node.scrollWidth;
-      });
-    const endPath = testInfo.outputPath(
-      `harness-sort-headers-end-${scale}x.png`,
-    );
-    await page.screenshot({ path: endPath });
-    await testInfo.attach(`harness-sort-headers-end-${scale}x.png`, {
-      path: endPath,
-      contentType: 'image/png',
-    });
-  }
-});
+  });
+}

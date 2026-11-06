@@ -98,8 +98,8 @@ export function HarnessIndexPage({ type }: { type: string }) {
     minimum: number;
     grow?: number;
   }[] = [
-    { key: 'order', label: 'Order', minimum: 5 },
-    { key: 'name', label: 'Name', minimum: 14, grow: 2 },
+    { key: 'order', label: 'Order', minimum: 6 },
+    { key: 'name', label: 'Name', minimum: 13, grow: 2 },
     { key: 'project', label: 'Project', minimum: 9, grow: 1 },
     { key: 'enabled', label: 'Enabled', minimum: 7 },
     ...(type === 'rule'
