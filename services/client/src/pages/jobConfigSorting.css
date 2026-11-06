@@ -1,0 +1,17 @@
+.job-config-table-region {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.job-config-table {
+  min-width: 40rem;
+}
+
+.job-config-table th {
+  white-space: nowrap;
+}
+
+.job-config-table .sortable-header-label {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
