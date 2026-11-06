@@ -1,0 +1,6 @@
+.eval-suite-detail .table.suite-scenarios-table {
+  min-width: max(750px, 54em);
+}
+.suite-scenarios-table .sortable-header-button {
+  width: auto;
+}
