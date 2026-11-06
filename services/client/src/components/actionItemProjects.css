@@ -55,7 +55,6 @@
   overflow-x: auto;
   max-width: 100%;
   padding: 0.25rem 0.25rem 0 0;
-  border-bottom: 1px solid var(--border);
   scrollbar-width: thin;
 }
 
