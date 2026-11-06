@@ -232,14 +232,16 @@ def list_items_summary(
     enabled: bool | None = None,
 ) -> list[dict]:
     table = _table(item_type)
-    latest = _LATEST_VERSION_CLAUSE.format(table=table)
     base_cols = (
         "id, name, project, agents, sort_key, enabled, version, created_at, updated_at"
     )
     cols = f"{base_cols}, clone_as_skill" if item_type == "rule" else base_cols
 
     project_clause, params = _project_filter(project)
-    query = f"SELECT {cols} FROM {table}\n        WHERE {latest}{project_clause}"
+    query = f"""SELECT {cols} FROM (
+        SELECT {cols}, MAX(version) OVER (PARTITION BY name, project) AS latest_version
+        FROM {table}
+    ) {table} WHERE version = latest_version {project_clause}"""
 
     if agent:
         query += "\n          AND %s = ANY(agents)"
