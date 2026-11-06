@@ -105,7 +105,7 @@ const cases = [
       'approved',
       { q: 'review', sort: 'oldest', limit: 25, offset: 50 },
     ],
-    sortLabel: 'Sort proposals',
+    sortLabel: 'Created',
     nextSort: 'newest',
     updatedExpected: [
       'approved',

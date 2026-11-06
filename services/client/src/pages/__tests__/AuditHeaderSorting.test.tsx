@@ -105,6 +105,10 @@ it('keeps the focused header mounted and rejects stale sort completions', async 
     ),
   );
   expect(button).toHaveFocus();
+  expect(screen.queryByText('Updating…')).not.toBeInTheDocument();
+  expect(screen.getByText('Initial row')).toBeVisible();
+  expect(screen.getByText('30 tool calls')).not.toBeVisible();
+  expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
   expect(header).not.toHaveAttribute('aria-sort');
   fireEvent.click(button);
   await waitFor(() =>

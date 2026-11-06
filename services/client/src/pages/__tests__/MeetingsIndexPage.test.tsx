@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, fireEvent, waitFor, act } from '@testing-library/react';
+import {
+  screen,
+  fireEvent,
+  waitFor,
+  act,
+  within,
+} from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { useLocation } from 'react-router';
 import { MeetingsIndexPage } from '../MeetingsIndexPage';
@@ -107,15 +113,14 @@ describe('MeetingsIndexPage', () => {
     expect(
       screen.getByRole('textbox', { name: 'Filter meetings by labels' }),
     ).toBeVisible();
-    expect(screen.getByRole('combobox', { name: 'Sort meetings' })).toHaveValue(
-      'newest',
-    );
+    expect(screen.getByRole('button', { name: 'Title' })).toBeVisible();
+    expect(
+      screen.queryByRole('combobox', { name: 'Sort meetings' }),
+    ).not.toBeInTheDocument();
     await screen.findByText(
       'No meeting summaries saved yet. Run your meeting import job from Jobs.',
     );
-    expect(
-      screen.getByRole('combobox', { name: 'Sort meetings' }),
-    ).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Meeting date' })).toBeVisible();
   });
 
   it('requests a new server sort from the first page', async () => {
@@ -131,12 +136,10 @@ describe('MeetingsIndexPage', () => {
       ),
     );
     mockList.mockClear();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Sort meetings' }), {
-      target: { value: 'oldest' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Title' }));
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
     expect(mockList).toHaveBeenCalledWith(
-      expect.objectContaining({ offset: 0, sort: 'oldest' }),
+      expect.objectContaining({ offset: 0, sort: 'title' }),
     );
   });
 
@@ -162,7 +165,9 @@ describe('MeetingsIndexPage', () => {
     expect(
       screen.queryByRole('textbox', { name: 'Search meetings' }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('link', { name: 'Meetings' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('link', { name: 'Meetings' }));
+    });
     expect(
       screen.getByRole('textbox', { name: 'Search meetings' }),
     ).toBeVisible();
@@ -207,11 +212,10 @@ describe('MeetingsIndexPage', () => {
         sort: 'newest',
       }),
     );
-    expect(await screen.findByText('Loading meetings...')).toBeVisible();
-    expect(
-      screen.queryByRole('button', { name: 'Next' }),
-    ).not.toBeInTheDocument();
-    resolveSearch(filteredPage);
+    expect(screen.queryByText('Loading meetings...')).not.toBeInTheDocument();
+    expect(screen.getByText('Product planning')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await act(async () => resolveSearch(filteredPage));
     expect(await screen.findByText('Filtered release meeting')).toBeVisible();
     expect(screen.getByText('Showing 1–10 of 25')).toBeVisible();
     fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
@@ -224,12 +228,16 @@ describe('MeetingsIndexPage', () => {
       }),
     );
     expect(await screen.findByText('Showing 11–20 of 25')).toBeVisible();
-    fireEvent.click(screen.getByRole('link', { name: 'Vocabulary' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('link', { name: 'Vocabulary' }));
+    });
     fireEvent.click(await screen.findByRole('button', { name: 'Edit LTV' }));
     fireEvent.change(screen.getByLabelText('Meaning / definition (optional)'), {
       target: { value: 'My definition draft' },
     });
-    fireEvent.click(screen.getByRole('link', { name: 'Meetings' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('link', { name: 'Meetings' }));
+    });
     expect(
       screen.getByRole('textbox', { name: 'Search meetings' }),
     ).toHaveValue('release');
@@ -240,7 +248,9 @@ describe('MeetingsIndexPage', () => {
       q: 'release',
       sort: 'newest',
     });
-    fireEvent.click(screen.getByRole('link', { name: 'Vocabulary' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('link', { name: 'Vocabulary' }));
+    });
     expect(
       screen.getByLabelText('Meaning / definition (optional)'),
     ).toHaveValue('My definition draft');
@@ -368,5 +378,147 @@ describe('MeetingsIndexPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Product planning')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+describe('Meetings header sorting', () => {
+  it.each([
+    ['Title', 'title', 'title_desc'],
+    ['Connection', 'connection_asc', 'connection_desc'],
+    ['Provider', 'provider_asc', 'provider_desc'],
+    ['Meeting date', 'date_asc', 'date_desc'],
+    ['Last updated', 'updated_asc', 'updated'],
+  ])(
+    'toggles %s in both server directions without a sorting menu',
+    async (label, ascending, descending) => {
+      renderWithProviders(<MeetingsIndexPage />, {
+        initialEntries: ['/meetings'],
+      });
+      await screen.findByText('Product planning');
+      const header = screen.getByRole('columnheader', { name: label });
+      const button = within(header).getByRole('button');
+      expect(
+        screen.queryByRole('combobox', { name: 'Sort meetings' }),
+      ).not.toBeInTheDocument();
+      fireEvent.click(button);
+      const first =
+        label === 'Meeting date' || label === 'Last updated'
+          ? descending
+          : ascending;
+      const second = first === ascending ? descending : ascending;
+      await waitFor(() =>
+        expect(mockList).toHaveBeenLastCalledWith(
+          expect.objectContaining({ sort: first, offset: 0 }),
+        ),
+      );
+      await waitFor(() =>
+        expect(header).toHaveAttribute(
+          'aria-sort',
+          first === ascending ? 'ascending' : 'descending',
+        ),
+      );
+      fireEvent.click(button);
+      await waitFor(() =>
+        expect(mockList).toHaveBeenLastCalledWith(
+          expect.objectContaining({ sort: second }),
+        ),
+      );
+      await waitFor(() =>
+        expect(header).toHaveAttribute(
+          'aria-sort',
+          second === ascending ? 'ascending' : 'descending',
+        ),
+      );
+    },
+  );
+
+  it('keeps focused headers mounted while rejecting stale sort results and clearing busy after errors', async () => {
+    let finishAsc!: (value: { items: typeof meetings; total: number }) => void;
+    let finishDesc!: (value: { items: typeof meetings; total: number }) => void;
+    renderWithProviders(<MeetingsIndexPage />, {
+      initialEntries: ['/meetings'],
+    });
+    await screen.findByText('Product planning');
+    mockList
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishAsc = resolve;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishDesc = resolve;
+        }),
+      );
+    const header = screen.getByRole('columnheader', { name: 'Title' });
+    const button = within(header).getByRole('button');
+    button.focus();
+    fireEvent.click(button);
+    expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
+    expect(screen.queryByText('Loading meetings...')).not.toBeInTheDocument();
+    expect(screen.getByText('Product planning')).toBeVisible();
+    expect(document.querySelector('[aria-sort]')).toBeNull();
+    expect(button).toHaveFocus();
+    fireEvent.click(button);
+    await act(async () => {
+      finishDesc({
+        items: [{ ...meetingFixture, title: 'Current descending' }],
+        total: 30,
+      });
+    });
+    await screen.findByText('Current descending');
+    await act(async () => {
+      finishAsc({
+        items: [{ ...meetingFixture, title: 'Stale ascending' }],
+        total: 99,
+      });
+    });
+    expect(screen.queryByText('Stale ascending')).not.toBeInTheDocument();
+    expect(header).toHaveAttribute('aria-sort', 'descending');
+    expect(button).toHaveFocus();
+    mockList.mockRejectedValueOnce(new Error('Synthetic read failure'));
+    fireEvent.click(button);
+    await screen.findByRole('alert');
+    expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'false');
+    expect(document.querySelector('[aria-sort]')).toBeNull();
+    expect(button).toHaveFocus();
+  });
+
+  it('keeps empty feedback outside the horizontally scrollable header columns', async () => {
+    mockList.mockResolvedValue({ items: [], total: 0 });
+    renderWithProviders(<MeetingsIndexPage />, {
+      initialEntries: ['/meetings'],
+    });
+    const empty = await screen.findByRole('status');
+    expect(empty).toHaveTextContent('No meeting summaries saved yet.');
+    expect(empty.closest('table')).toBeNull();
+    expect(screen.getAllByRole('columnheader')).toHaveLength(5);
+    expect(screen.getByRole('button', { name: 'Title' })).toBeEnabled();
+    let finish!: (value: { items: typeof meetings; total: number }) => void;
+    mockList.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search meetings' }), {
+      target: { value: 'new query' },
+    });
+    await waitFor(() =>
+      expect(mockList).toHaveBeenLastCalledWith(
+        expect.objectContaining({ q: 'new query' }),
+      ),
+    );
+    expect(
+      screen.queryByText(/No meeting summaries saved yet/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('No meetings match your search.'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Loading meetings...')).not.toBeInTheDocument();
+    expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
+    await act(async () => finish({ items: [], total: 0 }));
+    expect(
+      await screen.findByText('No meetings match your search.'),
+    ).toBeVisible();
   });
 });
