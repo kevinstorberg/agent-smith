@@ -1,3 +1,8 @@
+import { ScrollableTable } from '../components/ScrollableTable';
+import { SortableHeader } from '../components/table/SortableHeader';
+import { useLocalTableSort } from '../hooks/useLocalTableSort';
+import { COST_SORT_COLUMNS, USAGE_SORT_COLUMNS } from '../utils/costSorting';
+import './costSorting.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { CostResponse } from '../types/costs';
@@ -22,39 +27,50 @@ function ReportTable({
   currency?: string;
   precision?: number;
 }) {
+  const columns = currency ? COST_SORT_COLUMNS : USAGE_SORT_COLUMNS;
+  const { items, sort, setSort } = useLocalTableSort(rows, columns);
   return (
-    <section className="card" aria-label={title}>
+    <section className="card cost-table-card" aria-label={title}>
       <h3>{title}</h3>
-      <div className="table-container">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>
-                {title === 'Daily costs'
-                  ? 'Billing day (UTC)'
-                  : currency
-                    ? 'Service'
-                    : 'Metric'}
-              </th>
-              <th>{currency ? 'Cost' : 'Observed amount'}</th>
+      <ScrollableTable label={`${title} table`} className="cost-sorting-table">
+        <thead>
+          <tr>
+            <SortableHeader sort={sort} column={columns.label} onSort={setSort}>
+              {title === 'Daily costs'
+                ? 'Billing day (UTC)'
+                : currency
+                  ? 'Service'
+                  : 'Metric'}
+            </SortableHeader>
+            <SortableHeader
+              sort={sort}
+              column={columns.amount}
+              onSort={setSort}
+              title={
+                currency
+                  ? undefined
+                  : 'Groups units, then orders exact quantities within each unit'
+              }
+            >
+              {currency ? 'Cost' : 'Observed amount'}
+            </SortableHeader>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((row) => (
+            <tr key={row.label}>
+              <td>{row.label}</td>
+              <td>
+                {currency
+                  ? money(row.amount, currency, precision)
+                  : row.amount === 'Unavailable'
+                    ? 'Unavailable'
+                    : `${row.amount}${row.unit ? ' ' + row.unit : ''}`}
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.label}>
-                <td>{row.label}</td>
-                <td>
-                  {currency
-                    ? money(row.amount, currency, precision)
-                    : row.amount === 'Unavailable'
-                      ? 'Unavailable'
-                      : `${row.amount}${row.unit ? ' ' + row.unit : ''}`}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </ScrollableTable>
     </section>
   );
 }

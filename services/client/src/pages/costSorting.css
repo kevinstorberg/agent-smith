@@ -1,0 +1,14 @@
+.cost-table-card {
+  min-width: 0;
+}
+.cost-table-card .table.cost-sorting-table {
+  min-width: max(550px, 40em);
+  table-layout: auto;
+}
+.cost-table-card .cost-sorting-table th {
+  width: auto;
+  min-width: 14em;
+}
+.cost-table-card .sortable-header-button {
+  width: auto;
+}

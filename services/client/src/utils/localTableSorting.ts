@@ -3,12 +3,13 @@ import type { SortColumn } from './tableSorting';
 export type LocalSortValue = string | number | boolean | null | undefined;
 export interface LocalSortColumn<Row, T extends string> extends SortColumn<T> {
   readonly select: (row: Row) => LocalSortValue;
+  readonly compareRows?: (left: Row, right: Row) => number;
 }
 export type LocalSortToken<
   C extends Readonly<Record<string, SortColumn<string>>>,
 > = C[keyof C]['ascending' | 'descending'];
 
-function compareValues(
+export function compareLocalSortValues(
   left: Exclude<LocalSortValue, null | undefined>,
   right: Exclude<LocalSortValue, null | undefined>,
 ): number {
@@ -51,7 +52,9 @@ export function sortCompleteRows<
     const comparison =
       leftMissing || rightMissing
         ? 0
-        : compareValues(left.value!, right.value!);
+        : column.compareRows
+          ? column.compareRows(left.row, right.row)
+          : compareLocalSortValues(left.value!, right.value!);
     if (comparison) return comparison * direction;
     if (
       left.id !== undefined &&
