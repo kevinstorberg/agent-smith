@@ -381,12 +381,30 @@ for (const resource of [
       await expect(
         region.getByRole('columnheader').getByRole('button'),
       ).toHaveCount(resource.headerCount);
+      const initialFont = await empty.evaluate((element) =>
+        parseFloat(getComputedStyle(element).fontSize),
+      );
       for (const scale of [1, 2]) {
         if (scale === 2) await enlargeComputedText(page);
+        expect(
+          await empty.evaluate((element) =>
+            parseFloat(getComputedStyle(element).fontSize),
+          ),
+        ).toBeCloseTo(initialFont * scale, 1);
+        await empty.scrollIntoViewIfNeeded();
         for (const end of [false, true]) {
           await region.evaluate((element, end) => {
             element.scrollLeft = end ? element.scrollWidth : 0;
           }, end);
+          if (
+            end &&
+            (await region.evaluate(
+              (element) => element.scrollWidth > element.clientWidth,
+            ))
+          )
+            expect(
+              await region.evaluate((element) => element.scrollLeft),
+            ).toBeGreaterThan(0);
           await expectControlContained(empty, region);
           const glyphs = await empty.evaluate((element) => {
             const range = document.createRange();
@@ -395,6 +413,9 @@ for (const resource of [
             return {
               left: bounds.left,
               right: bounds.right,
+              top: bounds.top,
+              bottom: bounds.bottom,
+              viewportHeight: innerHeight,
               fragments: [...range.getClientRects()].map((rect) => ({
                 left: rect.left,
                 right: rect.right,
@@ -402,6 +423,8 @@ for (const resource of [
             };
           });
           expect(glyphs.fragments.length).toBeGreaterThan(0);
+          expect(glyphs.top).toBeGreaterThanOrEqual(0);
+          expect(glyphs.bottom).toBeLessThanOrEqual(glyphs.viewportHeight);
           for (const fragment of glyphs.fragments) {
             expect(fragment.left).toBeGreaterThanOrEqual(glyphs.left);
             expect(fragment.right).toBeLessThanOrEqual(glyphs.right);
