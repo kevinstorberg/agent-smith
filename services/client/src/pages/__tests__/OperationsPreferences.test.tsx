@@ -105,7 +105,7 @@ const cases = [
       'approved',
       { q: 'review', sort: 'oldest', limit: 25, offset: 50 },
     ],
-    sortLabel: 'Sort proposals',
+    sortLabel: 'Created',
     nextSort: 'newest',
     updatedExpected: [
       'approved',
@@ -168,12 +168,12 @@ describe('Operations preference consumers', () => {
       renderWithProviders(view, { initialEntries: [route] });
       await waitFor(() => expect(list).toHaveBeenCalledTimes(1));
       expect(list).toHaveBeenCalledWith(...expected);
-      if (route === '/audit')
-        fireEvent.click(screen.getByRole('button', { name: sortLabel }));
-      else
-        fireEvent.change(screen.getByRole('combobox', { name: sortLabel }), {
+      const sortMenu = screen.queryByRole('combobox', { name: sortLabel });
+      if (sortMenu)
+        fireEvent.change(sortMenu, {
           target: { value: nextSort },
         });
+      else fireEvent.click(screen.getByRole('button', { name: sortLabel }));
       await waitFor(() =>
         expect(list).toHaveBeenLastCalledWith(...updatedExpected),
       );

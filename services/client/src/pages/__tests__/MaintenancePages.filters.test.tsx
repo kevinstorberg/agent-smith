@@ -283,9 +283,7 @@ describe('Maintenance page server controls', () => {
       expect.objectContaining({ q: 'parser', offset: 0 }),
     );
     fireEvent.click(screen.getByRole('button', { name: 'all statuses' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'Sort proposals' }), {
-      target: { value: 'title' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Title' }));
     await settle();
     expect(list).toHaveBeenLastCalledWith(
       undefined,
