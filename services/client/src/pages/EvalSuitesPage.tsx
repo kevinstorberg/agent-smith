@@ -4,15 +4,17 @@ import { api } from '../api';
 import type { EvalSuite } from '../api';
 import { EnabledToggleCell, DateCell } from '../components/table';
 import { ScrollableTable } from '../components/ScrollableTable';
+import { SortableHeader } from '../components/table/SortableHeader';
 import { FilterBar } from '../components/FilterBar';
 import { Pagination } from '../components/Pagination';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { usePagination } from '../hooks/usePagination';
 import { usePolling } from '../hooks/usePolling';
 import { makeRowClickable } from '../utils/a11y';
-import { EVAL_SUITE_SORT_OPTIONS } from '../constants';
+import { EVAL_SUITE_SORT_COLUMNS } from '../constants';
 import { useViewPreferences } from '../hooks/useViewPreferences';
 import { parseViewField } from '../utils/viewPreferences';
+import './suitesSorting.css';
 
 export function EvalSuitesPage() {
   const navigate = useNavigate();
@@ -26,7 +28,9 @@ export function EvalSuitesPage() {
     items: suites,
     total,
     loading,
+    initialLoading,
     error,
+    dataCurrent,
     limit,
     offset,
     setLimit,
@@ -61,8 +65,11 @@ export function EvalSuitesPage() {
     enabled: !loading && !togglePending && debouncedQuery === query,
   });
 
+  const readable =
+    dataCurrent && !loading && !error && debouncedQuery === query;
+
   const toggleEnabled = async (suite: EvalSuite) => {
-    if (writing.current) return;
+    if (writing.current || !readable) return;
     writing.current = true;
     setTogglePending(true);
     setMutationError(false);
@@ -113,25 +120,6 @@ export function EvalSuitesPage() {
             <option value="false">Disabled</option>
           </select>
         </label>
-        <label>
-          <span className="form-label">Sort eval suites</span>
-          <select
-            aria-label="Sort eval suites"
-            value={sort}
-            onChange={(event) =>
-              preferences.setField(
-                'sort',
-                parseViewField('evalSuites', 'sort', event.target.value),
-              )
-            }
-          >
-            {EVAL_SUITE_SORT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
       </FilterBar>
       {error && (
         <p role="alert">
@@ -144,26 +132,48 @@ export function EvalSuitesPage() {
       {mutationError && (
         <p role="alert">Could not change the suite. Try again.</p>
       )}
-      {loading && <div className="loading">Loading...</div>}
+      {initialLoading && <div className="loading">Loading...</div>}
 
-      {!loading && !error && (
-        <ScrollableTable
-          label="Eval suites"
-          className="suites-list-table"
-          empty={suites.length === 0}
-        >
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Type</th>
-              <th>Scenarios</th>
-              <th>Enabled</th>
-              <th>Updated</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {suites.map((suite) => (
+      <ScrollableTable
+        label="Eval suites"
+        className="suites-list-table"
+        busy={!dataCurrent && (loading || !error)}
+        emptyState={
+          !loading && !error && suites.length === 0 ? (
+            <p className="loading" role="status">
+              No eval suites found
+            </p>
+          ) : undefined
+        }
+      >
+        <thead>
+          <tr>
+            {(
+              [
+                ['name', 'Name'],
+                ['type', 'Type'],
+                ['scenarios', 'Scenarios'],
+                ['enabled', 'Enabled'],
+                ['updated', 'Updated'],
+              ] as const
+            ).map(([key, label]) => (
+              <SortableHeader
+                key={key}
+                sort={sort}
+                column={EVAL_SUITE_SORT_COLUMNS[key]}
+                onSort={(value) => preferences.setField('sort', value)}
+                current={dataCurrent}
+                disabled={togglePending}
+              >
+                {label}
+              </SortableHeader>
+            ))}
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {!error &&
+            suites.map((suite) => (
               <tr
                 key={suite.id}
                 {...makeRowClickable(() =>
@@ -181,7 +191,7 @@ export function EvalSuitesPage() {
                 <td>
                   <EnabledToggleCell
                     enabled={suite.enabled}
-                    disabled={togglePending}
+                    disabled={togglePending || !readable}
                     ariaLabel={`Enable ${suite.name}`}
                     onChange={() => toggleEnabled(suite)}
                   />
@@ -207,16 +217,8 @@ export function EvalSuitesPage() {
                 </td>
               </tr>
             ))}
-            {!error && suites.length === 0 && (
-              <tr>
-                <td colSpan={6} className="loading">
-                  No eval suites found
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </ScrollableTable>
-      )}
+        </tbody>
+      </ScrollableTable>
 
       {!error && (
         <Pagination

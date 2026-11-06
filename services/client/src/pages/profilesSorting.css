@@ -1,0 +1,21 @@
+.scrollable-table .table.profiles-sorting-table {
+  min-width: max(860px, 72em);
+}
+.profiles-sorting-table .profile-star-column {
+  width: 6em;
+}
+.profiles-sorting-table .profile-email-column {
+  width: 15em;
+}
+.profiles-sorting-table .profile-identity-column {
+  width: 9em;
+}
+.profiles-sorting-table .profile-tags-column {
+  width: 10em;
+}
+.profiles-sorting-table .profile-meetings-column {
+  width: 9em;
+}
+.profiles-sorting-table .profile-updated-column {
+  width: 10em;
+}

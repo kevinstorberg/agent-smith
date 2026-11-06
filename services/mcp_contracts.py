@@ -23,27 +23,28 @@ class ContractMCP(ObservedMCP):
         super().__init__(name)
         self._input_contracts = MappingProxyType(dict(contracts))
 
-    def add_tool(self, fn: Callable[..., Any], name: str | None = None, *args: Any, **kwargs: Any) -> None:
+    def add_tool(
+        self, fn: Callable[..., Any], name: str | None = None, *args: Any, **kwargs: Any
+    ) -> None:
         super().add_tool(fn, name, *args, **kwargs)
         registered = self._tool_manager.get_tool(name or fn.__name__)
         if registered is None:
             raise ToolError("Tool registration did not return a tool")
         metadata = registered.fn_metadata
-        registered.fn_metadata = _ContractMetadata(**{
-            key: getattr(metadata, key) for key in type(metadata).model_fields
-        })
+        registered.fn_metadata = _ContractMetadata(
+            **{key: getattr(metadata, key) for key in type(metadata).model_fields}
+        )
 
-    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
-        parameters = arguments if arguments is not None else {}
+    async def _invoke_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         contract = self._input_contracts.get(name)
         if contract is None:
             raise ToolError(f"No input contract is registered for {name}")
         # Validate before the SDK can coerce values or discard unknown fields.
         try:
-            contract.model_validate(parameters)
+            contract.model_validate(arguments)
         except ValueError as error:
             raise ToolError(str(error)) from None
-        return await super().call_tool(name, parameters)
+        return await super()._invoke_tool(name, arguments)
 
     async def list_tools(self) -> list[Tool]:
         registered = await super().list_tools()

@@ -5,9 +5,26 @@ from psycopg2.extras import RealDictCursor
 from scripts.shared.validation import assert_not_empty
 from services.db import get_connection
 from services.api.models.base import BaseModel
-from services.api.models.shared.listing import search_pattern, sort_clause
+from services.api.models.shared.listing import (
+    bidirectional_sorts,
+    search_pattern,
+    sort_clause,
+)
 
 SUITE_SORTS = {
+    **bidirectional_sorts(
+        {
+            ("name", "name_desc"): ("lower(s.name)",),
+            ("type_asc", "type_desc"): (
+                "NULLIF(lower(s.eval_type), '')",
+                "NULLIF(lower(s.subcategory), '')",
+            ),
+            ("scenario_count_asc", "scenario_count_desc"): ("scenario_count",),
+            ("enabled_asc", "enabled_desc"): ("s.enabled",),
+            ("updated_asc", "updated"): ("s.updated_at",),
+        },
+        tie_breaker="s.id",
+    ),
     "name": "lower(s.name), s.id",
     "updated": "s.updated_at DESC, s.id DESC",
     "newest": "s.created_at DESC, s.id DESC",
