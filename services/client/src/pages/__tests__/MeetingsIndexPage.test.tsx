@@ -165,7 +165,9 @@ describe('MeetingsIndexPage', () => {
     expect(
       screen.queryByRole('textbox', { name: 'Search meetings' }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('link', { name: 'Meetings' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('link', { name: 'Meetings' }));
+    });
     expect(
       screen.getByRole('textbox', { name: 'Search meetings' }),
     ).toBeVisible();
@@ -210,11 +212,10 @@ describe('MeetingsIndexPage', () => {
         sort: 'newest',
       }),
     );
-    expect(await screen.findByText('Loading meetings...')).toBeVisible();
-    expect(
-      screen.queryByRole('button', { name: 'Next' }),
-    ).not.toBeInTheDocument();
-    resolveSearch(filteredPage);
+    expect(screen.queryByText('Loading meetings...')).not.toBeInTheDocument();
+    expect(screen.getByText('Product planning')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await act(async () => resolveSearch(filteredPage));
     expect(await screen.findByText('Filtered release meeting')).toBeVisible();
     expect(screen.getByText('Showing 1–10 of 25')).toBeVisible();
     fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
@@ -227,12 +228,16 @@ describe('MeetingsIndexPage', () => {
       }),
     );
     expect(await screen.findByText('Showing 11–20 of 25')).toBeVisible();
-    fireEvent.click(screen.getByRole('link', { name: 'Vocabulary' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('link', { name: 'Vocabulary' }));
+    });
     fireEvent.click(await screen.findByRole('button', { name: 'Edit LTV' }));
     fireEvent.change(screen.getByLabelText('Meaning / definition (optional)'), {
       target: { value: 'My definition draft' },
     });
-    fireEvent.click(screen.getByRole('link', { name: 'Meetings' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('link', { name: 'Meetings' }));
+    });
     expect(
       screen.getByRole('textbox', { name: 'Search meetings' }),
     ).toHaveValue('release');
@@ -243,7 +248,9 @@ describe('MeetingsIndexPage', () => {
       q: 'release',
       sort: 'newest',
     });
-    fireEvent.click(screen.getByRole('link', { name: 'Vocabulary' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('link', { name: 'Vocabulary' }));
+    });
     expect(
       screen.getByLabelText('Meaning / definition (optional)'),
     ).toHaveValue('My definition draft');
@@ -448,6 +455,8 @@ describe('Meetings header sorting', () => {
     button.focus();
     fireEvent.click(button);
     expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
+    expect(screen.queryByText('Loading meetings...')).not.toBeInTheDocument();
+    expect(screen.getByText('Product planning')).toBeVisible();
     expect(document.querySelector('[aria-sort]')).toBeNull();
     expect(button).toHaveFocus();
     fireEvent.click(button);
@@ -473,5 +482,17 @@ describe('Meetings header sorting', () => {
     expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'false');
     expect(document.querySelector('[aria-sort]')).toBeNull();
     expect(button).toHaveFocus();
+  });
+
+  it('keeps empty feedback outside the horizontally scrollable header columns', async () => {
+    mockList.mockResolvedValue({ items: [], total: 0 });
+    renderWithProviders(<MeetingsIndexPage />, {
+      initialEntries: ['/meetings'],
+    });
+    const empty = await screen.findByRole('status');
+    expect(empty).toHaveTextContent('No meeting summaries saved yet.');
+    expect(empty.closest('table')).toBeNull();
+    expect(screen.getAllByRole('columnheader')).toHaveLength(5);
+    expect(screen.getByRole('button', { name: 'Title' })).toBeEnabled();
   });
 });

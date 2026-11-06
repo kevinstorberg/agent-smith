@@ -1,4 +1,4 @@
-.meetings-sorting-container .table.meetings-sorting-table {
+.scrollable-table .table.meetings-sorting-table {
   table-layout: fixed;
   min-width: max(860px, 60em);
 }

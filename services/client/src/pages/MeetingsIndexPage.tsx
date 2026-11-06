@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router';
 import { api } from '../api';
 import type { MeetingSummary } from '../api';
 import { Pagination } from '../components/Pagination';
+import { ScrollableTable } from '../components/ScrollableTable';
 import { DateCell } from '../components/table';
 import { SortableHeader } from '../components/table/SortableHeader';
 import './meetingsSorting.css';
@@ -45,6 +46,7 @@ export function MeetingsIndexPage() {
     items,
     total,
     loading,
+    initialLoading,
     error,
     dataCurrent,
     limit,
@@ -141,7 +143,7 @@ export function MeetingsIndexPage() {
           )}
         </FilterBar>
 
-        {loading && <div className="loading">Loading meetings...</div>}
+        {initialLoading && <div className="loading">Loading meetings...</div>}
         {error && (
           <div className="card" role="alert">
             <p>Could not load meetings: {error}</p>
@@ -151,122 +153,117 @@ export function MeetingsIndexPage() {
           </div>
         )}
         <>
-          <div
-            className="profiles-table meetings-sorting-container"
-            role="region"
-            aria-label="Meetings list"
-            tabIndex={0}
+          <ScrollableTable
+            label="Meetings list"
+            className="meetings-sorting-table"
+            busy={!dataCurrent && (loading || !error)}
+            emptyState={
+              !initialLoading && !error && items.length === 0 ? (
+                <p className="loading" role="status">
+                  {query
+                    ? 'No meetings match your search.'
+                    : 'No meeting summaries saved yet. Run your meeting import job from Jobs.'}
+                </p>
+              ) : undefined
+            }
           >
-            <table
-              className="table meetings-sorting-table"
-              aria-busy={!dataCurrent && !error}
-            >
-              <colgroup>
-                <col />
-                <col className="meeting-connection-column" />
-                <col className="meeting-provider-column" />
-                <col className="meeting-date-column" />
-                <col className="meeting-date-column" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <SortableHeader
-                    sort={sort}
-                    column={MEETING_SORT_COLUMNS.title}
-                    current={dataCurrent}
-                    onSort={(value) => preferences.setField('sort', value)}
+            <colgroup>
+              <col />
+              <col className="meeting-connection-column" />
+              <col className="meeting-provider-column" />
+              <col className="meeting-date-column" />
+              <col className="meeting-date-column" />
+            </colgroup>
+            <thead>
+              <tr>
+                <SortableHeader
+                  sort={sort}
+                  column={MEETING_SORT_COLUMNS.title}
+                  current={dataCurrent}
+                  onSort={(value) => preferences.setField('sort', value)}
+                >
+                  Title
+                </SortableHeader>
+                <SortableHeader
+                  sort={sort}
+                  column={MEETING_SORT_COLUMNS.connection}
+                  current={dataCurrent}
+                  onSort={(value) => preferences.setField('sort', value)}
+                >
+                  Connection
+                </SortableHeader>
+                <SortableHeader
+                  sort={sort}
+                  column={MEETING_SORT_COLUMNS.provider}
+                  current={dataCurrent}
+                  onSort={(value) => preferences.setField('sort', value)}
+                >
+                  Provider
+                </SortableHeader>
+                <SortableHeader
+                  sort={sort}
+                  column={MEETING_SORT_COLUMNS.date}
+                  current={dataCurrent}
+                  onSort={(value) => preferences.setField('sort', value)}
+                >
+                  Meeting date
+                </SortableHeader>
+                <SortableHeader
+                  sort={sort}
+                  column={MEETING_SORT_COLUMNS.updated}
+                  current={dataCurrent}
+                  onSort={(value) => preferences.setField('sort', value)}
+                >
+                  Last updated
+                </SortableHeader>
+              </tr>
+            </thead>
+            <tbody>
+              {!initialLoading &&
+                !error &&
+                items.map((meeting) => (
+                  <tr
+                    key={meeting.id}
+                    {...makeRowClickable(() =>
+                      navigate(`/meetings/${meeting.id}`),
+                    )}
+                    style={{ cursor: 'pointer' }}
                   >
-                    Title
-                  </SortableHeader>
-                  <SortableHeader
-                    sort={sort}
-                    column={MEETING_SORT_COLUMNS.connection}
-                    current={dataCurrent}
-                    onSort={(value) => preferences.setField('sort', value)}
-                  >
-                    Connection
-                  </SortableHeader>
-                  <SortableHeader
-                    sort={sort}
-                    column={MEETING_SORT_COLUMNS.provider}
-                    current={dataCurrent}
-                    onSort={(value) => preferences.setField('sort', value)}
-                  >
-                    Provider
-                  </SortableHeader>
-                  <SortableHeader
-                    sort={sort}
-                    column={MEETING_SORT_COLUMNS.date}
-                    current={dataCurrent}
-                    onSort={(value) => preferences.setField('sort', value)}
-                  >
-                    Meeting date
-                  </SortableHeader>
-                  <SortableHeader
-                    sort={sort}
-                    column={MEETING_SORT_COLUMNS.updated}
-                    current={dataCurrent}
-                    onSort={(value) => preferences.setField('sort', value)}
-                  >
-                    Last updated
-                  </SortableHeader>
-                </tr>
-              </thead>
-              <tbody>
-                {!loading &&
-                  !error &&
-                  items.map((meeting) => (
-                    <tr
-                      key={meeting.id}
-                      {...makeRowClickable(() =>
-                        navigate(`/meetings/${meeting.id}`),
+                    <td>
+                      {meeting.title || 'Untitled meeting'}
+                      {Boolean(meeting.labels?.length) && (
+                        <div className="flex-wrap" style={{ marginTop: 6 }}>
+                          {meeting.labels!.map((label) => (
+                            <span className="tag tag-sm" key={label}>
+                              {label}
+                            </span>
+                          ))}
+                        </div>
                       )}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <td>
-                        {meeting.title || 'Untitled meeting'}
-                        {Boolean(meeting.labels?.length) && (
-                          <div className="flex-wrap" style={{ marginTop: 6 }}>
-                            {meeting.labels!.map((label) => (
-                              <span className="tag tag-sm" key={label}>
-                                {label}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                      <td>{meeting.source_name}</td>
-                      <td>{meeting.provider}</td>
-                      <td>
-                        <DateCell
-                          date={
-                            meeting.meeting_start || meeting.provider_created_at
-                          }
-                        />
-                      </td>
-                      <td>
-                        <DateCell date={meeting.updated_at} />
-                      </td>
-                    </tr>
-                  ))}
-                {!loading && !error && items.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="loading">
-                      {query
-                        ? 'No meetings match your search.'
-                        : 'No meeting summaries saved yet. Run your meeting import job from Jobs.'}
+                    </td>
+                    <td>{meeting.source_name}</td>
+                    <td>{meeting.provider}</td>
+                    <td>
+                      <DateCell
+                        date={
+                          meeting.meeting_start || meeting.provider_created_at
+                        }
+                      />
+                    </td>
+                    <td>
+                      <DateCell date={meeting.updated_at} />
                     </td>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          {!loading && !error && (
+                ))}
+            </tbody>
+          </ScrollableTable>
+          {!initialLoading && !error && (
             <Pagination
               total={total}
               limit={limit}
               offset={offset}
               onPageChange={setOffset}
+              disabled={loading}
               onLimitChange={(value) => {
                 setLimit(value);
                 setOffset(0);
