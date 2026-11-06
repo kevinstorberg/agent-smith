@@ -196,4 +196,3 @@ export function nameError(name: string): string | null {
 export function isValidRepo(r: string): boolean {
   return r === '*' || r.startsWith('/');
 }
-import { columnSortOptions } from './utils/tableSorting';

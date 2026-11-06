@@ -1,6 +1,12 @@
 import { test, expect, type APIRequest } from './fixtures';
 import { auditFixture } from './operationsFixture';
 import { expectSortableHeaderLayout } from './sortableHeaderLayout';
+import {
+  expectControlContained,
+  expectDocumentContained,
+  expectMainContained,
+} from './geometry';
+import { enlargeComputedText } from './typography';
 
 const rows = Array.from({ length: 30 }, (_, index) => ({
   ...auditFixture(),
@@ -13,6 +19,62 @@ const rows = Array.from({ length: 30 }, (_, index) => ({
 const data = (tool: string) => ({
   items: [{ ...rows[0], tool_name: tool }],
   total: 30,
+});
+
+test('Audit empty recovery preserves sortable headers and a visible message while panning at normal and doubled text', async ({
+  page,
+  fixtureAPI,
+}) => {
+  fixtureAPI.get('/api/audit/counts', { claude: 0, codex: 0, gemini: 0 });
+  fixtureAPI.get('/api/audit/events', { detail: 'Unavailable' }, 503);
+  await page.goto('/audit');
+  await expect(page.getByRole('alert')).toContainText(
+    'Could not load audit events.',
+  );
+  fixtureAPI.get('/api/audit/events', { items: [], total: 0 });
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  const region = page.getByRole('region', {
+    name: 'Audit events',
+    exact: true,
+  });
+  const message = region.getByRole('heading', {
+    name: 'No tool calls yet',
+    exact: true,
+  });
+  await expect(message).toBeVisible();
+  const originalFont = await message.evaluate((element) =>
+    parseFloat(getComputedStyle(element).fontSize),
+  );
+  for (const scale of [1, 2] as const) {
+    if (scale === 2) await enlargeComputedText(page);
+    expect(
+      await message.evaluate((element) =>
+        parseFloat(getComputedStyle(element).fontSize),
+      ),
+    ).toBeCloseTo(originalFont * scale, 1);
+    await expect(region.getByRole('columnheader')).toHaveCount(6);
+    for (const edge of ['start', 'end'] as const) {
+      await region.evaluate((element, edge) => {
+        element.scrollLeft = edge === 'start' ? 0 : element.scrollWidth;
+      }, edge);
+      await expectControlContained(message, region);
+      await expectControlContained(
+        region.getByText(
+          'Activity will appear here when an agent runs a tool.',
+        ),
+        region,
+      );
+      await expectDocumentContained(page);
+      await expectMainContained(page);
+    }
+  }
+  const tool = region.getByRole('columnheader', { name: 'Tool', exact: true });
+  const button = tool.getByRole('button');
+  await button.focus();
+  await button.press('Enter');
+  await expect(tool).toHaveAttribute('aria-sort', 'ascending');
+  await expect(button).toBeFocused();
+  await expect(message).toBeVisible();
 });
 
 test('Audit header directions order the global result at page zero and survive reload', async ({

@@ -317,7 +317,7 @@ for (const resource of [
     label: 'Audit events',
     error: 'Could not load audit events.',
     empty: 'No tool calls yet',
-    headerCount: 0,
+    headerCount: 6,
   },
   {
     route: '/evals',

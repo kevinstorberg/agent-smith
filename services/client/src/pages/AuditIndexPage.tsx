@@ -160,6 +160,21 @@ export function AuditIndexPage() {
           label="Audit events"
           className="audit-list-table"
           busy={updating && !error}
+          emptyState={
+            accepted &&
+            items.length === 0 && (
+              <section className="audit-empty">
+                <h3>
+                  {hasFilters ? 'No matching tool calls' : 'No tool calls yet'}
+                </h3>
+                <p>
+                  {hasFilters
+                    ? 'Try a different search or reset this view.'
+                    : 'Activity will appear here when an agent runs a tool.'}
+                </p>
+              </section>
+            )
+          }
         >
           <thead>
             <tr>
@@ -186,24 +201,6 @@ export function AuditIndexPage() {
             </tr>
           </thead>
           <tbody>
-            {accepted && items.length === 0 && (
-              <tr>
-                <td colSpan={6}>
-                  <section className="audit-empty">
-                    <h3>
-                      {hasFilters
-                        ? 'No matching tool calls'
-                        : 'No tool calls yet'}
-                    </h3>
-                    <p>
-                      {hasFilters
-                        ? 'Try a different search or reset this view.'
-                        : 'Activity will appear here when an agent runs a tool.'}
-                    </p>
-                  </section>
-                </td>
-              </tr>
-            )}
             {accepted &&
               items.map((event) => (
                 <tr
