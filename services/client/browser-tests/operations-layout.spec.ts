@@ -137,11 +137,12 @@ test('Proposals retain readable titles and reachable review actions through an e
   const empty = region.getByText('No pending proposals', { exact: true });
   await expect(empty).toBeVisible();
   await expectControlContained(empty, region);
-  expect(
-    await region.evaluate(
-      (element) => element.scrollWidth - element.clientWidth,
-    ),
-  ).toBeLessThanOrEqual(1);
+  await expect(region.getByRole('columnheader')).toHaveCount(6);
+  await expect(
+    region.getByRole('columnheader').getByRole('button'),
+  ).toHaveCount(5);
+  await exerciseScroll(region);
+  await expectControlContained(empty, region);
   await expectDocumentContained(page);
   await expectMainContained(page);
 });
@@ -309,7 +310,8 @@ for (const resource of [
     label: 'Proposals list',
     error: 'Could not load proposals.',
     empty: 'No pending proposals',
-    headerCount: 0,
+    headerCount: 6,
+    sortButtonCount: 5,
   },
   {
     route: '/audit',
@@ -333,7 +335,8 @@ for (const resource of [
     label: 'Eval suites',
     error: 'Could not load eval suites.',
     empty: 'No eval suites found',
-    headerCount: 0,
+    headerCount: 6,
+    sortButtonCount: 5,
   },
 ]) {
   test(`${resource.label} recover from an error into a contained empty state`, async ({
@@ -380,7 +383,7 @@ for (const resource of [
     } else {
       await expect(
         region.getByRole('columnheader').getByRole('button'),
-      ).toHaveCount(resource.headerCount);
+      ).toHaveCount(resource.sortButtonCount ?? resource.headerCount);
       const initialFont = await empty.evaluate((element) =>
         parseFloat(getComputedStyle(element).fontSize),
       );

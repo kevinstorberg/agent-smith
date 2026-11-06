@@ -4,14 +4,27 @@ A proposal row holds reasoning and review state only; the proposed content
 itself lives as a state='proposed' row in the target table (harness_* or
 background_jobs) referenced by ``proposed_item_id``.
 """
+
 from __future__ import annotations
 
 from services.api.models.base import BaseModel
 from services.db import get_connection
-from services.api.models.shared.listing import search_pattern, sort_clause
+from services.api.models.shared.listing import (
+    bidirectional_sorts,
+    search_pattern,
+    sort_clause,
+)
 
 PROPOSAL_STATUSES = ("pending", "approved", "rejected")
-PROPOSAL_SORTS = {"newest": "created_at DESC, id DESC", "oldest": "created_at, id", "title": "lower(title), id"}
+PROPOSAL_SORTS = bidirectional_sorts(
+    {
+        ("title", "title_desc"): ("lower(title)",),
+        ("kind_asc", "kind_desc"): ("lower(target_kind)",),
+        ("action_asc", "action_desc"): ("lower(action)",),
+        ("target_asc", "target_desc"): ("lower(target_name)",),
+        ("oldest", "newest"): ("created_at",),
+    }
+)
 
 
 class ProposalModel(BaseModel):
@@ -19,7 +32,14 @@ class ProposalModel(BaseModel):
     json_fields = {"evidence", "applied_ref"}
 
 
-def list_proposals(status: str | None = None, limit: int = 50, offset: int = 0, *, q: str | None = None, sort: str = "newest") -> tuple[list[dict], int]:
+def list_proposals(
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    *,
+    q: str | None = None,
+    sort: str = "newest",
+) -> tuple[list[dict], int]:
     clauses, params = [], []
     if status:
         assert status in PROPOSAL_STATUSES, f"Invalid status: {status}"
@@ -31,14 +51,20 @@ def list_proposals(status: str | None = None, limit: int = 50, offset: int = 0, 
         params.extend([pattern, pattern])
     where = "WHERE " + " AND ".join(clauses) if clauses else ""
     return ProposalModel.list(
-        where=where, params=tuple(params), order_by=sort_clause(sort, PROPOSAL_SORTS), limit=limit, offset=offset
+        where=where,
+        params=tuple(params),
+        order_by=sort_clause(sort, PROPOSAL_SORTS),
+        limit=limit,
+        offset=offset,
     )
 
 
 def count_by_status() -> dict[str, int]:
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT status, COUNT(*) FROM improvement_proposals GROUP BY status")
+            cur.execute(
+                "SELECT status, COUNT(*) FROM improvement_proposals GROUP BY status"
+            )
             counts = dict(cur.fetchall())
     return {status: counts.get(status, 0) for status in PROPOSAL_STATUSES}
 
