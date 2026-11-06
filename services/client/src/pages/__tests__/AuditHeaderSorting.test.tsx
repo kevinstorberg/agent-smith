@@ -120,3 +120,35 @@ it('keeps the focused header mounted and rejects stale sort completions', async 
   expect(header).toHaveAttribute('aria-sort', 'descending');
   expect(button).toHaveFocus();
 });
+
+it('announces a pending header retry after an error and clears busy when it completes', async () => {
+  let resolveRetry!: (value: { items: never[]; total: number }) => void;
+  const retry = new Promise<{ items: never[]; total: number }>((resolve) => {
+    resolveRetry = resolve;
+  });
+  vi.mocked(api.audit.list)
+    .mockRejectedValueOnce(new Error('Unavailable'))
+    .mockReturnValueOnce(retry);
+  renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
+  await screen.findByRole('alert');
+  const table = screen.getByRole('table');
+  expect(table).toHaveAttribute('aria-busy', 'false');
+  const header = screen.getByRole('columnheader', { name: 'Tool' });
+  const button = header.querySelector('button')!;
+  button.focus();
+  fireEvent.click(button);
+  await waitFor(() =>
+    expect(api.audit.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort: 'tool_asc' }),
+      { limit: 10, offset: 0 },
+    ),
+  );
+  expect(table).toHaveAttribute('aria-busy', 'true');
+  expect(header).not.toHaveAttribute('aria-sort');
+  expect(button).toHaveFocus();
+  await act(async () => resolveRetry({ items: [], total: 0 }));
+  await screen.findByRole('heading', { name: 'No tool calls yet' });
+  expect(table).toHaveAttribute('aria-busy', 'false');
+  expect(header).toHaveAttribute('aria-sort', 'ascending');
+  expect(button).toHaveFocus();
+});

@@ -31,17 +31,33 @@ test('Audit empty recovery preserves sortable headers and a visible message whil
   await expect(page.getByRole('alert')).toContainText(
     'Could not load audit events.',
   );
-  fixtureAPI.get('/api/audit/events', { items: [], total: 0 });
-  await page.getByRole('button', { name: 'Retry', exact: true }).click();
   const region = page.getByRole('region', {
     name: 'Audit events',
     exact: true,
   });
+  const table = region.getByRole('table');
+  await expect(table).toHaveAttribute('aria-busy', 'false');
+  let resolveRetry!: (value: { items: never[]; total: number }) => void;
+  const retry = new Promise<{ items: never[]; total: number }>((resolve) => {
+    resolveRetry = resolve;
+  });
+  fixtureAPI.get('/api/audit/events', () => retry);
+  const tool = region.getByRole('columnheader', { name: 'Tool', exact: true });
+  const button = tool.getByRole('button');
+  await button.focus();
+  await button.press('Enter');
+  await expect(table).toHaveAttribute('aria-busy', 'true');
+  await expect(tool).not.toHaveAttribute('aria-sort');
+  await expect(button).toBeFocused();
+  resolveRetry({ items: [], total: 0 });
   const message = region.getByRole('heading', {
     name: 'No tool calls yet',
     exact: true,
   });
   await expect(message).toBeVisible();
+  await expect(table).toHaveAttribute('aria-busy', 'false');
+  await expect(tool).toHaveAttribute('aria-sort', 'ascending');
+  await expect(button).toBeFocused();
   const originalFont = await message.evaluate((element) =>
     parseFloat(getComputedStyle(element).fontSize),
   );
@@ -68,13 +84,6 @@ test('Audit empty recovery preserves sortable headers and a visible message whil
       await expectMainContained(page);
     }
   }
-  const tool = region.getByRole('columnheader', { name: 'Tool', exact: true });
-  const button = tool.getByRole('button');
-  await button.focus();
-  await button.press('Enter');
-  await expect(tool).toHaveAttribute('aria-sort', 'ascending');
-  await expect(button).toBeFocused();
-  await expect(message).toBeVisible();
 });
 
 test('Audit header directions order the global result at page zero and survive reload', async ({

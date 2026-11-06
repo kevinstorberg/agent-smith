@@ -159,7 +159,7 @@ export function AuditIndexPage() {
         <ScrollableTable
           label="Audit events"
           className="audit-list-table"
-          busy={updating && !error}
+          busy={updating && (loading || !error)}
           emptyState={
             accepted &&
             items.length === 0 && (
