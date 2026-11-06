@@ -28,14 +28,43 @@ import { usePagination } from '../../hooks/usePagination';
 const mockUsePagination = usePagination as ReturnType<typeof vi.fn>;
 
 const fakeJobs = [
-  { id: 1, name: 'Backup', schedule_enabled: true, schedule_config: { hours: 24 }, input_params: {}, description: null, version: 1, created_at: '2026-01-15T10:00:00Z', updated_at: '2026-01-15T10:00:00Z' },
-  { id: 2, name: 'Sync', schedule_enabled: true, schedule_config: { minutes: 5 }, input_params: { command: 'sync' }, description: null, version: 1, created_at: '2026-02-20T14:30:00Z', updated_at: '2026-02-20T14:30:00Z' },
+  {
+    id: 1,
+    name: 'Backup',
+    schedule_enabled: true,
+    schedule_config: { hours: 24 },
+    input_params: {},
+    description: null,
+    version: 1,
+    created_at: '2026-01-15T10:00:00Z',
+    updated_at: '2026-01-15T10:00:00Z',
+  },
+  {
+    id: 2,
+    name: 'Sync',
+    schedule_enabled: true,
+    schedule_config: { minutes: 5 },
+    input_params: { command: 'sync' },
+    description: null,
+    version: 1,
+    created_at: '2026-02-20T14:30:00Z',
+    updated_at: '2026-02-20T14:30:00Z',
+  },
 ];
 
 function paginationReturn(overrides = {}) {
   return {
-    items: fakeJobs, total: 2, loading: false, limit: 10, offset: 0,
-    setLimit: mockSetLimit, setOffset: mockSetOffset, setItems: vi.fn(), refresh: mockRefresh,
+    items: fakeJobs,
+    total: 2,
+    loading: false,
+    initialLoading: false,
+    dataCurrent: true,
+    limit: 10,
+    offset: 0,
+    setLimit: mockSetLimit,
+    setOffset: mockSetOffset,
+    setItems: vi.fn(),
+    refresh: mockRefresh,
     ...overrides,
   };
 }
@@ -56,26 +85,42 @@ describe('JobsIndexPage', () => {
   });
 
   it('shows loading state', () => {
-    mockUsePagination.mockReturnValue(paginationReturn({ items: [], total: 0, loading: true }));
+    mockUsePagination.mockReturnValue(
+      paginationReturn({
+        items: [],
+        total: 0,
+        loading: true,
+        initialLoading: true,
+        dataCurrent: false,
+      }),
+    );
     renderWithProviders(<JobsIndexPage />, { initialEntries: ['/jobs'] });
     expect(screen.getByText('Loading...')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Search jobs...')).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: 'Scheduling' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('combobox', { name: 'Scheduling' }),
+    ).toBeInTheDocument();
   });
 
   it('shows empty state when no jobs exist', () => {
-    mockUsePagination.mockReturnValue(paginationReturn({ items: [], total: 0 }));
+    mockUsePagination.mockReturnValue(
+      paginationReturn({ items: [], total: 0 }),
+    );
     renderWithProviders(<JobsIndexPage />, { initialEntries: ['/jobs'] });
     expect(screen.getByText('No jobs found')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Search jobs...')).toBeInTheDocument();
   });
 
   it('keeps filters available after a failed request', () => {
-    mockUsePagination.mockReturnValue(paginationReturn({ error: 'Request failed' }));
+    mockUsePagination.mockReturnValue(
+      paginationReturn({ error: 'Request failed' }),
+    );
     renderWithProviders(<JobsIndexPage />, { initialEntries: ['/jobs'] });
-    expect(screen.getByRole('alert')).toHaveTextContent('Could not refresh jobs');
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Could not refresh jobs',
+    );
     expect(screen.getByPlaceholderText('Search jobs...')).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: 'Sort jobs' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Name' })).toBeInTheDocument();
   });
 
   it('navigates to new job on button click', () => {
@@ -92,7 +137,9 @@ describe('JobsIndexPage', () => {
 
   it('polls the current jobs page every 60 seconds', () => {
     vi.useFakeTimers();
-    const { unmount } = renderWithProviders(<JobsIndexPage />, { initialEntries: ['/jobs'] });
+    const { unmount } = renderWithProviders(<JobsIndexPage />, {
+      initialEntries: ['/jobs'],
+    });
 
     vi.advanceTimersByTime(POLL_INTERVAL_MS);
     expect(mockRefresh).toHaveBeenCalledWith({ showLoading: false });

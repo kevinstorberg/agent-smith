@@ -5,15 +5,21 @@ from __future__ import annotations
 from psycopg2.extras import RealDictCursor
 
 from services.api.models.base import BaseModel
-from services.api.models.shared.listing import search_pattern, sort_clause
+from services.api.models.shared.listing import (
+    bidirectional_sorts,
+    search_pattern,
+    sort_clause,
+)
 from services.db import get_connection
 from services.jobs.schedule import parse_interval
 
-JOB_SORTS = {
-    "updated": "updated_at DESC, id DESC",
-    "newest": "created_at DESC, id DESC",
-    "name": "lower(name), id",
-}
+JOB_SORTS = bidirectional_sorts(
+    {
+        ("name", "name_desc"): ("lower(name)",),
+        ("updated_asc", "updated"): ("updated_at",),
+    }
+)
+JOB_SORTS["newest"] = "created_at DESC, id DESC"
 
 
 class JobNotFoundError(LookupError):
