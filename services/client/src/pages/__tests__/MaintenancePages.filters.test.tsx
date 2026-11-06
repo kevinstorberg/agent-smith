@@ -195,10 +195,7 @@ describe('Maintenance page server controls', () => {
     expect(list).toHaveBeenLastCalledWith(
       expect.objectContaining({ q: 'Safety', enabled: 'false', offset: '0' }),
     );
-    fireEvent.change(
-      screen.getByRole('combobox', { name: 'Sort eval suites' }),
-      { target: { value: 'updated' } },
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Updated' }));
     await settle();
     expect(list).toHaveBeenLastCalledWith(
       expect.objectContaining({ enabled: 'false', sort: 'updated' }),

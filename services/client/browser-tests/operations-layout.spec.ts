@@ -335,7 +335,8 @@ for (const resource of [
     label: 'Eval suites',
     error: 'Could not load eval suites.',
     empty: 'No eval suites found',
-    headerCount: 0,
+    headerCount: 6,
+    sortButtonCount: 5,
   },
 ]) {
   test(`${resource.label} recover from an error into a contained empty state`, async ({

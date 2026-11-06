@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '../../test-utils';
 import { AuditIndexPage } from '../AuditIndexPage';
@@ -136,7 +136,7 @@ const cases = [
         offset: '50',
       },
     ],
-    sortLabel: 'Sort eval suites',
+    sortLabel: 'Name',
     nextSort: 'name',
     updatedExpected: [
       {
@@ -168,12 +168,14 @@ describe('Operations preference consumers', () => {
       renderWithProviders(view, { initialEntries: [route] });
       await waitFor(() => expect(list).toHaveBeenCalledTimes(1));
       expect(list).toHaveBeenCalledWith(...expected);
-      const sortMenu = screen.queryByRole('combobox', { name: sortLabel });
-      if (sortMenu)
-        fireEvent.change(sortMenu, {
-          target: { value: nextSort },
-        });
-      else fireEvent.click(screen.getByRole('button', { name: sortLabel }));
+      const dropdown = screen.queryByRole('combobox', { name: sortLabel });
+      if (dropdown) fireEvent.change(dropdown, { target: { value: nextSort } });
+      else
+        fireEvent.click(
+          within(
+            screen.getByRole('columnheader', { name: sortLabel }),
+          ).getByRole('button'),
+        );
       await waitFor(() =>
         expect(list).toHaveBeenLastCalledWith(...updatedExpected),
       );
