@@ -403,9 +403,7 @@ describe('Maintenance page server controls', () => {
       }),
     );
     expect(list.mock.lastCall?.[0]).not.toHaveProperty('scenario');
-    fireEvent.change(screen.getByRole('combobox', { name: 'Sort results' }), {
-      target: { value: 'score' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Scores' }));
     await settle();
     expect(list).toHaveBeenLastCalledWith(
       expect.objectContaining({ sort: 'score', offset: '0' }),

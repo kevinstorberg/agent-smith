@@ -362,9 +362,7 @@ describe('EvalsPage', () => {
       sort: 'score',
       limit: 25,
     });
-    fireEvent.change(screen.getByLabelText('Sort results'), {
-      target: { value: 'newest' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Time' }));
     await waitFor(() =>
       expect(mockList).toHaveBeenLastCalledWith({
         q: 'quality',

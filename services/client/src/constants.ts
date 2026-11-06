@@ -1,3 +1,5 @@
+import { columnSortOptions } from './utils/tableSorting';
+
 export const ALL_AGENTS = ['claude', 'codex', 'gemini'] as const;
 export const POLL_INTERVAL_MS = 15_000;
 export const PAGE_LIMITS = [10, 25, 50] as const;
@@ -103,11 +105,23 @@ export const CHAT_SORT_OPTIONS = [
   { value: 'newest', label: 'Newest first' },
   { value: 'name', label: 'Topic A–Z' },
 ] as const;
-export const RESULT_SORT_OPTIONS = [
-  { value: 'newest', label: 'Newest first' },
-  { value: 'oldest', label: 'Oldest first' },
-  { value: 'score', label: 'Highest score' },
-] as const;
+export const RESULT_SORT_COLUMNS = {
+  time: {
+    ascending: 'oldest',
+    descending: 'newest',
+    defaultDirection: 'descending',
+  },
+  category: { ascending: 'category_asc', descending: 'category_desc' },
+  scenario: { ascending: 'scenario_asc', descending: 'scenario_desc' },
+  model: { ascending: 'model_asc', descending: 'model_desc' },
+  threshold: { ascending: 'threshold_asc', descending: 'threshold_desc' },
+  scores: {
+    ascending: 'score_asc',
+    descending: 'score',
+    defaultDirection: 'descending',
+  },
+} as const;
+export const RESULT_SORT_OPTIONS = columnSortOptions(RESULT_SORT_COLUMNS);
 
 export const TYPE_PATHS: Record<string, string> = {
   rule: 'rules',
