@@ -302,3 +302,43 @@ test('Discussion Topic header sorting resets page two without leaking global pro
     [],
   );
 });
+
+test('Explicit Action Item Retry announces its pending read without adding refresh words', async ({
+  page,
+  fixtureAPI,
+}) => {
+  fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
+  fixtureAPI.get('/api/action-items', response(1));
+  await page.goto('/action-items');
+  const table = page.getByRole('table');
+  await expect(
+    page.getByRole('button', { name: 'Task 1', exact: true }),
+  ).toBeVisible();
+  fixtureAPI.get('/api/action-items', { detail: 'Synthetic failed read' }, 500);
+  await table.getByRole('button', { name: 'Title', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText(
+    'Could not refresh action items.',
+  );
+  await expect(table).toHaveAttribute('aria-busy', 'false');
+  const retry = deferred<ReturnType<typeof response>>();
+  fixtureAPI.get('/api/action-items', () => retry.promise);
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(table).toHaveAttribute('aria-busy', 'true');
+  await expect(
+    page.getByText('Loading action items…', { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Task 1', exact: true }),
+  ).toBeVisible();
+  retry.resolve(response(2));
+  await expect(
+    page.getByRole('button', { name: 'Task 2', exact: true }),
+  ).toBeVisible();
+  await expect(
+    table.getByRole('columnheader', { name: 'Title', exact: true }),
+  ).toHaveAttribute('aria-sort', 'ascending');
+  await expect(table).toHaveAttribute('aria-busy', 'false');
+  expect(fixtureAPI.requests.filter((entry) => entry.method !== 'GET')).toEqual(
+    [],
+  );
+});
