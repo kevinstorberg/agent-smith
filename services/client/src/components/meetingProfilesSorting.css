@@ -1,0 +1,16 @@
+.meeting-profile-links {
+  margin: 16px 0;
+}
+.scrollable-table .table.linked-meeting-profiles-table {
+  min-width: max(600px, 38em);
+  table-layout: fixed;
+}
+.linked-meeting-profiles-table td {
+  overflow-wrap: anywhere;
+}
+.linked-meeting-profiles-table .linked-profile-actions {
+  width: 10em;
+}
+.linked-meeting-profiles-table .sortable-header-button {
+  width: auto;
+}
