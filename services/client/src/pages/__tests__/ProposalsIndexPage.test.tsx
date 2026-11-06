@@ -17,10 +17,16 @@ const mockRefresh = vi.fn();
 const mockNotify = vi.fn();
 
 vi.mock('../../context/useNotification', async () => {
-  const actual = await vi.importActual<typeof import('../../context/useNotification')>('../../context/useNotification');
+  const actual = await vi.importActual<
+    typeof import('../../context/useNotification')
+  >('../../context/useNotification');
   return {
     ...actual,
-    useNotification: () => ({ notify: mockNotify, notifications: [], dismiss: vi.fn() }),
+    useNotification: () => ({
+      notify: mockNotify,
+      notifications: [],
+      dismiss: vi.fn(),
+    }),
   };
 });
 
@@ -79,6 +85,8 @@ beforeEach(() => {
     setItems: mockSetItems,
     total: 2,
     loading: false,
+    initialLoading: false,
+    dataCurrent: true,
     limit: 10,
     offset: 0,
     setLimit: mockSetLimit,
@@ -93,17 +101,23 @@ beforeEach(() => {
 
 describe('ProposalsIndexPage', () => {
   it('renders proposals with kind and target', async () => {
-    renderWithProviders(<ProposalsIndexPage />, { initialEntries: ['/proposals'] });
+    renderWithProviders(<ProposalsIndexPage />, {
+      initialEntries: ['/proposals'],
+    });
 
     expect(screen.getByText('Proposals')).toBeInTheDocument();
     expect(screen.getByText('Clarify the DRY rule')).toBeInTheDocument();
     expect(screen.getByText('Add nightly cleanup job')).toBeInTheDocument();
     expect(screen.getByText('dry')).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText(/pending \(2\)/)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText(/pending \(2\)/)).toBeInTheDocument(),
+    );
   });
 
   it('switches the status filter and resets paging', () => {
-    renderWithProviders(<ProposalsIndexPage />, { initialEntries: ['/proposals'] });
+    renderWithProviders(<ProposalsIndexPage />, {
+      initialEntries: ['/proposals'],
+    });
 
     fireEvent.click(screen.getByText(/approved/));
 
@@ -111,7 +125,9 @@ describe('ProposalsIndexPage', () => {
   });
 
   it('navigates to the detail page on row click', () => {
-    renderWithProviders(<ProposalsIndexPage />, { initialEntries: ['/proposals'] });
+    renderWithProviders(<ProposalsIndexPage />, {
+      initialEntries: ['/proposals'],
+    });
 
     fireEvent.click(screen.getByText('Clarify the DRY rule'));
 
@@ -119,7 +135,9 @@ describe('ProposalsIndexPage', () => {
   });
 
   it('quick-approves a row without navigating', async () => {
-    renderWithProviders(<ProposalsIndexPage />, { initialEntries: ['/proposals'] });
+    renderWithProviders(<ProposalsIndexPage />, {
+      initialEntries: ['/proposals'],
+    });
 
     fireEvent.click(screen.getAllByText('Approve')[0]);
 
@@ -127,53 +145,79 @@ describe('ProposalsIndexPage', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(mockRefresh).toHaveBeenCalledWith({ showLoading: false });
     await waitFor(() =>
-      expect(mockNotify).toHaveBeenCalledWith(expect.stringMatching(/applied/), 'success'),
+      expect(mockNotify).toHaveBeenCalledWith(
+        expect.stringMatching(/applied/),
+        'success',
+      ),
     );
   });
 
   it('quick-rejects a row and surfaces conflicts as errors', async () => {
-    mockReject.mockRejectedValue(new Error('proposal 2 is approved, not pending'));
-    renderWithProviders(<ProposalsIndexPage />, { initialEntries: ['/proposals'] });
+    mockReject.mockRejectedValue(
+      new Error('proposal 2 is approved, not pending'),
+    );
+    renderWithProviders(<ProposalsIndexPage />, {
+      initialEntries: ['/proposals'],
+    });
 
     fireEvent.click(screen.getAllByText('Reject')[1]);
 
     await waitFor(() => expect(mockReject).toHaveBeenCalledWith(2));
     await waitFor(() =>
-      expect(mockNotify).toHaveBeenCalledWith(expect.stringMatching(/reject failed/), 'error'),
+      expect(mockNotify).toHaveBeenCalledWith(
+        expect.stringMatching(/reject failed/),
+        'error',
+      ),
     );
   });
 
   it('triggers manual generation from the button', async () => {
-    renderWithProviders(<ProposalsIndexPage />, { initialEntries: ['/proposals'] });
+    renderWithProviders(<ProposalsIndexPage />, {
+      initialEntries: ['/proposals'],
+    });
 
     fireEvent.click(screen.getByText('Generate now'));
 
     await waitFor(() => expect(mockGenerate).toHaveBeenCalled());
     await waitFor(() =>
-      expect(mockNotify).toHaveBeenCalledWith(expect.stringMatching(/Generation started/), 'success'),
+      expect(mockNotify).toHaveBeenCalledWith(
+        expect.stringMatching(/Generation started/),
+        'success',
+      ),
     );
   });
 
   it('surfaces generate errors (e.g. job not seeded)', async () => {
-    mockGenerate.mockRejectedValue(new Error("No background job named 'improvement-proposals'"));
-    renderWithProviders(<ProposalsIndexPage />, { initialEntries: ['/proposals'] });
+    mockGenerate.mockRejectedValue(
+      new Error("No background job named 'improvement-proposals'"),
+    );
+    renderWithProviders(<ProposalsIndexPage />, {
+      initialEntries: ['/proposals'],
+    });
 
     fireEvent.click(screen.getByText('Generate now'));
 
     await waitFor(() =>
-      expect(mockNotify).toHaveBeenCalledWith(expect.stringMatching(/No background job named/), 'error'),
+      expect(mockNotify).toHaveBeenCalledWith(
+        expect.stringMatching(/No background job named/),
+        'error',
+      ),
     );
   });
 
   it('polls proposals and counts every 60 seconds', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    renderWithProviders(<ProposalsIndexPage />, { initialEntries: ['/proposals'] });
+    renderWithProviders(<ProposalsIndexPage />, {
+      initialEntries: ['/proposals'],
+    });
     await waitFor(() => expect(mockCounts).toHaveBeenCalledTimes(1));
 
     mockCounts.mockClear();
     vi.advanceTimersByTime(POLL_INTERVAL_MS);
 
-    await waitFor(() => expect(mockRefresh).toHaveBeenCalledWith({ showLoading: false }));
+    await waitFor(() =>
+      expect(mockRefresh).toHaveBeenCalledWith({ showLoading: false }),
+    );
     expect(mockCounts).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });

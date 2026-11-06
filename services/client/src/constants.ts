@@ -53,14 +53,34 @@ export const AUDIT_SORT_COLUMNS = {
   },
 } as const;
 export const AUDIT_SORT_OPTIONS = columnSortOptions(AUDIT_SORT_COLUMNS);
-export const PROPOSAL_SORT_OPTIONS = [
-  { value: 'newest', label: 'Newest first' },
-  { value: 'oldest', label: 'Oldest first' },
-  { value: 'title', label: 'Title' },
-] as const;
+export const PROPOSAL_SORT_COLUMNS = {
+  title: { ascending: 'title', descending: 'title_desc' },
+  kind: { ascending: 'kind_asc', descending: 'kind_desc' },
+  action: { ascending: 'action_asc', descending: 'action_desc' },
+  target: { ascending: 'target_asc', descending: 'target_desc' },
+  created: {
+    ascending: 'oldest',
+    descending: 'newest',
+    defaultDirection: 'descending',
+  },
+} as const;
+export const PROPOSAL_SORT_OPTIONS = columnSortOptions(PROPOSAL_SORT_COLUMNS);
+export const EVAL_SUITE_SORT_COLUMNS = {
+  name: { ascending: 'name', descending: 'name_desc' },
+  type: { ascending: 'type_asc', descending: 'type_desc' },
+  scenarios: {
+    ascending: 'scenario_count_asc',
+    descending: 'scenario_count_desc',
+  },
+  enabled: { ascending: 'enabled_asc', descending: 'enabled_desc' },
+  updated: {
+    ascending: 'updated_asc',
+    descending: 'updated',
+    defaultDirection: 'descending',
+  },
+} as const;
 export const EVAL_SUITE_SORT_OPTIONS = [
-  { value: 'name', label: 'Name' },
-  { value: 'updated', label: 'Recently updated' },
+  ...columnSortOptions(EVAL_SUITE_SORT_COLUMNS),
   { value: 'newest', label: 'Newest first' },
 ] as const;
 const UPDATED_AT_SORT_OPTIONS = [

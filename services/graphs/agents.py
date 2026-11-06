@@ -50,7 +50,10 @@ def create_tool_agent(
         build_chat_model(model_role, fallback_role=fallback_role),
         tools=tools or [],
         system_prompt=system_prompt,
-        middleware=[ActionLoggingMiddleware(), *(middleware or [])],
+        middleware=[
+            ActionLoggingMiddleware(agent_name=model_role),
+            *(middleware or []),
+        ],
     )
 
 
