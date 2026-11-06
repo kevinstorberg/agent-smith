@@ -494,5 +494,31 @@ describe('Meetings header sorting', () => {
     expect(empty.closest('table')).toBeNull();
     expect(screen.getAllByRole('columnheader')).toHaveLength(5);
     expect(screen.getByRole('button', { name: 'Title' })).toBeEnabled();
+    let finish!: (value: { items: typeof meetings; total: number }) => void;
+    mockList.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search meetings' }), {
+      target: { value: 'new query' },
+    });
+    await waitFor(() =>
+      expect(mockList).toHaveBeenLastCalledWith(
+        expect.objectContaining({ q: 'new query' }),
+      ),
+    );
+    expect(
+      screen.queryByText(/No meeting summaries saved yet/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('No meetings match your search.'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Loading meetings...')).not.toBeInTheDocument();
+    expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
+    await act(async () => finish({ items: [], total: 0 }));
+    expect(
+      await screen.findByText('No meetings match your search.'),
+    ).toBeVisible();
   });
 });

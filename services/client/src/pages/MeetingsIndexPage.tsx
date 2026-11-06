@@ -158,7 +158,7 @@ export function MeetingsIndexPage() {
             className="meetings-sorting-table"
             busy={!dataCurrent && (loading || !error)}
             emptyState={
-              !initialLoading && !error && items.length === 0 ? (
+              dataCurrent && !loading && !error && items.length === 0 ? (
                 <p className="loading" role="status">
                   {query
                     ? 'No meetings match your search.'
