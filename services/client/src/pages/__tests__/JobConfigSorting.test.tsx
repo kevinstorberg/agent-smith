@@ -88,7 +88,7 @@ it('sorts every config column in both directions without writing or changing can
     expect(write).not.toHaveBeenCalled();
 });
 
-it('resets local sort on real job identity navigation and keeps execution headers unchanged', async () => {
+it('resets local sort on real job identity navigation without changing execution sorting', async () => {
   const user = userEvent.setup();
   open();
   await screen.findByRole('heading', { name: 'Job 42' });
@@ -102,7 +102,7 @@ it('resets local sort on real job identity navigation and keeps execution header
   ).not.toHaveAttribute('aria-sort');
   await user.click(screen.getByRole('button', { name: 'Executions' }));
   expect(screen.getByRole('columnheader', { name: 'Started' })).toBeVisible();
-  expect(screen.queryByRole('button', { name: 'Started' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Started' })).toBeVisible();
   expect(api.jobs.update).not.toHaveBeenCalled();
   expect(api.jobs.runNow).not.toHaveBeenCalled();
 });

@@ -1,0 +1,11 @@
+.table.execution-sorting-table {
+  min-width: max(720px, 52em);
+  table-layout: auto;
+}
+.execution-sorting-table th {
+  width: auto;
+  min-width: 11em;
+}
+.execution-sorting-table .sortable-header-button {
+  width: auto;
+}
