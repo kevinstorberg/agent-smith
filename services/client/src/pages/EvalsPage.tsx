@@ -4,16 +4,17 @@ import { api } from '../api';
 import type { EvalRun, ChartPoint, AverageChartPoint } from '../api';
 import { ScoreChart } from '../components/ScoreChart';
 import { ScrollableTable } from '../components/ScrollableTable';
+import { SortableHeader } from '../components/table/SortableHeader';
 import { Pagination } from '../components/Pagination';
 import { FilterBar } from '../components/FilterBar';
 import { useApiRead } from '../hooks/useApiRead';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { usePagination } from '../hooks/usePagination';
 import { usePolling } from '../hooks/usePolling';
-import { RESULT_SORT_OPTIONS } from '../constants';
+import { RESULT_SORT_COLUMNS } from '../constants';
 import { useViewPreferences } from '../hooks/useViewPreferences';
-import { parseViewField } from '../utils/viewPreferences';
 import { makeRowClickable } from '../utils/a11y';
+import './resultsSorting.css';
 
 type ChartMode = 'average' | 'breakdown';
 type ChartData =
@@ -48,6 +49,7 @@ export function EvalsPage() {
     total,
     loading,
     error,
+    dataCurrent,
     limit,
     offset,
     setLimit,
@@ -211,25 +213,6 @@ export function EvalsPage() {
             ))}
           </select>
         </label>
-        <label>
-          <span className="form-label">Sort results</span>
-          <select
-            aria-label="Sort results"
-            value={sort}
-            onChange={(e) =>
-              preferences.setField(
-                'sort',
-                parseViewField('results', 'sort', e.target.value),
-              )
-            }
-          >
-            {RESULT_SORT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
       </FilterBar>
       {(categories.error || subcategories.error || facets.error) && (
         <p role="alert">Could not load result filter options.</p>
@@ -285,61 +268,78 @@ export function EvalsPage() {
       )}
       {loading && <div className="loading">Loading...</div>}
 
-      {!loading && !error && (
-        <>
-          <ScrollableTable
-            label="Results list"
-            className="results-list-table"
-            empty={runs.length === 0}
-          >
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Category</th>
-                <th>Scenario</th>
-                <th>Model</th>
-                <th>Threshold</th>
-                <th>Scores</th>
+      <ScrollableTable
+        label="Results list"
+        className="results-list-table"
+        busy={!dataCurrent && (loading || !error)}
+        emptyState={
+          !loading && !error && runs.length === 0 ? (
+            <p className="loading" role="status">
+              No eval runs found
+            </p>
+          ) : undefined
+        }
+      >
+        <thead>
+          <tr>
+            {(
+              [
+                ['time', 'Time'],
+                ['category', 'Category'],
+                ['scenario', 'Scenario'],
+                ['model', 'Model'],
+                ['threshold', 'Threshold'],
+                ['scores', 'Scores'],
+              ] as const
+            ).map(([key, label]) => (
+              <SortableHeader
+                key={key}
+                sort={sort}
+                column={RESULT_SORT_COLUMNS[key]}
+                onSort={(value) => preferences.setField('sort', value)}
+                current={dataCurrent}
+                title={
+                  key === 'scores'
+                    ? 'Sort by the unrounded average rule score'
+                    : undefined
+                }
+              >
+                {label}
+              </SortableHeader>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {!loading &&
+            !error &&
+            runs.map((run) => (
+              <tr
+                key={run.id}
+                {...makeRowClickable(() => navigate(`/evals/${run.id}`))}
+                style={{ cursor: 'pointer' }}
+              >
+                <td>{new Date(run.timestamp).toLocaleString()}</td>
+                <td>
+                  <span className="tag">
+                    {run.eval_type}
+                    {run.subcategory ? ` / ${run.subcategory}` : ''}
+                  </span>
+                </td>
+                <td>{run.scenario}</td>
+                <td>{run.test_model}</td>
+                <td>{run.threshold}</td>
+                <td>
+                  <span
+                    className={`score-badge ${(run.score_avg ?? 0) >= run.threshold ? 'pass' : 'fail'}`}
+                  >
+                    {(run.score_avg ?? 0).toFixed(1)} ({run.score_count ?? 0}
+                    {' rules)'}
+                  </span>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {runs.map((run) => (
-                <tr
-                  key={run.id}
-                  {...makeRowClickable(() => navigate(`/evals/${run.id}`))}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <td>{new Date(run.timestamp).toLocaleString()}</td>
-                  <td>
-                    <span className="tag">
-                      {run.eval_type}
-                      {run.subcategory ? ` / ${run.subcategory}` : ''}
-                    </span>
-                  </td>
-                  <td>{run.scenario}</td>
-                  <td>{run.test_model}</td>
-                  <td>{run.threshold}</td>
-                  <td>
-                    <span
-                      className={`score-badge ${(run.score_avg ?? 0) >= run.threshold ? 'pass' : 'fail'}`}
-                    >
-                      {(run.score_avg ?? 0).toFixed(1)} ({run.score_count ?? 0}
-                      {' rules)'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {!error && runs.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="loading">
-                    No eval runs found
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </ScrollableTable>
-        </>
-      )}
+            ))}
+        </tbody>
+      </ScrollableTable>
       {!error && (
         <Pagination
           total={total}

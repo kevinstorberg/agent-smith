@@ -1,0 +1,25 @@
+.harness-sorting-container {
+  --harness-sort-gap: 8px;
+  --harness-sort-padding: 16px;
+}
+
+.harness-list-scroll .harness-list-table {
+  min-width: var(--harness-minimum-width);
+}
+
+.harness-list-table .harness-list-header,
+.harness-list-table .harness-list-row {
+  font-size: inherit;
+  gap: var(--harness-sort-gap);
+  padding-inline: var(--harness-sort-padding);
+}
+
+.harness-sort-order-cell {
+  display: flex;
+  justify-content: center;
+}
+
+.harness-list-table .harness-list-row:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: -2px;
+}

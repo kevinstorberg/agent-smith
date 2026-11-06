@@ -7,14 +7,16 @@ import { FilterBar } from '../components/FilterBar';
 import { StatusBadge } from '../components/StatusBadge';
 import { ScrollableTable } from '../components/ScrollableTable';
 import { DateCell, ProjectCell } from '../components/table';
+import { SortableHeader } from '../components/table/SortableHeader';
 import { usePagination } from '../hooks/usePagination';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { usePolling } from '../hooks/usePolling';
 import { makeRowClickable } from '../utils/a11y';
 import { formatDuration } from '../utils/audit';
-import { ALL_AGENTS, AUDIT_SORT_OPTIONS, AUDIT_STATUSES } from '../constants';
+import { ALL_AGENTS, AUDIT_SORT_COLUMNS, AUDIT_STATUSES } from '../constants';
 import { useViewPreferences } from '../hooks/useViewPreferences';
 import { parseViewField } from '../utils/viewPreferences';
+import './auditSorting.css';
 
 export function AuditIndexPage() {
   const preferences = useViewPreferences('audit');
@@ -133,24 +135,6 @@ export function AuditIndexPage() {
             ))}
           </select>
         </label>
-        <label className="audit-sort-filter">
-          <span className="form-label">Sort</span>
-          <select
-            value={sort}
-            onChange={(event) =>
-              preferences.setField(
-                'sort',
-                parseViewField('audit', 'sort', event.target.value),
-              )
-            }
-          >
-            {AUDIT_SORT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
       </FilterBar>
 
       <div className="audit-results-summary" role="status">
@@ -172,48 +156,53 @@ export function AuditIndexPage() {
             </button>
           </p>
         )}
-        {accepted && items.length === 0 && (
-          <section
-            className="audit-empty"
-            role="region"
-            aria-label="Audit events"
-          >
-            <h3>
-              {hasFilters ? 'No matching tool calls' : 'No tool calls yet'}
-            </h3>
-            <p>
-              {hasFilters
-                ? 'Try a different search or reset this view.'
-                : 'Activity will appear here when an agent runs a tool.'}
-            </p>
-          </section>
-        )}
-        {accepted && items.length > 0 && (
-          <ScrollableTable label="Audit events" className="audit-list-table">
-            <thead>
-              <tr>
-                <th>Tool</th>
-                <th>Status</th>
-                <th>Agent</th>
-                <th aria-sort={sort === 'duration' ? 'descending' : undefined}>
-                  Duration
-                </th>
-                <th>Project</th>
-                <th
-                  aria-sort={
-                    sort === 'newest'
-                      ? 'descending'
-                      : sort === 'oldest'
-                        ? 'ascending'
-                        : undefined
-                  }
+        <ScrollableTable
+          label="Audit events"
+          className="audit-list-table"
+          busy={updating && (loading || !error)}
+          emptyState={
+            accepted &&
+            items.length === 0 && (
+              <section className="audit-empty">
+                <h3>
+                  {hasFilters ? 'No matching tool calls' : 'No tool calls yet'}
+                </h3>
+                <p>
+                  {hasFilters
+                    ? 'Try a different search or reset this view.'
+                    : 'Activity will appear here when an agent runs a tool.'}
+                </p>
+              </section>
+            )
+          }
+        >
+          <thead>
+            <tr>
+              {(
+                [
+                  ['Tool', 'tool'],
+                  ['Status', 'status'],
+                  ['Agent', 'agent'],
+                  ['Duration', 'duration'],
+                  ['Project', 'project'],
+                  ['Time', 'time'],
+                ] as const
+              ).map(([label, key]) => (
+                <SortableHeader
+                  key={key}
+                  sort={sort}
+                  column={AUDIT_SORT_COLUMNS[key]}
+                  current={accepted}
+                  onSort={(value) => preferences.setField('sort', value)}
                 >
-                  Time
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((event) => (
+                  {label}
+                </SortableHeader>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {accepted &&
+              items.map((event) => (
                 <tr
                   key={event.id}
                   {...makeRowClickable(() => navigate(`/audit/${event.id}`))}
@@ -243,9 +232,8 @@ export function AuditIndexPage() {
                   </td>
                 </tr>
               ))}
-            </tbody>
-          </ScrollableTable>
-        )}
+          </tbody>
+        </ScrollableTable>
       </div>
 
       {accepted && (
