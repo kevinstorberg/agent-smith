@@ -10,11 +10,23 @@ export const HARNESS_SORT_OPTIONS = [
 ] as const;
 export const AUDIT_STATUSES = ['pending', 'success', 'error'] as const;
 export const PROPOSAL_STATUSES = ['pending', 'approved', 'rejected'] as const;
-export const AUDIT_SORT_OPTIONS = [
-  { value: 'newest', label: 'Newest first' },
-  { value: 'oldest', label: 'Oldest first' },
-  { value: 'duration', label: 'Longest duration' },
-] as const;
+export const AUDIT_SORT_COLUMNS = {
+  tool: { ascending: 'tool_asc', descending: 'tool_desc' },
+  status: { ascending: 'status_asc', descending: 'status_desc' },
+  agent: { ascending: 'agent_asc', descending: 'agent_desc' },
+  duration: {
+    ascending: 'duration_asc',
+    descending: 'duration',
+    defaultDirection: 'descending',
+  },
+  project: { ascending: 'project_asc', descending: 'project_desc' },
+  time: {
+    ascending: 'oldest',
+    descending: 'newest',
+    defaultDirection: 'descending',
+  },
+} as const;
+export const AUDIT_SORT_OPTIONS = columnSortOptions(AUDIT_SORT_COLUMNS);
 export const PROPOSAL_SORT_OPTIONS = [
   { value: 'newest', label: 'Newest first' },
   { value: 'oldest', label: 'Oldest first' },
@@ -158,3 +170,4 @@ export function nameError(name: string): string | null {
 export function isValidRepo(r: string): boolean {
   return r === '*' || r.startsWith('/');
 }
+import { columnSortOptions } from './utils/tableSorting';
