@@ -8,6 +8,7 @@ from contextvars import ContextVar, copy_context
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial
+import json
 import logging
 import math
 import re
@@ -23,6 +24,7 @@ from scripts.shared.operation_logging import (
     resource_name,
     write_log as _write_log,
 )
+from scripts.shared.tool_logging import ToolInvocation
 
 
 logger = logging.getLogger("agent_smith.billable")
@@ -330,7 +332,13 @@ def billable_operation(
 
 @contextmanager
 def action_operation(
-    resource: str, action: str, *, owner: str, local_only: bool = False, **fields: Any
+    resource: str,
+    action: str,
+    *,
+    owner: str,
+    local_only: bool = False,
+    invocation: ToolInvocation | None = None,
+    **fields: Any,
 ) -> Iterator[BillableEvent]:
     if not isinstance(owner, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", owner):
         raise ValueError("Action owner must be a short lowercase identifier")
@@ -377,12 +385,22 @@ def action_operation(
         )
 
         def emit(record):
+            prefix, display_json = label.prefix, None
+            if invocation is not None and record["phase"] == "START":
+                record = {
+                    **record,
+                    "agent": invocation.agent,
+                    "tool": invocation.tool,
+                    "params": json.loads(invocation.params_json),
+                }
+                prefix, display_json = invocation.prefix, invocation.params_json
             _write_log(
                 record,
-                label.prefix,
+                prefix,
                 _action_logger,
                 "operation_event",
                 level=_event_level(record),
+                display_json=display_json,
             )
 
         event = (

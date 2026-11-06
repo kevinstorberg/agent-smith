@@ -47,6 +47,7 @@ export function HarnessIndexPage({ type }: { type: string }) {
     setItems,
     total,
     loading,
+    initialLoading,
     error,
     dataCurrent,
     refresh,
@@ -141,9 +142,7 @@ export function HarnessIndexPage({ type }: { type: string }) {
         onProjectChange={(value) => preferences.setField('project', value)}
         disabled={actions.freezeControls}
       />
-      {loading && items.length === 0 && (
-        <div className="loading">Loading...</div>
-      )}
+      {initialLoading && <div className="loading">Loading...</div>}
       {!loading && error && (
         <div role="alert" className="card">
           Could not load {TYPE_LABELS[type]?.toLowerCase() || 'items'}
@@ -152,12 +151,6 @@ export function HarnessIndexPage({ type }: { type: string }) {
             Retry
           </button>
         </div>
-      )}
-      {items.length > 0 && !readable && (
-        <p role="status">
-          Showing previous results. Reordering is unavailable until this view
-          loads.
-        </p>
       )}
       <span role="status" className="visually-hidden">
         {actions.savingOrder

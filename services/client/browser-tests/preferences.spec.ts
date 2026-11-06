@@ -476,8 +476,8 @@ test('Meeting tab links restore their own saved query and page without sharing c
     page.getByRole('textbox', { name: 'Search meetings' }),
   ).toHaveValue('meeting query');
   await expect(
-    page.getByRole('combobox', { name: 'Sort meetings' }),
-  ).toHaveValue('title');
+    page.getByRole('columnheader', { name: 'Title', exact: true }),
+  ).toHaveAttribute('aria-sort', 'ascending');
   const meetings = () =>
     fixtureAPI.requests.filter(
       (request) => new URL(request.url).pathname === '/api/meetings',

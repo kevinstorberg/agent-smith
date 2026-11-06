@@ -74,12 +74,10 @@ describe('Meetings and Vocabulary preference boundaries', () => {
       offset: 50,
     });
     expect(api.meetings.vocabulary.list).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Sort meetings' }), {
-      target: { value: 'oldest' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Meeting date' }));
     await waitFor(() =>
       expect(api.meetings.list).toHaveBeenLastCalledWith(
-        expect.objectContaining({ sort: 'oldest', offset: 0 }),
+        expect.objectContaining({ sort: 'date_desc', offset: 0 }),
       ),
     );
     const meetingReads = vi.mocked(api.meetings.list).mock.calls.length;
@@ -114,7 +112,7 @@ describe('Meetings and Vocabulary preference boundaries', () => {
       expect(api.meetings.list).toHaveBeenLastCalledWith(
         expect.objectContaining({
           q: 'meeting query',
-          sort: 'oldest',
+          sort: 'date_desc',
           offset: 0,
         }),
       ),

@@ -39,7 +39,7 @@ def entries(caplog):
 
 
 @pytest.mark.asyncio
-async def test_native_mcp_create_and_read_log_before_database_call_without_payload(
+async def test_native_mcp_create_and_read_log_parameters_before_database_call(
     monkeypatch, caplog
 ):
     server = create_server()
@@ -47,9 +47,7 @@ async def test_native_mcp_create_and_read_log_before_database_call_without_paylo
 
     def create(values):
         assert (
-            entries(caplog)[-1]
-            .getMessage()
-            .startswith("ACTION ITEM CREATE [NONBILLABLE]")
+            entries(caplog)[-1].getMessage().startswith("unknown action_item_create ")
         )
         return original(values)
 
@@ -57,12 +55,16 @@ async def test_native_mcp_create_and_read_log_before_database_call_without_paylo
     result = await server.call_tool("action_item_create", {"title": SECRET})
     created = result[1] if isinstance(result, tuple) else json.loads(result[0].text)
     await server.call_tool("action_item_get", {"item_id": created["id"]})
-    assert [r.getMessage().split(" [", 1)[0] for r in entries(caplog)] == [
-        "ACTION ITEM CREATE",
-        "ACTION ITEM READ",
+    assert [r.operation_event["tool"] for r in entries(caplog)] == [
+        "action_item_create",
+        "action_item_get",
     ]
     assert all(r.operation_event["client"] == "unknown" for r in entries(caplog))
-    assert SECRET not in caplog.text
+    assert all(r.operation_event["billing"] == "nonbillable" for r in entries(caplog))
+    assert [r.operation_event["params"] for r in entries(caplog)] == [
+        {"title": SECRET},
+        {"item_id": created["id"]},
+    ]
 
 
 def test_native_http_create_logs_template_and_same_action_adapter_only_once(
@@ -117,7 +119,12 @@ async def test_graph_adapter_deduplicates_mcp_but_retains_each_model_attempt(
         return await runtime.dispatch(type, inputs)
 
     await server.call_tool("run_graph", {"type": "opinion", "inputs": {"text": SECRET}})
-    assert entries(caplog)[0].getMessage().startswith("GRAPH RUN [BILLABLE]")
+    assert entries(caplog)[0].getMessage().startswith("unknown run_graph ")
+    assert entries(caplog)[0].operation_event["billing"] == "billable"
+    assert entries(caplog)[0].operation_event["params"] == {
+        "type": "opinion",
+        "inputs": {"text": SECRET},
+    }
     provider = [
         r
         for r in caplog.records
@@ -125,7 +132,10 @@ async def test_graph_adapter_deduplicates_mcp_but_retains_each_model_attempt(
     ]
     assert len(provider) == 2
     assert all(r.getMessage().startswith("MODEL GENERATE [BILLABLE]") for r in provider)
-    assert SECRET not in caplog.text
+    assert all(
+        SECRET not in r.getMessage() and "params" not in r.billable_event
+        for r in provider
+    )
 
 
 @pytest.mark.asyncio
@@ -133,17 +143,20 @@ async def test_native_agent_tool_middleware_logs_before_tool_and_preserves_resul
     monkeypatch, caplog
 ):
     monkeypatch.setenv("MEMORY_BACKEND", "pinecone")
+    query = "release ownership and metadata tags"
 
     @tool("search_memories")
     def search(query: str) -> str:
         """Read prior memories."""
-        assert entries(caplog)[0].getMessage().startswith("MEMORY SEARCH [BILLABLE]")
+        assert entries(caplog)[0].getMessage().startswith("opinion search_memories ")
+        assert entries(caplog)[0].operation_event["params"] == {"query": query}
+        assert entries(caplog)[0].operation_event["billing"] == "billable"
         assert observability.current_trigger()["agent_tool"] == "search_memories"
         with observability.billable_operation("pinecone", "query"):
-            return query
+            return SECRET
 
     model = ScriptedModel(
-        replies=[call("search_memories", query=SECRET), AIMessage(content="finished")]
+        replies=[call("search_memories", query=query), AIMessage(content="finished")]
     )
     monkeypatch.setattr(agents, "build_chat_model", lambda *a, **kw: model)
     agent = agents.create_tool_agent(
@@ -172,11 +185,8 @@ async def test_unknown_future_tool_is_never_assumed_free(monkeypatch, caplog):
         system_prompt="test", model_role="opinion", tools=[future_remote_search]
     )
     await agent.ainvoke({"messages": [HumanMessage(content="test")]})
-    assert (
-        entries(caplog)[0]
-        .getMessage()
-        .startswith("TOOL FUTURE REMOTE SEARCH [BILLABLE?]")
-    )
+    assert entries(caplog)[0].getMessage().startswith("opinion future_remote_search ")
+    assert entries(caplog)[0].operation_event["billing"] == "unknown"
 
 
 @pytest.mark.asyncio
@@ -195,9 +205,8 @@ async def test_unmapped_mcp_tool_cannot_inherit_local_crud_classification(
 
     await server.call_tool(name, {})
     assert len(entries(caplog)) == 1
-    assert (
-        entries(caplog)[0].getMessage().startswith(f"TOOL {name.upper()} [BILLABLE?]")
-    )
+    assert entries(caplog)[0].getMessage().startswith(f"unknown {name} ")
+    assert entries(caplog)[0].operation_event["billing"] == "unknown"
 
 
 @pytest.mark.asyncio
@@ -253,11 +262,13 @@ async def test_concurrent_native_mcp_actions_capture_separate_requests(
     assert len(entries(caplog)) == 2
     assert len({r.operation_event["request_id"] for r in entries(caplog)}) == 2
     assert all(
-        r.getMessage().startswith("MEMORY SEARCH [NONBILLABLE]")
-        for r in entries(caplog)
+        r.getMessage().startswith("unknown memory_search ") for r in entries(caplog)
+    )
+    assert all(r.operation_event["billing"] == "nonbillable" for r in entries(caplog))
+    assert all(
+        r.operation_event["params"] == {"query": SECRET} for r in entries(caplog)
     )
     assert observability.current_trigger() == {}
-    assert SECRET not in caplog.text
 
 
 def test_replaced_sdk_processing_noise_is_narrow_and_preserves_warnings(caplog):
