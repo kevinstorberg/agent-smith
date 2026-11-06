@@ -271,7 +271,7 @@ export function EvalsPage() {
       <ScrollableTable
         label="Results list"
         className="results-list-table"
-        busy={!dataCurrent && !error}
+        busy={!dataCurrent && (loading || !error)}
         emptyState={
           !loading && !error && runs.length === 0 ? (
             <p className="loading" role="status">
