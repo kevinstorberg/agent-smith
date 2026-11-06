@@ -1,3 +1,12 @@
+.action-items-index-page {
+  /* Preserve the shaded table surface while joining its selected project tab. */
+  --action-table-header-surface: color-mix(in srgb, var(--surface) 85%, black);
+}
+
+.action-items-index-page .action-items-table th {
+  background-color: var(--action-table-header-surface);
+}
+
 .action-projects {
   margin-bottom: 0;
   min-width: 0;
@@ -69,7 +78,7 @@
 .action-project-tabs button.active {
   color: var(--text);
   border-color: var(--info);
-  background: var(--surface);
+  background: var(--action-table-header-surface, var(--surface));
 }
 
 .action-project-tabs button:focus-visible {
