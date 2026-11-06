@@ -28,6 +28,8 @@ describe('queue row deletion capability', () => {
         return (
           <ActionItemQueueTable
             queue={queue}
+            sort="manual"
+            onSort={() => undefined}
             status="open"
             onEdit={() => undefined}
           />

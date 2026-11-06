@@ -24,7 +24,6 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { actionItemTags } from '../utils/actionItems';
 import {
   ACTION_ITEM_STATUSES,
-  actionItemSortOptions,
   defaultActionItemSort,
   MAX_BODY_LENGTH,
   MAX_TITLE_LENGTH,
@@ -527,30 +526,7 @@ export function ProfileDiscussionTopics({
                 placeholder="Tags, comma-separated"
               />
             </label>
-            <label>
-              <span className="form-label">Sort</span>
-              <select
-                className="input"
-                value={sort}
-                disabled={queue.freezeControls}
-                onChange={(event) =>
-                  setSort(event.target.value as ActionItemSort)
-                }
-              >
-                {actionItemSortOptions(status).map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
           </div>
-          {!queue.reorderableView && (
-            <p className="text-muted-sm">
-              To drag topics into order, use Open with Manual order; search and
-              filters can stay applied.
-            </p>
-          )}
           {identityChanged ? (
             <p className="card" role="alert">
               This profile identity changed. Reload the profile to continue.{' '}
@@ -562,6 +538,11 @@ export function ProfileDiscussionTopics({
             <ActionItemQueueTable
               queue={queue}
               status={status}
+              sort={sort}
+              onSort={(value) => {
+                setSort(value);
+                queue.setOffset(0);
+              }}
               scope={`profile-topics-${profileId}`}
               noun="discussion topic"
               plural="discussion topics"

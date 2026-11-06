@@ -20,7 +20,20 @@ from pydantic import (
 from scripts.shared.validation import MAX_BODY_LENGTH, MAX_TITLE_LENGTH
 
 Status = Literal["open", "completed"]
-Sort = Literal["manual", "newest", "updated", "title", "completed"]
+ItemSort = Literal[
+    "manual",
+    "manual_desc",
+    "newest",
+    "updated",
+    "updated_asc",
+    "title",
+    "title_desc",
+    "tags_asc",
+    "tags_desc",
+    "completed",
+]
+Sort = Literal[ItemSort, "project_asc", "project_desc", "due_asc", "due_desc"]
+GLOBAL_ONLY_SORTS = {"project_asc", "project_desc", "due_asc", "due_desc"}
 PositiveInt = Annotated[int, Field(strict=True, gt=0)]
 Title = Annotated[
     str,
@@ -178,7 +191,7 @@ class ItemQuery(Contract):
     q: Annotated[str, Field(max_length=1000)] | None = None
     status: Literal["open", "completed", "all"] = "open"
     tags: Tags = Field(default_factory=list)
-    sort: Sort | None = None
+    sort: ItemSort | None = None
     limit: Annotated[int, Field(ge=1, le=100)] = 10
     offset: Annotated[int, Field(ge=0)] = 0
 
@@ -195,7 +208,7 @@ class ItemQuery(Contract):
 
     @model_validator(mode="after")
     def validate_sort(self):
-        if self.sort == "manual" and self.status != "open":
+        if self.sort in {"manual", "manual_desc"} and self.status != "open":
             raise ValueError("manual sort is only available for open action items")
         if self.sort == "completed" and self.status != "completed":
             raise ValueError(
@@ -205,6 +218,7 @@ class ItemQuery(Contract):
 
 
 class Query(ItemQuery, ProjectFields):
+    sort: Sort | None = None
     unassigned: bool = False
     due_within_hours: (
         Annotated[int, Field(strict=True, ge=1, le=MAX_DUE_WINDOW_HOURS)] | None

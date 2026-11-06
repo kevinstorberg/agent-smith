@@ -36,6 +36,8 @@ function DateTable({ showDueDate }: { showDueDate?: boolean }) {
   return (
     <ActionItemQueueTable
       queue={queue}
+      sort="manual"
+      onSort={() => undefined}
       onEdit={() => undefined}
       showDueDate={showDueDate}
       status="open"

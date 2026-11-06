@@ -14,12 +14,14 @@ from services.action_items.contracts import (
     Contract,
     Create,
     Delete,
+    GLOBAL_ONLY_SORTS,
     Move,
     Patch,
     PositiveInt,
     ProjectCreate,
     Query,
 )
+from services.api.models.shared.listing import bidirectional_sorts
 from services.db import get_connection
 from services.meetings import profile_db
 from services.meetings.db import MeetingStorageError
@@ -29,10 +31,18 @@ _PROJECT_ROWS = "action_items a LEFT JOIN action_item_projects p ON p.id=a.proje
 _PUBLIC = "a.id, a.title, a.description, p.name AS project, a.tags, a.status, a.completed_at, a.revision, a.created_at, a.updated_at, a.sort_key AS priority"
 _LIST = _PUBLIC.replace("a.description, ", "")
 _SORTS = {
-    "manual": "a.sort_key, a.id",
+    **bidirectional_sorts(
+        {
+            ("manual", "manual_desc"): ("a.sort_key",),
+            ("title", "title_desc"): ("lower(a.title)",),
+            ("updated_asc", "updated"): ("a.updated_at",),
+            ("tags_asc", "tags_desc"): ("NULLIF(a.tags, '{}'::text[])",),
+            ("project_asc", "project_desc"): ("lower(p.name)",),
+            ("due_asc", "due_desc"): ("a.due_at",),
+        },
+        tie_breaker="a.id",
+    ),
     "newest": "a.created_at DESC, a.id DESC",
-    "updated": "a.updated_at DESC, a.id DESC",
-    "title": "lower(a.title), a.id",
     "completed": "a.completed_at DESC, a.id DESC",
 }
 
@@ -282,6 +292,13 @@ class Queue:
             object.__setattr__(self, "profile_id", str(UUID(self.profile_id)))
 
     def _validate_scope_fields(self, request: Contract) -> None:
+        if (
+            self.profile_id is not None
+            and getattr(request, "sort", None) in GLOBAL_ONLY_SORTS
+        ):
+            raise ValueError(
+                "Profile discussion topics do not support project or deadline sorting"
+            )
         if self.profile_id is not None and request.model_fields_set & {
             "due_at",
             "due_within_hours",

@@ -1,6 +1,12 @@
 import type { ReactNode } from 'react';
 import './scrollableTable.css';
 
+export function TableEmptyState({ children }: { children?: ReactNode }) {
+  return children != null ? (
+    <div className="scrollable-table-empty-state">{children}</div>
+  ) : null;
+}
+
 export function ScrollableTable({
   label,
   className = '',
@@ -29,9 +35,7 @@ export function ScrollableTable({
       >
         {children}
       </table>
-      {emptyState != null && (
-        <div className="scrollable-table-empty-state">{emptyState}</div>
-      )}
+      <TableEmptyState>{emptyState}</TableEmptyState>
     </div>
   );
 }
