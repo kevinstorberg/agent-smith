@@ -23,6 +23,7 @@ import {
 } from '../constants';
 import type { PageLimit } from '../constants';
 import { MAX_DUE_WINDOW_HOURS } from './actionItemDeadlines';
+import { columnSortOptions } from './tableSorting';
 
 export const VIEW_COOKIE_NAME = 'agent-smith.ui.v1';
 export const MAX_COOKIE_BYTES = 3000;
@@ -33,10 +34,19 @@ export const JOB_SORT_OPTIONS = [
   { value: 'newest', label: 'Newest first' },
   { value: 'name', label: 'Name' },
 ] as const;
+export const PLAN_SORT_COLUMNS = {
+  title: { ascending: 'title', descending: 'title_desc' },
+  status: { ascending: 'status_asc', descending: 'status_desc' },
+  project: { ascending: 'project_asc', descending: 'project_desc' },
+  updated: {
+    ascending: 'updated_asc',
+    descending: 'updated',
+    defaultDirection: 'descending',
+  },
+} as const;
 export const PLAN_SORT_OPTIONS = [
-  { value: 'updated', label: 'Recently updated' },
+  ...columnSortOptions(PLAN_SORT_COLUMNS),
   { value: 'newest', label: 'Newest first' },
-  { value: 'title', label: 'Title A–Z' },
 ] as const;
 export const PLAN_STATUSES = ['all', 'draft', 'final'] as const;
 export const SCHEDULING_OPTIONS = [
