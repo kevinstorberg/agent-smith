@@ -31,6 +31,7 @@ export function PlansIndexPage() {
     items,
     total,
     loading,
+    initialLoading,
     error,
     dataCurrent,
     limit,
@@ -97,7 +98,7 @@ export function PlansIndexPage() {
         </div>
       </FilterBar>
 
-      {loading && <div className="loading">Loading...</div>}
+      {initialLoading && <div className="loading">Loading...</div>}
       {error && (
         <div role="alert" className="card">
           Could not load plans.{' '}
@@ -155,8 +156,7 @@ export function PlansIndexPage() {
             </tr>
           </thead>
           <tbody>
-            {!loading &&
-              !error &&
+            {!error &&
               items.map((plan) => (
                 <tr
                   key={plan.id}

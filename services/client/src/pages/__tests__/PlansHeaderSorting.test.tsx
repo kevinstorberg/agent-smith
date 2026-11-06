@@ -171,6 +171,8 @@ describe('Plans header sorting', () => {
     expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
     expect(document.querySelector('[aria-sort]')).toBeNull();
     expect(titleButton).toHaveFocus();
+    expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+    expect(screen.getByText('Original accepted row')).toBeVisible();
     expect(titleButton).toBeEnabled();
     await user.keyboard(' ');
     await waitFor(() =>

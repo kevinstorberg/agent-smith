@@ -30,6 +30,7 @@ export function AuditIndexPage() {
     items,
     total,
     loading,
+    initialLoading,
     error,
     dataCurrent,
     limit,
@@ -137,8 +138,14 @@ export function AuditIndexPage() {
         </label>
       </FilterBar>
 
-      <div className="audit-results-summary" role="status">
-        {updating
+      <div
+        className="audit-results-summary"
+        role="status"
+        style={{
+          visibility: updating && !initialLoading ? 'hidden' : undefined,
+        }}
+      >
+        {initialLoading
           ? 'Updating…'
           : !error &&
             `${total.toLocaleString()} ${hasFilters ? 'matching ' : ''}tool call${total === 1 ? '' : 's'}`}
@@ -201,7 +208,7 @@ export function AuditIndexPage() {
             </tr>
           </thead>
           <tbody>
-            {accepted &&
+            {!error &&
               items.map((event) => (
                 <tr
                   key={event.id}

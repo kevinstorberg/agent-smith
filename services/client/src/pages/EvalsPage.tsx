@@ -48,6 +48,7 @@ export function EvalsPage() {
     items: runs,
     total,
     loading,
+    initialLoading,
     error,
     dataCurrent,
     limit,
@@ -266,7 +267,7 @@ export function EvalsPage() {
           </button>
         </p>
       )}
-      {loading && <div className="loading">Loading...</div>}
+      {initialLoading && <div className="loading">Loading...</div>}
 
       <ScrollableTable
         label="Results list"
@@ -310,8 +311,7 @@ export function EvalsPage() {
           </tr>
         </thead>
         <tbody>
-          {!loading &&
-            !error &&
+          {!error &&
             runs.map((run) => (
               <tr
                 key={run.id}
