@@ -13,6 +13,7 @@ import {
   scenarioFixture,
   suiteFixture,
 } from './operationsFixture';
+import { enlargeComputedText } from './typography';
 
 async function exerciseScroll(region: Locator) {
   await expect(region).toHaveAttribute('tabindex', '0');
@@ -308,6 +309,7 @@ for (const resource of [
     label: 'Proposals list',
     error: 'Could not load proposals.',
     empty: 'No pending proposals',
+    headerCount: 0,
   },
   {
     route: '/audit',
@@ -315,6 +317,7 @@ for (const resource of [
     label: 'Audit events',
     error: 'Could not load audit events.',
     empty: 'No tool calls yet',
+    headerCount: 0,
   },
   {
     route: '/evals',
@@ -322,6 +325,7 @@ for (const resource of [
     label: 'Results list',
     error: 'Could not load results.',
     empty: 'No eval runs found',
+    headerCount: 0,
   },
   {
     route: '/eval-configs',
@@ -329,12 +333,13 @@ for (const resource of [
     label: 'Eval suites',
     error: 'Could not load eval suites.',
     empty: 'No eval suites found',
+    headerCount: 0,
   },
 ]) {
   test(`${resource.label} recover from an error into a contained empty state`, async ({
     page,
     fixtureAPI,
-  }) => {
+  }, testInfo) => {
     fixtureAPI.get(
       resource.endpoint,
       { detail: 'Synthetic unavailable response' },
@@ -362,13 +367,53 @@ for (const resource of [
     });
     const empty = region.getByText(resource.empty, { exact: true });
     await expect(empty).toBeVisible();
-    await expect(region.getByRole('columnheader')).toHaveCount(0);
+    await expect(region.getByRole('columnheader')).toHaveCount(
+      resource.headerCount,
+    );
     await expectControlContained(empty, region);
-    expect(
-      await region.evaluate(
-        (element) => element.scrollWidth - element.clientWidth,
-      ),
-    ).toBeLessThanOrEqual(1);
+    if (resource.headerCount === 0) {
+      expect(
+        await region.evaluate(
+          (element) => element.scrollWidth - element.clientWidth,
+        ),
+      ).toBeLessThanOrEqual(1);
+    } else {
+      await expect(
+        region.getByRole('columnheader').getByRole('button'),
+      ).toHaveCount(resource.headerCount);
+      for (const scale of [1, 2]) {
+        if (scale === 2) await enlargeComputedText(page);
+        for (const end of [false, true]) {
+          await region.evaluate((element, end) => {
+            element.scrollLeft = end ? element.scrollWidth : 0;
+          }, end);
+          await expectControlContained(empty, region);
+          const glyphs = await empty.evaluate((element) => {
+            const range = document.createRange();
+            range.selectNodeContents(element);
+            const bounds = element.getBoundingClientRect();
+            return {
+              left: bounds.left,
+              right: bounds.right,
+              fragments: [...range.getClientRects()].map((rect) => ({
+                left: rect.left,
+                right: rect.right,
+              })),
+            };
+          });
+          expect(glyphs.fragments.length).toBeGreaterThan(0);
+          for (const fragment of glyphs.fragments) {
+            expect(fragment.left).toBeGreaterThanOrEqual(glyphs.left);
+            expect(fragment.right).toBeLessThanOrEqual(glyphs.right);
+          }
+          await page.screenshot({
+            path: testInfo.outputPath(
+              `empty-${resource.route.slice(1)}-${scale}x-${end ? 'end' : 'start'}.png`,
+            ),
+          });
+        }
+      }
+    }
     await expectDocumentContained(page);
     await expectMainContained(page);
     await expectControlsUnclipped(page);
