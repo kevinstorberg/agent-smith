@@ -311,7 +311,7 @@ for (const resource of [
     error: 'Could not load proposals.',
     empty: 'No pending proposals',
     headerCount: 6,
-    sortableHeaderCount: 5,
+    sortButtonCount: 5,
   },
   {
     route: '/audit',
@@ -382,7 +382,7 @@ for (const resource of [
     } else {
       await expect(
         region.getByRole('columnheader').getByRole('button'),
-      ).toHaveCount(resource.sortableHeaderCount ?? resource.headerCount);
+      ).toHaveCount(resource.sortButtonCount ?? resource.headerCount);
       const initialFont = await empty.evaluate((element) =>
         parseFloat(getComputedStyle(element).fontSize),
       );
