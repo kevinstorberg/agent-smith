@@ -1,4 +1,5 @@
 import { test, expect, type APIRequest } from './fixtures';
+import { expectSortableHeaderLayout } from './sortableHeaderLayout';
 import { expectControlReachable, expectDocumentContained } from './geometry';
 import { enlargeComputedText } from './typography';
 
@@ -211,109 +212,27 @@ test('Plans sort labels retain whole words and separate arrows at normal and dou
   await expect(
     page.getByText('Readable heading fixture', { exact: true }),
   ).toBeVisible();
-  const initialFonts = new Map<string, number>();
-  for (const scale of [1, 2]) {
-    if (scale === 2) await enlargeComputedText(page);
-    for (const name of ['Status', 'Project', 'Last Updated']) {
-      const header = page.getByRole('columnheader', { name });
-      const control = header.getByRole('button');
-      await control.scrollIntoViewIfNeeded();
-      const geometry = await header.evaluate((node) => {
-        const label = node.querySelector<HTMLElement>(
-          '.sortable-header-label',
-        )!;
-        const icon = node
-          .querySelector<HTMLElement>('.sortable-header-icon')!
-          .getBoundingClientRect();
-        const text = label.firstChild!;
-        const range = document.createRange();
-        range.selectNodeContents(label);
-        const fragments = Array.from(range.getClientRects(), (rect) => ({
-          left: rect.left,
-          right: rect.right,
-          top: rect.top,
-          bottom: rect.bottom,
-        }));
-        const words = [...label.textContent!.matchAll(/\S+/g)].map((word) => {
-          range.setStart(text, word.index!);
-          range.setEnd(text, word.index! + word[0].length);
-          return { word: word[0], fragments: range.getClientRects().length };
-        });
+  await expectSortableHeaderLayout(page, testInfo, {
+    table: page.getByRole('table'),
+    scrollRegion: page.locator('.plans-table'),
+    labels: ['Status', 'Project', 'Last Updated'],
+    artifactPrefix: 'plans-sort-labels',
+    fullyVisibleHeaders: ['Last Updated'],
+    maximumLines: { Status: 1, Project: 1, 'Last Updated': 2 },
+    assertLayout: async (scale) => {
+      const dimensions = await page.locator('.plans-table').evaluate((node) => {
+        const table = node.querySelector('table')!;
         return {
-          fragments,
-          words,
-          labelRight: label.getBoundingClientRect().right,
-          icon: { left: icon.left, right: icon.right },
-          font: parseFloat(getComputedStyle(label).fontSize),
+          viewport: node.clientWidth,
+          scrollWidth: node.scrollWidth,
+          table: table.getBoundingClientRect().width,
+          font: parseFloat(getComputedStyle(table).fontSize),
         };
       });
-      if (scale === 1) initialFonts.set(name, geometry.font);
-      expect(geometry.font).toBeCloseTo(initialFonts.get(name)! * scale, 1);
-      expect(
-        geometry.words,
-        `${name} must not split words at ${scale}x`,
-      ).toEqual(name.split(' ').map((word) => ({ word, fragments: 1 })));
-      expect(
-        geometry.fragments.length,
-        `${name} must use at most one line per natural word`,
-      ).toBeLessThanOrEqual(name === 'Last Updated' ? 2 : 1);
-      expect(
-        geometry.fragments.every(
-          (fragment) => fragment.right <= geometry.icon.left + 0.5,
-        ),
-        `${name} label must not overlap its sort arrow`,
-      ).toBe(true);
-      expect(
-        geometry.icon.left - geometry.labelRight,
-        `${name} arrow must remain beside its label`,
-      ).toBeLessThanOrEqual(16);
-      await expectControlReachable(control);
-      if (name === 'Last Updated') {
-        const [controlBox, viewportBox] = await Promise.all([
-          control.boundingBox(),
-          page.locator('.plans-table').boundingBox(),
-        ]);
-        expect(controlBox!.x).toBeGreaterThanOrEqual(viewportBox!.x);
-        expect(controlBox!.x + controlBox!.width).toBeLessThanOrEqual(
-          viewportBox!.x + viewportBox!.width,
-        );
-      }
-      await testInfo.attach(
-        `plans-${name.replaceAll(' ', '-')}-${scale}x-geometry.json`,
-        { body: JSON.stringify(geometry), contentType: 'application/json' },
-      );
-    }
-    await page.locator('.plans-table').evaluate((node) => {
-      node.scrollLeft = 0;
-    });
-    await expectDocumentContained(page);
-    const path = testInfo.outputPath(`plans-sort-labels-${scale}x.png`);
-    await page.screenshot({ path });
-    await testInfo.attach(`plans-sort-labels-${scale}x.png`, {
-      path,
-      contentType: 'image/png',
-    });
-    const dimensions = await page.locator('.plans-table').evaluate((node) => {
-      const table = node.querySelector('table')!;
-      return {
-        viewport: node.clientWidth,
-        scrollWidth: node.scrollWidth,
-        table: table.getBoundingClientRect().width,
-        font: parseFloat(getComputedStyle(table).fontSize),
-      };
-    });
-    await testInfo.attach(`plans-table-${scale}x-geometry.json`, {
-      body: JSON.stringify(dimensions),
-      contentType: 'application/json',
-    });
-    await page.locator('.plans-table').evaluate((node) => {
-      node.scrollLeft = node.scrollWidth;
-    });
-    const endPath = testInfo.outputPath(`plans-sort-labels-end-${scale}x.png`);
-    await page.screenshot({ path: endPath });
-    await testInfo.attach(`plans-sort-labels-end-${scale}x.png`, {
-      path: endPath,
-      contentType: 'image/png',
-    });
-  }
+      await testInfo.attach(`plans-table-${scale}x-geometry.json`, {
+        body: JSON.stringify(dimensions),
+        contentType: 'application/json',
+      });
+    },
+  });
 });
