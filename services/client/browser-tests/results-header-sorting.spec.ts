@@ -218,15 +218,23 @@ test('Results preserve native focus, reject stale orders, and keep empty/error h
   await expect(table).toHaveAttribute('aria-busy', 'false');
   await expect(table.locator('[aria-sort]')).toHaveCount(0);
   await expect(model).toBeFocused();
-  fixtureAPI.get('/api/evals', { items: [], total: 0 });
-  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  let finishEmpty!: (value: ReturnType<typeof response>) => void;
+  const emptyResponse = new Promise<ReturnType<typeof response>>((resolve) => {
+    finishEmpty = resolve;
+  });
+  fixtureAPI.get('/api/evals', () => emptyResponse);
+  await model.press('Enter');
+  await expect(table).toHaveAttribute('aria-busy', 'true');
+  await expect(model).toBeFocused();
+  finishEmpty({ items: [], total: 0 });
   await expect(
     page.getByText('No eval runs found', { exact: true }),
   ).toBeVisible();
   await expect(table.getByRole('button')).toHaveCount(6);
   await expect(
     table.getByRole('columnheader', { name: 'Model', exact: true }),
-  ).toHaveAttribute('aria-sort', 'ascending');
+  ).toHaveAttribute('aria-sort', 'descending');
+  await expect(model).toBeFocused();
   expect(
     fixtureAPI.requests.filter((entry) => entry.method !== 'GET'),
   ).toHaveLength(0);

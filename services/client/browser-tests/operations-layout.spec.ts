@@ -325,7 +325,7 @@ for (const resource of [
     label: 'Results list',
     error: 'Could not load results.',
     empty: 'No eval runs found',
-    headerCount: 0,
+    headerCount: 6,
   },
   {
     route: '/eval-configs',

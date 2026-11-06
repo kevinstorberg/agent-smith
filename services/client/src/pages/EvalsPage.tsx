@@ -272,6 +272,13 @@ export function EvalsPage() {
         label="Results list"
         className="results-list-table"
         busy={!dataCurrent && !error}
+        emptyState={
+          !loading && !error && runs.length === 0 ? (
+            <p className="loading" role="status">
+              No eval runs found
+            </p>
+          ) : undefined
+        }
       >
         <thead>
           <tr>
@@ -331,13 +338,6 @@ export function EvalsPage() {
                 </td>
               </tr>
             ))}
-          {!loading && !error && runs.length === 0 && (
-            <tr>
-              <td colSpan={6} className="loading">
-                No eval runs found
-              </td>
-            </tr>
-          )}
         </tbody>
       </ScrollableTable>
       {!error && (
