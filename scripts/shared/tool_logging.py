@@ -104,7 +104,10 @@ class ToolInvocation:
 
     @property
     def prefix(self) -> str:
+        return self.format_prefix()
+
+    def format_prefix(self, source: str | None = None) -> str:
         return " ".join(
             json.dumps(value, ensure_ascii=True)[1:-1]
-            for value in (self.agent, self.tool)
+            for value in (self.agent if source is None else source, self.tool)
         )
