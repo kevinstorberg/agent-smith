@@ -7,6 +7,7 @@ from uuid import uuid4
 from mcp.server.fastmcp import FastMCP
 
 from scripts.shared.operation_logging import KNOWN_GRAPHS, tool_action
+from scripts.shared.tool_logging import ToolInvocation
 from services.observability import action_operation, current_trigger, trigger_context
 
 
@@ -33,6 +34,11 @@ class ObservedMCP(FastMCP):
     async def call_tool(
         self, name: str, arguments: dict[str, Any] | None = None
     ) -> Any:
+        parameters = arguments if arguments is not None else {}
+        client = self._client_name()
+        invocation = ToolInvocation.capture(
+            agent=client, tool=name, arguments=parameters
+        )
         registered = self._tool_manager.get_tool(name)
         namespace = self.name.split(" - ")[0]
         resource, action = tool_action(
@@ -40,7 +46,7 @@ class ObservedMCP(FastMCP):
         )
         fields = {}
         if namespace == "graphs" and name == "run_graph":
-            graph = (arguments or {}).get("type")
+            graph = parameters.get("type")
             fields["graph"] = (
                 graph if isinstance(graph, str) and graph in KNOWN_GRAPHS else "unknown"
             )
@@ -49,13 +55,14 @@ class ObservedMCP(FastMCP):
                 trigger="mcp",
                 source=namespace,
                 tool=name if registered is not None else "unknown",
-                client=self._client_name(),
+                client=invocation.agent,
                 request_id=current_trigger().get("request_id") or str(uuid4()),
                 reason="mcp_tool",
                 **fields,
             ),
-            action_operation(resource, action, owner="mcp"),
+            action_operation(resource, action, owner="mcp", invocation=invocation),
         ):
-            return await super().call_tool(
-                name, arguments if arguments is not None else {}
-            )
+            return await self._invoke_tool(name, parameters)
+
+    async def _invoke_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        return await super().call_tool(name, arguments)

@@ -315,6 +315,7 @@ def write_log(
     extra_name: str,
     *,
     level: int = logging.INFO,
+    display_json: str | None = None,
 ) -> None:
     # Standalone hooks and CLI providers also need visible stderr without app handlers.
     with _handler_lock:
@@ -327,6 +328,8 @@ def write_log(
         level,
         "%s %s",
         prefix,
-        json.dumps(record, ensure_ascii=True, sort_keys=True),
+        display_json
+        if display_json is not None
+        else json.dumps(record, ensure_ascii=True, sort_keys=True),
         extra={extra_name: record},
     )

@@ -184,7 +184,6 @@ for (const enlarged of [false, true])
 for (const view of [
   { path: '/memory', select: 'Sort' },
   { path: '/memory?q=release', select: 'Sort' },
-  { path: '/profiles', select: 'Sort' },
   { path: '/jobs', select: 'Scheduling' },
   { path: '/action-items?status=completed', select: 'Sort' },
 ]) {
@@ -363,14 +362,14 @@ for (const view of [
   {
     path: '/plans',
     label: 'Plan status',
-    sort: null,
+    field: 'Project scope',
     status: 'draft',
     api: '/api/plans',
   },
   {
     path: '/proposals',
     label: 'Proposal status',
-    sort: 'Sort proposals',
+    field: 'Search',
     status: 'approved',
     api: '/api/proposals',
   },
@@ -386,9 +385,7 @@ for (const view of [
     });
     if (page.viewportSize()!.width === 1440)
       await expectSameRow(
-        view.sort
-          ? page.getByRole('combobox', { name: view.sort })
-          : page.getByRole('textbox', { name: 'Project scope' }),
+        page.getByRole('textbox', { name: view.field }),
         button,
       );
     await button.focus();

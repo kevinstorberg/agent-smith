@@ -12,12 +12,22 @@ from psycopg2.extras import Json, RealDictCursor
 from services.db import get_connection
 from services.meetings.config import SourceConfig
 from services.meetings.types import MeetingSummary
-from services.api.models.shared.listing import sort_clause
+from services.api.models.shared.listing import bidirectional_sorts, sort_clause
 
 MEETING_SORTS = {
+    **bidirectional_sorts(
+        {
+            ("title", "title_desc"): ("lower(title)",),
+            ("connection_asc", "connection_desc"): ("lower(source_name)",),
+            ("provider_asc", "provider_desc"): ("lower(provider)",),
+            ("date_asc", "date_desc"): (
+                "COALESCE(meeting_start, provider_created_at)",
+            ),
+            ("updated_asc", "updated"): ("updated_at",),
+        }
+    ),
     "newest": "COALESCE(meeting_start, provider_created_at) DESC, id",
     "oldest": "COALESCE(meeting_start, provider_created_at), id",
-    "title": "lower(title), id",
 }
 
 

@@ -1,0 +1,18 @@
+.scrollable-table .suites-list-table {
+  min-width: 66rem;
+}
+.suites-list-table .sortable-header-label {
+  white-space: nowrap;
+}
+.suites-list-table th:first-child,
+.suites-list-table th:nth-child(3) {
+  width: 20%;
+}
+.suites-list-table th:nth-child(2),
+.suites-list-table th:last-child {
+  width: 12%;
+}
+.suites-list-table th:nth-child(4),
+.suites-list-table th:nth-child(5) {
+  width: 18%;
+}

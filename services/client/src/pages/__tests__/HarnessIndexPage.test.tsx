@@ -104,6 +104,50 @@ afterEach(() => {
 
 describe('HarnessIndexPage', () => {
   it.each(['rule', 'skill', 'tool', 'hook', 'agent'])(
+    'keeps a pending %s header sort quiet while retaining stale-row safety',
+    async (type) => {
+      renderWithProviders(<HarnessIndexPage type={type} />, {
+        initialEntries: [
+          `/harness/${{ rule: 'rules', skill: 'skills', tool: 'tools', hook: 'hooks', agent: 'agents' }[type]}`,
+        ],
+      });
+      await screen.findByText('test_rule');
+      let finish!: (value: unknown) => void;
+      mockList.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+      const target = within(
+        screen.getByRole('columnheader', { name: 'Name' }),
+      ).getByRole('button');
+      target.focus();
+      fireEvent.click(target);
+      await waitFor(() =>
+        expect(mockList).toHaveBeenLastCalledWith(
+          type,
+          expect.objectContaining({ sort: 'name' }),
+        ),
+      );
+      expect(
+        screen.queryByText(/Showing previous results/),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+      expect(screen.getByText('test_rule')).toBeVisible();
+      expect(target).toHaveFocus();
+      expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
+      expect(screen.getByTestId('harness-drop-zone')).toHaveAttribute(
+        'data-disabled',
+        'true',
+      );
+      expect(mockMove).not.toHaveBeenCalled();
+      expect(mockUpdateMetadata).not.toHaveBeenCalled();
+      await act(async () => finish({ items: [makeItem()], total: 1 }));
+      expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'false');
+    },
+  );
+
+  it.each(['rule', 'skill', 'tool', 'hook', 'agent'])(
     'silently polls the current %s page at 15 seconds and stops on unmount',
     async (type) => {
       vi.useFakeTimers();
@@ -465,7 +509,7 @@ describe('HarnessIndexPage', () => {
     expect(mockReorder).not.toHaveBeenCalled();
   });
 
-  it('labels retained rows and blocks stale drag callbacks while changed criteria refetch', async () => {
+  it('quietly retains rows and blocks stale drag callbacks while changed criteria refetch', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     renderWithProviders(<HarnessIndexPage type="rule" />, {
       initialEntries: ['/harness/rules'],
@@ -493,10 +537,10 @@ describe('HarnessIndexPage', () => {
       vi.advanceTimersByTime(300);
     });
     expect(
-      screen.getByText(
+      screen.queryByText(
         'Showing previous results. Reordering is unavailable until this view loads.',
       ),
-    ).toBeVisible();
+    ).not.toBeInTheDocument();
     expect(screen.getByText('test_rule')).toBeVisible();
     expect(screen.getByTestId('harness-drop-zone')).toHaveAttribute(
       'data-disabled',
@@ -541,10 +585,10 @@ describe('HarnessIndexPage', () => {
     );
     expect(screen.getByText('test_rule')).toBeVisible();
     expect(
-      screen.getByText(
+      screen.queryByText(
         'Showing previous results. Reordering is unavailable until this view loads.',
       ),
-    ).toBeVisible();
+    ).not.toBeInTheDocument();
     expect(screen.queryByText('No rules found')).not.toBeInTheDocument();
     expect(
       screen.queryByText('Private backend diagnostic'),
