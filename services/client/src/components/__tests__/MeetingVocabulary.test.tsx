@@ -64,6 +64,75 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('MeetingVocabulary', () => {
+  it.each([
+    ['Term', 'term_desc', 'term'],
+    ['Meaning', 'definition_asc', 'definition_desc'],
+  ])(
+    'toggles %s from the first server page without a sort menu',
+    async (label, first, second) => {
+      vi.mocked(vocabulary.list).mockResolvedValue({
+        items: [term],
+        total: 25,
+      });
+      open();
+      await screen.findByText('Lifetime value');
+      fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+      await waitFor(() =>
+        expect(vocabulary.list).toHaveBeenLastCalledWith(
+          expect.objectContaining({ offset: 10 }),
+        ),
+      );
+      expect(
+        screen.queryByRole('combobox', { name: 'Sort vocabulary' }),
+      ).not.toBeInTheDocument();
+      const header = screen.getByRole('columnheader', { name: label });
+      for (const sort of [first, second]) {
+        fireEvent.click(within(header).getByRole('button'));
+        await waitFor(() =>
+          expect(vocabulary.list).toHaveBeenLastCalledWith(
+            expect.objectContaining({ sort, offset: 0 }),
+          ),
+        );
+        await waitFor(() =>
+          expect(header).toHaveAttribute(
+            'aria-sort',
+            sort.endsWith('desc') ? 'descending' : 'ascending',
+          ),
+        );
+      }
+      expect(vocabulary.update).not.toHaveBeenCalled();
+      expect(vocabulary.remove).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps sortable headers mounted while empty and while a focused sort retains its accepted rows', async () => {
+    open();
+    await screen.findByText('Lifetime value');
+    let finish!: (value: { items: (typeof term)[]; total: number }) => void;
+    vi.mocked(vocabulary.list).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const header = screen.getByRole('columnheader', { name: 'Meaning' });
+    const button = within(header).getByRole('button');
+    button.focus();
+    fireEvent.click(button);
+    expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
+    expect(button).toHaveFocus();
+    expect(screen.getByText('Lifetime value')).toBeVisible();
+    expect(screen.queryByText('Loading vocabulary...')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit LTV' })).toBeDisabled();
+    await act(async () => finish({ items: [], total: 0 }));
+    expect(await screen.findByText('No vocabulary terms yet.')).toBeVisible();
+    expect(screen.getAllByRole('columnheader')).toHaveLength(3);
+    expect(button).toHaveFocus();
+    expect(
+      within(screen.getByRole('columnheader', { name: 'Actions' })).queryByRole(
+        'button',
+      ),
+    ).not.toBeInTheDocument();
+  });
   it('silently refreshes the current vocabulary criteria and page at 15 seconds', async () => {
     vi.useFakeTimers();
     document.cookie = mergeViewCookie('', 'vocabulary', {
@@ -207,6 +276,8 @@ describe('MeetingVocabulary', () => {
       finish({ ...term, revision: 2 });
     });
     expect(vocabulary.list).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Edit LTV' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Delete LTV' })).toBeDisabled();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(30_000);
     });
@@ -229,13 +300,9 @@ describe('MeetingVocabulary', () => {
     expect(screen.getByRole('combobox', { name: 'Definition' })).toHaveValue(
       'all',
     );
-    expect(
-      screen.getByRole('combobox', { name: 'Sort vocabulary' }),
-    ).toHaveValue('term');
+    expect(screen.getByRole('button', { name: 'Term' })).toBeVisible();
     await screen.findByText('Could not load vocabulary.');
-    expect(
-      screen.getByRole('combobox', { name: 'Sort vocabulary' }),
-    ).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Term' })).toBeVisible();
     vi.mocked(vocabulary.list).mockResolvedValue({ items: [], total: 0 });
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await screen.findByText('No vocabulary terms yet.');
@@ -267,16 +334,13 @@ describe('MeetingVocabulary', () => {
         sort: 'term',
       }),
     );
-    fireEvent.change(
-      screen.getByRole('combobox', { name: 'Sort vocabulary' }),
-      { target: { value: 'updated' } },
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Meaning' }));
     await waitFor(() =>
       expect(vocabulary.list).toHaveBeenLastCalledWith(
         expect.objectContaining({
           offset: 0,
           definition: 'undefined',
-          sort: 'updated',
+          sort: 'definition_asc',
         }),
       ),
     );

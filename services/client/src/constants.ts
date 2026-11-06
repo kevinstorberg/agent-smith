@@ -86,8 +86,12 @@ export const VOCABULARY_DEFINITIONS = [
   { value: 'defined', label: 'With definition' },
   { value: 'undefined', label: 'Without definition' },
 ] as const;
+export const VOCABULARY_SORT_COLUMNS = {
+  term: { ascending: 'term', descending: 'term_desc' },
+  meaning: { ascending: 'definition_asc', descending: 'definition_desc' },
+} as const;
 export const VOCABULARY_SORT_OPTIONS = [
-  { value: 'term', label: 'Term A–Z' },
+  ...columnSortOptions(VOCABULARY_SORT_COLUMNS),
   { value: 'updated', label: 'Recently updated' },
 ] as const;
 

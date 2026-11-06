@@ -1,0 +1,13 @@
+.meeting-vocabulary > .scrollable-table {
+  margin-top: 16px;
+}
+.meeting-vocabulary .scrollable-table .table.vocabulary-table {
+  min-width: max(600px, 28em);
+}
+.vocabulary-table .vocabulary-sort-term-column,
+.vocabulary-table .vocabulary-sort-meaning-column {
+  width: 8em;
+}
+.vocabulary-table .vocabulary-sort-actions-column {
+  width: 12em;
+}
