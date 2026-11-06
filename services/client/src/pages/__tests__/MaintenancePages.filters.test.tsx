@@ -249,9 +249,7 @@ describe('Maintenance page server controls', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), {
       target: { value: 'error' },
     });
-    fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), {
-      target: { value: 'duration' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Duration' }));
     await settle();
     expect(list).toHaveBeenLastCalledWith(
       expect.objectContaining({

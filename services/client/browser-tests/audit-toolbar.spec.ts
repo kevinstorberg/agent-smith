@@ -8,7 +8,7 @@ import { auditFixture } from './operationsFixture';
 import { expectContrast } from './contrast';
 import { enlargeComputedText } from './typography';
 
-test('Audit keeps five quiet labeled fields visible and keyboard operable without records', async ({
+test('Audit keeps four quiet labeled fields visible and keyboard operable without records', async ({
   page,
   fixtureAPI,
 }, testInfo) => {
@@ -23,7 +23,7 @@ test('Audit keeps five quiet labeled fields visible and keyboard operable withou
     await expect(
       toolbar.getByRole('textbox', { name, exact: true }),
     ).toBeVisible();
-  for (const name of ['Agent', 'Status', 'Sort'])
+  for (const name of ['Agent', 'Status'])
     await expect(
       toolbar.getByRole('combobox', { name, exact: true }),
     ).toBeVisible();
@@ -35,9 +35,10 @@ test('Audit keeps five quiet labeled fields visible and keyboard operable withou
   await status.focus();
   await status.press('e');
   await expect(status).toHaveValue('error');
-  await toolbar
-    .getByRole('combobox', { name: 'Sort', exact: true })
-    .selectOption('duration');
+  await page
+    .getByRole('columnheader', { name: 'Duration', exact: true })
+    .getByRole('button')
+    .click();
   await expect
     .poll(() =>
       fixtureAPI.requests.some((entry) => {
@@ -83,8 +84,8 @@ test('Audit keeps five quiet labeled fields visible and keyboard operable withou
   await expect(agent).toHaveValue('');
   await expect(status).toHaveValue('error');
   await expect(
-    toolbar.getByRole('combobox', { name: 'Sort', exact: true }),
-  ).toHaveValue('duration');
+    page.getByRole('columnheader', { name: 'Duration', exact: true }),
+  ).toHaveAttribute('aria-sort', 'descending');
   await expect
     .poll(() =>
       fixtureAPI.requests.some((entry) => {
@@ -189,7 +190,7 @@ test('Audit distinguishes pending, filtered empty, and failed requests without s
   await expect(
     page.getByText('No matching tool calls', { exact: true }),
   ).not.toBeVisible();
-  for (const name of ['Agent', 'Status', 'Sort'])
+  for (const name of ['Agent', 'Status'])
     await expect(
       page.getByRole('combobox', { name, exact: true }),
     ).toBeVisible();
@@ -260,8 +261,9 @@ test('Audit retains readable selected values after200% computed text enlargement
     .getByRole('combobox', { name: 'Agent', exact: true })
     .selectOption('claude');
   await page
-    .getByRole('combobox', { name: 'Sort', exact: true })
-    .selectOption('duration');
+    .getByRole('columnheader', { name: 'Duration', exact: true })
+    .getByRole('button')
+    .click();
   await expect(page.getByRole('status')).toHaveText('1 matching tool call');
   await enlargeComputedText(page);
   const toolbar = page.locator('.audit-toolbar');

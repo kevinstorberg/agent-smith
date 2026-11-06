@@ -12,14 +12,23 @@ from __future__ import annotations
 from psycopg2.extras import Json
 
 from services.api.models.base import BaseModel
-from services.api.models.shared.listing import search_pattern, sort_clause
+from services.api.models.shared.listing import (
+    bidirectional_sorts,
+    search_pattern,
+    sort_clause,
+)
 from services.db import get_connection
 
-AUDIT_SORTS = {
-    "newest": "created_at DESC, id DESC",
-    "oldest": "created_at, id",
-    "duration": "duration_ms DESC NULLS LAST, id DESC",
-}
+AUDIT_SORTS = bidirectional_sorts(
+    {
+        ("tool_asc", "tool_desc"): ("lower(tool_name)",),
+        ("status_asc", "status_desc"): ("status",),
+        ("agent_asc", "agent_desc"): ("agent",),
+        ("duration_asc", "duration"): ("duration_ms",),
+        ("project_asc", "project_desc"): ("NULLIF(lower(project), '')",),
+        ("oldest", "newest"): ("created_at",),
+    }
+)
 
 # Server-side home for the coding-agent list. The host hook derives its own list
 # from scripts/audit_hook.py:FIELD_KEYS (it can't import services.*), and the
