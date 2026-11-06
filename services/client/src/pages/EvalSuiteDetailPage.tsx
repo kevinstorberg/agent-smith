@@ -5,12 +5,34 @@ import type { EvalSuite, EvalScenario } from '../api';
 import { CopyButton } from '../components/CopyButton';
 import { DetailPageHeader } from '../components/DetailPageHeader';
 import { ScrollableTable } from '../components/ScrollableTable';
+import { SortableHeader } from '../components/table/SortableHeader';
+import { useLocalTableSort } from '../hooks/useLocalTableSort';
+import './scenarioSorting.css';
 import { useDetailPageEdit } from '../hooks/useDetailPageEdit';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { usePageLifetime } from '../hooks/usePageLifetime';
 import { useNotification } from '../context/useNotification';
 import { makeKeyboardClickable } from '../utils/a11y';
 import { validators } from '../utils/validation';
+
+const SCENARIO_COLUMNS = {
+  name: {
+    ascending: 'name_asc',
+    descending: 'name_desc',
+    select: (scenario: EvalScenario) => scenario.name,
+  },
+  prompt: {
+    ascending: 'prompt_asc',
+    descending: 'prompt_desc',
+    select: (scenario: EvalScenario) => scenario.prompt,
+  },
+  enabled: {
+    ascending: 'enabled_asc',
+    descending: 'enabled_desc',
+    select: (scenario: EvalScenario) => scenario.enabled,
+  },
+} as const;
+const scenarioId = (scenario: EvalScenario) => scenario.id;
 
 interface SuiteEditValues {
   name: string;
@@ -39,6 +61,11 @@ export function EvalSuiteDetailPage() {
     enabled: true,
   });
   const [scenarios, setScenarios] = useState<EvalScenario[]>([]);
+  const scenarioRows = useLocalTableSort(
+    scenarios,
+    SCENARIO_COLUMNS,
+    scenarioId,
+  );
 
   const {
     editing,
@@ -602,18 +629,31 @@ export function EvalSuiteDetailPage() {
           <ScrollableTable
             label="Suite scenarios"
             className="suite-scenarios-table"
-            empty={scenarios.length === 0}
           >
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Prompt</th>
-                <th>Enabled</th>
+                {(
+                  [
+                    ['name', 'Name'],
+                    ['prompt', 'Prompt'],
+                    ['enabled', 'Enabled'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <SortableHeader
+                    key={key}
+                    sort={scenarioRows.sort}
+                    column={SCENARIO_COLUMNS[key]}
+                    onSort={scenarioRows.setSort}
+                    disabled={saving}
+                  >
+                    {label}
+                  </SortableHeader>
+                ))}
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {scenarios.map((sc) => {
+              {scenarioRows.items.map((sc) => {
                 const isExpanded = expandedId === sc.id;
                 const isScenarioEditing = editingScenarioId === sc.id;
 
