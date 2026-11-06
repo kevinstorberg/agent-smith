@@ -11,13 +11,35 @@ from scripts.shared.agents import VIRTUAL_AGENTS
 from scripts.shared.validation import assert_not_empty
 from services.db import get_connection
 from services.api.models.base import BaseModel
-from services.api.models.shared.listing import sort_clause
+from services.api.models.shared.listing import bidirectional_sorts, sort_clause
 
+_CONFIG_COUNT_SORTS = bidirectional_sorts(
+    {
+        ("config_count_asc", "config_count_desc"): (
+            "COALESCE(config_counts.config_count, 0)",
+        )
+    }
+)
+_RULE_CLONE_SORTS = bidirectional_sorts(
+    {("clone_as_skill_asc", "clone_as_skill_desc"): ("clone_as_skill",)}
+)
 HARNESS_SORTS = {
-    "manual": "sort_key, id",
-    "name": "lower(name), id",
+    **bidirectional_sorts(
+        {
+            ("manual", "manual_desc"): ("sort_key",),
+            ("name", "name_desc"): ("lower(name)",),
+            ("project_asc", "project_desc"): ("NULLIF(lower(project), '')",),
+            ("enabled_asc", "enabled_desc"): ("enabled",),
+            ("agents_asc", "agents_desc"): (
+                "NULLIF(ARRAY(SELECT lower(listed.agent) FROM unnest(agents) AS listed(agent) ORDER BY lower(listed.agent)), ARRAY[]::text[])",
+            ),
+            ("version_asc", "version_desc"): ("version",),
+            ("updated_asc", "updated"): ("updated_at",),
+        }
+    ),
+    **_CONFIG_COUNT_SORTS,
+    **_RULE_CLONE_SORTS,
     "newest": "created_at DESC, id DESC",
-    "updated": "updated_at DESC, id DESC",
 }
 
 
@@ -232,16 +254,28 @@ def list_items_summary(
     enabled: bool | None = None,
 ) -> list[dict]:
     table = _table(item_type)
+    order = sort_clause(sort, HARNESS_SORTS)
+    if item_type != "rule" and sort in _RULE_CLONE_SORTS:
+        raise ValueError("Skill clone ordering is available only for rules")
     base_cols = (
         "id, name, project, agents, sort_key, enabled, version, created_at, updated_at"
     )
     cols = f"{base_cols}, clone_as_skill" if item_type == "rule" else base_cols
 
     project_clause, params = _project_filter(project)
+    count_join = ""
+    if sort in _CONFIG_COUNT_SORTS:
+        count_join = f"""
+            LEFT JOIN LATERAL (
+                SELECT count(*) AS config_count FROM harness_configs
+                WHERE item_type = %s AND item_id = {table}.id
+            ) config_counts ON true
+        """
+        params.insert(0, item_type)
     query = f"""SELECT {cols} FROM (
         SELECT {cols}, MAX(version) OVER (PARTITION BY name, project) AS latest_version
         FROM {table}
-    ) {table} WHERE version = latest_version {project_clause}"""
+    ) {table} {count_join} WHERE version = latest_version {project_clause}"""
 
     if agent:
         query += "\n          AND %s = ANY(agents)"
@@ -252,7 +286,7 @@ def list_items_summary(
             raise ValueError("enabled must be a boolean")
         query += "\n          AND enabled = %s"
         params.append(enabled)
-    query += "\n        ORDER BY " + sort_clause(sort, HARNESS_SORTS)
+    query += "\n        ORDER BY " + order
 
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:

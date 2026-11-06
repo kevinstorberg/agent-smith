@@ -290,9 +290,7 @@ describe('HarnessIndexPage', () => {
         initialEntries: ['/harness/rules'],
       });
       await screen.findByText('test_rule');
-      fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), {
-        target: { value: 'updated' },
-      });
+      fireEvent.click(screen.getByRole('button', { name: 'Updated' }));
       await waitFor(() =>
         expect(mockList).toHaveBeenLastCalledWith(
           'rule',
@@ -312,7 +310,7 @@ describe('HarnessIndexPage', () => {
           expect.objectContaining({ offset: 10 }),
         ),
       );
-      const row = screen.getByRole('button', { name: /another_rule/ });
+      const row = screen.getByRole('row', { name: /another_rule/ });
       await waitFor(() =>
         expect(within(row).getAllByRole('checkbox')[0]).toBeEnabled(),
       );
@@ -326,6 +324,11 @@ describe('HarnessIndexPage', () => {
         screen.getByPlaceholderText('Filter by project...'),
       ).toBeDisabled();
       expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+      screen
+        .getAllByRole('columnheader')
+        .forEach((header) =>
+          expect(within(header).getByRole('button')).toBeDisabled(),
+        );
       mockList
         .mockResolvedValue({ items: [items[1], items[0]], total: 25 })
         .mockClear();
@@ -345,9 +348,9 @@ describe('HarnessIndexPage', () => {
           sort: 'updated',
         }),
       );
-      const rows = within(screen.getByTestId('harness-drop-zone')).getAllByRole(
-        'button',
-      );
+      const rows = within(screen.getByTestId('harness-drop-zone'))
+        .getAllByRole('row')
+        .filter((row) => row.classList.contains('harness-list-row'));
       expect(rows[0]).toHaveTextContent('another_rule');
       expect(rows[1]).toHaveTextContent('test_rule');
     },
@@ -360,11 +363,15 @@ describe('HarnessIndexPage', () => {
     });
     for (const name of ['Search', 'Project scope'])
       expect(screen.getByRole('textbox', { name })).toBeVisible();
-    expect(screen.getByRole('combobox', { name: 'Sort' })).toHaveValue(
-      'manual',
-    );
+    expect(screen.getByRole('button', { name: 'Order' })).toBeVisible();
+    expect(
+      screen.queryByRole('combobox', { name: 'Sort' }),
+    ).not.toBeInTheDocument();
     await screen.findByText('No rules found');
-    expect(screen.getByRole('combobox', { name: 'Sort' })).toBeVisible();
+    expect(screen.getByRole('columnheader', { name: 'Order' })).toHaveAttribute(
+      'aria-sort',
+      'ascending',
+    );
     expect(mockList).toHaveBeenCalledWith(
       'rule',
       expect.objectContaining({ sort: 'manual' }),
@@ -393,9 +400,7 @@ describe('HarnessIndexPage', () => {
       ),
     );
     mockList.mockClear();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), {
-      target: { value: 'name' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Name' }));
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
     expect(mockList).toHaveBeenCalledWith(
       'rule',
@@ -419,9 +424,7 @@ describe('HarnessIndexPage', () => {
       'false',
     );
     const manualDrop = drag.end;
-    fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), {
-      target: { value: 'updated' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Updated' }));
     await waitFor(() =>
       expect(mockList).toHaveBeenLastCalledWith(
         'rule',
@@ -436,9 +439,7 @@ describe('HarnessIndexPage', () => {
       'data-disabled',
       'true',
     );
-    fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), {
-      target: { value: 'manual' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Order' }));
     await waitFor(() =>
       expect(screen.getByTestId('harness-drop-zone')).toHaveAttribute(
         'data-disabled',
@@ -649,6 +650,19 @@ describe('HarnessIndexPage', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/harness/rule/1');
   });
 
+  it.each(['Enter', ' '])(
+    'preserves row keyboard navigation with %j after adopting table roles',
+    async (key) => {
+      renderWithProviders(<HarnessIndexPage type="rule" />, {
+        initialEntries: ['/harness/rules'],
+      });
+      await screen.findByText('test_rule');
+      const row = screen.getByText('test_rule').closest('[role="row"]')!;
+      fireEvent.keyDown(row, { key });
+      expect(mockNavigate).toHaveBeenCalledExactlyOnceWith('/harness/rule/1');
+    },
+  );
+
   it('navigates to create page on new button click', async () => {
     renderWithProviders(<HarnessIndexPage type="rule" />, {
       initialEntries: ['/harness/rules'],
@@ -709,5 +723,223 @@ describe('HarnessIndexPage', () => {
     );
     expect(screen.getByPlaceholderText('Search by name...')).toBe(nameInput);
     expect(nameInput).toHaveFocus();
+  });
+});
+
+describe('Harness header sorting', () => {
+  it.each(['rule', 'skill', 'tool', 'hook', 'agent'])(
+    'exposes a valid %s table with sortable data headers and ordinary cells',
+    async (type) => {
+      renderWithProviders(<HarnessIndexPage type={type} />, {
+        initialEntries: [`/harness/${type === 'rule' ? 'rules' : `${type}s`}`],
+      });
+      await screen.findByText('test_rule');
+      const table = screen.getByRole('table');
+      const expected = [
+        'Order',
+        'Name',
+        'Project',
+        'Enabled',
+        ...(type === 'rule' ? ['Skill Clone'] : []),
+        'Agents',
+        'Configs',
+        'Version',
+        'Updated',
+      ];
+      expect(
+        within(table)
+          .getAllByRole('columnheader')
+          .map((node) => node.textContent?.replace(/[↕▲▼]/g, '').trim()),
+      ).toEqual(expected);
+      for (const label of expected)
+        expect(
+          within(table).getByRole('columnheader', { name: label }),
+        ).toContainElement(within(table).getByRole('button', { name: label }));
+      const row = screen.getByText('test_rule').closest('[role="row"]')!;
+      expect(within(row as HTMLElement).getAllByRole('cell')).toHaveLength(
+        expected.length,
+      );
+      expect(within(table).getAllByRole('rowgroup')).toHaveLength(2);
+      expect(screen.queryByRole('grid')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('combobox', { name: 'Sort' }),
+      ).not.toBeInTheDocument();
+      expect(table).toHaveAttribute('aria-busy', 'false');
+    },
+  );
+
+  it.each([
+    ['Order', 'manual', 'manual_desc'],
+    ['Name', 'name', 'name_desc'],
+    ['Project', 'project_asc', 'project_desc'],
+    ['Enabled', 'enabled_asc', 'enabled_desc'],
+    ['Skill Clone', 'clone_as_skill_asc', 'clone_as_skill_desc'],
+    ['Agents', 'agents_asc', 'agents_desc'],
+    ['Configs', 'config_count_asc', 'config_count_desc'],
+    ['Version', 'version_asc', 'version_desc'],
+    ['Updated', 'updated_asc', 'updated'],
+  ])(
+    'toggles %s server order without metadata or rank writes',
+    async (label, ascending, descending) => {
+      renderWithProviders(<HarnessIndexPage type="rule" />, {
+        initialEntries: ['/harness/rules?sort=newest'],
+      });
+      await screen.findByText('test_rule');
+      const header = screen.getByRole('columnheader', { name: label });
+      const button = within(header).getByRole('button');
+      fireEvent.click(button);
+      const first = label === 'Updated' ? descending : ascending;
+      const second = label === 'Updated' ? ascending : descending;
+      await waitFor(() =>
+        expect(mockList).toHaveBeenLastCalledWith(
+          'rule',
+          expect.objectContaining({ sort: first, offset: 0 }),
+        ),
+      );
+      await waitFor(() =>
+        expect(header).toHaveAttribute(
+          'aria-sort',
+          first === ascending ? 'ascending' : 'descending',
+        ),
+      );
+      fireEvent.click(button);
+      await waitFor(() =>
+        expect(mockList).toHaveBeenLastCalledWith(
+          'rule',
+          expect.objectContaining({ sort: second }),
+        ),
+      );
+      await waitFor(() =>
+        expect(header).toHaveAttribute(
+          'aria-sort',
+          second === ascending ? 'ascending' : 'descending',
+        ),
+      );
+      expect(mockUpdateMetadata).not.toHaveBeenCalled();
+      expect(mockMove).not.toHaveBeenCalled();
+      expect(mockReorder).not.toHaveBeenCalled();
+    },
+  );
+
+  it('restores canonical Order after Name directions and freezes every header throughout drag/save/recovery', async () => {
+    const items = [makeItem(), makeItem({ id: 2, name: 'another_rule' })];
+    mockList.mockResolvedValue({ items, total: 2 });
+    let finish!: (value: unknown) => void;
+    mockMove.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    renderWithProviders(<HarnessIndexPage type="rule" />, {
+      initialEntries: ['/harness/rules'],
+    });
+    await screen.findByText('test_rule');
+    const name = screen.getByRole('button', { name: 'Name' });
+    fireEvent.click(name);
+    await waitFor(() =>
+      expect(
+        screen.getByRole('columnheader', { name: 'Name' }),
+      ).toHaveAttribute('aria-sort', 'ascending'),
+    );
+    expect(
+      screen.getByRole('button', { name: 'Reorder test_rule' }),
+    ).toBeDisabled();
+    fireEvent.click(name);
+    await waitFor(() =>
+      expect(
+        screen.getByRole('columnheader', { name: 'Name' }),
+      ).toHaveAttribute('aria-sort', 'descending'),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Order' }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('columnheader', { name: 'Order' }),
+      ).toHaveAttribute('aria-sort', 'ascending'),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('harness-drop-zone')).toHaveAttribute(
+        'data-disabled',
+        'false',
+      ),
+    );
+    act(() => {
+      drag.start();
+    });
+    screen
+      .getAllByRole('columnheader')
+      .forEach((header) =>
+        expect(within(header).getByRole('button')).toBeDisabled(),
+      );
+    let finished!: Promise<void>;
+    act(() => {
+      finished = drag.end({
+        source: { index: 0 },
+        destination: { index: 1 },
+        draggableId: '1',
+        reason: 'DROP',
+      });
+    });
+    expect(mockMove).toHaveBeenCalledTimes(1);
+    screen
+      .getAllByRole('columnheader')
+      .forEach((header) =>
+        expect(within(header).getByRole('button')).toBeDisabled(),
+      );
+    await act(async () => {
+      finish({});
+      await finished;
+    });
+    screen
+      .getAllByRole('columnheader')
+      .forEach((header) =>
+        expect(within(header).getByRole('button')).toBeEnabled(),
+      );
+  });
+
+  it('removes accepted sort indicators while criteria change and ignores late ascending completion', async () => {
+    let finishAsc!: (value: unknown) => void;
+    let finishDesc!: (value: unknown) => void;
+    const ascending = new Promise((resolve) => {
+      finishAsc = resolve;
+    });
+    const descending = new Promise((resolve) => {
+      finishDesc = resolve;
+    });
+    mockList.mockImplementation((_type, params) =>
+      params.sort === 'name'
+        ? ascending
+        : params.sort === 'name_desc'
+          ? descending
+          : Promise.resolve({ items: [makeItem()], total: 25 }),
+    );
+    renderWithProviders(<HarnessIndexPage type="rule" />, {
+      initialEntries: ['/harness/rules'],
+    });
+    await screen.findByText('test_rule');
+    const name = screen.getByRole('button', { name: 'Name' });
+    name.focus();
+    fireEvent.click(name);
+    expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
+    expect(document.querySelector('[aria-sort]')).toBeNull();
+    expect(name).toHaveFocus();
+    fireEvent.click(name);
+    await act(async () => {
+      finishDesc({
+        items: [makeItem({ name: 'Accepted descending' })],
+        total: 40,
+      });
+    });
+    await screen.findByText('Accepted descending');
+    await act(async () => {
+      finishAsc({ items: [makeItem({ name: 'Stale ascending' })], total: 99 });
+    });
+    expect(screen.queryByText('Stale ascending')).not.toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toHaveAttribute(
+      'aria-sort',
+      'descending',
+    );
+    expect(screen.getByText('Showing 1–10 of 40')).toBeInTheDocument();
+    expect(mockMove).not.toHaveBeenCalled();
+    expect(mockUpdateMetadata).not.toHaveBeenCalled();
   });
 });
