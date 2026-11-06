@@ -4,19 +4,55 @@ export const ALL_AGENTS = ['claude', 'codex', 'gemini'] as const;
 export const POLL_INTERVAL_MS = 15_000;
 export const PAGE_LIMITS = [10, 25, 50] as const;
 export type PageLimit = (typeof PAGE_LIMITS)[number];
+export const HARNESS_SORT_COLUMNS = {
+  order: { ascending: 'manual', descending: 'manual_desc' },
+  name: { ascending: 'name', descending: 'name_desc' },
+  project: { ascending: 'project_asc', descending: 'project_desc' },
+  enabled: { ascending: 'enabled_asc', descending: 'enabled_desc' },
+  clone_as_skill: {
+    ascending: 'clone_as_skill_asc',
+    descending: 'clone_as_skill_desc',
+  },
+  agents: { ascending: 'agents_asc', descending: 'agents_desc' },
+  configs: { ascending: 'config_count_asc', descending: 'config_count_desc' },
+  version: { ascending: 'version_asc', descending: 'version_desc' },
+  updated: {
+    ascending: 'updated_asc',
+    descending: 'updated',
+    defaultDirection: 'descending',
+  },
+} as const;
 export const HARNESS_SORT_OPTIONS = [
-  { value: 'manual', label: 'Manual order' },
-  { value: 'name', label: 'Name A–Z' },
+  ...columnSortOptions(HARNESS_SORT_COLUMNS),
   { value: 'newest', label: 'Newest first' },
-  { value: 'updated', label: 'Recently updated' },
 ] as const;
+export function harnessSortOptions(type: string) {
+  return HARNESS_SORT_OPTIONS.filter(
+    (option) =>
+      type === 'rule' ||
+      (option.value !== HARNESS_SORT_COLUMNS.clone_as_skill.ascending &&
+        option.value !== HARNESS_SORT_COLUMNS.clone_as_skill.descending),
+  );
+}
 export const AUDIT_STATUSES = ['pending', 'success', 'error'] as const;
 export const PROPOSAL_STATUSES = ['pending', 'approved', 'rejected'] as const;
-export const AUDIT_SORT_OPTIONS = [
-  { value: 'newest', label: 'Newest first' },
-  { value: 'oldest', label: 'Oldest first' },
-  { value: 'duration', label: 'Longest duration' },
-] as const;
+export const AUDIT_SORT_COLUMNS = {
+  tool: { ascending: 'tool_asc', descending: 'tool_desc' },
+  status: { ascending: 'status_asc', descending: 'status_desc' },
+  agent: { ascending: 'agent_asc', descending: 'agent_desc' },
+  duration: {
+    ascending: 'duration_asc',
+    descending: 'duration',
+    defaultDirection: 'descending',
+  },
+  project: { ascending: 'project_asc', descending: 'project_desc' },
+  time: {
+    ascending: 'oldest',
+    descending: 'newest',
+    defaultDirection: 'descending',
+  },
+} as const;
+export const AUDIT_SORT_OPTIONS = columnSortOptions(AUDIT_SORT_COLUMNS);
 export const PROPOSAL_SORT_OPTIONS = [
   { value: 'newest', label: 'Newest first' },
   { value: 'oldest', label: 'Oldest first' },
@@ -120,11 +156,23 @@ export const CHAT_SORT_OPTIONS = [
   { value: 'newest', label: 'Newest first' },
   { value: 'name', label: 'Topic A–Z' },
 ] as const;
-export const RESULT_SORT_OPTIONS = [
-  { value: 'newest', label: 'Newest first' },
-  { value: 'oldest', label: 'Oldest first' },
-  { value: 'score', label: 'Highest score' },
-] as const;
+export const RESULT_SORT_COLUMNS = {
+  time: {
+    ascending: 'oldest',
+    descending: 'newest',
+    defaultDirection: 'descending',
+  },
+  category: { ascending: 'category_asc', descending: 'category_desc' },
+  scenario: { ascending: 'scenario_asc', descending: 'scenario_desc' },
+  model: { ascending: 'model_asc', descending: 'model_desc' },
+  threshold: { ascending: 'threshold_asc', descending: 'threshold_desc' },
+  scores: {
+    ascending: 'score_asc',
+    descending: 'score',
+    defaultDirection: 'descending',
+  },
+} as const;
+export const RESULT_SORT_OPTIONS = columnSortOptions(RESULT_SORT_COLUMNS);
 
 export const TYPE_PATHS: Record<string, string> = {
   rule: 'rules',

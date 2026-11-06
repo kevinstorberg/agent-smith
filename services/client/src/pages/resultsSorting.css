@@ -1,0 +1,22 @@
+.scrollable-table .results-list-table {
+  min-width: 72rem;
+}
+
+.results-list-table .sortable-header-label {
+  white-space: nowrap;
+}
+
+.results-list-table th:first-child,
+.results-list-table th:nth-child(4) {
+  width: 14%;
+}
+.results-list-table th:nth-child(2),
+.results-list-table th:nth-child(3) {
+  width: 18%;
+}
+.results-list-table th:nth-child(5) {
+  width: 20%;
+}
+.results-list-table th:last-child {
+  width: 16%;
+}

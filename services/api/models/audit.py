@@ -6,15 +6,29 @@ the latest still-open row for that ``correlation_key``. If no open row matches (
 post that arrived without its pre), a completed row is inserted so nothing is lost.
 Append-only: tool_input/created_at are never rewritten.
 """
+
 from __future__ import annotations
 
 from psycopg2.extras import Json
 
 from services.api.models.base import BaseModel
-from services.api.models.shared.listing import search_pattern, sort_clause
+from services.api.models.shared.listing import (
+    bidirectional_sorts,
+    search_pattern,
+    sort_clause,
+)
 from services.db import get_connection
 
-AUDIT_SORTS = {"newest": "created_at DESC, id DESC", "oldest": "created_at, id", "duration": "duration_ms DESC NULLS LAST, id DESC"}
+AUDIT_SORTS = bidirectional_sorts(
+    {
+        ("tool_asc", "tool_desc"): ("lower(tool_name)",),
+        ("status_asc", "status_desc"): ("status",),
+        ("agent_asc", "agent_desc"): ("agent",),
+        ("duration_asc", "duration"): ("duration_ms",),
+        ("project_asc", "project_desc"): ("NULLIF(lower(project), '')",),
+        ("oldest", "newest"): ("created_at",),
+    }
+)
 
 # Server-side home for the coding-agent list. The host hook derives its own list
 # from scripts/audit_hook.py:FIELD_KEYS (it can't import services.*), and the
@@ -45,7 +59,11 @@ def start_event(
     """Insert a 'pending' tool-call row for a PreToolUse event. Returns its id."""
     _validate_agent(agent)
     ToolCallEventModel._validate_required(
-        {"session_id": session_id, "tool_name": tool_name, "correlation_key": correlation_key},
+        {
+            "session_id": session_id,
+            "tool_name": tool_name,
+            "correlation_key": correlation_key,
+        },
         ["session_id", "tool_name", "correlation_key"],
     )
     return ToolCallEventModel.create(
@@ -79,7 +97,9 @@ def complete_event(
     ``duration_ms`` is used verbatim when provided (native), otherwise computed from
     ``now() - created_at`` of the matched row.
     """
-    assert status in COMPLETION_STATUSES, f"status must be one of {COMPLETION_STATUSES}, got {status!r}"
+    assert status in COMPLETION_STATUSES, (
+        f"status must be one of {COMPLETION_STATUSES}, got {status!r}"
+    )
     assert correlation_key, "correlation_key must not be empty."
 
     result_json = Json(result) if result is not None else None
@@ -121,8 +141,16 @@ def complete_event(
                 RETURNING id
                 """,
                 (
-                    correlation_key, agent, session_id, tool_name, Json(tool_input or {}),
-                    cwd, project, status, result_json, duration_ms,
+                    correlation_key,
+                    agent,
+                    session_id,
+                    tool_name,
+                    Json(tool_input or {}),
+                    cwd,
+                    project,
+                    status,
+                    result_json,
+                    duration_ms,
                 ),
             )
             return cur.fetchone()[0]
@@ -136,7 +164,9 @@ def list_events(
     status: str | None = None,
     limit: int = 50,
     offset: int = 0,
-    *, q: str | None = None, sort: str = "newest",
+    *,
+    q: str | None = None,
+    sort: str = "newest",
 ) -> tuple[list[dict], int]:
     """List audit events with optional filters. Returns (rows, total).
 
@@ -156,7 +186,9 @@ def list_events(
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     pattern = search_pattern(q)
     if pattern is not None:
-        clauses.append("(tool_name ILIKE %s OR project ILIKE %s OR session_id ILIKE %s)")
+        clauses.append(
+            "(tool_name ILIKE %s OR project ILIKE %s OR session_id ILIKE %s)"
+        )
         params.extend([pattern] * 3)
         where = "WHERE " + " AND ".join(clauses)
     return ToolCallEventModel.list(
@@ -182,7 +214,9 @@ def prune(before_iso: str) -> int:
     assert before_iso, "before timestamp must not be empty."
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM tool_call_events WHERE created_at < %s", (before_iso,))
+            cur.execute(
+                "DELETE FROM tool_call_events WHERE created_at < %s", (before_iso,)
+            )
             return cur.rowcount
 
 

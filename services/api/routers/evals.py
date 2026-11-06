@@ -6,15 +6,50 @@ from psycopg2.extras import RealDictCursor
 
 from services.db import get_connection
 from services.api.models.base import BaseModel
-from services.api.routers.base import require_found, list_response, delete_response, query_result
-from services.api.models.shared.listing import search_pattern, sort_clause, sort_pattern
+from services.api.routers.base import (
+    require_found,
+    list_response,
+    delete_response,
+    query_result,
+)
+from services.api.models.shared.listing import (
+    bidirectional_sorts,
+    search_pattern,
+    sort_clause,
+    sort_pattern,
+)
 
-RESULT_SORTS = {"newest": "timestamp DESC, id DESC", "oldest": "timestamp, id", "score": "score_avg DESC NULLS LAST, timestamp DESC, id DESC"}
+RESULT_SORTS = {
+    **bidirectional_sorts(
+        {
+            ("category_asc", "category_desc"): (
+                "NULLIF(lower(eval_type), '')",
+                "NULLIF(lower(subcategory), '')",
+            ),
+            ("scenario_asc", "scenario_desc"): ("NULLIF(lower(scenario), '')",),
+            ("model_asc", "model_desc"): ("NULLIF(lower(test_model), '')",),
+            ("threshold_asc", "threshold_desc"): ("threshold",),
+            ("score_asc", "score"): ("score_avg",),
+        }
+    ),
+    "newest": "timestamp DESC, id DESC",
+    "oldest": "timestamp, id",
+    "score": "score_avg DESC NULLS LAST, timestamp DESC, id DESC",
+}
 
 router = APIRouter()
 
 
-def _build_filters(scenario="", model="", eval_type="", subcategory="", date_from="", date_to="", *, q: str | None = None):
+def _build_filters(
+    scenario="",
+    model="",
+    eval_type="",
+    subcategory="",
+    date_from="",
+    date_to="",
+    *,
+    q: str | None = None,
+):
     conditions, params = [], []
     if scenario:
         conditions.append("scenario = %s")
@@ -36,7 +71,9 @@ def _build_filters(scenario="", model="", eval_type="", subcategory="", date_fro
         params.append(date_to)
     pattern = search_pattern(q)
     if pattern is not None:
-        conditions.append("(scenario ILIKE %s OR test_model ILIKE %s OR eval_type ILIKE %s OR subcategory ILIKE %s)")
+        conditions.append(
+            "(scenario ILIKE %s OR test_model ILIKE %s OR eval_type ILIKE %s OR subcategory ILIKE %s)"
+        )
         params.extend([pattern] * 4)
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     return where, params
@@ -55,7 +92,9 @@ def list_evals(
     q: Annotated[str, Query(max_length=1000)] = "",
     sort: Annotated[str, Query(pattern=sort_pattern(RESULT_SORTS))] = "newest",
 ):
-    where, params = query_result(_build_filters, scenario, model, eval_type, subcategory, date_from, date_to, q=q)
+    where, params = query_result(
+        _build_filters, scenario, model, eval_type, subcategory, date_from, date_to, q=q
+    )
     order = query_result(sort_clause, sort, RESULT_SORTS)
 
     with get_connection() as conn:
@@ -89,7 +128,9 @@ def list_evals(
 def list_categories():
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT DISTINCT eval_type FROM eval_results ORDER BY eval_type")
+            cur.execute(
+                "SELECT DISTINCT eval_type FROM eval_results ORDER BY eval_type"
+            )
             return [row[0] for row in cur.fetchall()]
 
 
@@ -113,7 +154,14 @@ def list_subcategories(eval_type: str = Query("")):
             return [row[0] for row in cur.fetchall()]
 
 
-def _fetch_chart_rows(scenario: str, model: str, eval_type: str, subcategory: str = "", *, q: str | None = None) -> list[dict]:
+def _fetch_chart_rows(
+    scenario: str,
+    model: str,
+    eval_type: str,
+    subcategory: str = "",
+    *,
+    q: str | None = None,
+) -> list[dict]:
     where, params = _build_filters(scenario, model, eval_type, subcategory, q=q)
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -140,7 +188,9 @@ def chart_data(
             "timestamp": row["timestamp"].isoformat(),
             "scores": {r["rule"]: r["score"] for r in row["results"]},
         }
-        for row in query_result(_fetch_chart_rows, scenario, model, eval_type, subcategory, q=q)
+        for row in query_result(
+            _fetch_chart_rows, scenario, model, eval_type, subcategory, q=q
+        )
     ]
 
 
@@ -156,19 +206,31 @@ def chart_average(
         {
             "id": row["id"],
             "timestamp": row["timestamp"].isoformat(),
-            "score": sum(r["score"] for r in row["results"]) / max(len(row["results"]), 1),
+            "score": sum(r["score"] for r in row["results"])
+            / max(len(row["results"]), 1),
         }
-        for row in query_result(_fetch_chart_rows, scenario, model, eval_type, subcategory, q=q)
+        for row in query_result(
+            _fetch_chart_rows, scenario, model, eval_type, subcategory, q=q
+        )
     ]
 
 
 @router.get("/facets")
-def result_facets(eval_type: str = "", subcategory: str = "", q: Annotated[str, Query(max_length=1000)] = ""):
-    where, params = query_result(_build_filters, eval_type=eval_type, subcategory=subcategory, q=q)
+def result_facets(
+    eval_type: str = "",
+    subcategory: str = "",
+    q: Annotated[str, Query(max_length=1000)] = "",
+):
+    where, params = query_result(
+        _build_filters, eval_type=eval_type, subcategory=subcategory, q=q
+    )
     with get_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(f"""WITH matching AS (SELECT scenario,test_model FROM eval_results {where})
+        cur.execute(
+            f"""WITH matching AS (SELECT scenario,test_model FROM eval_results {where})
             SELECT ARRAY(SELECT DISTINCT scenario FROM matching WHERE scenario IS NOT NULL ORDER BY scenario) AS scenarios,
-                   ARRAY(SELECT DISTINCT test_model FROM matching WHERE test_model IS NOT NULL ORDER BY test_model) AS models""", params)
+                   ARRAY(SELECT DISTINCT test_model FROM matching WHERE test_model IS NOT NULL ORDER BY test_model) AS models""",
+            params,
+        )
         return dict(cur.fetchone())
 
 
@@ -186,7 +248,9 @@ def get_eval(eval_id: int):
 def delete_eval(eval_id: int):
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM eval_results WHERE id = %s RETURNING id", (eval_id,))
+            cur.execute(
+                "DELETE FROM eval_results WHERE id = %s RETURNING id", (eval_id,)
+            )
             row = cur.fetchone()
 
     require_found(row, "Eval", eval_id)
