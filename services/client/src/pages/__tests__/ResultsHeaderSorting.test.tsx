@@ -147,6 +147,8 @@ describe('Results header sorting', () => {
       ),
     );
     expect(target).toHaveFocus();
+    expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+    expect(screen.getByText('Initial row')).toBeVisible();
     expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
     expect(document.querySelector('[aria-sort]')).toBeNull();
     await user.keyboard(' ');

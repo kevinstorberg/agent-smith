@@ -64,6 +64,7 @@ function paginationResult() {
     setItems: vi.fn(),
     total: 2,
     loading: false,
+    initialLoading: false,
     dataCurrent: true,
     limit: 10,
     offset: 0,
@@ -81,6 +82,20 @@ beforeEach(() => {
 });
 
 describe('AuditIndexPage', () => {
+  it('keeps initial loading visible before the first accepted result', async () => {
+    mockUsePagination.mockReturnValue({
+      ...paginationResult(),
+      initialLoading: true,
+      loading: true,
+      dataCurrent: false,
+      items: [],
+    });
+    renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
+    expect(screen.getByRole('status')).toHaveTextContent('Updating…');
+    expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
+    await screen.findByText(/claude \(1\)/);
+  });
+
   it('renders events with tool, status, and duration', async () => {
     renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
 
@@ -91,22 +106,34 @@ describe('AuditIndexPage', () => {
     expect(screen.getByText('—')).toBeInTheDocument(); // pending event has no duration
     // 'success' appears both as a status filter chip and the row's status badge.
     expect(screen.getAllByText('success').length).toBeGreaterThan(0);
-    await waitFor(() => expect(screen.getByText(/claude \(1\)/)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText(/claude \(1\)/)).toBeInTheDocument(),
+    );
   });
 
   it('filters by agent and resets paging', async () => {
     renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
 
     await screen.findByText(/claude \(1\)/);
-    fireEvent.change(screen.getByRole('combobox', { name: 'Agent' }), { target: { value: 'claude' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Agent' }), {
+      target: { value: 'claude' },
+    });
 
-    expect(screen.getByRole('combobox', { name: 'Agent' })).toHaveValue('claude');
-    expect(mockUsePagination).toHaveBeenLastCalledWith(expect.any(Function), expect.arrayContaining(['claude']), 10, expect.objectContaining({ page: { limit: 10, offset: 0 } }));
+    expect(screen.getByRole('combobox', { name: 'Agent' })).toHaveValue(
+      'claude',
+    );
+    expect(mockUsePagination).toHaveBeenLastCalledWith(
+      expect.any(Function),
+      expect.arrayContaining(['claude']),
+      10,
+      expect.objectContaining({ page: { limit: 10, offset: 0 } }),
+    );
   });
 
-  it('navigates to detail on row click', () => {
+  it('navigates to detail on row click', async () => {
     renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
 
+    await screen.findByText(/claude \(1\)/);
     const link = screen.getByRole('link', { name: 'Bash' });
     expect(link).toHaveAttribute('href', '/audit/1');
     fireEvent.click(link.closest('tr')!);
@@ -114,8 +141,9 @@ describe('AuditIndexPage', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/audit/1');
   });
 
-  it('preserves native tool link behavior without activating supplemental row navigation', () => {
+  it('preserves native tool link behavior without activating supplemental row navigation', async () => {
     renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
+    await screen.findByText(/claude \(1\)/);
     fireEvent.click(screen.getByRole('link', { name: 'Bash' }));
     expect(mockNavigate).not.toHaveBeenCalled();
   });
@@ -124,21 +152,43 @@ describe('AuditIndexPage', () => {
     { loading: true, dataCurrent: false, error: null },
     { loading: false, dataCurrent: false, error: null },
     { loading: false, dataCurrent: false, error: 'Unavailable' },
-  ])('keeps filters mounted without claiming empty results during $error/$loading/$dataCurrent', state => {
-    mockUsePagination.mockReturnValue({ ...paginationResult(), ...state, items: [], total: 0 });
-    renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
-    expect(screen.getByRole('combobox', { name: 'Agent' })).toBeVisible();
-    expect(screen.getByRole('combobox', { name: 'Status' })).toBeVisible();
-    expect(screen.queryByText('No tool calls yet')).not.toBeInTheDocument();
-    expect(screen.queryByText('0 tool calls')).not.toBeInTheDocument();
-    if (state.error) expect(screen.getByRole('alert')).toHaveTextContent('Could not load audit events.');
-    else expect(screen.getByRole('status')).toHaveTextContent('Updating…');
-  });
+  ])(
+    'keeps filters mounted without claiming empty results during $error/$loading/$dataCurrent',
+    async (state) => {
+      mockUsePagination.mockReturnValue({
+        ...paginationResult(),
+        ...state,
+        items: [],
+        total: 0,
+      });
+      renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
+      expect(screen.getByRole('combobox', { name: 'Agent' })).toBeVisible();
+      expect(screen.getByRole('combobox', { name: 'Status' })).toBeVisible();
+      expect(screen.queryByText('No tool calls yet')).not.toBeInTheDocument();
+      if (state.error)
+        expect(screen.queryByText('0 tool calls')).not.toBeInTheDocument();
+      else expect(screen.getByText('0 tool calls')).not.toBeVisible();
+      if (state.error)
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'Could not load audit events.',
+        );
+      else expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      expect(screen.queryByText('Updating…')).not.toBeInTheDocument();
+    },
+  );
 
-  it('announces an in-flight retry without enabling another retry or claiming empty results', () => {
-    mockUsePagination.mockReturnValue({ ...paginationResult(), loading: true, error: 'Unavailable', dataCurrent: false, items: [] });
+  it('announces an in-flight retry without enabling another retry or claiming empty results', async () => {
+    mockUsePagination.mockReturnValue({
+      ...paginationResult(),
+      loading: true,
+      error: 'Unavailable',
+      dataCurrent: false,
+      items: [],
+    });
     renderWithProviders(<AuditIndexPage />, { initialEntries: ['/audit'] });
-    expect(screen.getByRole('status')).toHaveTextContent('Updating…');
+    await screen.findByText(/claude \(1\)/);
+    expect(screen.queryByText('Updating…')).not.toBeInTheDocument();
+    expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
     expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled();
     expect(screen.queryByText('No tool calls yet')).not.toBeInTheDocument();
   });
@@ -151,7 +201,9 @@ describe('AuditIndexPage', () => {
     mockCounts.mockClear();
     vi.advanceTimersByTime(POLL_INTERVAL_MS);
 
-    await waitFor(() => expect(mockRefresh).toHaveBeenCalledWith({ showLoading: false }));
+    await waitFor(() =>
+      expect(mockRefresh).toHaveBeenCalledWith({ showLoading: false }),
+    );
     expect(mockCounts).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
