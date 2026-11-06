@@ -164,47 +164,56 @@ test('Audit native keyboard headers retain focus and ignore stale completions', 
   await expect(button).toBeFocused();
 });
 
-test('Audit headers stay readable with adjacent arrows at normal and doubled text', async ({
-  page,
-  fixtureAPI,
-}, testInfo) => {
-  fixtureAPI.get('/api/audit/counts', { claude: 1, codex: 0, gemini: 0 });
-  fixtureAPI.get('/api/audit/events', data('Visible row'));
-  await page.goto('/audit');
-  await expect(
-    page.getByRole('link', { name: 'Visible row', exact: true }),
-  ).toBeVisible();
-  await expectSortableHeaderLayout(page, testInfo, {
-    table: page.getByRole('table'),
-    scrollRegion: page.getByRole('region', {
-      name: 'Audit events',
-      exact: true,
-    }),
-    labels: ['Tool', 'Status', 'Agent', 'Duration', 'Project', 'Time'],
-    artifactPrefix: 'audit-headers',
-    assertLayout: async () => {
-      const measurements = await page
-        .locator('.audit-list-table .sortable-header-button')
-        .evaluateAll((buttons) =>
-          buttons.map((button) => {
-            const label = button
-              .querySelector('.sortable-header-label')!
-              .getBoundingClientRect();
-            const icon = button
-              .querySelector('.sortable-header-icon')!
-              .getBoundingClientRect();
-            return {
-              gap: icon.x - label.right,
-              vertical: Math.abs(
-                label.y + label.height / 2 - icon.y - icon.height / 2,
-              ),
-            };
-          }),
-        );
-      for (const measurement of measurements) {
-        expect(measurement.gap).toBeLessThanOrEqual(12);
-        expect(measurement.vertical).toBeLessThanOrEqual(1);
-      }
-    },
+for (const fontFamily of ['computed', 'Arial'] as const) {
+  test(`Audit headers stay readable with adjacent arrows at normal and doubled text using ${fontFamily} font`, async ({
+    page,
+    fixtureAPI,
+  }, testInfo) => {
+    fixtureAPI.get('/api/audit/counts', { claude: 1, codex: 0, gemini: 0 });
+    fixtureAPI.get('/api/audit/events', data('Visible row'));
+    await page.goto('/audit');
+    await expect(
+      page.getByRole('link', { name: 'Visible row', exact: true }),
+    ).toBeVisible();
+    if (fontFamily === 'Arial') {
+      await page.addStyleTag({
+        content: '.audit-list-table { font-family: Arial, sans-serif; }',
+      });
+      await expect(page.getByRole('table')).toHaveCSS('font-family', /Arial/);
+    }
+    await expectSortableHeaderLayout(page, testInfo, {
+      table: page.getByRole('table'),
+      scrollRegion: page.getByRole('region', {
+        name: 'Audit events',
+        exact: true,
+      }),
+      labels: ['Tool', 'Status', 'Agent', 'Duration', 'Project', 'Time'],
+      artifactPrefix:
+        fontFamily === 'Arial' ? 'audit-headers-arial' : 'audit-headers',
+      assertLayout: async () => {
+        const measurements = await page
+          .locator('.audit-list-table .sortable-header-button')
+          .evaluateAll((buttons) =>
+            buttons.map((button) => {
+              const label = button
+                .querySelector('.sortable-header-label')!
+                .getBoundingClientRect();
+              const icon = button
+                .querySelector('.sortable-header-icon')!
+                .getBoundingClientRect();
+              return {
+                gap: icon.x - label.right,
+                vertical: Math.abs(
+                  label.y + label.height / 2 - icon.y - icon.height / 2,
+                ),
+              };
+            }),
+          );
+        for (const measurement of measurements) {
+          expect(measurement.gap).toBeLessThanOrEqual(12);
+          expect(measurement.vertical).toBeLessThanOrEqual(1);
+        }
+      },
+    });
   });
-});
+}
