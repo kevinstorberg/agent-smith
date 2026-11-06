@@ -12,6 +12,7 @@ import {
   AUDIT_STATUSES,
   EVAL_SUITE_SORT_OPTIONS,
   HARNESS_SORT_OPTIONS,
+  harnessSortOptions,
   MEMORY_LIST_SORT_OPTIONS,
   MEMORY_SEARCH_SORT_OPTIONS,
   MEETING_SORT_OPTIONS,
@@ -20,6 +21,7 @@ import {
   PROPOSAL_STATUSES,
   VOCABULARY_DEFINITIONS,
   VOCABULARY_SORT_OPTIONS,
+  TYPE_PATHS,
 } from '../constants';
 import type { PageLimit } from '../constants';
 import { MAX_DUE_WINDOW_HOURS } from './actionItemDeadlines';
@@ -240,14 +242,16 @@ function numeric(value: unknown): number | undefined {
     : undefined;
 }
 
-function harnessSpec(pathname: string): ViewSpec<HarnessViewSettings> {
+function harnessSpec(type: string): ViewSpec<HarnessViewSettings> {
+  const path = TYPE_PATHS[type];
+  if (!path) throw new Error(`Unsupported Harness preference type: ${type}`);
   return {
-    pathname,
+    pathname: `/harness/${path}`,
     defaults: { name: '', project: '', sort: 'manual', limit: 10, offset: 0 },
     fields: {
       name: text,
       project: text,
-      sort: choice(HARNESS_SORT_OPTIONS.map((option) => option.value)),
+      sort: choice(harnessSortOptions(type).map((option) => option.value)),
       limit: pageLimit,
       offset: pageOffset,
     },
@@ -255,11 +259,11 @@ function harnessSpec(pathname: string): ViewSpec<HarnessViewSettings> {
 }
 
 const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
-  'harness.rule': harnessSpec('/harness/rules'),
-  'harness.skill': harnessSpec('/harness/skills'),
-  'harness.tool': harnessSpec('/harness/tools'),
-  'harness.hook': harnessSpec('/harness/hooks'),
-  'harness.agent': harnessSpec('/harness/agents'),
+  'harness.rule': harnessSpec('rule'),
+  'harness.skill': harnessSpec('skill'),
+  'harness.tool': harnessSpec('tool'),
+  'harness.hook': harnessSpec('hook'),
+  'harness.agent': harnessSpec('agent'),
   actionItems: {
     pathname: '/action-items',
     defaults: {

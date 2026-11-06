@@ -12,14 +12,16 @@ import {
   DateCell,
   VersionCell,
 } from '../components/table';
+import { SortableHeader } from '../components/table/SortableHeader';
 import { usePagination } from '../hooks/usePagination';
 import { makeKeyboardClickable } from '../utils/a11y';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
-import { HARNESS_SORT_OPTIONS } from '../constants';
-import { harnessViewKey, parseViewField } from '../utils/viewPreferences';
+import { HARNESS_SORT_COLUMNS } from '../constants';
+import { harnessViewKey } from '../utils/viewPreferences';
 import { useViewPreferences } from '../hooks/useViewPreferences';
 import { useHarnessListActions } from '../hooks/useHarnessListActions';
 import { usePolling } from '../hooks/usePolling';
+import './harnessSorting.css';
 
 const TYPE_LABELS: Record<string, string> = {
   rule: 'Rules',
@@ -90,19 +92,32 @@ export function HarnessIndexPage({ type }: { type: string }) {
   usePolling(() => refresh({ showLoading: false }), {
     enabled: !loading && !criteriaPending && !actions.freezeControls,
   });
-  const columns = [
-    manual && '32px',
-    'minmax(220px, 2fr)',
-    'minmax(120px, 1fr)',
-    '72px',
-    type === 'rule' && '88px',
-    'minmax(160px, 1fr)',
-    '90px',
-    '64px',
-    '144px',
-  ]
-    .filter(Boolean)
+  const columns: {
+    key: keyof typeof HARNESS_SORT_COLUMNS;
+    label: string;
+    minimum: number;
+    grow?: number;
+  }[] = [
+    { key: 'order', label: 'Order', minimum: 5 },
+    { key: 'name', label: 'Name', minimum: 14, grow: 2 },
+    { key: 'project', label: 'Project', minimum: 9, grow: 1 },
+    { key: 'enabled', label: 'Enabled', minimum: 7 },
+    ...(type === 'rule'
+      ? [{ key: 'clone_as_skill' as const, label: 'Skill Clone', minimum: 8 }]
+      : []),
+    { key: 'agents', label: 'Agents', minimum: 10, grow: 1 },
+    { key: 'configs', label: 'Configs', minimum: 6.5 },
+    { key: 'version', label: 'Version', minimum: 6.5 },
+    { key: 'updated', label: 'Updated', minimum: 9 },
+  ];
+  const gridColumns = columns
+    .map((column) =>
+      column.grow
+        ? `minmax(${column.minimum}em, ${column.grow}fr)`
+        : `${column.minimum}em`,
+    )
     .join(' ');
+  const minimumWidth = `calc(${columns.reduce((sum, column) => sum + column.minimum, 0)}em + ${columns.length - 1} * var(--harness-sort-gap) + 2 * var(--harness-sort-padding))`;
 
   return (
     <div>
@@ -125,29 +140,7 @@ export function HarnessIndexPage({ type }: { type: string }) {
         onNameChange={(value) => preferences.setField('name', value)}
         onProjectChange={(value) => preferences.setField('project', value)}
         disabled={actions.freezeControls}
-      >
-        <label>
-          <span className="form-label">Sort</span>
-          <select
-            className="input"
-            disabled={actions.freezeControls}
-            value={sort}
-            onChange={(event) => {
-              if (!actions.freezeControls)
-                preferences.setField(
-                  'sort',
-                  parseViewField(preferenceKey, 'sort', event.target.value),
-                );
-            }}
-          >
-            {HARNESS_SORT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </FilterBar>
+      />
       {loading && items.length === 0 && (
         <div className="loading">Loading...</div>
       )}
@@ -174,100 +167,138 @@ export function HarnessIndexPage({ type }: { type: string }) {
             : ''}
       </span>
 
-      {(items.length > 0 || (!loading && !error)) && (
-        <>
-          <DragDropContext
-            onBeforeDragStart={actions.startDrag}
-            onDragEnd={actions.endDrag}
+      <>
+        <DragDropContext
+          onBeforeDragStart={actions.startDrag}
+          onDragEnd={actions.endDrag}
+        >
+          <Droppable
+            droppableId="harness-table"
+            isDropDisabled={!actions.canDrag}
           >
-            <Droppable
-              droppableId="harness-table"
-              isDropDisabled={!actions.canDrag}
-            >
-              {(provided) => (
+            {(provided) => (
+              <div
+                className="table-container harness-sorting-container"
+                style={
+                  {
+                    '--harness-columns': gridColumns,
+                    '--harness-minimum-width': minimumWidth,
+                  } as CSSProperties
+                }
+              >
                 <div
-                  className="table-container"
-                  style={{ '--harness-columns': columns } as CSSProperties}
+                  className="harness-list-scroll"
+                  role="region"
+                  aria-label={`${TYPE_LABELS[type] || type} list`}
+                  tabIndex={0}
                 >
                   <div
-                    className="harness-list-scroll"
-                    role="region"
-                    aria-label={`${TYPE_LABELS[type] || type} list`}
-                    tabIndex={0}
+                    className="harness-list-table"
+                    role="table"
+                    aria-label={`${TYPE_LABELS[type] || type} items`}
+                    aria-busy={
+                      (!dataCurrent ||
+                        criteriaPending ||
+                        loading ||
+                        actions.busy) &&
+                      !error
+                    }
                   >
-                    <div className="harness-list-table">
-                      <div className="table-header harness-list-header">
-                        {manual && <div></div>}
-                        <div>Name</div>
-                        <div>Project</div>
-                        <div>Enabled</div>
-                        {type === 'rule' && <div>Skill Clone</div>}
-                        <div>Agents</div>
-                        <div>Configs</div>
-                        <div>Version</div>
-                        <div>Updated</div>
-                      </div>
-                      <div ref={provided.innerRef} {...provided.droppableProps}>
-                        {actions.displayed.map((item, index) => (
-                          <Draggable
-                            key={String(item.id)}
-                            draggableId={String(item.id)}
-                            index={index}
-                            isDragDisabled={!manual}
-                            disableInteractiveElementBlocking
+                    <div role="rowgroup">
+                      <div
+                        className="table-header harness-list-header"
+                        role="row"
+                      >
+                        {columns.map((column) => (
+                          <SortableHeader
+                            key={column.key}
+                            as="div"
+                            sort={sort}
+                            column={HARNESS_SORT_COLUMNS[column.key]}
+                            current={readable && !actions.freezeControls}
+                            disabled={actions.freezeControls}
+                            onSort={(value) => {
+                              if (!actions.freezeControls)
+                                preferences.setField('sort', value);
+                            }}
                           >
-                            {(prov, snapshot) => (
+                            {column.label}
+                          </SortableHeader>
+                        ))}
+                      </div>
+                    </div>
+                    <div
+                      role="rowgroup"
+                      ref={provided.innerRef}
+                      {...provided.droppableProps}
+                    >
+                      {actions.displayed.map((item, index) => (
+                        <Draggable
+                          key={String(item.id)}
+                          draggableId={String(item.id)}
+                          index={index}
+                          isDragDisabled={!manual}
+                          disableInteractiveElementBlocking
+                        >
+                          {(prov, snapshot) => (
+                            <div
+                              className="harness-list-row"
+                              ref={prov.innerRef}
+                              {...prov.draggableProps}
+                              {...makeKeyboardClickable(() =>
+                                navigate(`/harness/${type}/${item.id}`),
+                              )}
+                              role="row"
+                              style={{
+                                background: snapshot.isDragging
+                                  ? 'var(--surface-hover)'
+                                  : undefined,
+                                ...prov.draggableProps.style,
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!snapshot.isDragging)
+                                  e.currentTarget.style.background =
+                                    'var(--surface-hover)';
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!snapshot.isDragging)
+                                  e.currentTarget.style.background = '';
+                              }}
+                            >
                               <div
-                                className="harness-list-row"
-                                ref={prov.innerRef}
-                                {...prov.draggableProps}
-                                {...makeKeyboardClickable(() =>
-                                  navigate(`/harness/${type}/${item.id}`),
-                                )}
-                                style={{
-                                  background: snapshot.isDragging
-                                    ? 'var(--surface-hover)'
-                                    : undefined,
-                                  ...prov.draggableProps.style,
-                                }}
-                                onMouseEnter={(e) => {
-                                  if (!snapshot.isDragging)
-                                    e.currentTarget.style.background =
-                                      'var(--surface-hover)';
-                                }}
-                                onMouseLeave={(e) => {
-                                  if (!snapshot.isDragging)
-                                    e.currentTarget.style.background = '';
-                                }}
+                                role="cell"
+                                className="harness-sort-order-cell"
                               >
-                                {manual && (
-                                  <button
-                                    {...prov.dragHandleProps}
-                                    type="button"
-                                    className="harness-drag-handle"
-                                    aria-label={`Reorder ${item.name}`}
-                                    disabled={!actions.canDrag}
-                                    onClick={(e) => e.stopPropagation()}
-                                    style={{
-                                      cursor: actions.canDrag
-                                        ? 'grab'
-                                        : 'default',
-                                      color: 'var(--text-muted)',
-                                      fontSize: 16,
-                                      textAlign: 'center',
-                                      background: 'transparent',
-                                      border: 0,
-                                      padding: 0,
-                                      pointerEvents: actions.canDrag
-                                        ? undefined
-                                        : 'none',
-                                    }}
-                                  >
-                                    ⠿
-                                  </button>
-                                )}
-                                <div>{item.name}</div>
+                                <button
+                                  {...prov.dragHandleProps}
+                                  type="button"
+                                  className="harness-drag-handle"
+                                  aria-label={`Reorder ${item.name}`}
+                                  disabled={!actions.canDrag}
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{
+                                    cursor: actions.canDrag
+                                      ? 'grab'
+                                      : 'default',
+                                    color: 'var(--text-muted)',
+                                    fontSize: 16,
+                                    textAlign: 'center',
+                                    background: 'transparent',
+                                    border: 0,
+                                    padding: 0,
+                                    pointerEvents: actions.canDrag
+                                      ? undefined
+                                      : 'none',
+                                  }}
+                                >
+                                  ⠿
+                                </button>
+                              </div>
+                              <div role="cell">{item.name}</div>
+                              <div role="cell">
                                 <ProjectCell project={item.project} />
+                              </div>
+                              <div role="cell">
                                 <EnabledToggleCell
                                   enabled={item.enabled}
                                   disabled={!readable || actions.freezeControls}
@@ -278,7 +309,9 @@ export function HarnessIndexPage({ type }: { type: string }) {
                                   }
                                   ariaLabel={`Enable ${item.name}`}
                                 />
-                                {type === 'rule' && (
+                              </div>
+                              {type === 'rule' && (
+                                <div role="cell">
                                   <EnabledToggleCell
                                     enabled={!!item.clone_as_skill}
                                     disabled={
@@ -292,75 +325,79 @@ export function HarnessIndexPage({ type }: { type: string }) {
                                     ariaLabel={`Clone ${item.name} as a skill`}
                                     accentColor="var(--highlight)"
                                   />
-                                )}
-                                <BadgeCell items={item.agents} />
-                                <div>
-                                  {(item.configs ?? []).length > 0 ? (
-                                    <div
-                                      style={{
-                                        display: 'flex',
-                                        gap: 4,
-                                        alignItems: 'center',
-                                        flexWrap: 'wrap',
-                                      }}
-                                    >
-                                      <span className="tag tag-sm">
-                                        {item.configs.length}
-                                      </span>
-                                      {item.configs.some(
-                                        (c) => c.device !== '*',
-                                      ) && (
-                                        <span className="tag tag-warning">
-                                          device
-                                        </span>
-                                      )}
-                                      {item.configs.some(
-                                        (c) => c.repo !== '*',
-                                      ) && (
-                                        <span className="tag tag-success">
-                                          repo
-                                        </span>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <span className="text-muted-sm">
-                                      default
-                                    </span>
-                                  )}
                                 </div>
+                              )}
+                              <div role="cell">
+                                <BadgeCell items={item.agents} />
+                              </div>
+                              <div role="cell">
+                                {(item.configs ?? []).length > 0 ? (
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      gap: 4,
+                                      alignItems: 'center',
+                                      flexWrap: 'wrap',
+                                    }}
+                                  >
+                                    <span className="tag tag-sm">
+                                      {item.configs.length}
+                                    </span>
+                                    {item.configs.some(
+                                      (c) => c.device !== '*',
+                                    ) && (
+                                      <span className="tag tag-warning">
+                                        device
+                                      </span>
+                                    )}
+                                    {item.configs.some(
+                                      (c) => c.repo !== '*',
+                                    ) && (
+                                      <span className="tag tag-success">
+                                        repo
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-muted-sm">default</span>
+                                )}
+                              </div>
+                              <div role="cell">
                                 <VersionCell version={item.version} />
+                              </div>
+                              <div role="cell">
                                 <DateCell date={item.updated_at} />
                               </div>
-                            )}
-                          </Draggable>
-                        ))}
-                        {provided.placeholder}
-                      </div>
+                            </div>
+                          )}
+                        </Draggable>
+                      ))}
+                      {provided.placeholder}
                     </div>
                   </div>
-                  {!loading && items.length === 0 && (
-                    <div className="loading">
-                      No {TYPE_LABELS[type]?.toLowerCase() || 'items'} found
-                    </div>
-                  )}
                 </div>
-              )}
-            </Droppable>
-          </DragDropContext>
+                {!loading && items.length === 0 && (
+                  <div className="loading">
+                    No {TYPE_LABELS[type]?.toLowerCase() || 'items'} found
+                  </div>
+                )}
+              </div>
+            )}
+          </Droppable>
+        </DragDropContext>
 
-          <Pagination
-            total={total}
-            limit={limit}
-            offset={offset}
-            onPageChange={setOffset}
-            onLimitChange={(newLimit) => {
-              setLimit(newLimit);
-              setOffset(0);
-            }}
-            disabled={actions.freezeControls || !readable}
-          />
-        </>
-      )}
+        <Pagination
+          total={total}
+          limit={limit}
+          offset={offset}
+          onPageChange={setOffset}
+          onLimitChange={(newLimit) => {
+            setLimit(newLimit);
+            setOffset(0);
+          }}
+          disabled={actions.freezeControls || !readable}
+        />
+      </>
     </div>
   );
 }
