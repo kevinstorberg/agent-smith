@@ -9,6 +9,7 @@ export function TableEmptyState({ children }: { children?: ReactNode }) {
 
 export function ScrollableTable({
   label,
+  tableLabel,
   className = '',
   empty = false,
   busy,
@@ -16,6 +17,7 @@ export function ScrollableTable({
   children,
 }: {
   label: string;
+  tableLabel?: string;
   className?: string;
   empty?: boolean;
   busy?: boolean;
@@ -31,6 +33,7 @@ export function ScrollableTable({
     >
       <table
         className={`table ${className}${empty ? ' table-empty' : ''}`}
+        aria-label={tableLabel}
         aria-busy={busy}
       >
         {children}
