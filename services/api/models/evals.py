@@ -7,7 +7,11 @@ from services.db import get_connection
 from services.api.models.base import BaseModel
 from services.api.models.shared.listing import search_pattern, sort_clause
 
-SUITE_SORTS = {"name": "lower(s.name), s.id", "updated": "s.updated_at DESC, s.id DESC", "newest": "s.created_at DESC, s.id DESC"}
+SUITE_SORTS = {
+    "name": "lower(s.name), s.id",
+    "updated": "s.updated_at DESC, s.id DESC",
+    "newest": "s.created_at DESC, s.id DESC",
+}
 
 
 class SuiteModel(BaseModel):
@@ -15,29 +19,71 @@ class SuiteModel(BaseModel):
     json_fields = {"items", "config"}
 
     @classmethod
-    def create(cls, name, eval_type, subcategory, judge_prompt, items=None, config=None, enabled=True):
+    def create(
+        cls,
+        name,
+        eval_type,
+        subcategory,
+        judge_prompt,
+        items=None,
+        config=None,
+        enabled=True,
+    ):
         cls._validate_required(
-            {"name": name, "eval_type": eval_type, "subcategory": subcategory, "judge_prompt": judge_prompt},
+            {
+                "name": name,
+                "eval_type": eval_type,
+                "subcategory": subcategory,
+                "judge_prompt": judge_prompt,
+            },
             ["name", "eval_type", "subcategory", "judge_prompt"],
         )
         return super().create(
-            name=name, eval_type=eval_type, subcategory=subcategory,
-            judge_prompt=judge_prompt, items=items or {}, config=config or {},
+            name=name,
+            eval_type=eval_type,
+            subcategory=subcategory,
+            judge_prompt=judge_prompt,
+            items=items or {},
+            config=config or {},
             enabled=enabled,
         )
 
     @classmethod
-    def update(cls, suite_id, *, name=None, eval_type=None, subcategory=None,
-               judge_prompt=None, items=None, config=None, enabled=None):
+    def update(
+        cls,
+        suite_id,
+        *,
+        name=None,
+        eval_type=None,
+        subcategory=None,
+        judge_prompt=None,
+        items=None,
+        config=None,
+        enabled=None,
+    ):
         fields = cls._collect_fields(
-            name=name, eval_type=eval_type, subcategory=subcategory,
-            judge_prompt=judge_prompt, items=items, config=config, enabled=enabled,
+            name=name,
+            eval_type=eval_type,
+            subcategory=subcategory,
+            judge_prompt=judge_prompt,
+            items=items,
+            config=config,
+            enabled=enabled,
         )
         if fields:
             cls.dynamic_update(suite_id, fields)
 
     @classmethod
-    def list(cls, enabled_only=True, limit=50, offset=0, *, q: str | None = None, enabled: bool | None = None, sort: str = "name"):
+    def list(
+        cls,
+        enabled_only=True,
+        limit=50,
+        offset=0,
+        *,
+        q: str | None = None,
+        enabled: bool | None = None,
+        sort: str = "name",
+    ):
         clauses, params = [], []
         if enabled is not None:
             if type(enabled) is not bool:
@@ -48,13 +94,17 @@ class SuiteModel(BaseModel):
             clauses.append("s.enabled = true")
         pattern = search_pattern(q)
         if pattern is not None:
-            clauses.append("(s.name ILIKE %s OR s.eval_type ILIKE %s OR s.subcategory ILIKE %s)")
+            clauses.append(
+                "(s.name ILIKE %s OR s.eval_type ILIKE %s OR s.subcategory ILIKE %s)"
+            )
             params.extend([pattern] * 3)
         where = "WHERE " + " AND ".join(clauses) if clauses else ""
         order = sort_clause(sort, SUITE_SORTS)
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(f"SELECT count(*) as cnt FROM {cls.table} s {where}", params)
+                cur.execute(
+                    f"SELECT count(*) as cnt FROM {cls.table} s {where}", params
+                )
                 total = cur.fetchone()["cnt"]
                 cur.execute(
                     f"SELECT s.id, s.name, s.eval_type, s.subcategory, s.enabled, "
@@ -77,15 +127,31 @@ class SuiteModel(BaseModel):
                 return cls.serialize_timestamps(row) if row else None
 
     @classmethod
-    def upsert(cls, name, eval_type, subcategory, judge_prompt, items=None, config=None, enabled=True):
+    def upsert(
+        cls,
+        name,
+        eval_type,
+        subcategory,
+        judge_prompt,
+        items=None,
+        config=None,
+        enabled=True,
+    ):
         existing = cls.get_by_name(name)
         if existing:
             cls.update(
-                existing["id"], eval_type=eval_type, subcategory=subcategory,
-                judge_prompt=judge_prompt, items=items or {}, config=config or {}, enabled=enabled,
+                existing["id"],
+                eval_type=eval_type,
+                subcategory=subcategory,
+                judge_prompt=judge_prompt,
+                items=items or {},
+                config=config or {},
+                enabled=enabled,
             )
             return existing["id"]
-        return cls.create(name, eval_type, subcategory, judge_prompt, items, config, enabled)
+        return cls.create(
+            name, eval_type, subcategory, judge_prompt, items, config, enabled
+        )
 
 
 class ScenarioModel(BaseModel):
@@ -95,7 +161,9 @@ class ScenarioModel(BaseModel):
     def create(cls, suite_id, name, prompt, enabled=True):
         cls._validate_id(suite_id)
         cls._validate_required({"name": name, "prompt": prompt}, ["name", "prompt"])
-        return super().create(suite_id=suite_id, name=name, prompt=prompt, enabled=enabled)
+        return super().create(
+            suite_id=suite_id, name=name, prompt=prompt, enabled=enabled
+        )
 
     @classmethod
     def update(cls, scenario_id, *, name=None, prompt=None, enabled=None):
@@ -179,6 +247,7 @@ def resolve_items(items: dict) -> list[tuple[str, str]]:
 
     if source == "harness":
         from services.api.models.rule import collect_rules_from_db
+
         harness_type = items.get("harness_type", "rule")
         agent = items.get("agent", "claude")
         exclude = set(items.get("exclude", []))
@@ -192,6 +261,7 @@ def resolve_items(items: dict) -> list[tuple[str, str]]:
 
     if source == "skill":
         from services.api.models.skill import get_skill
+
         skill_name = items.get("skill_name")
         assert skill_name, "skill source requires 'skill_name'."
         skill = get_skill(skill_name)
@@ -205,6 +275,7 @@ def resolve_extra_context(items: dict) -> str | None:
     source = items.get("source")
     if source == "skill":
         from services.api.models.skill import get_skill
+
         skill_name = items.get("skill_name")
         assert skill_name, "skill source requires 'skill_name'."
         skill = get_skill(skill_name)
