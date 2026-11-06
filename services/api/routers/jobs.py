@@ -15,8 +15,21 @@ from services.jobs.models.config import (
     list_configs_for_jobs,
     update_config,
 )
-from services.jobs.models.execution import get_execution, list_executions_for_job
-from services.jobs.models.job import JOB_SORTS, JobNotFoundError, delete_job, get_job, list_graph_jobs, list_jobs, set_schedule_enabled, update_job
+from services.jobs.models.execution import (
+    EXECUTION_SORTS,
+    get_execution,
+    list_executions_for_job,
+)
+from services.jobs.models.job import (
+    JOB_SORTS,
+    JobNotFoundError,
+    delete_job,
+    get_job,
+    list_graph_jobs,
+    list_jobs,
+    set_schedule_enabled,
+    update_job,
+)
 from services.api.models.shared.listing import sort_pattern
 from services.jobs.scoping import job_targets
 from services.jobs.schedule import parse_interval
@@ -42,11 +55,21 @@ def _job_detail(job_id: int) -> dict:
 
 
 @router.get("")
-def list_all(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
-             q: Annotated[str, Query(max_length=1000)] = "",
-             schedule_enabled: bool | None = None,
-             sort: Annotated[str, Query(pattern=sort_pattern(JOB_SORTS))] = "updated"):
-    items, total = query_result(list_jobs, limit=limit, offset=offset, q=q, schedule_enabled=schedule_enabled, sort=sort)
+def list_all(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    q: Annotated[str, Query(max_length=1000)] = "",
+    schedule_enabled: bool | None = None,
+    sort: Annotated[str, Query(pattern=sort_pattern(JOB_SORTS))] = "updated",
+):
+    items, total = query_result(
+        list_jobs,
+        limit=limit,
+        offset=offset,
+        q=q,
+        schedule_enabled=schedule_enabled,
+        sort=sort,
+    )
     return list_response(items, total)
 
 
@@ -56,13 +79,21 @@ def get_one(job_id: int):
 
 
 @router.get("/graph/{graph_type}")
-def for_graph(graph_type: str = Path(min_length=1, max_length=100, pattern=r"^[a-z][a-z0-9_]*$")):
+def for_graph(
+    graph_type: str = Path(min_length=1, max_length=100, pattern=r"^[a-z][a-z0-9_]*$"),
+):
     jobs = list_graph_jobs(graph_type)
     grouped = {job["id"]: [] for job in jobs}
     for config in list_configs_for_jobs(list(grouped)):
         grouped[config["job_id"]].append(config)
-    items = [{**job, "configs": grouped[job["id"]],
-              "runs_on_device": bool(job_targets(grouped[job["id"]], DEVICE_NAME))} for job in jobs]
+    items = [
+        {
+            **job,
+            "configs": grouped[job["id"]],
+            "runs_on_device": bool(job_targets(grouped[job["id"]], DEVICE_NAME)),
+        }
+        for job in jobs
+    ]
     return list_response(items, len(items))
 
 
@@ -90,11 +121,16 @@ class JobCreateRequest(BaseModel):
 def create(body: JobCreateRequest):
     try:
         job_id = create_job_with_default_config(
-            body.name, body.schedule_config, body.input_params, body.description,
+            body.name,
+            body.schedule_config,
+            body.input_params,
+            body.description,
             device=DEVICE_NAME if body.device_scope == "this_device" else "*",
         )
     except psycopg2.IntegrityError:
-        raise HTTPException(status_code=409, detail=f"A job named '{body.name}' already exists")
+        raise HTTPException(
+            status_code=409, detail=f"A job named '{body.name}' already exists"
+        )
     return _job_detail(job_id)
 
 
@@ -131,7 +167,9 @@ def update(job_id: int, body: JobUpdateRequest):
             description=body.description,
         )
     except psycopg2.IntegrityError:
-        raise HTTPException(status_code=409, detail=f"A job named '{body.name}' already exists")
+        raise HTTPException(
+            status_code=409, detail=f"A job named '{body.name}' already exists"
+        )
     return _job_detail(job_id)
 
 
@@ -167,9 +205,12 @@ def executions(
     job_id: int,
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    sort: Annotated[str, Query(pattern=sort_pattern(EXECUTION_SORTS))] = "started_desc",
 ):
     require_found(get_job(job_id), "Job", job_id)
-    items, total = list_executions_for_job(job_id, limit=limit, offset=offset)
+    items, total = list_executions_for_job(
+        job_id, limit=limit, offset=offset, sort=sort
+    )
     return list_response(items, total)
 
 
@@ -177,7 +218,10 @@ def executions(
 def execution_one(job_id: int, execution_id: int):
     execution = require_found(get_execution(execution_id), "Execution", execution_id)
     if execution["job_id"] != job_id:
-        raise HTTPException(status_code=404, detail=f"Execution {execution_id} does not belong to job {job_id}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Execution {execution_id} does not belong to job {job_id}",
+        )
     return execution
 
 
@@ -211,7 +255,10 @@ class ConfigUpdateRequest(BaseModel):
 def _require_config_of_job(job_id: int, config_id: int) -> dict:
     config = require_found(get_config(config_id), "Config", config_id)
     if config["job_id"] != job_id:
-        raise HTTPException(status_code=404, detail=f"Config {config_id} does not belong to job {job_id}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Config {config_id} does not belong to job {job_id}",
+        )
     return config
 
 

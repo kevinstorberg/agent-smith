@@ -1,3 +1,5 @@
+import { ScrollableTable } from '../components/ScrollableTable';
+import './executionSorting.css';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router';
 import { api } from '../api';
@@ -20,6 +22,21 @@ import { SortableHeader } from '../components/table/SortableHeader';
 import { useLocalTableSort } from '../hooks/useLocalTableSort';
 import type { LocalSortColumn } from '../utils/localTableSorting';
 import './jobConfigSorting.css';
+
+const EXECUTION_COLUMNS = {
+  status: { ascending: 'status_asc', descending: 'status_desc' },
+  started: {
+    ascending: 'started_asc',
+    descending: 'started_desc',
+    defaultDirection: 'descending',
+  },
+  completed: {
+    ascending: 'completed_asc',
+    descending: 'completed_desc',
+    defaultDirection: 'descending',
+  },
+  exit: { ascending: 'exit_asc', descending: 'exit_desc' },
+} as const;
 
 const INTERVAL_UNITS = ['seconds', 'minutes', 'hours', 'days'];
 const CONFIG_SORT_COLUMNS = {
@@ -218,12 +235,19 @@ function JobDetail({ id }: { id?: string }) {
     },
   });
 
+  const [executionSort, setExecutionSort] = useState('started_desc');
   const exec = usePagination<JobExecution>(
     (l, o) =>
       isNew
         ? Promise.resolve({ items: [], total: 0 })
-        : api.jobs.executions(Number(id), { limit: l, offset: o }),
-    [id, execRefresh],
+        : api.jobs.executions(Number(id), {
+            limit: l,
+            offset: o,
+            ...(executionSort === 'started_desc'
+              ? {}
+              : { sort: executionSort }),
+          }),
+    [id, execRefresh, executionSort],
   );
   const readExecution = useCallback(
     () =>
@@ -859,13 +883,67 @@ function JobDetail({ id }: { id?: string }) {
                   )}
                 </section>
               )}
-              <table className="table">
+              {exec.error && (
+                <p role="alert">
+                  Could not refresh executions.{' '}
+                  <button className="btn btn-sm" onClick={() => exec.refresh()}>
+                    Retry executions
+                  </button>
+                </p>
+              )}
+              {exec.initialLoading && (
+                <p role="status">Loading executions...</p>
+              )}
+              <ScrollableTable
+                label="Job executions"
+                className="execution-sorting-table"
+                busy={
+                  (exec.loading || !exec.dataCurrent) &&
+                  (exec.loading || !exec.error)
+                }
+                emptyState={
+                  exec.dataCurrent &&
+                  !exec.loading &&
+                  !exec.error &&
+                  exec.total === 0 ? (
+                    <p className="loading">No executions yet</p>
+                  ) : undefined
+                }
+              >
                 <thead>
                   <tr>
-                    <th>Status</th>
-                    <th>Started</th>
-                    <th>Completed</th>
-                    <th>Exit</th>
+                    <SortableHeader
+                      sort={executionSort}
+                      column={EXECUTION_COLUMNS.status}
+                      onSort={setExecutionSort}
+                      current={exec.dataCurrent && !exec.loading && !exec.error}
+                    >
+                      Status
+                    </SortableHeader>
+                    <SortableHeader
+                      sort={executionSort}
+                      column={EXECUTION_COLUMNS.started}
+                      onSort={setExecutionSort}
+                      current={exec.dataCurrent && !exec.loading && !exec.error}
+                    >
+                      Started
+                    </SortableHeader>
+                    <SortableHeader
+                      sort={executionSort}
+                      column={EXECUTION_COLUMNS.completed}
+                      onSort={setExecutionSort}
+                      current={exec.dataCurrent && !exec.loading && !exec.error}
+                    >
+                      Completed
+                    </SortableHeader>
+                    <SortableHeader
+                      sort={executionSort}
+                      column={EXECUTION_COLUMNS.exit}
+                      onSort={setExecutionSort}
+                      current={exec.dataCurrent && !exec.loading && !exec.error}
+                    >
+                      Exit
+                    </SortableHeader>
                   </tr>
                 </thead>
                 <tbody>
@@ -892,15 +970,8 @@ function JobDetail({ id }: { id?: string }) {
                       <td>{String(e.result?.exit_code ?? '--')}</td>
                     </tr>
                   ))}
-                  {exec.items.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="loading">
-                        No executions yet
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
-              </table>
+              </ScrollableTable>
               <Pagination
                 total={exec.total}
                 limit={exec.limit}

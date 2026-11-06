@@ -1730,11 +1730,14 @@ export const api = {
       patch<Job>(`/jobs/${id}/scheduling`, body),
     remove: (id: number) => del(`/jobs/${id}`),
     runNow: (id: number) => post<JobRunResult>(`/jobs/${id}/run-now`, {}),
-    executions: (id: number, pagination?: PaginationParams) =>
-      get<Paginated<JobExecution>>(
-        `/jobs/${id}/executions`,
-        paginationToParams(pagination),
-      ),
+    executions: (
+      id: number,
+      pagination?: PaginationParams & { sort?: string },
+    ) =>
+      get<Paginated<JobExecution>>(`/jobs/${id}/executions`, {
+        ...paginationToParams(pagination),
+        ...(pagination?.sort ? { sort: pagination.sort } : {}),
+      }),
     execution: (id: number, executionId: number) =>
       get<JobExecution>(`/jobs/${id}/executions/${executionId}`),
     configs: {

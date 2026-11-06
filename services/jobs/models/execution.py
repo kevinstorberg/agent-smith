@@ -7,6 +7,19 @@ from psycopg2.extras import Json, RealDictCursor
 from services.config import DEVICE_NAME
 from services.db import get_connection
 from services.api.models.base import BaseModel
+from services.api.models.shared.listing import bidirectional_sorts, sort_clause
+
+
+EXECUTION_SORTS = bidirectional_sorts(
+    {
+        ("status_asc", "status_desc"): ("lower(status)",),
+        ("started_asc", "started_desc"): ("started_at",),
+        ("completed_asc", "completed_desc"): ("completed_at",),
+        ("exit_asc", "exit_desc"): (
+            "CASE WHEN jsonb_typeof(result->'exit_code') = 'number' THEN (result->>'exit_code')::numeric END",
+        ),
+    }
+)
 
 
 class JobExecutionModel(BaseModel):
@@ -62,9 +75,17 @@ class JobExecutionModel(BaseModel):
 
     @classmethod
     def list_for_job(
-        cls, job_id: int, limit: int = 50, offset: int = 0
+        cls,
+        job_id: int,
+        limit: int = 50,
+        offset: int = 0,
+        *,
+        sort: str = "started_desc",
     ) -> tuple[list[dict], int]:
         cls._validate_id(job_id)
+        if type(limit) is not int or limit < 1 or type(offset) is not int or offset < 0:
+            raise ValueError("Execution limit must be positive and offset nonnegative")
+        order = sort_clause(sort, EXECUTION_SORTS)
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
@@ -75,7 +96,7 @@ class JobExecutionModel(BaseModel):
                 cur.execute(
                     f"""SELECT * FROM {cls.table}
                     WHERE job_id = %s
-                    ORDER BY started_at DESC
+                    ORDER BY {order}
                     LIMIT %s OFFSET %s""",
                     (job_id, limit, offset),
                 )
