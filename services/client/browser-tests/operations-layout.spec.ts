@@ -1,34 +1,65 @@
 import type { Locator } from '@playwright/test';
 import { test, expect } from './fixtures';
-import { expectControlContained, expectControlsUnclipped, expectDocumentContained, expectMainContained } from './geometry';
-import { auditFixture, proposalFixture, runFixture, scenarioFixture, suiteFixture } from './operationsFixture';
+import {
+  expectControlContained,
+  expectControlsUnclipped,
+  expectDocumentContained,
+  expectMainContained,
+} from './geometry';
+import {
+  auditFixture,
+  proposalFixture,
+  runFixture,
+  scenarioFixture,
+  suiteFixture,
+} from './operationsFixture';
 
 async function exerciseScroll(region: Locator) {
   await expect(region).toHaveAttribute('tabindex', '0');
   await region.focus();
-  if (await region.evaluate(element => element.scrollWidth > element.clientWidth)) {
+  if (
+    await region.evaluate(
+      (element) => element.scrollWidth > element.clientWidth,
+    )
+  ) {
     await region.press('ArrowRight');
-    await expect.poll(() => region.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
+    await expect
+      .poll(() => region.evaluate((element) => element.scrollLeft))
+      .toBeGreaterThan(0);
   }
 }
 
 function resultOptions(register: (path: string, response: unknown) => void) {
   register('/api/evals/categories', ['rules']);
   register('/api/evals/subcategories', ['release']);
-  register('/api/evals/facets', { scenarios: [runFixture().scenario], models: [runFixture().test_model] });
+  register('/api/evals/facets', {
+    scenarios: [runFixture().scenario],
+    models: [runFixture().test_model],
+  });
   register('/api/evals/chart/average', []);
 }
 
-test('Audit list scrolls locally and long detail identifiers wrap inside their values', async ({ page, fixtureAPI }) => {
+test('Audit list scrolls locally and long detail identifiers wrap inside their values', async ({
+  page,
+  fixtureAPI,
+}) => {
   const event = auditFixture();
   fixtureAPI.get('/api/audit/events', { items: [event], total: 1 });
   fixtureAPI.get('/api/audit/counts', { claude: 1, codex: 0, gemini: 0 });
   fixtureAPI.get('/api/audit/events/1', event);
   await page.goto('/audit');
-  const region = page.getByRole('region', { name: 'Audit events', exact: true });
-  await expect(region.getByRole('cell', { name: event.tool_name })).toBeVisible();
+  const region = page.getByRole('region', {
+    name: 'Audit events',
+    exact: true,
+  });
+  await expect(
+    region.getByRole('cell', { name: event.tool_name }),
+  ).toBeVisible();
   await exerciseScroll(region);
-  const project = region.getByRole('cell', { name: event.project!, exact: true });
+  const project = region.getByRole('cell', {
+    name: event.project!,
+    exact: true,
+  });
   await project.scrollIntoViewIfNeeded();
   await expectControlContained(project, region);
   await expectMainContained(page);
@@ -36,33 +67,65 @@ test('Audit list scrolls locally and long detail identifiers wrap inside their v
   await expect(page).toHaveURL(/\/audit\/1$/);
   await expect(page.getByText(event.session_id, { exact: true })).toBeVisible();
   if (page.viewportSize()!.width <= 390) {
-    const label = (await page.getByText('Session', { exact: true }).boundingBox())!;
-    const value = (await page.getByText(event.session_id, { exact: true }).boundingBox())!;
+    const label = (await page
+      .getByText('Session', { exact: true })
+      .boundingBox())!;
+    const value = (await page
+      .getByText(event.session_id, { exact: true })
+      .boundingBox())!;
     expect(value.x).toBeCloseTo(label.x);
     expect(value.y).toBeGreaterThanOrEqual(label.y + label.height);
   }
   for (const value of [event.session_id, event.correlation_key]) {
     const text = page.getByText(value, { exact: true });
-    const geometry = await text.evaluate(element => {
-      const range = document.createRange(); range.selectNodeContents(element);
-      const bounds = element.closest('.audit-detail-row')!.getBoundingClientRect();
-      return { right: bounds.right, textRight: Math.max(...[...range.getClientRects()].map(rect => rect.right)) };
+    const geometry = await text.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const bounds = element
+        .closest('.audit-detail-row')!
+        .getBoundingClientRect();
+      return {
+        right: bounds.right,
+        textRight: Math.max(
+          ...[...range.getClientRects()].map((rect) => rect.right),
+        ),
+      };
     });
     expect(geometry.textRight).toBeLessThanOrEqual(geometry.right + 1);
   }
-  for (const pane of await page.locator('.operations-content-pane').all()) await expectControlContained(pane, page.locator('#main-content'));
+  for (const pane of await page.locator('.operations-content-pane').all())
+    await expectControlContained(pane, page.locator('#main-content'));
   await expectDocumentContained(page);
   await expectMainContained(page);
 });
 
-test('Proposals retain readable titles and reachable review actions through an empty result', async ({ page, fixtureAPI }) => {
+test('Proposals retain readable titles and reachable review actions through an empty result', async ({
+  page,
+  fixtureAPI,
+}) => {
   let pending = true;
-  fixtureAPI.get('/api/proposals', () => ({ items: pending ? [proposalFixture()] : [], total: pending ? 1 : 0 }));
-  fixtureAPI.get('/api/proposals/counts', () => ({ pending: pending ? 1 : 0, approved: 0, rejected: pending ? 0 : 1 }));
-  fixtureAPI.mock('POST', '/api/proposals/1/reject', () => { pending = false; return { ...proposalFixture(), status: 'rejected' }; });
+  fixtureAPI.get('/api/proposals', () => ({
+    items: pending ? [proposalFixture()] : [],
+    total: pending ? 1 : 0,
+  }));
+  fixtureAPI.get('/api/proposals/counts', () => ({
+    pending: pending ? 1 : 0,
+    approved: 0,
+    rejected: pending ? 0 : 1,
+  }));
+  fixtureAPI.mock('POST', '/api/proposals/1/reject', () => {
+    pending = false;
+    return { ...proposalFixture(), status: 'rejected' };
+  });
   await page.goto('/proposals');
-  const region = page.getByRole('region', { name: 'Proposals list', exact: true });
-  const title = region.getByRole('cell', { name: proposalFixture().title, exact: true });
+  const region = page.getByRole('region', {
+    name: 'Proposals list',
+    exact: true,
+  });
+  const title = region.getByRole('cell', {
+    name: proposalFixture().title,
+    exact: true,
+  });
   await expect(title).toBeVisible();
   expect((await title.boundingBox())!.width).toBeGreaterThanOrEqual(200);
   await exerciseScroll(region);
@@ -73,19 +136,37 @@ test('Proposals retain readable titles and reachable review actions through an e
   const empty = region.getByText('No pending proposals', { exact: true });
   await expect(empty).toBeVisible();
   await expectControlContained(empty, region);
-  expect(await region.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+  expect(
+    await region.evaluate(
+      (element) => element.scrollWidth - element.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(1);
   await expectDocumentContained(page);
   await expectMainContained(page);
 });
 
-test('Results keep scenario text readable and rightmost scores reachable', async ({ page, fixtureAPI }) => {
+test('Results keep scenario text readable and rightmost scores reachable', async ({
+  page,
+  fixtureAPI,
+}) => {
   const run = runFixture();
   fixtureAPI.get('/api/evals', { items: [run], total: 1 });
   resultOptions(fixtureAPI.get);
-  fixtureAPI.get('/api/evals/1', { ...run, prompt: 'Review release context', output: 'Ready', results: [] });
+  fixtureAPI.get('/api/evals/1', {
+    ...run,
+    prompt: 'Review release context',
+    output: 'Ready',
+    results: [],
+  });
   await page.goto('/evals');
-  const region = page.getByRole('region', { name: 'Results list', exact: true });
-  const scenario = region.getByRole('cell', { name: run.scenario, exact: true });
+  const region = page.getByRole('region', {
+    name: 'Results list',
+    exact: true,
+  });
+  const scenario = region.getByRole('cell', {
+    name: run.scenario,
+    exact: true,
+  });
   await expect(scenario).toBeVisible();
   expect((await scenario.boundingBox())!.width).toBeGreaterThanOrEqual(200);
   await exerciseScroll(region);
@@ -101,7 +182,10 @@ test('Results keep scenario text readable and rightmost scores reachable', async
   await expectMainContained(page);
 });
 
-test('Eval suite Results links remain keyboard reachable in the rightmost column', async ({ page, fixtureAPI }) => {
+test('Eval suite Results links remain keyboard reachable in the rightmost column', async ({
+  page,
+  fixtureAPI,
+}) => {
   const suite = suiteFixture();
   fixtureAPI.get('/api/eval-configs/suites', { items: [suite], total: 1 });
   fixtureAPI.get('/api/evals', { items: [], total: 0 });
@@ -118,57 +202,97 @@ test('Eval suite Results links remain keyboard reachable in the rightmost column
   await expectMainContained(page);
   await results.press('Enter');
   await expect(page).toHaveURL(/\/evals\?category=rules&subcategory=release$/);
-  await expect(page.getByText('No eval runs found', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('No eval runs found', { exact: true }),
+  ).toBeVisible();
   await expectDocumentContained(page);
   await expectMainContained(page);
 });
 
-test('Suite scenario actions and edit controls remain readable without widening the page', async ({ page, fixtureAPI }) => {
+test('Suite scenario actions and edit controls remain readable without widening the page', async ({
+  page,
+  fixtureAPI,
+}) => {
   const suite = suiteFixture();
   const scenario = scenarioFixture();
-  fixtureAPI.get('/api/eval-configs/suites/1', { ...suite, scenarios: [scenario] });
+  fixtureAPI.get('/api/eval-configs/suites/1', {
+    ...suite,
+    scenarios: [scenario],
+  });
   await page.goto('/eval-configs/1');
-  const region = page.getByRole('region', { name: 'Suite scenarios', exact: true });
-  await expect(region.getByRole('cell', { name: scenario.name, exact: true })).toBeVisible();
+  const region = page.getByRole('region', {
+    name: 'Suite scenarios',
+    exact: true,
+  });
+  await expect(
+    region.getByRole('cell', { name: scenario.name, exact: true }),
+  ).toBeVisible();
   await exerciseScroll(region);
   const remove = region.getByRole('button', { name: 'Delete', exact: true });
   await remove.scrollIntoViewIfNeeded();
   await expectControlContained(remove, region);
-  expect(await remove.evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(12);
-  page.once('dialog', dialog => dialog.dismiss());
+  expect(
+    await remove.evaluate((element) =>
+      parseFloat(getComputedStyle(element).fontSize),
+    ),
+  ).toBeGreaterThanOrEqual(12);
+  page.once('dialog', (dialog) => dialog.dismiss());
   await remove.click();
-  await expect(region.getByRole('cell', { name: scenario.name, exact: true })).toBeVisible();
-  await region.getByRole('button', { name: 'Edit scenario', exact: true }).click();
+  await expect(
+    region.getByRole('cell', { name: scenario.name, exact: true }),
+  ).toBeVisible();
+  await region
+    .getByRole('button', { name: 'Edit scenario', exact: true })
+    .click();
   const cancel = region.getByRole('button', { name: 'Cancel', exact: true });
   await cancel.scrollIntoViewIfNeeded();
   await expectControlContained(cancel, region);
   await cancel.click();
-  await expect(region.getByRole('button', { name: 'Cancel', exact: true })).not.toBeVisible();
-  await page.getByRole('button', { name: '+ Add Scenario', exact: true }).click();
+  await expect(
+    region.getByRole('button', { name: 'Cancel', exact: true }),
+  ).not.toBeVisible();
+  await page
+    .getByRole('button', { name: '+ Add Scenario', exact: true })
+    .click();
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expectDocumentContained(page);
   await expectMainContained(page);
   await expectControlsUnclipped(page);
 });
 
-test('Jobs empty messages stay centered in the visible table', async ({ page, fixtureAPI }) => {
+test('Jobs empty messages stay centered in the visible table', async ({
+  page,
+  fixtureAPI,
+}) => {
   fixtureAPI.get('/api/jobs', { items: [], total: 0 });
   await page.goto('/jobs');
   const region = page.getByRole('region', { name: 'Jobs list', exact: true });
-  const empty = region.getByRole('cell', { name: 'No jobs found', exact: true });
+  const empty = region.getByRole('cell', {
+    name: 'No jobs found',
+    exact: true,
+  });
   await expect(empty).toHaveCSS('text-align', 'center');
   await expect(empty).toHaveCSS('padding-top', '32px');
   await expect(region.getByRole('columnheader')).toHaveCount(0);
   await expectControlContained(empty, region);
-  expect(await region.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+  expect(
+    await region.evaluate(
+      (element) => element.scrollWidth - element.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(1);
   await expectDocumentContained(page);
   await expectMainContained(page);
 });
 
-test('Proposal create previews keep long content inside their panes', async ({ page, fixtureAPI }) => {
+test('Proposal create previews keep long content inside their panes', async ({
+  page,
+  fixtureAPI,
+}) => {
   fixtureAPI.get('/api/proposals/1', proposalFixture());
   await page.goto('/proposals/1');
-  await expect(page.getByRole('heading', { name: proposalFixture().title })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: proposalFixture().title }),
+  ).toBeVisible();
   const pane = page.locator('.operations-content-pane');
   await expect(pane).toBeVisible();
   await expectControlContained(pane, page.locator('#main-content'));
@@ -178,27 +302,73 @@ test('Proposal create previews keep long content inside their panes', async ({ p
 });
 
 for (const resource of [
-  { route: '/proposals', endpoint: '/api/proposals', label: 'Proposals list', error: 'Could not load proposals.', empty: 'No pending proposals' },
-  { route: '/audit', endpoint: '/api/audit/events', label: 'Audit events', error: 'Could not load audit events.', empty: 'No tool calls yet' },
-  { route: '/evals', endpoint: '/api/evals', label: 'Results list', error: 'Could not load results.', empty: 'No eval runs found' },
-  { route: '/eval-configs', endpoint: '/api/eval-configs/suites', label: 'Eval suites', error: 'Could not load eval suites.', empty: 'No eval suites found' },
+  {
+    route: '/proposals',
+    endpoint: '/api/proposals',
+    label: 'Proposals list',
+    error: 'Could not load proposals.',
+    empty: 'No pending proposals',
+  },
+  {
+    route: '/audit',
+    endpoint: '/api/audit/events',
+    label: 'Audit events',
+    error: 'Could not load audit events.',
+    empty: 'No tool calls yet',
+  },
+  {
+    route: '/evals',
+    endpoint: '/api/evals',
+    label: 'Results list',
+    error: 'Could not load results.',
+    empty: 'No eval runs found',
+  },
+  {
+    route: '/eval-configs',
+    endpoint: '/api/eval-configs/suites',
+    label: 'Eval suites',
+    error: 'Could not load eval suites.',
+    empty: 'No eval suites found',
+  },
 ]) {
-  test(`${resource.label} recover from an error into a contained empty state`, async ({ page, fixtureAPI }) => {
-    fixtureAPI.get(resource.endpoint, { detail: 'Synthetic unavailable response' }, 503);
-    if (resource.route === '/proposals') fixtureAPI.get('/api/proposals/counts', { pending: 0, approved: 0, rejected: 0 });
-    if (resource.route === '/audit') fixtureAPI.get('/api/audit/counts', { claude: 0, codex: 0, gemini: 0 });
+  test(`${resource.label} recover from an error into a contained empty state`, async ({
+    page,
+    fixtureAPI,
+  }) => {
+    fixtureAPI.get(
+      resource.endpoint,
+      { detail: 'Synthetic unavailable response' },
+      503,
+    );
+    if (resource.route === '/proposals')
+      fixtureAPI.get('/api/proposals/counts', {
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+      });
+    if (resource.route === '/audit')
+      fixtureAPI.get('/api/audit/counts', { claude: 0, codex: 0, gemini: 0 });
     if (resource.route === '/evals') resultOptions(fixtureAPI.get);
     await page.goto(resource.route);
     await expect(page.getByRole('alert')).toContainText(resource.error);
-    await expect(page.getByRole('textbox', { name: 'Search', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('textbox', { name: 'Search', exact: true }),
+    ).toBeVisible();
     fixtureAPI.get(resource.endpoint, { items: [], total: 0 });
     await page.getByRole('button', { name: 'Retry', exact: true }).click();
-    const region = page.getByRole('region', { name: resource.label, exact: true });
+    const region = page.getByRole('region', {
+      name: resource.label,
+      exact: true,
+    });
     const empty = region.getByText(resource.empty, { exact: true });
     await expect(empty).toBeVisible();
     await expect(region.getByRole('columnheader')).toHaveCount(0);
     await expectControlContained(empty, region);
-    expect(await region.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+    expect(
+      await region.evaluate(
+        (element) => element.scrollWidth - element.clientWidth,
+      ),
+    ).toBeLessThanOrEqual(1);
     await expectDocumentContained(page);
     await expectMainContained(page);
     await expectControlsUnclipped(page);
@@ -206,10 +376,15 @@ for (const resource of [
 }
 
 for (const route of ['/eval-configs/new', '/eval-configs/1']) {
-  test(`Suite form fields wrap inside their card at ${route}`, async ({ page, fixtureAPI }) => {
-    if (route.endsWith('/1')) fixtureAPI.get('/api/eval-configs/suites/1', suiteFixture());
+  test(`Suite form fields wrap inside their card at ${route}`, async ({
+    page,
+    fixtureAPI,
+  }) => {
+    if (route.endsWith('/1'))
+      fixtureAPI.get('/api/eval-configs/suites/1', suiteFixture());
     await page.goto(route);
-    if (route.endsWith('/1')) await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    if (route.endsWith('/1'))
+      await page.getByRole('button', { name: 'Edit', exact: true }).click();
     const fields = page.locator('.eval-suite-fields input');
     await expect(fields).toHaveCount(2);
     if (page.viewportSize()!.width <= 390) {
