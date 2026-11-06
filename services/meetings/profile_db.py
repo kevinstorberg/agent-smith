@@ -11,6 +11,7 @@ from psycopg2.extras import Json
 from psycopg2.errors import LockNotAvailable
 from pydantic import ValidationError
 
+from services.api.models.shared.listing import bidirectional_sorts
 from services.meetings import stage_db, stage_state
 from services.meetings.db import _cursor, _serialize
 from services.meetings.outputs import (
@@ -31,15 +32,29 @@ MAX_TAGS = 20
 MAX_TAG_LENGTH = 100
 MAX_PROFILE_NAME_LENGTH = 200
 DEFAULT_PROFILE_SORT = "starred_name_asc"
-PROFILE_SORTS = {
-    f"{name}_{direction}": f"{column} {direction.upper()}"
-    for name, column in (
-        ("name", "lower({alias}.display_name)"),
-        ("created_at", "{alias}.created_at"),
-        ("updated_at", "{alias}.updated_at"),
-    )
-    for direction in ("asc", "desc")
-}
+PROFILE_SORTS = bidirectional_sorts(
+    {
+        ("starred_asc", "starred_desc"): ("{alias}.starred",),
+        ("email_asc", "email_desc"): ("NULLIF(lower({alias}.email), '')",),
+        ("identity_asc", "identity_desc"): ("lower({alias}.identity_scope)",),
+        ("tags_asc", "tags_desc"): (
+            "NULLIF(ARRAY(SELECT lower(tag) FROM unnest({alias}.tags) tag ORDER BY lower(tag)), ARRAY[]::text[])",
+        ),
+        ("meeting_count_asc", "meeting_count_desc"): ("{alias}.meeting_count",),
+    },
+    tie_breaker="{alias}.id",
+)
+PROFILE_SORTS.update(
+    {
+        f"{name}_{direction}": f"{column} {direction.upper()}"
+        for name, column in (
+            ("name", "lower({alias}.display_name)"),
+            ("created_at", "{alias}.created_at"),
+            ("updated_at", "{alias}.updated_at"),
+        )
+        for direction in ("asc", "desc")
+    }
+)
 PROFILE_SORTS[DEFAULT_PROFILE_SORT] = (
     "{alias}.starred DESC, lower({alias}.display_name) ASC"
 )
@@ -636,6 +651,23 @@ def _tags(tags: list[str]) -> list[str]:
     return normalized
 
 
+def _profile_counts_sql(alias: str) -> str:
+    return f"""CROSS JOIN LATERAL (
+        WITH claim_sources AS (
+            SELECT claim->>'meeting_id' AS id FROM jsonb_array_elements({alias}.claims) claim
+            WHERE claim->>'superseded' IS DISTINCT FROM 'true'
+              AND {profile_metadata.source_sql("claim", legacy_claim=True)}
+        )
+        SELECT (SELECT count(*) FROM claim_sources) AS claim_count,
+               (SELECT count(*) FROM (
+                   SELECT id FROM claim_sources UNION
+                   SELECT source.value->>'meeting_id' FROM jsonb_each({alias}.metadata_provenance) source
+                   WHERE {alias}.metadata ? source.key AND source.value->>'human' IS DISTINCT FROM 'true'
+                     AND {profile_metadata.source_sql("source.value")}
+               ) meeting_sources) AS meeting_count
+    ) visible"""
+
+
 def list_profiles(
     query: str | None = None,
     limit: int = 20,
@@ -653,9 +685,7 @@ def list_profiles(
     ):
         raise ValueError("Profile limit must be 1-100 and offset must be nonnegative")
     if not isinstance(sort, str) or sort not in PROFILE_SORTS:
-        raise ValueError(
-            "Profile sort must select starred_name_asc, name, created_at or updated_at with asc or desc"
-        )
+        raise ValueError("Profile sort must be one of: " + ", ".join(PROFILE_SORTS))
     if starred is not None and type(starred) is not bool:
         raise ValueError("Profile starred filter must be a boolean")
     normalized_tags = _tags(tags) if tags is not None else []
@@ -680,6 +710,12 @@ def list_profiles(
         params.append(starred)
     where = " AND ".join(clauses)
     order = PROFILE_SORTS[sort]
+    count_order = sort in {"meeting_count_asc", "meeting_count_desc"}
+    matched = f"SELECT p.* FROM participant_profiles p WHERE {where}"
+    if count_order:
+        matched = f"SELECT p.*, visible.claim_count, visible.meeting_count FROM ({matched}) p {_profile_counts_sql('p')}"
+    count_alias = "page" if count_order else "visible"
+    page_counts = "" if count_order else _profile_counts_sql("page")
     with _cursor() as cur:
         cur.execute(
             f"SELECT count(*) AS count FROM participant_profiles p WHERE {where}",
@@ -693,24 +729,11 @@ def list_profiles(
                    ARRAY(SELECT DISTINCT lower(identity.email) FROM participant_profiles identity
                          WHERE (identity.id = page.id OR identity.merged_into = page.id) AND identity.email IS NOT NULL
                          ORDER BY lower(identity.email)) AS emails,
-                   visible.claim_count, visible.meeting_count
+                   {count_alias}.claim_count, {count_alias}.meeting_count
                FROM (
-                   SELECT p.* FROM participant_profiles p WHERE {where}
+                   SELECT p.* FROM ({matched}) p
                    ORDER BY {order.format(alias="p")}, p.id ASC LIMIT %s OFFSET %s
-               ) page CROSS JOIN LATERAL (
-                   WITH claim_sources AS (
-                       SELECT claim->>'meeting_id' AS id FROM jsonb_array_elements(page.claims) claim
-                       WHERE claim->>'superseded' IS DISTINCT FROM 'true'
-                         AND {profile_metadata.source_sql("claim", legacy_claim=True)}
-                   )
-                   SELECT (SELECT count(*) FROM claim_sources) AS claim_count,
-                          (SELECT count(*) FROM (
-                              SELECT id FROM claim_sources UNION
-                              SELECT source.value->>'meeting_id' FROM jsonb_each(page.metadata_provenance) source
-                              WHERE page.metadata ? source.key AND source.value->>'human' IS DISTINCT FROM 'true'
-                                AND {profile_metadata.source_sql("source.value")}
-                          ) meeting_sources) AS meeting_count
-               ) visible ORDER BY {order.format(alias="page")}, page.id ASC""",
+               ) page {page_counts} ORDER BY {order.format(alias="page")}, page.id ASC""",
             (*params, limit, offset),
         )
         return {

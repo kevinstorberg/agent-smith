@@ -1,0 +1,28 @@
+.proposals-page {
+  min-width: 0;
+}
+
+.proposals-page .table.proposals-list-table {
+  min-width: max(950px, 58em);
+  table-layout: auto;
+}
+
+.proposals-page .proposals-list-table th {
+  width: auto;
+  min-width: 8em;
+}
+
+.proposals-page .proposals-list-table th:first-child,
+.proposals-page .proposals-list-table th:nth-child(4) {
+  width: auto;
+  min-width: 12em;
+}
+
+.proposals-page .proposals-list-table th:nth-child(5) {
+  min-width: 11em;
+}
+
+.proposals-page .proposals-list-table th:last-child {
+  width: auto;
+  min-width: 12em;
+}

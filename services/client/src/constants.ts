@@ -53,14 +53,34 @@ export const AUDIT_SORT_COLUMNS = {
   },
 } as const;
 export const AUDIT_SORT_OPTIONS = columnSortOptions(AUDIT_SORT_COLUMNS);
-export const PROPOSAL_SORT_OPTIONS = [
-  { value: 'newest', label: 'Newest first' },
-  { value: 'oldest', label: 'Oldest first' },
-  { value: 'title', label: 'Title' },
-] as const;
+export const PROPOSAL_SORT_COLUMNS = {
+  title: { ascending: 'title', descending: 'title_desc' },
+  kind: { ascending: 'kind_asc', descending: 'kind_desc' },
+  action: { ascending: 'action_asc', descending: 'action_desc' },
+  target: { ascending: 'target_asc', descending: 'target_desc' },
+  created: {
+    ascending: 'oldest',
+    descending: 'newest',
+    defaultDirection: 'descending',
+  },
+} as const;
+export const PROPOSAL_SORT_OPTIONS = columnSortOptions(PROPOSAL_SORT_COLUMNS);
+export const EVAL_SUITE_SORT_COLUMNS = {
+  name: { ascending: 'name', descending: 'name_desc' },
+  type: { ascending: 'type_asc', descending: 'type_desc' },
+  scenarios: {
+    ascending: 'scenario_count_asc',
+    descending: 'scenario_count_desc',
+  },
+  enabled: { ascending: 'enabled_asc', descending: 'enabled_desc' },
+  updated: {
+    ascending: 'updated_asc',
+    descending: 'updated',
+    defaultDirection: 'descending',
+  },
+} as const;
 export const EVAL_SUITE_SORT_OPTIONS = [
-  { value: 'name', label: 'Name' },
-  { value: 'updated', label: 'Recently updated' },
+  ...columnSortOptions(EVAL_SUITE_SORT_COLUMNS),
   { value: 'newest', label: 'Newest first' },
 ] as const;
 const UPDATED_AT_SORT_OPTIONS = [
@@ -76,10 +96,25 @@ export const MEMORY_SEARCH_SORT_OPTIONS = [
   { value: 'relevance', label: 'Relevance' },
   ...MEMORY_LIST_SORT_OPTIONS,
 ] as const;
+export const MEETING_SORT_COLUMNS = {
+  title: { ascending: 'title', descending: 'title_desc' },
+  connection: { ascending: 'connection_asc', descending: 'connection_desc' },
+  provider: { ascending: 'provider_asc', descending: 'provider_desc' },
+  date: {
+    ascending: 'date_asc',
+    descending: 'date_desc',
+    defaultDirection: 'descending',
+  },
+  updated: {
+    ascending: 'updated_asc',
+    descending: 'updated',
+    defaultDirection: 'descending',
+  },
+} as const;
 export const MEETING_SORT_OPTIONS = [
+  ...columnSortOptions(MEETING_SORT_COLUMNS),
   { value: 'newest', label: 'Newest first' },
   { value: 'oldest', label: 'Oldest first' },
-  { value: 'title', label: 'Title A–Z' },
 ] as const;
 export const VOCABULARY_DEFINITIONS = [
   { value: 'all', label: 'All terms' },
@@ -123,13 +158,32 @@ export function defaultActionItemSort(status: ActionItemStatus) {
       ? 'completed'
       : 'newest';
 }
+export const PROFILE_SORT_COLUMNS = {
+  starred: {
+    ascending: 'starred_asc',
+    descending: 'starred_desc',
+    defaultDirection: 'descending',
+  },
+  name: { ascending: 'name_asc', descending: 'name_desc' },
+  email: { ascending: 'email_asc', descending: 'email_desc' },
+  identity: { ascending: 'identity_asc', descending: 'identity_desc' },
+  tags: { ascending: 'tags_asc', descending: 'tags_desc' },
+  meetings: {
+    ascending: 'meeting_count_asc',
+    descending: 'meeting_count_desc',
+    defaultDirection: 'descending',
+  },
+  updated: {
+    ascending: 'updated_at_asc',
+    descending: 'updated_at_desc',
+    defaultDirection: 'descending',
+  },
+} as const;
 export const PROFILE_SORT_OPTIONS = [
+  ...columnSortOptions(PROFILE_SORT_COLUMNS),
   { value: 'starred_name_asc', label: 'Starred, name A–Z' },
   { value: 'created_at_desc', label: 'Newest profiles' },
   { value: 'created_at_asc', label: 'Oldest profiles' },
-  { value: 'name_asc', label: 'Name A–Z' },
-  { value: 'name_desc', label: 'Name Z–A' },
-  ...UPDATED_AT_SORT_OPTIONS,
 ] as const;
 export const CHAT_STATUSES = [
   { value: 'all', label: 'All rooms' },

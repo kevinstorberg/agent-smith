@@ -165,7 +165,8 @@ test('Audit distinguishes pending, filtered empty, and failed requests without s
   await expect(page.getByRole('status')).toHaveText('1 tool call');
   const search = page.getByRole('textbox', { name: 'Search', exact: true });
   await search.fill('held');
-  await expect(page.getByRole('status')).toHaveText('Updating…');
+  await expect(page.getByRole('status')).toHaveCount(0);
+  await expect(page.getByRole('table')).toHaveAttribute('aria-busy', 'true');
   await expect(
     page.getByText('No matching tool calls', { exact: true }),
   ).not.toBeVisible();
@@ -217,7 +218,8 @@ test('Audit distinguishes pending, filtered empty, and failed requests without s
     'aria-busy',
     'true',
   );
-  await expect(page.getByRole('status')).toHaveText('Updating…');
+  await expect(page.getByRole('status')).toHaveCount(0);
+  await expect(page.getByRole('table')).toHaveAttribute('aria-busy', 'true');
   await expect.poll(() => Boolean(retryRelease)).toBe(true);
   retryRelease!({ items: [], total: 0 });
   await expect(
