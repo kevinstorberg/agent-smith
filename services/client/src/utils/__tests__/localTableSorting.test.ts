@@ -83,6 +83,38 @@ describe('immutable complete-array sorting', () => {
     expect(sortCompleteRows(rows, 'desc', columns)).toEqual(rows);
   });
 
+  it.each(['asc', 'desc'] as const)(
+    'orders mixed numeric and string ID ties consistently in %s order',
+    (sort) => {
+      const tiedColumns = {
+        value: {
+          ascending: 'asc',
+          descending: 'desc',
+          select: () => 'same',
+        },
+      } as const;
+      const rows = [{ id: '2' }, { id: 2 }, { id: '1' }, { id: 1 }];
+      for (const input of [rows, [...rows].reverse()]) {
+        expect(
+          sortCompleteRows(input, sort, tiedColumns, (row) => row.id).map(
+            (row) => row.id,
+          ),
+        ).toEqual([1, 2, '1', '2']);
+      }
+    },
+  );
+
+  it.each([NaN, Infinity, -Infinity])(
+    'rejects the nonfinite numeric ID %s even in a single-row collection',
+    (id) => {
+      for (const sort of ['asc', 'desc'] as const) {
+        expect(() => sorted([{ id, value: 'same' }], sort)).toThrow(
+          /IDs must be finite/i,
+        );
+      }
+    },
+  );
+
   it('rejects undeclared keys and invalid scalar numbers instead of guessing', () => {
     expect(() =>
       sortCompleteRows([{ id: 1, value: 1 }], 'unknown' as 'asc', columns),

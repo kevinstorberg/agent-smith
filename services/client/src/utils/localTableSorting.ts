@@ -37,9 +37,12 @@ export function sortCompleteRows<
   const direction = sort === column.ascending ? 1 : -1;
   const selected = rows.map((row, index) => {
     const value = column.select(row);
+    const id = getId?.(row);
     if (typeof value === 'number' && !Number.isFinite(value))
       throw new Error('Local numeric sort keys must be finite.');
-    return { row, index, value, id: getId?.(row) };
+    if (typeof id === 'number' && !Number.isFinite(id))
+      throw new Error('Local numeric IDs must be finite.');
+    return { row, index, value, id };
   });
   selected.sort((left, right) => {
     const leftMissing = left.value == null;
@@ -50,8 +53,15 @@ export function sortCompleteRows<
         ? 0
         : compareValues(left.value!, right.value!);
     if (comparison) return comparison * direction;
-    if (left.id !== undefined && right.id !== undefined && left.id !== right.id)
+    if (
+      left.id !== undefined &&
+      right.id !== undefined &&
+      left.id !== right.id
+    ) {
+      if (typeof left.id !== typeof right.id)
+        return typeof left.id === 'number' ? -1 : 1;
       return left.id < right.id ? -1 : 1;
+    }
     return left.index - right.index;
   });
   return selected.map((value) => value.row);
