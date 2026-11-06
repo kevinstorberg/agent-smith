@@ -207,7 +207,14 @@ test('Profile empty feedback stays visible while all headers remain sortable at 
   page,
   fixtureAPI,
 }) => {
-  fixtureAPI.get('/api/profiles', { items: [], total: 0 });
+  const emptyPage = { items: [], total: 0 };
+  let finish!: (value: typeof emptyPage) => void;
+  const pending = new Promise<typeof emptyPage>((resolve) => {
+    finish = resolve;
+  });
+  fixtureAPI.get('/api/profiles', ({ url }: APIRequest) =>
+    url.searchParams.get('q') === 'new query' ? pending : emptyPage,
+  );
   await page.goto('/profiles');
   const region = page.getByRole('region', {
     name: 'Profiles list',
@@ -255,6 +262,25 @@ test('Profile empty feedback stays visible while all headers remain sortable at 
   await header.getByRole('button').click();
   await expect(header).toHaveAttribute('aria-sort', 'descending');
   await expect(empty).toBeVisible();
+  await page
+    .getByRole('textbox', { name: 'Search profiles', exact: true })
+    .fill('new query');
+  await expect
+    .poll(() =>
+      fixtureAPI.requests
+        .filter((entry) => new URL(entry.url).pathname === '/api/profiles')
+        .some(
+          (entry) => new URL(entry.url).searchParams.get('q') === 'new query',
+        ),
+    )
+    .toBe(true);
+  await expect(empty).toHaveCount(0);
+  await expect(
+    page.getByText('No profiles match your search.', { exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByRole('table')).toHaveAttribute('aria-busy', 'true');
+  finish(emptyPage);
+  await expect(empty).toHaveText('No profiles match your search.');
   await expectDocumentContained(page);
   expect(fixtureAPI.requests.filter((entry) => entry.method !== 'GET')).toEqual(
     [],

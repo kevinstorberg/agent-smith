@@ -49,6 +49,38 @@ beforeEach(() => {
 });
 
 describe('Profile header sorting', () => {
+  it('does not present an accepted-empty result as a new query result while that read is pending', async () => {
+    vi.mocked(api.profiles.list).mockResolvedValueOnce({ items: [], total: 0 });
+    renderWithProviders(<ProfilesIndexPage />, {
+      initialEntries: ['/profiles'],
+    });
+    await screen.findByRole('status');
+    let finish!: (value: ReturnType<typeof page>) => void;
+    vi.mocked(api.profiles.list).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search profiles' }), {
+      target: { value: 'new query' },
+    });
+    await waitFor(() =>
+      expect(api.profiles.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ q: 'new query' }),
+      ),
+    );
+    expect(screen.queryByText(/No profiles saved yet/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('No profiles match your search.'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Loading profiles...')).not.toBeInTheDocument();
+    expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getAllByRole('columnheader')).toHaveLength(7);
+    await act(async () => finish({ items: [], total: 0 }));
+    expect(
+      await screen.findByText('No profiles match your search.'),
+    ).toBeVisible();
+  });
   it.each(pairs)(
     'toggles %s globally from page zero without a sort dropdown',
     async (label, ascending, descending, first) => {

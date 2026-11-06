@@ -261,7 +261,7 @@ export function ProfilesIndexPage() {
         className="profiles-sorting-table"
         busy={!dataCurrent && (loading || !error)}
         emptyState={
-          !initialLoading && !error && items.length === 0 ? (
+          dataCurrent && !loading && !error && items.length === 0 ? (
             <p className="loading" role="status">
               {query || tags.length || starredOnly
                 ? 'No profiles match your search.'
