@@ -138,13 +138,32 @@ export function defaultActionItemSort(status: ActionItemStatus) {
       ? 'completed'
       : 'newest';
 }
+export const PROFILE_SORT_COLUMNS = {
+  starred: {
+    ascending: 'starred_asc',
+    descending: 'starred_desc',
+    defaultDirection: 'descending',
+  },
+  name: { ascending: 'name_asc', descending: 'name_desc' },
+  email: { ascending: 'email_asc', descending: 'email_desc' },
+  identity: { ascending: 'identity_asc', descending: 'identity_desc' },
+  tags: { ascending: 'tags_asc', descending: 'tags_desc' },
+  meetings: {
+    ascending: 'meeting_count_asc',
+    descending: 'meeting_count_desc',
+    defaultDirection: 'descending',
+  },
+  updated: {
+    ascending: 'updated_at_asc',
+    descending: 'updated_at_desc',
+    defaultDirection: 'descending',
+  },
+} as const;
 export const PROFILE_SORT_OPTIONS = [
+  ...columnSortOptions(PROFILE_SORT_COLUMNS),
   { value: 'starred_name_asc', label: 'Starred, name A–Z' },
   { value: 'created_at_desc', label: 'Newest profiles' },
   { value: 'created_at_asc', label: 'Oldest profiles' },
-  { value: 'name_asc', label: 'Name A–Z' },
-  { value: 'name_desc', label: 'Name Z–A' },
-  ...UPDATED_AT_SORT_OPTIONS,
 ] as const;
 export const CHAT_STATUSES = [
   { value: 'all', label: 'All rooms' },
