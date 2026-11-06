@@ -4,6 +4,9 @@ import { useNavigate } from 'react-router';
 import { api, ApiError } from '../api';
 import type { ProfileSummary } from '../api';
 import { Pagination } from '../components/Pagination';
+import { ScrollableTable } from '../components/ScrollableTable';
+import { SortableHeader } from '../components/table/SortableHeader';
+import './profilesSorting.css';
 import { BadgeCell, DateCell } from '../components/table';
 import { ProfileStar } from '../components/ProfileStar';
 import { usePagination } from '../hooks/usePagination';
@@ -14,9 +17,8 @@ import { useApiMutation } from '../hooks/useApiMutation';
 import { PROFILE_SCOPE_LABELS } from '../utils/profiles';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { PersonaJob } from '../components/PersonaJob';
-import { PROFILE_SORT_OPTIONS } from '../constants';
+import { PROFILE_SORT_COLUMNS } from '../constants';
 import { useViewPreferences } from '../hooks/useViewPreferences';
-import { parseViewField } from '../utils/viewPreferences';
 
 export function ProfilesIndexPage() {
   const navigate = useNavigate();
@@ -54,6 +56,8 @@ export function ProfilesIndexPage() {
     items,
     total,
     loading,
+    initialLoading,
+    dataCurrent,
     error,
     limit,
     offset,
@@ -225,28 +229,6 @@ export function ProfilesIndexPage() {
             }
           />
         </div>
-        <div>
-          <label className="form-label" htmlFor="profile-sort">
-            Sort
-          </label>
-          <select
-            id="profile-sort"
-            className="input"
-            value={sort}
-            onChange={(event) =>
-              preferences.setField(
-                'sort',
-                parseViewField('profiles', 'sort', event.target.value),
-              )
-            }
-          >
-            {PROFILE_SORT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
         <FilterCheckbox
           checked={starredOnly}
           onChange={(event) =>
@@ -265,104 +247,124 @@ export function ProfilesIndexPage() {
           {notice}
         </p>
       )}
-      {loading ? (
-        <div className="loading">Loading profiles...</div>
-      ) : error ? (
+      {initialLoading && <div className="loading">Loading profiles...</div>}
+      {error && (
         <div className="card" role="alert">
           <p>Could not load profiles. Try again.</p>
           <button className="btn" onClick={() => refresh()}>
             Retry
           </button>
         </div>
-      ) : (
-        <>
-          <div
-            className="profiles-table"
-            role="region"
-            aria-label="Profiles list"
-            tabIndex={0}
-          >
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Star</th>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Identity</th>
-                  <th>Tags</th>
-                  <th>Meetings</th>
-                  <th>Last updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((profile) => (
-                  <tr
-                    key={profile.id}
-                    {...makeRowClickable(() =>
-                      navigate(`/profiles/${profile.id}`),
-                    )}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <td>
-                      <ProfileStar
-                        name={profile.display_name}
-                        starred={profile.starred}
-                        disabled={star.loading}
-                        onClick={() => star.mutate(profile)}
-                      />
-                    </td>
-                    <td>
-                      {profile.display_name}
-                      {(profile.metadata?.job_role ||
-                        profile.metadata?.company) && (
-                        <p className="text-muted-sm">
-                          {[profile.metadata.job_role, profile.metadata.company]
-                            .filter(Boolean)
-                            .join(' · ')}
-                        </p>
-                      )}
-                    </td>
-                    <td>
-                      {profile.email || '—'}
-                      {(profile.emails?.length || 0) > 1 && (
-                        <p className="text-muted-sm">
-                          +{profile.emails!.length - 1} more
-                        </p>
-                      )}
-                    </td>
-                    <td>{PROFILE_SCOPE_LABELS[profile.identity_scope]}</td>
-                    <td>
-                      <BadgeCell items={profile.tags} />
-                    </td>
-                    <td>{profile.meeting_count}</td>
-                    <td>
-                      <DateCell date={profile.updated_at} />
-                    </td>
-                  </tr>
-                ))}
-                {items.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="loading">
-                      {query || tags.length || starredOnly
-                        ? 'No profiles match your search.'
-                        : 'No profiles saved yet. Create one or run the persona job to review saved meeting transcripts.'}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <Pagination
-            total={total}
-            limit={limit}
-            offset={offset}
-            onPageChange={setOffset}
-            onLimitChange={(value) => {
-              setLimit(value);
-              setOffset(0);
-            }}
-          />
-        </>
+      )}
+      <ScrollableTable
+        label="Profiles list"
+        className="profiles-sorting-table"
+        busy={!dataCurrent && (loading || !error)}
+        emptyState={
+          !initialLoading && !error && items.length === 0 ? (
+            <p className="loading" role="status">
+              {query || tags.length || starredOnly
+                ? 'No profiles match your search.'
+                : 'No profiles saved yet. Create one or run the persona job to review saved meeting transcripts.'}
+            </p>
+          ) : undefined
+        }
+      >
+        <colgroup>
+          <col className="profile-star-column" />
+          <col />
+          <col className="profile-email-column" />
+          <col className="profile-identity-column" />
+          <col className="profile-tags-column" />
+          <col className="profile-meetings-column" />
+          <col className="profile-updated-column" />
+        </colgroup>
+        <thead>
+          <tr>
+            {(
+              [
+                ['starred', 'Star'],
+                ['name', 'Name'],
+                ['email', 'Email'],
+                ['identity', 'Identity'],
+                ['tags', 'Tags'],
+                ['meetings', 'Meetings'],
+                ['updated', 'Last updated'],
+              ] as const
+            ).map(([key, label]) => (
+              <SortableHeader
+                key={key}
+                sort={sort}
+                column={PROFILE_SORT_COLUMNS[key]}
+                current={dataCurrent}
+                disabled={star.loading}
+                onSort={(value) => preferences.setField('sort', value)}
+              >
+                {label}
+              </SortableHeader>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {!initialLoading &&
+            !error &&
+            items.map((profile) => (
+              <tr
+                key={profile.id}
+                {...makeRowClickable(() => navigate(`/profiles/${profile.id}`))}
+                style={{ cursor: 'pointer' }}
+              >
+                <td>
+                  <ProfileStar
+                    name={profile.display_name}
+                    starred={profile.starred}
+                    disabled={star.loading || !dataCurrent}
+                    onClick={() => star.mutate(profile)}
+                  />
+                </td>
+                <td>
+                  {profile.display_name}
+                  {(profile.metadata?.job_role ||
+                    profile.metadata?.company) && (
+                    <p className="text-muted-sm">
+                      {[profile.metadata.job_role, profile.metadata.company]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                  )}
+                </td>
+                <td>
+                  {profile.email || '—'}
+                  {(profile.emails?.length || 0) > 1 && (
+                    <p className="text-muted-sm">
+                      +{profile.emails!.length - 1} more
+                    </p>
+                  )}
+                </td>
+                <td>{PROFILE_SCOPE_LABELS[profile.identity_scope]}</td>
+                <td>
+                  <BadgeCell items={profile.tags} />
+                </td>
+                <td>{profile.meeting_count}</td>
+                <td>
+                  <DateCell date={profile.updated_at} />
+                </td>
+              </tr>
+            ))}
+        </tbody>
+      </ScrollableTable>
+      {!initialLoading && !error && (
+        <Pagination
+          total={total}
+          limit={limit}
+          offset={offset}
+          onPageChange={setOffset}
+          disabled={loading}
+          onLimitChange={(value) => {
+            setLimit(value);
+            setOffset(0);
+          }}
+        />
       )}
     </div>
   );

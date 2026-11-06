@@ -184,7 +184,6 @@ for (const enlarged of [false, true])
 for (const view of [
   { path: '/memory', select: 'Sort' },
   { path: '/memory?q=release', select: 'Sort' },
-  { path: '/profiles', select: 'Sort' },
   { path: '/jobs', select: 'Scheduling' },
   { path: '/action-items?status=completed', select: 'Sort' },
 ]) {
