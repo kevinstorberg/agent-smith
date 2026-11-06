@@ -53,11 +53,18 @@ export const AUDIT_SORT_COLUMNS = {
   },
 } as const;
 export const AUDIT_SORT_OPTIONS = columnSortOptions(AUDIT_SORT_COLUMNS);
-export const PROPOSAL_SORT_OPTIONS = [
-  { value: 'newest', label: 'Newest first' },
-  { value: 'oldest', label: 'Oldest first' },
-  { value: 'title', label: 'Title' },
-] as const;
+export const PROPOSAL_SORT_COLUMNS = {
+  title: { ascending: 'title', descending: 'title_desc' },
+  kind: { ascending: 'kind_asc', descending: 'kind_desc' },
+  action: { ascending: 'action_asc', descending: 'action_desc' },
+  target: { ascending: 'target_asc', descending: 'target_desc' },
+  created: {
+    ascending: 'oldest',
+    descending: 'newest',
+    defaultDirection: 'descending',
+  },
+} as const;
+export const PROPOSAL_SORT_OPTIONS = columnSortOptions(PROPOSAL_SORT_COLUMNS);
 export const EVAL_SUITE_SORT_OPTIONS = [
   { value: 'name', label: 'Name' },
   { value: 'updated', label: 'Recently updated' },
