@@ -7,6 +7,24 @@
   flex-wrap: wrap;
 }
 
+.action-items-container .action-items-table {
+  min-width: max(860px, 71em);
+  --action-priority-width: 9em;
+  --action-topics-width: 16em;
+  --action-updated-width: 11em;
+  --action-controls-width: 18em;
+}
+
+.action-project-tag-sorts {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.action-items-table .sortable-header-button {
+  width: auto;
+}
+
 .action-item-project-drop-cue {
   position: absolute;
   bottom: 100%;

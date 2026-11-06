@@ -78,7 +78,9 @@ def action_item_list(
 ) -> dict[str, Any]:
     """Search title/description and list tasks. Status: open, completed, all. All supplied tags must match.
 
-    Sort: manual (open only), completed (completed only), newest, updated, title.
+    Sort: manual/manual_desc (open only), completed (completed only), newest,
+    title/title_desc, updated_asc/updated, tags_asc/tags_desc,
+    project_asc/project_desc, due_asc/due_desc. Missing values sort last.
     Defaults: open/manual, completed/completed, all/newest. Limit 1-100, offset nonnegative.
     Project names match exactly; unassigned=true selects tasks without a project and cannot combine with project.
     due_within_hours (1-168) includes past deadlines and deadlines within that many hours; undated tasks are excluded.

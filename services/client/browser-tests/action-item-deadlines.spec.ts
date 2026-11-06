@@ -315,7 +315,7 @@ for (const scale of [1, 2]) {
     if (scale === 2) await enlargeComputedText(page);
     const checkbox = page.getByRole('checkbox', { name: 'Deadline window' });
     const label = checkbox.locator('..');
-    const sort = page.getByRole('combobox', { name: 'Sort', exact: true });
+    const sort = page.getByRole('textbox', { name: 'Tags', exact: true });
     expect
       .soft(
         await checkbox.evaluate((element) =>
@@ -344,7 +344,7 @@ for (const scale of [1, 2]) {
       await checkbox.evaluate((element) => {
         const sort = element
           .closest('.profile-filters')
-          ?.querySelector('select');
+          ?.querySelector('label:nth-child(2) input');
         return Boolean(
           sort &&
           sort.compareDocumentPosition(element) &

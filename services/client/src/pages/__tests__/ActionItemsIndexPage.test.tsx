@@ -494,9 +494,7 @@ describe('ActionItemsIndexPage', () => {
     expect(
       screen.getByRole('button', { name: 'Reorder Task 1' }),
     ).toBeEnabled();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), {
-      target: { value: 'title' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Title' }));
     await waitFor(() =>
       expect(api.actionItems.list).toHaveBeenLastCalledWith({
         status: 'open',
@@ -545,7 +543,9 @@ describe('ActionItemsIndexPage', () => {
         offset: 0,
       }),
     );
-    expect(screen.getByLabelText('Sort')).toHaveValue('newest');
+    expect(
+      screen.queryByRole('columnheader', { name: /Title/ }),
+    ).not.toHaveAttribute('aria-sort');
   });
 
   it('keeps title disclosures separate from right-side completion and Edit controls', async () => {
@@ -673,9 +673,7 @@ describe('ActionItemsIndexPage', () => {
         offset: 0,
       }),
     );
-    fireEvent.change(screen.getByLabelText('Sort'), {
-      target: { value: 'title' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Title' }));
     await waitFor(() =>
       expect(api.actionItems.list).toHaveBeenLastCalledWith(
         expect.objectContaining({
@@ -827,8 +825,8 @@ describe('ActionItemsIndexPage', () => {
       screen.getByRole('tablist', { name: 'Action item projects' }),
     ).getAllByRole('tab'))
       expect(tab).toHaveAttribute('aria-disabled', 'true');
-    for (const label of ['Tags', 'Sort'])
-      expect(screen.getByLabelText(label)).toBeDisabled();
+    expect(screen.getByLabelText('Tags')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Title' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
     expect(
       screen.getByRole('button', { name: 'Complete Task 12' }),
@@ -1020,15 +1018,13 @@ describe('ActionItemsIndexPage', () => {
     await act(async () => {
       vi.advanceTimersByTime(300);
     });
-    fireEvent.change(screen.getByLabelText('Sort'), {
-      target: { value: 'title' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Title' }));
     await screen.findByRole('button', { name: 'Task 24' });
     expect(
       within(screen.getByRole('table'))
         .getAllByRole('columnheader')
-        .map((header) => header.textContent),
-    ).toEqual(['Priority', 'Title', 'Project / tags', 'Due date', 'Actions']);
+        .map((header) => header.textContent?.replace(/[▲▼↕]/g, '')),
+    ).toEqual(['Priority', 'Title', 'Project/Tags', 'Due date', 'Actions']);
     expect(
       [
         ...screen.getByRole('table').querySelectorAll('.action-item-priority'),
@@ -1089,6 +1085,11 @@ describe('ActionItemsIndexPage', () => {
       screen.queryByRole('region', { name: 'Task 2' }),
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Complete Task 3' }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Complete Task 3' }),
+      ).toBeEnabled(),
+    );
     expect(title).toHaveAttribute('aria-expanded', 'true');
   });
 
@@ -1554,4 +1555,159 @@ describe('Action Items list deletion', () => {
       }
     },
   );
+});
+
+describe('Action item column sorting', () => {
+  it('toggles visible columns and resets paging while retaining projects and filters without writes', async () => {
+    vi.mocked(api.actionItems.list).mockResolvedValue({
+      items: rows,
+      total: 60,
+    });
+    renderWithProviders(<ActionItemsIndexPage />, {
+      initialEntries: [
+        '/action-items?project=Work&tags=security&limit=25&offset=25&sort=updated',
+      ],
+    });
+    await screen.findByRole('button', { name: 'Task 1' });
+    expect(
+      screen.queryByRole('combobox', { name: 'Sort' }),
+    ).not.toBeInTheDocument();
+    for (const [label, ascending, descending] of [
+      ['Title', 'title', 'title_desc'],
+      ['Project', 'project_asc', 'project_desc'],
+      ['Tags', 'tags_asc', 'tags_desc'],
+      ['Due date', 'due_asc', 'due_desc'],
+      ['Priority', 'manual', 'manual_desc'],
+    ]) {
+      fireEvent.click(screen.getByRole('button', { name: label }));
+      await waitFor(() =>
+        expect(api.actionItems.list).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            project: 'Work',
+            tags: ['security'],
+            sort: ascending,
+            limit: 25,
+            offset: 0,
+          }),
+        ),
+      );
+      fireEvent.click(screen.getByRole('button', { name: label }));
+      await waitFor(() =>
+        expect(api.actionItems.list).toHaveBeenLastCalledWith(
+          expect.objectContaining({ sort: descending, offset: 0 }),
+        ),
+      );
+    }
+    expect(api.actionItems.move).not.toHaveBeenCalled();
+    expect(api.actionItems.update).not.toHaveBeenCalled();
+  });
+
+  it('retains focused headers through a pending first page, failed sort, retry and empty result', async () => {
+    const initial = deferred<Paginated<ActionItemRow>>();
+    vi.mocked(api.actionItems.list).mockReturnValueOnce(initial.promise);
+    renderWithProviders(<ActionItemsIndexPage />, {
+      initialEntries: ['/action-items'],
+    });
+    const title = screen.getByRole('button', { name: 'Title' });
+    expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
+    await act(async () => initial.resolve({ items: rows, total: 3 }));
+    const sorted = deferred<Paginated<ActionItemRow>>();
+    vi.mocked(api.actionItems.list).mockReturnValueOnce(sorted.promise);
+    title.focus();
+    fireEvent.click(title);
+    expect(title).toHaveFocus();
+    expect(
+      screen.getByRole('columnheader', { name: 'Title' }),
+    ).not.toHaveAttribute('aria-sort');
+    await act(async () => sorted.reject(new Error('Sort request failed')));
+    expect(title).toHaveFocus();
+    expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'false');
+    expect(
+      screen.getByRole('columnheader', { name: 'Title' }),
+    ).not.toHaveAttribute('aria-sort');
+    vi.mocked(api.actionItems.list).mockResolvedValueOnce({
+      items: [],
+      total: 0,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('columnheader', { name: 'Title' }),
+      ).toHaveAttribute('aria-sort', 'ascending'),
+    );
+    expect(screen.getByRole('button', { name: 'Title' })).toBe(title);
+    expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'false');
+  });
+});
+
+it('keeps sorting quiet and reports pending retries while protecting retained rows from writes', async () => {
+  await renderReady();
+  const table = screen.getByRole('table');
+  const title = screen.getByRole('button', { name: 'Title' });
+  const pending = deferred<Paginated<ActionItemRow>>();
+  vi.mocked(api.actionItems.list).mockReturnValueOnce(pending.promise);
+  title.focus();
+  fireEvent.click(title);
+  expect(table).toHaveAttribute('aria-busy', 'true');
+  expect(screen.getByRole('button', { name: 'Task 1' })).toBeInTheDocument();
+  expect(
+    screen.queryByText(
+      /Loading action items|To drag items|Showing previous results/,
+    ),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole('button', { name: 'Complete Task 1' }),
+  ).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Delete Task 1' })).toBeDisabled();
+  expect(
+    screen.getByRole('button', { name: 'Move Task 1 to project' }),
+  ).toBeDisabled();
+  await act(async () => pending.reject(new Error('Unavailable sort read')));
+  expect(table).toHaveAttribute('aria-busy', 'false');
+  expect(
+    screen.getByRole('columnheader', { name: 'Title' }),
+  ).not.toHaveAttribute('aria-sort');
+  const retry = deferred<Paginated<ActionItemRow>>();
+  vi.mocked(api.actionItems.list).mockReturnValueOnce(retry.promise);
+  fireEvent.click(title);
+  expect(table).toHaveAttribute('aria-busy', 'true');
+  expect(title).toHaveFocus();
+  await act(async () => retry.resolve({ items: [], total: 0 }));
+  expect(table).toHaveAttribute('aria-busy', 'false');
+  expect(screen.getByRole('columnheader', { name: 'Title' })).toHaveAttribute(
+    'aria-sort',
+    'descending',
+  );
+  expect(screen.getByText('No open action items found.')).toBeVisible();
+  expect(title).toHaveFocus();
+  expect(api.actionItems.move).not.toHaveBeenCalled();
+  expect(api.actionItems.update).not.toHaveBeenCalled();
+  expect(api.actionItems.remove).not.toHaveBeenCalled();
+});
+
+it('announces a pending explicit Retry without replacing accepted rows or inserting loading prose', async () => {
+  await renderReady();
+  vi.mocked(api.actionItems.list).mockRejectedValueOnce(
+    new Error('Unavailable sort read'),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Title' }));
+  await screen.findByRole('alert');
+  const table = screen.getByRole('table');
+  expect(table).toHaveAttribute('aria-busy', 'false');
+  const retry = deferred<Paginated<ActionItemRow>>();
+  vi.mocked(api.actionItems.list).mockReturnValueOnce(retry.promise);
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await waitFor(() => expect(table).toHaveAttribute('aria-busy', 'true'));
+  expect(screen.getByRole('button', { name: 'Task 1' })).toBeInTheDocument();
+  expect(screen.queryByText('Loading action items…')).not.toBeInTheDocument();
+  expect(
+    screen.getByRole('button', { name: 'Complete Task 1' }),
+  ).toBeDisabled();
+  await act(async () => retry.resolve({ items: [actionItem(1)], total: 1 }));
+  expect(table).toHaveAttribute('aria-busy', 'false');
+  expect(screen.getByRole('columnheader', { name: 'Title' })).toHaveAttribute(
+    'aria-sort',
+    'ascending',
+  );
+  expect(api.actionItems.update).not.toHaveBeenCalled();
 });

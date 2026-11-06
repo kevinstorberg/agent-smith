@@ -166,12 +166,15 @@ describe('ProfileDiscussionTopics', () => {
       PID,
       expect.objectContaining({ q: 'Task', tags: ['security'] }),
     );
-    fireEvent.change(screen.getByLabelText('Sort'), {
-      target: { value: 'title' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Title' }));
     expect(
       screen.queryByRole('button', { name: /^Reorder/ }),
     ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole('columnheader', { name: 'Title' }),
+      ).toHaveAttribute('aria-sort', 'ascending'),
+    );
   });
 
   it('completes and reopens using displayed item revisions and a discussion-topic confirmation', async () => {
@@ -551,4 +554,79 @@ describe('ProfileDiscussionTopics', () => {
     expect(topics.list).not.toHaveBeenCalled();
     expect(reloaded).not.toHaveBeenCalled();
   });
+});
+
+it('sorts all discussion columns on the server, excludes global fields, and restores manual order', async () => {
+  renderTopics();
+  await screen.findByRole('button', { name: 'Task 1' });
+  expect(
+    screen.queryByRole('combobox', { name: 'Sort' }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: 'Project' }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: 'Due date' }),
+  ).not.toBeInTheDocument();
+  for (const [label, first, second] of [
+    ['Title', 'title', 'title_desc'],
+    ['Tags', 'tags_asc', 'tags_desc'],
+    ['Updated', 'updated', 'updated_asc'],
+    ['Priority', 'manual', 'manual_desc'],
+  ]) {
+    fireEvent.click(screen.getByRole('button', { name: label }));
+    await waitFor(() =>
+      expect(topics.list).toHaveBeenLastCalledWith(
+        PID,
+        expect.objectContaining({ sort: first, offset: 0 }),
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: label }));
+    await waitFor(() =>
+      expect(topics.list).toHaveBeenLastCalledWith(
+        PID,
+        expect.objectContaining({ sort: second, offset: 0 }),
+      ),
+    );
+  }
+  expect(
+    screen.queryByRole('button', { name: /^Reorder/ }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Priority' }));
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Reorder Task 1' }),
+    ).toBeEnabled(),
+  );
+  expect(topics.move).not.toHaveBeenCalled();
+  expect(topics.update).not.toHaveBeenCalled();
+});
+
+it('resets a real page-two discussion topic read before requesting a new column order', async () => {
+  topics.list.mockImplementation(async (_id, filters) => ({
+    profile_id: PID,
+    items: [topic(filters?.offset ? 11 : 1)],
+    total: 30,
+  }));
+  renderTopics();
+  await screen.findByRole('button', { name: 'Task 1' });
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+  await screen.findByRole('button', { name: 'Task 11' });
+  const before = topics.list.mock.calls.length;
+  fireEvent.click(screen.getByRole('button', { name: 'Tags' }));
+  await waitFor(() =>
+    expect(screen.getByRole('columnheader', { name: 'Tags' })).toHaveAttribute(
+      'aria-sort',
+      'ascending',
+    ),
+  );
+  expect(topics.list.mock.calls.slice(before)).toEqual([
+    [PID, expect.objectContaining({ sort: 'tags_asc', offset: 0, limit: 10 })],
+  ]);
+  expect(screen.getByRole('button', { name: 'Task 1' })).toBeInTheDocument();
+  expect(
+    screen.queryByText(/Loading discussion topics|To drag topics/),
+  ).not.toBeInTheDocument();
+  expect(topics.update).not.toHaveBeenCalled();
+  expect(topics.move).not.toHaveBeenCalled();
 });

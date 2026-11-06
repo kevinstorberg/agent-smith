@@ -1,4 +1,5 @@
 import type { CostResponse } from './types/costs';
+import type { ACTION_ITEM_SORT_OPTIONS } from './constants';
 
 const BASE = '/api';
 
@@ -173,8 +174,7 @@ export interface PaginationParams {
 }
 
 export type ActionItemStatus = 'open' | 'completed';
-export type ActionItemSort =
-  'manual' | 'newest' | 'updated' | 'title' | 'completed';
+export type ActionItemSort = (typeof ACTION_ITEM_SORT_OPTIONS)[number]['value'];
 export interface ActionItemRow {
   id: number;
   title: string;

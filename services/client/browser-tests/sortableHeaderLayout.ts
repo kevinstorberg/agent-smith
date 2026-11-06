@@ -30,11 +30,9 @@ export async function expectSortableHeaderLayout(
     if (scale === 2) await enlargeComputedText(page);
     const measurements = [];
     for (const name of options.labels) {
-      const header = options.table.getByRole('columnheader', {
-        name,
-        exact: true,
-      });
-      const button = header.getByRole('button');
+      const button = options.table
+        .locator('th, [role="columnheader"]')
+        .getByRole('button', { name, exact: true });
       await button.scrollIntoViewIfNeeded();
       const measurement = await button.evaluate((node) => {
         const label = node.querySelector<HTMLElement>('.sortable-header-label');

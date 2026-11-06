@@ -132,19 +132,26 @@ export const ACTION_ITEM_STATUSES = [
   ['all', 'All'],
 ] as const;
 export type ActionItemStatus = (typeof ACTION_ITEM_STATUSES)[number][0];
-const ACTION_ITEM_COMMON_SORTS = [
-  { value: 'newest', label: 'Newest' },
-  { value: 'updated', label: 'Updated: newest' },
-  { value: 'title', label: 'Title A–Z' },
-] as const;
+export const ACTION_ITEM_SORT_COLUMNS = {
+  priority: { ascending: 'manual', descending: 'manual_desc' },
+  title: { ascending: 'title', descending: 'title_desc' },
+  tags: { ascending: 'tags_asc', descending: 'tags_desc' },
+  project: { ascending: 'project_asc', descending: 'project_desc' },
+  due: { ascending: 'due_asc', descending: 'due_desc' },
+  updated: {
+    ascending: 'updated_asc',
+    descending: 'updated',
+    defaultDirection: 'descending',
+  },
+} as const;
 export const ACTION_ITEM_SORT_OPTIONS = [
-  { value: 'manual', label: 'Manual order' },
+  ...columnSortOptions(ACTION_ITEM_SORT_COLUMNS),
   { value: 'completed', label: 'Completed: newest' },
-  ...ACTION_ITEM_COMMON_SORTS,
+  { value: 'newest', label: 'Newest' },
 ] as const;
 export function actionItemSortOptions(status: ActionItemStatus) {
   return ACTION_ITEM_SORT_OPTIONS.filter((option) =>
-    option.value === 'manual'
+    option.value === 'manual' || option.value === 'manual_desc'
       ? status === 'open'
       : option.value === 'completed'
         ? status === 'completed'

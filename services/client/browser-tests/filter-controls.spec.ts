@@ -191,6 +191,28 @@ for (const view of [
     page,
   }) => {
     await page.goto(view.path);
+    if (view.path.startsWith('/action-items')) {
+      await expect(page.getByRole('table')).toBeVisible();
+      await enlargeComputedText(page);
+      await expect(
+        page.getByRole('combobox', { name: 'Sort', exact: true }),
+      ).toHaveCount(0);
+      for (const label of ['Title', 'Project', 'Tags', 'Due date']) {
+        const button = page
+          .getByRole('table')
+          .getByRole('button', { name: label, exact: true });
+        for (const direction of ['ascending', 'descending']) {
+          await button.click();
+          await expect(button.locator('xpath=ancestor::th')).toHaveAttribute(
+            'aria-sort',
+            direction,
+          );
+          await expectControlReachable(button);
+          await expectFilterRows(page, page.viewportSize()!.width !== 320);
+        }
+      }
+      return;
+    }
     const select = page.getByRole('combobox', {
       name: view.select,
       exact: true,
@@ -430,7 +452,7 @@ test('Analysis transcript search checkbox wraps inside the dialog without changi
   await expectControlsUnclipped(page);
 });
 
-test('Discussion topics reuse readable status-specific sort choices at200% text', async ({
+test('Discussion topics expose readable status-specific sortable headers at200% text', async ({
   page,
   fixtureAPI,
 }) => {
@@ -445,20 +467,37 @@ test('Discussion topics reuse readable status-specific sort choices at200% text'
     name: 'Discussion topics',
     exact: true,
   });
-  const select = section.getByRole('combobox', { name: 'Sort', exact: true });
-  await expect(select).toBeVisible();
+  await expect(section.getByRole('table')).toBeVisible();
+  await expect(
+    section.getByRole('combobox', { name: 'Sort', exact: true }),
+  ).toHaveCount(0);
   await enlargeComputedText(page);
   for (const status of ['Open', 'Completed', 'All']) {
     await section.getByRole('tab', { name: status, exact: true }).click();
-    const values = await select
-      .locator('option')
-      .evaluateAll((options) =>
-        options.map((option) => (option as HTMLOptionElement).value),
-      );
-    for (const value of values) {
-      await select.selectOption(value);
-      await expect(select).toHaveValue(value);
-      await expectFilterRows(page, page.viewportSize()!.width !== 320);
+    const labels =
+      status === 'Open'
+        ? ['Title', 'Tags', 'Updated', 'Priority']
+        : ['Title', 'Tags', 'Updated'];
+    await expect(
+      section.getByRole('button', { name: 'Priority', exact: true }),
+    ).toHaveCount(status === 'Open' ? 1 : 0);
+    for (const label of labels) {
+      const button = section
+        .getByRole('columnheader', { name: label, exact: true })
+        .getByRole('button');
+      const directions =
+        label === 'Updated'
+          ? ['descending', 'ascending']
+          : ['ascending', 'descending'];
+      for (const direction of directions) {
+        await button.click();
+        await expect(button.locator('..')).toHaveAttribute(
+          'aria-sort',
+          direction,
+        );
+        await expectControlReachable(button);
+        await expectFilterRows(page, page.viewportSize()!.width !== 320);
+      }
     }
   }
 });

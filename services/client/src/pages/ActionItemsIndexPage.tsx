@@ -4,13 +4,8 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useActionItemQueue } from '../hooks/useActionItemQueue';
 import { ActionItemQueueTable } from '../components/ActionItemQueueTable';
 import { actionItemTags } from '../utils/actionItems';
-import {
-  ACTION_ITEM_STATUSES,
-  actionItemSortOptions,
-  defaultActionItemSort,
-} from '../constants';
+import { ACTION_ITEM_STATUSES, defaultActionItemSort } from '../constants';
 import { useViewPreferences } from '../hooks/useViewPreferences';
-import { parseViewField } from '../utils/viewPreferences';
 import { ActionItemProjectTabs } from '../components/ActionItemProjects';
 import { projectScope, projectScopeFields } from '../utils/actionItemProjects';
 import { ActionItemDeadlineWindow } from '../components/ActionItemDeadlines';
@@ -149,26 +144,6 @@ export function ActionItemsIndexPage() {
                   placeholder="Tags, comma-separated"
                 />
               </label>
-              <label>
-                <span className="form-label">Sort</span>
-                <select
-                  className="input"
-                  value={sort}
-                  disabled={freezeControls}
-                  onChange={(event) =>
-                    preferences.setField(
-                      'sort',
-                      parseViewField('actionItems', 'sort', event.target.value),
-                    )
-                  }
-                >
-                  {actionItemSortOptions(status).map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
               <FilterCheckbox
                 checked={unassigned}
                 disabled={freezeControls || Boolean(project)}
@@ -194,17 +169,13 @@ export function ActionItemsIndexPage() {
                 disabled={freezeControls}
               />
             </div>
-            {(status !== 'open' || sort !== 'manual') && (
-              <p className="text-muted-sm">
-                To drag items into order, use Open with Manual order; search and
-                filters can stay applied.
-              </p>
-            )}
           </>
         }
       />
       <ActionItemQueueTable
         queue={queue}
+        sort={sort}
+        onSort={(value) => preferences.setField('sort', value)}
         status={status}
         showDueDate
         onEdit={(item) => navigate(`/action-items/${item.id}?edit=1`)}

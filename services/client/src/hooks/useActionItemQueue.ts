@@ -513,6 +513,7 @@ export function useActionItemQueue({
   }, [active, editing, refresh]);
   return {
     ...list,
+    criteriaPending,
     source,
     view,
     busy,

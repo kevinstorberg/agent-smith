@@ -188,7 +188,7 @@ for (const scale of [1, 2]) {
     const checkbox = page.getByRole('checkbox', { name: 'Unassigned only' });
     const all = page.getByRole('tab', { name: 'All projects', exact: true });
     const deadline = page.getByRole('checkbox', { name: 'Deadline window' });
-    const sort = page.getByRole('combobox', { name: 'Sort', exact: true });
+    const sort = page.getByRole('textbox', { name: 'Tags', exact: true });
     const filters = page.locator('.profile-filters');
     await expect(checkbox).toBeChecked();
     await expect(all).toHaveAttribute('aria-selected', 'true');
