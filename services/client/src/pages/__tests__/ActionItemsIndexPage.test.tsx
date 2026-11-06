@@ -1690,25 +1690,24 @@ it('announces a pending explicit Retry without replacing accepted rows or insert
   vi.mocked(api.actionItems.list).mockRejectedValueOnce(
     new Error('Unavailable sort read'),
   );
-  fireEvent.click(screen.getByRole('button', { name: 'Title', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Title' }));
   await screen.findByRole('alert');
   const table = screen.getByRole('table');
   expect(table).toHaveAttribute('aria-busy', 'false');
   const retry = deferred<Paginated<ActionItemRow>>();
   vi.mocked(api.actionItems.list).mockReturnValueOnce(retry.promise);
-  fireEvent.click(screen.getByRole('button', { name: 'Retry', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
   await waitFor(() => expect(table).toHaveAttribute('aria-busy', 'true'));
-  expect(
-    screen.getByRole('button', { name: 'Task 1', exact: true }),
-  ).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Task 1' })).toBeInTheDocument();
   expect(screen.queryByText('Loading action items…')).not.toBeInTheDocument();
   expect(
-    screen.getByRole('button', { name: 'Complete Task 1', exact: true }),
+    screen.getByRole('button', { name: 'Complete Task 1' }),
   ).toBeDisabled();
   await act(async () => retry.resolve({ items: [actionItem(1)], total: 1 }));
   expect(table).toHaveAttribute('aria-busy', 'false');
-  expect(
-    screen.getByRole('columnheader', { name: 'Title', exact: true }),
-  ).toHaveAttribute('aria-sort', 'ascending');
+  expect(screen.getByRole('columnheader', { name: 'Title' })).toHaveAttribute(
+    'aria-sort',
+    'ascending',
+  );
   expect(api.actionItems.update).not.toHaveBeenCalled();
 });
