@@ -1086,7 +1086,9 @@ describe('ActionItemsIndexPage', () => {
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Complete Task 3' }));
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Complete Task 3' })).toBeEnabled(),
+      expect(
+        screen.getByRole('button', { name: 'Complete Task 3' }),
+      ).toBeEnabled(),
     );
     expect(title).toHaveAttribute('aria-expanded', 'true');
   });
@@ -1638,7 +1640,6 @@ describe('Action item column sorting', () => {
   });
 });
 
-
 it('keeps sorting quiet and reports pending retries while protecting retained rows from writes', async () => {
   await renderReady();
   const table = screen.getByRole('table');
@@ -1649,13 +1650,23 @@ it('keeps sorting quiet and reports pending retries while protecting retained ro
   fireEvent.click(title);
   expect(table).toHaveAttribute('aria-busy', 'true');
   expect(screen.getByRole('button', { name: 'Task 1' })).toBeInTheDocument();
-  expect(screen.queryByText(/Loading action items|To drag items|Showing previous results/)).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Complete Task 1' })).toBeDisabled();
+  expect(
+    screen.queryByText(
+      /Loading action items|To drag items|Showing previous results/,
+    ),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole('button', { name: 'Complete Task 1' }),
+  ).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Delete Task 1' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'Move Task 1 to project' })).toBeDisabled();
+  expect(
+    screen.getByRole('button', { name: 'Move Task 1 to project' }),
+  ).toBeDisabled();
   await act(async () => pending.reject(new Error('Unavailable sort read')));
   expect(table).toHaveAttribute('aria-busy', 'false');
-  expect(screen.getByRole('columnheader', { name: 'Title' })).not.toHaveAttribute('aria-sort');
+  expect(
+    screen.getByRole('columnheader', { name: 'Title' }),
+  ).not.toHaveAttribute('aria-sort');
   const retry = deferred<Paginated<ActionItemRow>>();
   vi.mocked(api.actionItems.list).mockReturnValueOnce(retry.promise);
   fireEvent.click(title);
@@ -1663,10 +1674,41 @@ it('keeps sorting quiet and reports pending retries while protecting retained ro
   expect(title).toHaveFocus();
   await act(async () => retry.resolve({ items: [], total: 0 }));
   expect(table).toHaveAttribute('aria-busy', 'false');
-  expect(screen.getByRole('columnheader', { name: 'Title' })).toHaveAttribute('aria-sort', 'descending');
+  expect(screen.getByRole('columnheader', { name: 'Title' })).toHaveAttribute(
+    'aria-sort',
+    'descending',
+  );
   expect(screen.getByText('No open action items found.')).toBeVisible();
   expect(title).toHaveFocus();
   expect(api.actionItems.move).not.toHaveBeenCalled();
   expect(api.actionItems.update).not.toHaveBeenCalled();
   expect(api.actionItems.remove).not.toHaveBeenCalled();
+});
+
+it('announces a pending explicit Retry without replacing accepted rows or inserting loading prose', async () => {
+  await renderReady();
+  vi.mocked(api.actionItems.list).mockRejectedValueOnce(
+    new Error('Unavailable sort read'),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Title', exact: true }));
+  await screen.findByRole('alert');
+  const table = screen.getByRole('table');
+  expect(table).toHaveAttribute('aria-busy', 'false');
+  const retry = deferred<Paginated<ActionItemRow>>();
+  vi.mocked(api.actionItems.list).mockReturnValueOnce(retry.promise);
+  fireEvent.click(screen.getByRole('button', { name: 'Retry', exact: true }));
+  await waitFor(() => expect(table).toHaveAttribute('aria-busy', 'true'));
+  expect(
+    screen.getByRole('button', { name: 'Task 1', exact: true }),
+  ).toBeInTheDocument();
+  expect(screen.queryByText('Loading action items…')).not.toBeInTheDocument();
+  expect(
+    screen.getByRole('button', { name: 'Complete Task 1', exact: true }),
+  ).toBeDisabled();
+  await act(async () => retry.resolve({ items: [actionItem(1)], total: 1 }));
+  expect(table).toHaveAttribute('aria-busy', 'false');
+  expect(
+    screen.getByRole('columnheader', { name: 'Title', exact: true }),
+  ).toHaveAttribute('aria-sort', 'ascending');
+  expect(api.actionItems.update).not.toHaveBeenCalled();
 });

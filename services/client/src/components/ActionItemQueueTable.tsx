@@ -141,10 +141,7 @@ export function ActionItemQueueTable({
           {items.length
             ? `Could not refresh ${plural}. The current list is kept.`
             : `Could not load ${plural}.`}{' '}
-          <button
-            className="btn"
-            onClick={() => refresh({ showLoading: false })}
-          >
+          <button className="btn" onClick={() => refresh()}>
             Retry
           </button>
         </div>

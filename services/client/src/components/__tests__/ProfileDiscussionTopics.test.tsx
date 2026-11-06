@@ -171,10 +171,9 @@ describe('ProfileDiscussionTopics', () => {
       screen.queryByRole('button', { name: /^Reorder/ }),
     ).not.toBeInTheDocument();
     await waitFor(() =>
-      expect(screen.getByRole('columnheader', { name: 'Title' })).toHaveAttribute(
-        'aria-sort',
-        'ascending',
-      ),
+      expect(
+        screen.getByRole('columnheader', { name: 'Title' }),
+      ).toHaveAttribute('aria-sort', 'ascending'),
     );
   });
 
@@ -603,19 +602,31 @@ it('sorts all discussion columns on the server, excludes global fields, and rest
   expect(topics.update).not.toHaveBeenCalled();
 });
 
-
 it('resets a real page-two discussion topic read before requesting a new column order', async () => {
-  topics.list.mockImplementation(async (_id, filters) => ({ profile_id: PID, items: [topic(filters?.offset ? 11 : 1)], total: 30 }));
+  topics.list.mockImplementation(async (_id, filters) => ({
+    profile_id: PID,
+    items: [topic(filters?.offset ? 11 : 1)],
+    total: 30,
+  }));
   renderTopics();
   await screen.findByRole('button', { name: 'Task 1' });
   fireEvent.click(screen.getByRole('button', { name: 'Next' }));
   await screen.findByRole('button', { name: 'Task 11' });
   const before = topics.list.mock.calls.length;
   fireEvent.click(screen.getByRole('button', { name: 'Tags' }));
-  await waitFor(() => expect(screen.getByRole('columnheader', { name: 'Tags' })).toHaveAttribute('aria-sort', 'ascending'));
-  expect(topics.list.mock.calls.slice(before)).toEqual([[PID, expect.objectContaining({ sort: 'tags_asc', offset: 0, limit: 10 })]]);
+  await waitFor(() =>
+    expect(screen.getByRole('columnheader', { name: 'Tags' })).toHaveAttribute(
+      'aria-sort',
+      'ascending',
+    ),
+  );
+  expect(topics.list.mock.calls.slice(before)).toEqual([
+    [PID, expect.objectContaining({ sort: 'tags_asc', offset: 0, limit: 10 })],
+  ]);
   expect(screen.getByRole('button', { name: 'Task 1' })).toBeInTheDocument();
-  expect(screen.queryByText(/Loading discussion topics|To drag topics/)).not.toBeInTheDocument();
+  expect(
+    screen.queryByText(/Loading discussion topics|To drag topics/),
+  ).not.toBeInTheDocument();
   expect(topics.update).not.toHaveBeenCalled();
   expect(topics.move).not.toHaveBeenCalled();
 });
