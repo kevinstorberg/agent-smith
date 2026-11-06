@@ -242,6 +242,7 @@ test('Plans sort labels retain whole words and separate arrows at normal and dou
         return {
           fragments,
           words,
+          labelRight: label.getBoundingClientRect().right,
           icon: { left: icon.left, right: icon.right },
           font: parseFloat(getComputedStyle(label).fontSize),
         };
@@ -262,6 +263,10 @@ test('Plans sort labels retain whole words and separate arrows at normal and dou
         ),
         `${name} label must not overlap its sort arrow`,
       ).toBe(true);
+      expect(
+        geometry.icon.left - geometry.labelRight,
+        `${name} arrow must remain beside its label`,
+      ).toBeLessThanOrEqual(16);
       await expectControlReachable(control);
       if (name === 'Last Updated') {
         const [controlBox, viewportBox] = await Promise.all([
