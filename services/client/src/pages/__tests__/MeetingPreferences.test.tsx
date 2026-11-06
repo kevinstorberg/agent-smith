@@ -101,10 +101,7 @@ describe('Meetings and Vocabulary preference boundaries', () => {
     expect(
       screen.getByRole('textbox', { name: 'Search vocabulary' }),
     ).toHaveValue('vocabulary query');
-    fireEvent.change(
-      screen.getByRole('combobox', { name: 'Sort vocabulary' }),
-      { target: { value: 'term' } },
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Term' }));
     await waitFor(() =>
       expect(api.meetings.vocabulary.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ sort: 'term', offset: 0 }),

@@ -8,9 +8,12 @@ import { usePagination } from '../hooks/usePagination';
 import { usePolling } from '../hooks/usePolling';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { Pagination } from './Pagination';
+import { ScrollableTable } from './ScrollableTable';
+import { SortableHeader } from './table/SortableHeader';
+import './vocabularySorting.css';
 import { useViewPreferences } from '../hooks/useViewPreferences';
 import { parseViewField } from '../utils/viewPreferences';
-import { VOCABULARY_DEFINITIONS, VOCABULARY_SORT_OPTIONS } from '../constants';
+import { VOCABULARY_DEFINITIONS, VOCABULARY_SORT_COLUMNS } from '../constants';
 
 type Draft = { term: string; definition: string; entry?: VocabularyTerm };
 type Change =
@@ -210,28 +213,8 @@ export function MeetingVocabulary({ active = true }: { active?: boolean }) {
             ))}
           </select>
         </label>
-        <label>
-          <span className="form-label">Sort vocabulary</span>
-          <select
-            className="input"
-            value={sort}
-            onChange={(event) => {
-              preferences.setField(
-                'sort',
-                parseViewField('vocabulary', 'sort', event.target.value),
-              );
-              setRemoving(null);
-            }}
-          >
-            {VOCABULARY_SORT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
-      {loading && <p role="status">Loading vocabulary...</p>}
+      {list.initialLoading && <p role="status">Loading vocabulary...</p>}
       {list.error && (
         <p role="alert">
           {'Could not load vocabulary. '}
@@ -325,99 +308,120 @@ export function MeetingVocabulary({ active = true }: { active?: boolean }) {
           </div>
         </form>
       )}
-      {!loading && !list.error && list.total === 0 && (
-        <p className="text-muted-sm">
-          {query
-            ? 'No vocabulary terms match your search.'
-            : 'No vocabulary terms yet.'}
-        </p>
-      )}
-      {!loading && !list.error && list.items.length > 0 && (
-        <div className="table-container" style={{ marginTop: 16 }}>
-          <table
-            className="table vocabulary-table"
-            aria-label="Vocabulary terms"
-          >
-            <thead>
-              <tr>
-                <th className="vocabulary-term-cell">Term</th>
-                <th>Meaning</th>
-                <th className="vocabulary-actions-cell">Actions</th>
+      <ScrollableTable
+        label="Vocabulary terms"
+        className="vocabulary-table"
+        busy={!list.dataCurrent && (loading || !list.error)}
+        emptyState={
+          list.dataCurrent && !loading && !list.error && list.total === 0 ? (
+            <p className="text-muted-sm" role="status">
+              {query
+                ? 'No vocabulary terms match your search.'
+                : 'No vocabulary terms yet.'}
+            </p>
+          ) : undefined
+        }
+      >
+        <caption className="visually-hidden">Vocabulary terms</caption>
+        <colgroup>
+          <col className="vocabulary-sort-term-column" />
+          <col className="vocabulary-sort-meaning-column" />
+          <col className="vocabulary-sort-actions-column" />
+        </colgroup>
+        <thead>
+          <tr>
+            {(
+              [
+                ['term', 'Term'],
+                ['meaning', 'Meaning'],
+              ] as const
+            ).map(([key, label]) => (
+              <SortableHeader
+                key={key}
+                sort={sort}
+                column={VOCABULARY_SORT_COLUMNS[key]}
+                current={list.dataCurrent}
+                disabled={change.loading}
+                onSort={(value) => {
+                  preferences.setField('sort', value);
+                  setRemoving(null);
+                }}
+              >
+                {label}
+              </SortableHeader>
+            ))}
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {!list.error &&
+            list.items.map((entry) => (
+              <tr key={entry.id}>
+                <td>
+                  <strong className="vocabulary-preview" title={entry.term}>
+                    {entry.term}
+                  </strong>
+                </td>
+                <td>
+                  <span className="vocabulary-preview" title={entry.definition}>
+                    {entry.definition || '—'}
+                  </span>
+                </td>
+                <td>
+                  <div className="vocabulary-actions">
+                    {removing?.id === entry.id ? (
+                      <>
+                        <button
+                          className="btn btn-danger btn-sm"
+                          aria-label="Confirm delete"
+                          disabled={change.loading}
+                          onClick={() =>
+                            change.mutate({
+                              action: 'remove',
+                              entry: removing,
+                            })
+                          }
+                        >
+                          Delete?
+                        </button>
+                        <button
+                          className="btn btn-sm"
+                          aria-label="Cancel delete"
+                          disabled={change.loading}
+                          onClick={() => setRemoving(null)}
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          className="btn btn-sm"
+                          aria-label={`Edit ${entry.term}`}
+                          disabled={busy || loading || !list.dataCurrent}
+                          onClick={() => start(entry)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="btn btn-danger btn-sm"
+                          aria-label={`Delete ${entry.term}`}
+                          disabled={busy || loading || !list.dataCurrent}
+                          onClick={() => {
+                            setRemoving(entry);
+                            setNotice(null);
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {list.items.map((entry) => (
-                <tr key={entry.id}>
-                  <td>
-                    <strong className="vocabulary-preview" title={entry.term}>
-                      {entry.term}
-                    </strong>
-                  </td>
-                  <td>
-                    <span
-                      className="vocabulary-preview"
-                      title={entry.definition}
-                    >
-                      {entry.definition || '—'}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="vocabulary-actions">
-                      {removing?.id === entry.id ? (
-                        <>
-                          <button
-                            className="btn btn-danger btn-sm"
-                            aria-label="Confirm delete"
-                            disabled={change.loading}
-                            onClick={() =>
-                              change.mutate({
-                                action: 'remove',
-                                entry: removing,
-                              })
-                            }
-                          >
-                            Delete?
-                          </button>
-                          <button
-                            className="btn btn-sm"
-                            aria-label="Cancel delete"
-                            disabled={change.loading}
-                            onClick={() => setRemoving(null)}
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            className="btn btn-sm"
-                            aria-label={`Edit ${entry.term}`}
-                            disabled={busy}
-                            onClick={() => start(entry)}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            className="btn btn-danger btn-sm"
-                            aria-label={`Delete ${entry.term}`}
-                            disabled={busy}
-                            onClick={() => {
-                              setRemoving(entry);
-                              setNotice(null);
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            ))}
+        </tbody>
+      </ScrollableTable>
       {!list.error && (
         <Pagination
           total={list.total}

@@ -465,8 +465,9 @@ test('Meeting tab links restore their own saved query and page without sharing c
   await expect.poll(() => vocab().length).toBe(1);
   expect(new URL(vocab()[0].url).searchParams.get('offset')).toBe('50');
   await page
-    .getByRole('combobox', { name: 'Sort vocabulary' })
-    .selectOption('term');
+    .getByRole('columnheader', { name: 'Term', exact: true })
+    .getByRole('button')
+    .click();
   await page
     .getByRole('navigation', { name: 'Meeting views' })
     .getByRole('link', { name: 'Meetings', exact: true })
