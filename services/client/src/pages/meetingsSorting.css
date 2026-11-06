@@ -1,0 +1,16 @@
+.meetings-sorting-container .table.meetings-sorting-table {
+  table-layout: fixed;
+  min-width: max(860px, 60em);
+}
+.meetings-sorting-table .meeting-connection-column {
+  width: 10em;
+}
+.meetings-sorting-table .meeting-provider-column {
+  width: 8em;
+}
+.meetings-sorting-table .meeting-date-column {
+  width: 10em;
+}
+.meetings-sorting-table td {
+  overflow-wrap: anywhere;
+}
