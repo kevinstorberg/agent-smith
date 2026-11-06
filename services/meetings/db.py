@@ -14,7 +14,11 @@ from services.meetings.config import SourceConfig
 from services.meetings.types import MeetingSummary
 from services.api.models.shared.listing import sort_clause
 
-MEETING_SORTS = {"newest": "COALESCE(meeting_start, provider_created_at) DESC, id", "oldest": "COALESCE(meeting_start, provider_created_at), id", "title": "lower(title), id"}
+MEETING_SORTS = {
+    "newest": "COALESCE(meeting_start, provider_created_at) DESC, id",
+    "oldest": "COALESCE(meeting_start, provider_created_at), id",
+    "title": "lower(title), id",
+}
 
 
 class ClaimLostError(RuntimeError):
@@ -36,7 +40,9 @@ def _cursor() -> Iterator[RealDictCursor]:
                 yield cur
     except psycopg2.Error as error:
         # PostgreSQL diagnostics may echo parameters containing meeting context.
-        raise MeetingStorageError(f"Meeting storage operation failed (SQLSTATE {error.pgcode or 'unknown'})") from None
+        raise MeetingStorageError(
+            f"Meeting storage operation failed (SQLSTATE {error.pgcode or 'unknown'})"
+        ) from None
 
 
 def _identity(config: SourceConfig) -> tuple[str, str]:
@@ -52,16 +58,26 @@ def _owned_state(cur: RealDictCursor, config: SourceConfig, owner: str) -> dict:
     state = cur.fetchone()
     cur.execute("SELECT clock_timestamp() AS now")
     now = cur.fetchone()["now"]
-    if (state is None or state["claim_owner"] != owner
-            or state["claim_until"] is None or state["claim_until"] <= now
-            or state["config_fingerprint"] != config.fingerprint):
-        raise ClaimLostError("Meeting source claim expired, changed, or belongs to another run")
+    if (
+        state is None
+        or state["claim_owner"] != owner
+        or state["claim_until"] is None
+        or state["claim_until"] <= now
+        or state["config_fingerprint"] != config.fingerprint
+    ):
+        raise ClaimLostError(
+            "Meeting source claim expired, changed, or belongs to another run"
+        )
     return state
 
 
-def claim_source(config: SourceConfig, owner: str, lease_seconds: int = 300) -> dict | None:
+def claim_source(
+    config: SourceConfig, owner: str, lease_seconds: int = 300
+) -> dict | None:
     if not isinstance(owner, str) or not owner.strip() or len(owner) > 100:
-        raise ValueError("Meeting claim owner must be a nonblank string of at most 100 characters")
+        raise ValueError(
+            "Meeting claim owner must be a nonblank string of at most 100 characters"
+        )
     if type(lease_seconds) is not int or not 1 <= lease_seconds <= 3600:
         raise ValueError("Meeting claim lease_seconds must be between 1 and 3600")
     with _cursor() as cur:
@@ -109,7 +125,9 @@ def _save_scan(cur: RealDictCursor, config: SourceConfig, scan: dict) -> None:
     )
 
 
-def _stored_summary(cur: RealDictCursor, config: SourceConfig, external_id: str) -> dict | None:
+def _stored_summary(
+    cur: RealDictCursor, config: SourceConfig, external_id: str
+) -> dict | None:
     cur.execute(
         "SELECT * FROM meeting_summaries WHERE provider = %s AND account_key = %s AND external_id = %s",
         (*_identity(config), external_id),
@@ -117,7 +135,9 @@ def _stored_summary(cur: RealDictCursor, config: SourceConfig, external_id: str)
     return cur.fetchone()
 
 
-def _mark_seen(cur: RealDictCursor, config: SourceConfig, external_id: str, scan: dict) -> None:
+def _mark_seen(
+    cur: RealDictCursor, config: SourceConfig, external_id: str, scan: dict
+) -> None:
     cur.execute(
         """UPDATE meeting_summaries SET last_seen_at = clock_timestamp(), last_seen_scan_id = %s
            WHERE provider = %s AND account_key = %s AND external_id = %s""",
@@ -126,25 +146,38 @@ def _mark_seen(cur: RealDictCursor, config: SourceConfig, external_id: str, scan
 
 
 def save_progress(
-    config: SourceConfig, owner: str, scan: dict,
-    summary: MeetingSummary | None = None, unavailable_id: str | None = None,
-    seen_id: str | None = None, deleted_at: datetime | None = None,
+    config: SourceConfig,
+    owner: str,
+    scan: dict,
+    summary: MeetingSummary | None = None,
+    unavailable_id: str | None = None,
+    seen_id: str | None = None,
+    deleted_at: datetime | None = None,
     observed_updated_at: datetime | None = None,
 ) -> dict | None:
     _validate_scan(scan)
     if sum(value is not None for value in (summary, unavailable_id, seen_id)) > 1:
         raise ValueError("Save one meeting observation per checkpoint")
     if deleted_at is not None:
-        if (unavailable_id is None or not isinstance(deleted_at, datetime) or deleted_at.utcoffset() is None
-                or not isinstance(observed_updated_at, datetime) or observed_updated_at.utcoffset() is None):
-            raise ValueError("Meeting deletion requires unavailable_id and timezone-aware deleted_at/observed_updated_at")
+        if (
+            unavailable_id is None
+            or not isinstance(deleted_at, datetime)
+            or deleted_at.utcoffset() is None
+            or not isinstance(observed_updated_at, datetime)
+            or observed_updated_at.utcoffset() is None
+        ):
+            raise ValueError(
+                "Meeting deletion requires unavailable_id and timezone-aware deleted_at/observed_updated_at"
+            )
     with _cursor() as cur:
         _owned_state(cur, config, owner)
         result = None
         if summary is not None:
             result = _save_summary(cur, config, scan, summary)
         elif unavailable_id is not None and deleted_at is not None:
-            result = _save_tombstone(cur, config, scan, unavailable_id, deleted_at, observed_updated_at)
+            result = _save_tombstone(
+                cur, config, scan, unavailable_id, deleted_at, observed_updated_at
+            )
         elif unavailable_id is not None:
             cur.execute(
                 """UPDATE meeting_summaries SET missing_count = missing_count + 1,
@@ -158,7 +191,11 @@ def save_progress(
             )
             row = cur.fetchone()
             if row:
-                result = {"id": str(row["id"]), "revision": row["revision"], "status": "unavailable" if not row["available"] else "pending"}
+                result = {
+                    "id": str(row["id"]),
+                    "revision": row["revision"],
+                    "status": "unavailable" if not row["available"] else "pending",
+                }
         elif seen_id is not None:
             _mark_seen(cur, config, seen_id, scan)
         _save_scan(cur, config, scan)
@@ -166,8 +203,12 @@ def save_progress(
 
 
 def _save_tombstone(
-    cur: RealDictCursor, config: SourceConfig, scan: dict, external_id: str,
-    deleted_at: datetime, observed_updated_at: datetime,
+    cur: RealDictCursor,
+    config: SourceConfig,
+    scan: dict,
+    external_id: str,
+    deleted_at: datetime,
+    observed_updated_at: datetime,
 ) -> dict | None:
     old = _stored_summary(cur, config, external_id)
     if old is None:
@@ -177,9 +218,15 @@ def _save_tombstone(
         return {"id": str(old["id"]), "revision": old["revision"], "status": "stale"}
     deleted_at = deleted_at.astimezone(timezone.utc)
     snapshot = MeetingSummary(
-        old["external_id"], old["title"], old["summary_text"], old["summary_markdown"],
-        old["source_url"], old["provider_created_at"], observed_updated_at,
-        deleted_at, old["metadata"],
+        old["external_id"],
+        old["title"],
+        old["summary_text"],
+        old["summary_markdown"],
+        old["source_url"],
+        old["provider_created_at"],
+        observed_updated_at,
+        deleted_at,
+        old["metadata"],
     )
     content_hash = snapshot.payload_hash(old["project"])
     changed = old["available"] or old["content_hash"] != content_hash
@@ -191,17 +238,31 @@ def _save_tombstone(
            last_seen_scan_id = %s, last_seen_at = clock_timestamp(),
            updated_at = CASE WHEN %s THEN clock_timestamp() ELSE updated_at END
            WHERE id = %s""",
-        (deleted_at, observed_updated_at, content_hash, revision, scan.get("id"), changed, old["id"]),
+        (
+            deleted_at,
+            observed_updated_at,
+            content_hash,
+            revision,
+            scan.get("id"),
+            changed,
+            old["id"],
+        ),
     )
     return {"id": str(old["id"]), "revision": revision, "status": "unavailable"}
 
 
-def _save_summary(cur: RealDictCursor, config: SourceConfig, scan: dict, summary: MeetingSummary) -> dict:
+def _save_summary(
+    cur: RealDictCursor, config: SourceConfig, scan: dict, summary: MeetingSummary
+) -> dict:
     if not summary.external_id or not summary.summary_text.strip():
-        raise ValueError("Meeting summary requires an external_id and nonblank summary_text")
+        raise ValueError(
+            "Meeting summary requires an external_id and nonblank summary_text"
+        )
     for field in ("provider_created_at", "provider_updated_at", "provider_deleted_at"):
         value = getattr(summary, field)
-        if value is not None and (not isinstance(value, datetime) or value.utcoffset() is None):
+        if value is not None and (
+            not isinstance(value, datetime) or value.utcoffset() is None
+        ):
             raise ValueError(f"Meeting summary {field} must include a timezone")
     old = _stored_summary(cur, config, summary.external_id)
     if old and summary.provider_updated_at < old["provider_updated_at"]:
@@ -209,11 +270,17 @@ def _save_summary(cur: RealDictCursor, config: SourceConfig, scan: dict, summary
         return {"id": str(old["id"]), "revision": old["revision"], "status": "stale"}
     content_hash = summary.payload_hash(config.project)
     available = summary.provider_deleted_at is None
-    changed = old is None or content_hash != old["content_hash"] or available != old["available"]
+    changed = (
+        old is None
+        or content_hash != old["content_hash"]
+        or available != old["available"]
+    )
     summary_id = str(old["id"]) if old else str(uuid.uuid4())
     revision = (old["revision"] + int(changed)) if old else 1
     calendar = summary.metadata.get("calendar_event") or {}
-    meeting_start = _optional_date(calendar.get("scheduled_start_time"), "meeting_start")
+    meeting_start = _optional_date(
+        calendar.get("scheduled_start_time"), "meeting_start"
+    )
     meeting_end = _optional_date(calendar.get("scheduled_end_time"), "meeting_end")
     cur.execute(
         """INSERT INTO meeting_summaries
@@ -233,10 +300,27 @@ def _save_summary(cur: RealDictCursor, config: SourceConfig, scan: dict, summary
              last_seen_scan_id = EXCLUDED.last_seen_scan_id, last_seen_at = clock_timestamp(),
              updated_at = CASE WHEN meeting_summaries.revision <> EXCLUDED.revision
                                THEN clock_timestamp() ELSE meeting_summaries.updated_at END""",
-        (summary_id, *_identity(config), summary.external_id, config.name, config.project,
-         summary.title, summary.summary_text, summary.summary_markdown, summary.source_url,
-         Json(summary.metadata), summary.provider_created_at, summary.provider_updated_at,
-         summary.provider_deleted_at, meeting_start, meeting_end, content_hash, revision, available, scan.get("id")),
+        (
+            summary_id,
+            *_identity(config),
+            summary.external_id,
+            config.name,
+            config.project,
+            summary.title,
+            summary.summary_text,
+            summary.summary_markdown,
+            summary.source_url,
+            Json(summary.metadata),
+            summary.provider_created_at,
+            summary.provider_updated_at,
+            summary.provider_deleted_at,
+            meeting_start,
+            meeting_end,
+            content_hash,
+            revision,
+            available,
+            scan.get("id"),
+        ),
     )
     status = "created" if old is None else "updated" if changed else "unchanged"
     if status == "created":
@@ -250,7 +334,9 @@ def finish_scan(config: SourceConfig, owner: str, scan: dict) -> None:
     _validate_scan(scan)
     started = _optional_date(scan.get("started_at"), "scan.started_at")
     if started is None or scan.get("phase") != "done":
-        raise ValueError("Only a completed meeting scan with started_at can advance the pull boundary")
+        raise ValueError(
+            "Only a completed meeting scan with started_at can advance the pull boundary"
+        )
     with _cursor() as cur:
         _owned_state(cur, config, owner)
         cur.execute(
@@ -263,11 +349,23 @@ def finish_scan(config: SourceConfig, owner: str, scan: dict) -> None:
         )
 
 
-def release_source(config: SourceConfig, owner: str, outcome: str, error: str | None = None) -> None:
-    if outcome not in {"completed", "completed_with_warnings", "continued", "failed", "interrupted"}:
+def release_source(
+    config: SourceConfig, owner: str, outcome: str, error: str | None = None
+) -> None:
+    if outcome not in {
+        "completed",
+        "completed_with_warnings",
+        "continued",
+        "failed",
+        "interrupted",
+    }:
         raise ValueError("Unknown meeting sync outcome")
     # Persist an error category, never an exception body that may contain remote data.
-    safe_error = "Meeting synchronization failed; inspect redacted execution diagnostics" if error else None
+    safe_error = (
+        "Meeting synchronization failed; inspect redacted execution diagnostics"
+        if error
+        else None
+    )
     with _cursor() as cur:
         cur.execute(
             """UPDATE meeting_sync_state SET claim_owner = NULL, claim_until = NULL,
@@ -285,7 +383,12 @@ def get_stored_refs(config: SourceConfig) -> dict:
                FROM meeting_summaries WHERE provider = %s AND account_key = %s""",
             _identity(config),
         )
-        return {row["external_id"]: {key: value for key, value in row.items() if key != "external_id"} for row in cur.fetchall()}
+        return {
+            row["external_id"]: {
+                key: value for key, value in row.items() if key != "external_id"
+            }
+            for row in cur.fetchall()
+        }
 
 
 def _optional_date(value: str | None, field: str) -> datetime | None:
@@ -311,13 +414,23 @@ def _serialize(row: dict) -> dict:
 
 
 def list_summaries(
-    source: str | None = None, project: str | None = None, query: str | None = None,
-    after: str | None = None, before: str | None = None, limit: int = 20, offset: int = 0,
+    source: str | None = None,
+    project: str | None = None,
+    query: str | None = None,
+    after: str | None = None,
+    before: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
     labels: list[str] | None = None,
     sort: str = "newest",
 ) -> dict:
     order = sort_clause(sort, MEETING_SORTS)
-    if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
+    if (
+        type(limit) is not int
+        or not 1 <= limit <= 100
+        or type(offset) is not int
+        or offset < 0
+    ):
         raise ValueError("Meeting limit must be 1-100 and offset must be nonnegative")
     clauses, params = ["available = true"], []
     if labels is not None:
@@ -335,7 +448,9 @@ def list_summaries(
             params.append(value)
     if query is not None:
         if not isinstance(query, str) or not query.strip() or len(query) > 1000:
-            raise ValueError("Meeting query must be nonblank and at most 1000 characters")
+            raise ValueError(
+                "Meeting query must be nonblank and at most 1000 characters"
+            )
         clauses.append("(title ILIKE %s OR summary_text ILIKE %s)")
         params.extend([f"%{query}%"] * 2)
     start, end = _optional_date(after, "after"), _optional_date(before, "before")
@@ -343,11 +458,15 @@ def list_summaries(
         raise ValueError("Meeting after must not be later than before")
     for operator, stamp in ((">=", start), ("<=", end)):
         if stamp is not None:
-            clauses.append(f"COALESCE(meeting_start, provider_created_at) {operator} %s")
+            clauses.append(
+                f"COALESCE(meeting_start, provider_created_at) {operator} %s"
+            )
             params.append(stamp)
     where = " AND ".join(clauses)
     with _cursor() as cur:
-        cur.execute(f"SELECT count(*) AS count FROM meeting_summaries WHERE {where}", params)
+        cur.execute(
+            f"SELECT count(*) AS count FROM meeting_summaries WHERE {where}", params
+        )
         total = cur.fetchone()["count"]
         cur.execute(
             f"""SELECT * FROM meeting_summaries WHERE {where}
@@ -363,7 +482,10 @@ def get_summary(summary_id: str, include_unavailable: bool = False) -> dict | No
     except (ValueError, TypeError, AttributeError):
         raise ValueError("Meeting summary_id must be a UUID") from None
     with _cursor() as cur:
-        cur.execute("SELECT * FROM meeting_summaries WHERE id = %s AND (available OR %s)", (normalized, include_unavailable))
+        cur.execute(
+            "SELECT * FROM meeting_summaries WHERE id = %s AND (available OR %s)",
+            (normalized, include_unavailable),
+        )
         row = cur.fetchone()
         return _serialize(row) if row else None
 
@@ -380,15 +502,35 @@ def source_status(source: str | None = None) -> list[dict]:
             (source, source),
         )
         results = []
-        allowed_counts = {"listed", "fetched", "processed", "created", "updated", "unchanged", "stale", "pending", "unavailable", "failed"}
+        allowed_counts = {
+            "listed",
+            "fetched",
+            "processed",
+            "created",
+            "updated",
+            "unchanged",
+            "stale",
+            "pending",
+            "unavailable",
+            "failed",
+        }
         for row in cur.fetchall():
             counts = row.get("counts") or {}
-            row["counts"] = {
-                key: value for key, value in counts.items()
-                if key in allowed_counts and type(value) is int and value >= 0
-            } if isinstance(counts, dict) else {}
+            row["counts"] = (
+                {
+                    key: value
+                    for key, value in counts.items()
+                    if key in allowed_counts and type(value) is int and value >= 0
+                }
+                if isinstance(counts, dict)
+                else {}
+            )
             started = _optional_date(row["scan_started_at"], "scan_started_at")
-            age = max(0, (datetime.now(timezone.utc) - started).total_seconds()) if started else None
+            age = (
+                max(0, (datetime.now(timezone.utc) - started).total_seconds())
+                if started
+                else None
+            )
             row["scan_age_seconds"] = int(age) if age is not None else None
             row["degraded"] = age is not None and age > 86400
             results.append(_serialize(row))
