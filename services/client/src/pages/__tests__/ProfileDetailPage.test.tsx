@@ -326,7 +326,10 @@ describe('ProfileDetailPage', () => {
       offset: 20,
       sort: 'newest',
     });
-    expect(screen.getAllByRole('combobox')).toHaveLength(4);
+    expect(screen.getAllByRole('combobox')).toHaveLength(3);
+    expect(
+      screen.getByRole('columnheader', { name: 'Observation' }),
+    ).toBeVisible();
     expect(screen.getByTestId('location')).toHaveTextContent('?tab=evidence');
   });
 

@@ -1,3 +1,4 @@
+import type { EvidenceSort } from './utils/evidenceSorting';
 import type { CostResponse } from './types/costs';
 import type { ACTION_ITEM_SORT_OPTIONS } from './constants';
 
@@ -778,7 +779,7 @@ export interface ProfileClaimsParams extends PaginationParams {
   confidence?: ProfileClaim['confidence'];
   status?: ProfileClaim['status'];
   target_id?: string;
-  sort?: 'newest' | 'oldest';
+  sort?: EvidenceSort;
 }
 
 export interface ProfileRelationshipUpdateInput {

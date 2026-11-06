@@ -540,9 +540,7 @@ it('uses kind tabs and server filters, debounces search and resets paging before
   fireEvent.change(screen.getByLabelText('Review status'), {
     target: { value: 'corrected' },
   });
-  fireEvent.change(screen.getByLabelText('Sort'), {
-    target: { value: 'oldest' },
-  });
+  fireEvent.click(screen.getByRole('button', { name: 'Observation' }));
   screen.getByLabelText('Search observations').focus();
   fireEvent.change(screen.getByLabelText('Search observations'), {
     target: { value: 'clear commitments' },
@@ -551,7 +549,7 @@ it('uses kind tabs and server filters, debounces search and resets paging before
     expect(api.profiles.claims).toHaveBeenLastCalledWith(profileFixture.id, {
       limit: 20,
       offset: 0,
-      sort: 'oldest',
+      sort: 'observation_asc',
       epistemic: 'inference',
       category: 'perception',
       confidence: 'high',

@@ -44,7 +44,20 @@ ProfileCategory = Literal[
 ProfileEpistemic = Literal["self_report", "observed", "inference"]
 ProfileConfidence = Literal["low", "medium", "high"]
 ProfileReviewStatus = Literal["active", "corrected", "rejected"]
-ProfileClaimSort = Literal["oldest", "newest"]
+ProfileClaimSort = Literal[
+    "oldest",
+    "newest",
+    "observation_asc",
+    "observation_desc",
+    "type_asc",
+    "type_desc",
+    "confidence_asc",
+    "confidence_desc",
+    "review_asc",
+    "review_desc",
+    "source_asc",
+    "source_desc",
+]
 
 
 class _Output(BaseModel):
