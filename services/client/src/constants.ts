@@ -76,10 +76,25 @@ export const MEMORY_SEARCH_SORT_OPTIONS = [
   { value: 'relevance', label: 'Relevance' },
   ...MEMORY_LIST_SORT_OPTIONS,
 ] as const;
+export const MEETING_SORT_COLUMNS = {
+  title: { ascending: 'title', descending: 'title_desc' },
+  connection: { ascending: 'connection_asc', descending: 'connection_desc' },
+  provider: { ascending: 'provider_asc', descending: 'provider_desc' },
+  date: {
+    ascending: 'date_asc',
+    descending: 'date_desc',
+    defaultDirection: 'descending',
+  },
+  updated: {
+    ascending: 'updated_asc',
+    descending: 'updated',
+    defaultDirection: 'descending',
+  },
+} as const;
 export const MEETING_SORT_OPTIONS = [
+  ...columnSortOptions(MEETING_SORT_COLUMNS),
   { value: 'newest', label: 'Newest first' },
   { value: 'oldest', label: 'Oldest first' },
-  { value: 'title', label: 'Title A–Z' },
 ] as const;
 export const VOCABULARY_DEFINITIONS = [
   { value: 'all', label: 'All terms' },
