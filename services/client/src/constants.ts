@@ -58,9 +58,22 @@ export const PROPOSAL_SORT_OPTIONS = [
   { value: 'oldest', label: 'Oldest first' },
   { value: 'title', label: 'Title' },
 ] as const;
+export const EVAL_SUITE_SORT_COLUMNS = {
+  name: { ascending: 'name', descending: 'name_desc' },
+  type: { ascending: 'type_asc', descending: 'type_desc' },
+  scenarios: {
+    ascending: 'scenario_count_asc',
+    descending: 'scenario_count_desc',
+  },
+  enabled: { ascending: 'enabled_asc', descending: 'enabled_desc' },
+  updated: {
+    ascending: 'updated_asc',
+    descending: 'updated',
+    defaultDirection: 'descending',
+  },
+} as const;
 export const EVAL_SUITE_SORT_OPTIONS = [
-  { value: 'name', label: 'Name' },
-  { value: 'updated', label: 'Recently updated' },
+  ...columnSortOptions(EVAL_SUITE_SORT_COLUMNS),
   { value: 'newest', label: 'Newest first' },
 ] as const;
 const UPDATED_AT_SORT_OPTIONS = [
