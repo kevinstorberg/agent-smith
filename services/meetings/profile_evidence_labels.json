@@ -1,0 +1,25 @@
+{
+  "category": {
+    "driver": "Drivers",
+    "priority": "Priorities",
+    "communication": "Communication",
+    "decision_pattern": "Decision patterns",
+    "perception": "Perceptions",
+    "interaction": "Interactions",
+    "uncertainty": "Uncertainties",
+    "strength": "Strengths",
+    "development_area": "Development areas",
+    "relationship": "Relationship evidence",
+    "role": "Roles and organizations"
+  },
+  "epistemic": {
+    "self_report": "Self-reported",
+    "observed": "Observed",
+    "inference": "Hypothesis"
+  },
+  "review": {
+    "active": "Active",
+    "corrected": "Corrected by you",
+    "rejected": "Rejected by you"
+  }
+}

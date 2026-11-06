@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+from pathlib import Path
 from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 from typing import get_args
@@ -25,6 +26,48 @@ from services.meetings.outputs import (
 )
 from services.meetings import profile_fields, profile_metadata
 from services.personas import revisions, sections
+
+
+_EVIDENCE_LABELS = json.loads(
+    Path(__file__).with_name("profile_evidence_labels.json").read_text()
+)
+
+
+def _evidence_label_order(field: str, labels: dict[str, str]) -> str:
+    cases = " ".join(
+        "WHEN '"
+        + key.replace("'", "''")
+        + "' THEN '"
+        + label.lower().replace("'", "''")
+        + "'"
+        for key, label in labels.items()
+    )
+    return f"CASE value->>'{field}' {cases} END"
+
+
+CLAIM_SORTS = bidirectional_sorts(
+    {
+        ("observation_asc", "observation_desc"): (
+            "lower(CASE WHEN value->>'status' = 'corrected' THEN coalesce(NULLIF(value->'correction'->>'content', ''), value->>'content') ELSE value->>'content' END)",
+        ),
+        ("type_asc", "type_desc"): (
+            _evidence_label_order("category", _EVIDENCE_LABELS["category"]),
+            _evidence_label_order("epistemic", _EVIDENCE_LABELS["epistemic"]),
+        ),
+        ("confidence_asc", "confidence_desc"): (
+            "CASE value->>'confidence' WHEN 'low' THEN 0 WHEN 'medium' THEN 1 WHEN 'high' THEN 2 END",
+        ),
+        ("review_asc", "review_desc"): (
+            _evidence_label_order("status", _EVIDENCE_LABELS["review"]),
+        ),
+        ("source_asc", "source_desc"): (
+            "lower(NULLIF(value->>'meeting_title', ''))",
+            "(value->>'meeting_date')::timestamptz",
+        ),
+    },
+    tie_breaker="value->>'id'",
+)
+CLAIM_SORTS.update(oldest="ordinality ASC", newest="ordinality DESC")
 
 _CLAIM_NAMESPACE = UUID("9a9b960b-0574-53ed-9f5d-9a3f67b58fd7")
 _WRITE_LOCK = "agent-smith:profile-write"
@@ -510,8 +553,8 @@ def list_claims(
                 raise ValueError(f"Profile evidence {field} is invalid")
             filters.append(f"value->>'{field}' = %s")
             params.append(value)
-    if not isinstance(sort, str) or sort not in get_args(ProfileClaimSort):
-        raise ValueError("Profile evidence sort must be oldest or newest")
+    if not isinstance(sort, str) or sort not in CLAIM_SORTS:
+        raise ValueError("Profile evidence sort is invalid")
     if query is not None:
         if not isinstance(query, str) or not query.strip() or len(query) > 1000:
             raise ValueError(
@@ -526,7 +569,7 @@ def list_claims(
         )
         params.append(str(UUID(str(target_id))))
     where = " AND ".join(filters) or "true"
-    direction = "DESC" if sort == "newest" else "ASC"
+    order = CLAIM_SORTS[sort]
     with _cursor() as cur:
         cur.execute(
             f"""WITH profile AS (
@@ -554,8 +597,8 @@ def list_claims(
                     ordinality FROM visible WHERE {where}
             ) SELECT profile.id AS profile_id, profile.revision, profile.deleted, profile.merged_into,
                 (SELECT count(*) FROM filtered) AS total,
-                coalesce((SELECT jsonb_agg(page.value ORDER BY page.ordinality {direction}) FROM (
-                    SELECT value, ordinality FROM filtered ORDER BY ordinality {direction} LIMIT %s OFFSET %s
+                coalesce((SELECT jsonb_agg(page.value ORDER BY page.position) FROM (
+                    SELECT value, row_number() OVER (ORDER BY {order}) AS position FROM filtered ORDER BY {order} LIMIT %s OFFSET %s
                 ) page), '[]'::jsonb) AS items FROM profile""",
             (*params, limit, offset),
         )

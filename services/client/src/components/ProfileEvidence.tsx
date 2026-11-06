@@ -1,3 +1,11 @@
+import evidenceLabels from '../../../meetings/profile_evidence_labels.json';
+import { ScrollableTable } from './ScrollableTable';
+import { SortableHeader } from './table/SortableHeader';
+import {
+  EVIDENCE_SORT_COLUMNS,
+  parseEvidenceSort,
+} from '../utils/evidenceSorting';
+import './evidenceSorting.css';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigationType, useSearchParams } from 'react-router';
 import { api, ApiError } from '../api';
@@ -14,24 +22,11 @@ import { Pagination } from './Pagination';
 import { DateCell } from './table';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 
-const CATEGORIES: [ProfileClaim['category'], string][] = [
-  ['driver', 'Drivers'],
-  ['priority', 'Priorities'],
-  ['communication', 'Communication'],
-  ['decision_pattern', 'Decision patterns'],
-  ['perception', 'Perceptions'],
-  ['interaction', 'Interactions'],
-  ['uncertainty', 'Uncertainties'],
-  ['strength', 'Strengths'],
-  ['development_area', 'Development areas'],
-  ['relationship', 'Relationship evidence'],
-  ['role', 'Roles and organizations'],
-];
-const EPISTEMIC = {
-  self_report: 'Self-reported',
-  observed: 'Observed',
-  inference: 'Hypothesis',
-};
+const CATEGORIES = Object.entries(evidenceLabels.category) as [
+  ProfileClaim['category'],
+  string,
+][];
+const EPISTEMIC = evidenceLabels.epistemic;
 const PAGE_SIZE = 20;
 
 interface Edit {
@@ -103,7 +98,7 @@ export function ProfileEvidence({
     (value) => value === searchParams.get('status'),
   );
   const targetId = searchParams.get('target_id') || undefined;
-  const sort = searchParams.get('sort') === 'oldest' ? 'oldest' : 'newest';
+  const sort = parseEvidenceSort(searchParams.get('sort'));
   const criteriaPending = queryText.trim() !== query;
   const hasFilters = Boolean(
     queryText || epistemic || category || confidence || status || targetId,
@@ -206,6 +201,8 @@ export function ProfileEvidence({
     offset,
     setOffset,
   } = evidence;
+  const tableCurrent =
+    evidence.dataCurrent && !criteriaPending && !loading && !error;
   const correction = useApiMutation({
     mutationFn: ({
       claimId,
@@ -262,15 +259,14 @@ export function ProfileEvidence({
   const canSave =
     Boolean(displayedEdit) &&
     freshAfterConflict &&
-    !loading &&
-    !error &&
+    tableCurrent &&
     !correction.loading;
   const cancel = () => {
     setEdit(null);
     setNotice(null);
   };
   const startEdit = (claim: EvidenceItem, action: Edit['action']) => {
-    if (criteriaPending || loading) return;
+    if (!tableCurrent) return;
     setExpandedId(claim.id);
     setNotice(null);
     setEdit({
@@ -478,21 +474,6 @@ export function ProfileEvidence({
             <option value="rejected">Rejected</option>
           </select>
         </div>
-        <div>
-          <label className="form-label" htmlFor="evidence-sort">
-            Sort
-          </label>
-          <select
-            id="evidence-sort"
-            className="input"
-            disabled={busy}
-            value={sort}
-            onChange={(event) => setFilter('sort', event.target.value)}
-          >
-            <option value="newest">Newest saved</option>
-            <option value="oldest">Oldest saved</option>
-          </select>
-        </div>
       </div>
       <div className="evidence-list-summary">
         <span className="text-muted-sm">
@@ -532,10 +513,7 @@ export function ProfileEvidence({
             Could not refresh this evidence. Your current view and drafts are
             retained.
           </p>
-          <button
-            className="btn"
-            onClick={() => refreshEvidence({ showLoading: false })}
-          >
+          <button className="btn" onClick={() => refreshEvidence()}>
             Retry evidence
           </button>
         </div>
@@ -545,227 +523,258 @@ export function ProfileEvidence({
           {editor}
         </section>
       )}
-      {loading && (
+      {evidence.initialLoading && (
         <p className="text-muted-sm" role="status">
           Loading evidence...
         </p>
       )}
-      <div
-        className="evidence-table"
-        role="region"
-        aria-label="Observation list"
-        tabIndex={0}
-        aria-busy={loading || criteriaPending}
+      <ScrollableTable
+        label="Observation list"
+        className="evidence-sorting-table"
+        busy={
+          (loading || criteriaPending || !evidence.dataCurrent) &&
+          (loading || !error)
+        }
+        emptyState={
+          evidence.dataCurrent &&
+          !loading &&
+          !criteriaPending &&
+          !error &&
+          evidence.total === 0 ? (
+            <p className="loading">
+              {hasFilters
+                ? 'No observations match these filters.'
+                : 'No saved observations yet. They appear as linked meetings are processed.'}
+            </p>
+          ) : undefined
+        }
       >
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Observation</th>
-              <th>Type</th>
-              <th>Confidence</th>
-              <th>Review status</th>
-              <th>Source</th>
-              <th>Details</th>
-            </tr>
-          </thead>
-          <tbody>
-            {evidence.items.map((claim) => {
-              const expanded =
-                expandedId === claim.id || edit?.claimId === claim.id;
-              const content =
-                claim.status === 'corrected'
-                  ? claim.correction?.content || claim.content
-                  : claim.content;
-              const sourceUrl = safeHttpUrl(claim.source_url);
-              return (
-                <Fragment key={claim.id}>
-                  <tr
-                    className={expanded ? 'evidence-row-expanded' : undefined}
-                  >
-                    <td>
-                      <span
-                        className="evidence-preview"
-                        style={{
-                          textDecoration:
-                            claim.status === 'rejected'
-                              ? 'line-through'
-                              : undefined,
-                        }}
+        <thead>
+          <tr>
+            <SortableHeader
+              sort={sort}
+              column={EVIDENCE_SORT_COLUMNS.observation}
+              current={tableCurrent}
+              disabled={busy}
+              onSort={(value) => setFilter('sort', value)}
+            >
+              Observation
+            </SortableHeader>
+            <SortableHeader
+              sort={sort}
+              column={EVIDENCE_SORT_COLUMNS.type}
+              current={tableCurrent}
+              disabled={busy}
+              onSort={(value) => setFilter('sort', value)}
+            >
+              Type
+            </SortableHeader>
+            <SortableHeader
+              sort={sort}
+              column={EVIDENCE_SORT_COLUMNS.confidence}
+              current={tableCurrent}
+              disabled={busy}
+              onSort={(value) => setFilter('sort', value)}
+            >
+              Confidence
+            </SortableHeader>
+            <SortableHeader
+              sort={sort}
+              column={EVIDENCE_SORT_COLUMNS.review}
+              current={tableCurrent}
+              disabled={busy}
+              onSort={(value) => setFilter('sort', value)}
+            >
+              Review status
+            </SortableHeader>
+            <SortableHeader
+              sort={sort}
+              column={EVIDENCE_SORT_COLUMNS.source}
+              current={tableCurrent}
+              disabled={busy}
+              onSort={(value) => setFilter('sort', value)}
+            >
+              Source
+            </SortableHeader>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {evidence.items.map((claim) => {
+            const expanded =
+              expandedId === claim.id || edit?.claimId === claim.id;
+            const content =
+              claim.status === 'corrected'
+                ? claim.correction?.content || claim.content
+                : claim.content;
+            const sourceUrl = safeHttpUrl(claim.source_url);
+            return (
+              <Fragment key={claim.id}>
+                <tr className={expanded ? 'evidence-row-expanded' : undefined}>
+                  <td>
+                    <span
+                      className="evidence-preview"
+                      style={{
+                        textDecoration:
+                          claim.status === 'rejected'
+                            ? 'line-through'
+                            : undefined,
+                      }}
+                    >
+                      {content}
+                    </span>
+                  </td>
+                  <td>
+                    {CATEGORIES.find(([key]) => key === claim.category)?.[1]}
+                    <div className="text-muted-sm">
+                      {EPISTEMIC[claim.epistemic]}
+                    </div>
+                  </td>
+                  <td>{claim.confidence}</td>
+                  <td>
+                    <span className="tag">
+                      {evidenceLabels.review[claim.status]}
+                    </span>
+                  </td>
+                  <td>
+                    <Link
+                      className="text-link"
+                      to={`/meetings/${claim.meeting_id}#meeting-transcript`}
+                    >
+                      {claim.meeting_title || 'Source meeting'}
+                    </Link>
+                    {claim.meeting_date && (
+                      <DateCell date={claim.meeting_date} />
+                    )}
+                  </td>
+                  <td>
+                    <button
+                      className="btn btn-sm"
+                      aria-expanded={expanded}
+                      aria-controls={`observation-${claim.id}`}
+                      disabled={busy || !tableCurrent}
+                      onClick={() => setExpandedId(expanded ? null : claim.id)}
+                    >
+                      {expanded ? 'Close details' : 'View observation'}
+                    </button>
+                  </td>
+                </tr>
+                {expanded && (
+                  <tr>
+                    <td colSpan={6} className="evidence-detail-cell">
+                      <section
+                        id={`observation-${claim.id}`}
+                        aria-label="Observation details"
+                        className="evidence-detail"
                       >
-                        {content}
-                      </span>
-                    </td>
-                    <td>
-                      {CATEGORIES.find(([key]) => key === claim.category)?.[1]}
-                      <div className="text-muted-sm">
-                        {EPISTEMIC[claim.epistemic]}
-                      </div>
-                    </td>
-                    <td>{claim.confidence}</td>
-                    <td>
-                      <span className="tag">
-                        {claim.status === 'corrected'
-                          ? 'Corrected by you'
-                          : claim.status === 'rejected'
-                            ? 'Rejected by you'
-                            : 'Active'}
-                      </span>
-                    </td>
-                    <td>
-                      <Link
-                        className="text-link"
-                        to={`/meetings/${claim.meeting_id}#meeting-transcript`}
-                      >
-                        {claim.meeting_title || 'Source meeting'}
-                      </Link>
-                      {claim.meeting_date && (
-                        <DateCell date={claim.meeting_date} />
-                      )}
-                    </td>
-                    <td>
-                      <button
-                        className="btn btn-sm"
-                        aria-expanded={expanded}
-                        aria-controls={`observation-${claim.id}`}
-                        disabled={busy || criteriaPending || loading}
-                        onClick={() =>
-                          setExpandedId(expanded ? null : claim.id)
-                        }
-                      >
-                        {expanded ? 'Close details' : 'View observation'}
-                      </button>
-                    </td>
-                  </tr>
-                  {expanded && (
-                    <tr>
-                      <td colSpan={6} className="evidence-detail-cell">
-                        <section
-                          id={`observation-${claim.id}`}
-                          aria-label="Observation details"
-                          className="evidence-detail"
+                        <p
+                          style={{
+                            whiteSpace: 'pre-wrap',
+                            textDecoration:
+                              claim.status === 'rejected'
+                                ? 'line-through'
+                                : undefined,
+                          }}
                         >
-                          <p
-                            style={{
-                              whiteSpace: 'pre-wrap',
-                              textDecoration:
-                                claim.status === 'rejected'
-                                  ? 'line-through'
-                                  : undefined,
-                            }}
-                          >
-                            {content}
-                          </p>
-                          {claim.target_id && (
-                            <p className="text-muted-sm">
-                              About{' '}
-                              <Link
-                                className="text-link"
-                                to={`/profiles/${claim.target_id}`}
-                              >
-                                {claim.target_name || 'another participant'}
-                              </Link>
-                            </p>
-                          )}
-                          {claim.rationale && !claim.correction && (
-                            <p
-                              className="text-muted-sm"
-                              style={{ whiteSpace: 'pre-wrap' }}
-                            >
-                              {claim.rationale}
-                            </p>
-                          )}
-                          {claim.correction && (
-                            <div className="text-muted-sm">
-                              <p>Reason: {claim.correction.reason}</p>
-                              <details>
-                                <summary>Original claim</summary>
-                                <p style={{ whiteSpace: 'pre-wrap' }}>
-                                  {claim.content}
-                                </p>
-                                {claim.rationale && (
-                                  <p style={{ whiteSpace: 'pre-wrap' }}>
-                                    Original rationale: {claim.rationale}
-                                  </p>
-                                )}
-                              </details>
-                            </div>
-                          )}
-                          <details>
-                            <summary>Source evidence</summary>
-                            {claim.evidence.map((entry, index) => (
-                              <blockquote key={`${entry.segment_id}-${index}`}>
-                                <p style={{ whiteSpace: 'pre-wrap' }}>
-                                  {entry.quote}
-                                </p>
-                                <cite className="text-muted-sm">
-                                  Transcript {entry.segment_id}
-                                </cite>
-                              </blockquote>
-                            ))}
+                          {content}
+                        </p>
+                        {claim.target_id && (
+                          <p className="text-muted-sm">
+                            About{' '}
                             <Link
                               className="text-link"
-                              to={`/meetings/${claim.meeting_id}#meeting-transcript`}
+                              to={`/profiles/${claim.target_id}`}
                             >
-                              View source meeting
+                              {claim.target_name || 'another participant'}
                             </Link>
-                            {sourceUrl && (
-                              <>
-                                {' '}
-                                ·{' '}
-                                <a
-                                  className="text-link"
-                                  href={sourceUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                >
-                                  Open original meeting
-                                </a>
-                              </>
-                            )}
-                          </details>
-                          {edit?.claimId === claim.id ? (
-                            editor
-                          ) : (
-                            <div className="flex-wrap">
-                              <button
-                                className="btn btn-sm"
-                                onClick={() => startEdit(claim, 'correct')}
-                                disabled={
-                                  disabled || busy || criteriaPending || loading
-                                }
+                          </p>
+                        )}
+                        {claim.rationale && !claim.correction && (
+                          <p
+                            className="text-muted-sm"
+                            style={{ whiteSpace: 'pre-wrap' }}
+                          >
+                            {claim.rationale}
+                          </p>
+                        )}
+                        {claim.correction && (
+                          <div className="text-muted-sm">
+                            <p>Reason: {claim.correction.reason}</p>
+                            <details>
+                              <summary>Original claim</summary>
+                              <p style={{ whiteSpace: 'pre-wrap' }}>
+                                {claim.content}
+                              </p>
+                              {claim.rationale && (
+                                <p style={{ whiteSpace: 'pre-wrap' }}>
+                                  Original rationale: {claim.rationale}
+                                </p>
+                              )}
+                            </details>
+                          </div>
+                        )}
+                        <details>
+                          <summary>Source evidence</summary>
+                          {claim.evidence.map((entry, index) => (
+                            <blockquote key={`${entry.segment_id}-${index}`}>
+                              <p style={{ whiteSpace: 'pre-wrap' }}>
+                                {entry.quote}
+                              </p>
+                              <cite className="text-muted-sm">
+                                Transcript {entry.segment_id}
+                              </cite>
+                            </blockquote>
+                          ))}
+                          <Link
+                            className="text-link"
+                            to={`/meetings/${claim.meeting_id}#meeting-transcript`}
+                          >
+                            View source meeting
+                          </Link>
+                          {sourceUrl && (
+                            <>
+                              {' '}
+                              ·{' '}
+                              <a
+                                className="text-link"
+                                href={sourceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
                               >
-                                Correct claim
-                              </button>
-                              <button
-                                className="btn btn-sm"
-                                onClick={() => startEdit(claim, 'reject')}
-                                disabled={
-                                  disabled || busy || criteriaPending || loading
-                                }
-                              >
-                                Reject claim
-                              </button>
-                            </div>
+                                Open original meeting
+                              </a>
+                            </>
                           )}
-                        </section>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-            {!loading && !error && evidence.total === 0 && (
-              <tr>
-                <td colSpan={6} className="loading">
-                  {hasFilters
-                    ? 'No observations match these filters.'
-                    : 'No saved observations yet. They appear as linked meetings are processed.'}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+                        </details>
+                        {edit?.claimId === claim.id ? (
+                          editor
+                        ) : (
+                          <div className="flex-wrap">
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => startEdit(claim, 'correct')}
+                              disabled={disabled || busy || !tableCurrent}
+                            >
+                              Correct claim
+                            </button>
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => startEdit(claim, 'reject')}
+                              disabled={disabled || busy || !tableCurrent}
+                            >
+                              Reject claim
+                            </button>
+                          </div>
+                        )}
+                      </section>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </ScrollableTable>
       <Pagination
         total={evidence.total}
         limit={PAGE_SIZE}
