@@ -117,5 +117,22 @@ for (const font of ['computed', 'Arial'])
       scrollRegion: region,
       labels: ['Observation', 'Type', 'Confidence', 'Review status', 'Source'],
       artifactPrefix: `evidence-${font.toLowerCase()}`,
+      assertLayout: async () => {
+        const button = region.getByRole('button', {
+          name: /^(View observation|Close details)$/,
+        });
+        if ((await button.getAttribute('aria-expanded')) === 'false')
+          await button.click();
+        const detail = region.getByRole('region', {
+          name: 'Observation details',
+          exact: true,
+        });
+        await expect(detail).toBeVisible();
+        await expect(
+          region.locator('tbody tr').first().locator('td').first(),
+        ).toHaveCSS('vertical-align', 'top');
+        const width = await region.evaluate((element) => element.clientWidth);
+        expect((await detail.boundingBox())!.width).toBeLessThanOrEqual(width);
+      },
     });
   });

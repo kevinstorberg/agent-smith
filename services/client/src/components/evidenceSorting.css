@@ -1,3 +1,7 @@
+#profile-evidence .evidence-filters {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15em), 1fr));
+}
+
 #profile-evidence .evidence-sorting-table {
   min-width: max(1000px, 78em);
   table-layout: auto;
