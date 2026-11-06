@@ -1,16 +1,19 @@
 import type { ReactNode } from 'react';
+import './scrollableTable.css';
 
 export function ScrollableTable({
   label,
   className = '',
   empty = false,
   busy,
+  emptyState,
   children,
 }: {
   label: string;
   className?: string;
   empty?: boolean;
   busy?: boolean;
+  emptyState?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -26,6 +29,9 @@ export function ScrollableTable({
       >
         {children}
       </table>
+      {emptyState != null && (
+        <div className="scrollable-table-empty-state">{emptyState}</div>
+      )}
     </div>
   );
 }
