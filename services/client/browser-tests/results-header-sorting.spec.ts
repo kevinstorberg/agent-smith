@@ -17,113 +17,135 @@ test.beforeEach(async ({ fixtureAPI }) => {
   );
 });
 
-test('Results headers order the complete server set and remain readable at normal and doubled text', async ({
-  page,
-  fixtureAPI,
-}, testInfo) => {
-  fixtureAPI.get('/api/evals', ({ url }: APIRequest) => {
-    const ordered =
-      url.searchParams.get('sort') === 'scenario_asc'
-        ? resultSortingRows
-        : [...resultSortingRows].reverse();
-    const offset = Number(url.searchParams.get('offset') || 0);
-    const limit = Number(url.searchParams.get('limit') || 10);
-    return {
-      items: ordered.slice(offset, offset + limit),
-      total: ordered.length,
-    };
-  });
-  await page.goto('/evals?category=rules&subcategory=core&q=release&keep=1');
-  await expect(page.getByText('Scenario 30', { exact: true })).toBeVisible();
-  await expect(
-    page.getByRole('combobox', { name: 'Sort results' }),
-  ).toHaveCount(0);
-  await page.getByRole('button', { name: 'Next', exact: true }).click();
-  await expect(page.getByText('Scenario 20', { exact: true })).toBeVisible();
-  const chartReads = fixtureAPI.requests.filter(
-    (entry) => new URL(entry.url).pathname === '/api/evals/chart/average',
-  ).length;
-  const region = page.getByRole('region', {
-    name: 'Results list',
-    exact: true,
-  });
-  const table = region.getByRole('table');
-  for (const [label, first, second] of [
-    ['Scenario', 'scenario_asc', 'scenario_desc'],
-    ['Time', 'newest', 'oldest'],
-    ['Category', 'category_asc', 'category_desc'],
-    ['Model', 'model_asc', 'model_desc'],
-    ['Threshold', 'threshold_asc', 'threshold_desc'],
-    ['Scores', 'score', 'score_asc'],
-  ] as const) {
-    const header = table.getByRole('columnheader', {
-      name: label,
-      exact: true,
-    });
-    const button = header.getByRole('button', { name: label, exact: true });
-    await button.scrollIntoViewIfNeeded();
-    for (const sort of [first, second]) {
-      await button.focus();
-      await button.press(sort === first ? 'Enter' : 'Space');
-      await expect
-        .poll(() => new URL(page.url()).searchParams.get('sort'))
-        .toBe(sort);
-      await expect(header).toHaveAttribute(
-        'aria-sort',
-        sort.endsWith('_asc') || sort === 'oldest' ? 'ascending' : 'descending',
+for (const font of ['default', 'Arial']) {
+  test(
+    'Results headers order the complete server set at normal and doubled ' +
+      font +
+      ' text',
+    async ({ page, fixtureAPI }, testInfo) => {
+      fixtureAPI.get('/api/evals', ({ url }: APIRequest) => {
+        const ordered =
+          url.searchParams.get('sort') === 'scenario_asc'
+            ? resultSortingRows
+            : [...resultSortingRows].reverse();
+        const offset = Number(url.searchParams.get('offset') || 0);
+        const limit = Number(url.searchParams.get('limit') || 10);
+        return {
+          items: ordered.slice(offset, offset + limit),
+          total: ordered.length,
+        };
+      });
+      await page.goto(
+        '/evals?category=rules&subcategory=core&q=release&keep=1',
       );
-      await expect(table).toHaveAttribute('aria-busy', 'false');
-      await expect(button).toBeFocused();
-    }
-    if (label === 'Scenario')
       await expect(
-        page.getByText('Showing 1–10 of 30', { exact: true }),
+        page.getByText('Scenario 30', { exact: true }),
       ).toBeVisible();
-  }
-  const reads = fixtureAPI.requests.filter(
-    (entry) => new URL(entry.url).pathname === '/api/evals',
+      await expect(
+        page.getByRole('combobox', { name: 'Sort results' }),
+      ).toHaveCount(0);
+      await page.getByRole('button', { name: 'Next', exact: true }).click();
+      await expect(
+        page.getByText('Scenario 20', { exact: true }),
+      ).toBeVisible();
+      const chartReads = fixtureAPI.requests.filter(
+        (entry) => new URL(entry.url).pathname === '/api/evals/chart/average',
+      ).length;
+      const region = page.getByRole('region', {
+        name: 'Results list',
+        exact: true,
+      });
+      const table = region.getByRole('table');
+      for (const [label, first, second] of [
+        ['Scenario', 'scenario_asc', 'scenario_desc'],
+        ['Time', 'newest', 'oldest'],
+        ['Category', 'category_asc', 'category_desc'],
+        ['Model', 'model_asc', 'model_desc'],
+        ['Threshold', 'threshold_asc', 'threshold_desc'],
+        ['Scores', 'score', 'score_asc'],
+      ] as const) {
+        const header = table.getByRole('columnheader', {
+          name: label,
+          exact: true,
+        });
+        const button = header.getByRole('button', { name: label, exact: true });
+        await button.scrollIntoViewIfNeeded();
+        for (const sort of [first, second]) {
+          await button.focus();
+          await button.press(sort === first ? 'Enter' : 'Space');
+          await expect
+            .poll(() => new URL(page.url()).searchParams.get('sort'))
+            .toBe(sort);
+          await expect(header).toHaveAttribute(
+            'aria-sort',
+            sort.endsWith('_asc') || sort === 'oldest'
+              ? 'ascending'
+              : 'descending',
+          );
+          await expect(table).toHaveAttribute('aria-busy', 'false');
+          await expect(button).toBeFocused();
+        }
+        if (label === 'Scenario')
+          await expect(
+            page.getByText('Showing 1–10 of 30', { exact: true }),
+          ).toBeVisible();
+      }
+      const reads = fixtureAPI.requests.filter(
+        (entry) => new URL(entry.url).pathname === '/api/evals',
+      );
+      const sorted = new URL(
+        reads.find(
+          (entry) =>
+            new URL(entry.url).searchParams.get('sort') === 'scenario_asc',
+        )!.url,
+      ).searchParams;
+      expect(Object.fromEntries(sorted)).toMatchObject({
+        eval_type: 'rules',
+        subcategory: 'core',
+        q: 'release',
+        offset: '0',
+      });
+      expect(new URL(page.url()).searchParams.get('keep')).toBe('1');
+      expect(
+        fixtureAPI.requests.filter(
+          (entry) => new URL(entry.url).pathname === '/api/evals/chart/average',
+        ),
+      ).toHaveLength(chartReads);
+      expect(
+        fixtureAPI.requests.filter((entry) => entry.method !== 'GET'),
+      ).toHaveLength(0);
+      await page.reload();
+      await expect(
+        table.getByRole('columnheader', { name: 'Scores' }),
+      ).toHaveAttribute('aria-sort', 'ascending');
+      const labels = [
+        'Time',
+        'Category',
+        'Scenario',
+        'Model',
+        'Threshold',
+        'Scores',
+      ];
+      if (font === 'Arial')
+        await page.addStyleTag({
+          content: ':root { --font: Arial, sans-serif; }',
+        });
+      if (font === 'Arial')
+        await expect(table.getByRole('button').first()).toHaveCSS(
+          'font-family',
+          'Arial, sans-serif',
+        );
+      await expectSortableHeaderLayout(page, testInfo, {
+        table,
+        scrollRegion: region,
+        labels,
+        artifactPrefix: 'results-sort-' + font.toLowerCase(),
+        fullyVisibleHeaders: labels,
+        assertLayout: async () => expectMainContained(page),
+      });
+    },
   );
-  const sorted = new URL(
-    reads.find(
-      (entry) => new URL(entry.url).searchParams.get('sort') === 'scenario_asc',
-    )!.url,
-  ).searchParams;
-  expect(Object.fromEntries(sorted)).toMatchObject({
-    eval_type: 'rules',
-    subcategory: 'core',
-    q: 'release',
-    offset: '0',
-  });
-  expect(new URL(page.url()).searchParams.get('keep')).toBe('1');
-  expect(
-    fixtureAPI.requests.filter(
-      (entry) => new URL(entry.url).pathname === '/api/evals/chart/average',
-    ),
-  ).toHaveLength(chartReads);
-  expect(
-    fixtureAPI.requests.filter((entry) => entry.method !== 'GET'),
-  ).toHaveLength(0);
-  await page.reload();
-  await expect(
-    table.getByRole('columnheader', { name: 'Scores' }),
-  ).toHaveAttribute('aria-sort', 'ascending');
-  const labels = [
-    'Time',
-    'Category',
-    'Scenario',
-    'Model',
-    'Threshold',
-    'Scores',
-  ];
-  await expectSortableHeaderLayout(page, testInfo, {
-    table,
-    scrollRegion: region,
-    labels,
-    artifactPrefix: 'results-sort',
-    fullyVisibleHeaders: labels,
-    assertLayout: async () => expectMainContained(page),
-  });
-});
+}
 
 test('Results preserve native focus, reject stale orders, and keep empty/error headers available', async ({
   page,
