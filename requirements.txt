@@ -24,7 +24,7 @@ ruff==0.17.3
 deepeval>=2.9.3
 anthropic>=2.3.0
 openai>=1.0.0
-google-generativeai>=0.8.0
+google-generativeai>=0.8.6
 graphviz>=0.21
 boto3[crt]>=1.41,<2.0
 
