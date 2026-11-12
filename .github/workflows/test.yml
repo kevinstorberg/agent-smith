@@ -89,7 +89,7 @@ jobs:
             script: test
           - name: Browser regressions
             script: test:browser
-            container_image: mcr.microsoft.com/playwright:v1.64.1-resolute@sha256:f76885029244e5a384243a930ff283cef67d90653978ee27a77dd4cff8882fb4
+            container_image: mcr.microsoft.com/playwright:v1.65.0-resolute@sha256:916c9fb63a8340822589dd5c821dae82e8012106bb8515a72f278d97f277446a
 
     defaults:
       run:
