@@ -70,7 +70,7 @@ def create_rubric_agent(
         from services.graphs.rubric_context import FullContextRubricMiddleware
     except ImportError as exc:
         raise RuntimeError(
-            "deepagents==0.7.22 (for RubricMiddleware) and langchain (for create_agent) "
+            "deepagents (for RubricMiddleware) and langchain (for create_agent) "
             "are required for rubric-backed graph agents. Install requirements.txt."
         ) from exc
 
