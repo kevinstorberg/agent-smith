@@ -366,6 +366,21 @@ export function ActionItemQueueTable({
                                   <div
                                     className={`flex-row action-item-actions${showMoveActions ? ' action-item-actions-icons' : ''}`}
                                   >
+                                    <ActionItemStatusButton
+                                      noun={noun}
+                                      item={item}
+                                      small
+                                      iconOnly={showMoveActions}
+                                      disabled={
+                                        busy ||
+                                        freezeControls ||
+                                        loading ||
+                                        Boolean(error)
+                                      }
+                                      onChange={() => {
+                                        void changeStatus(item);
+                                      }}
+                                    />
                                     {showMoveActions &&
                                       reorderableView &&
                                       (['top', 'bottom'] as const).map(
@@ -391,21 +406,6 @@ export function ActionItemQueueTable({
                                           </button>
                                         ),
                                       )}
-                                    <ActionItemStatusButton
-                                      noun={noun}
-                                      item={item}
-                                      small
-                                      iconOnly={showMoveActions}
-                                      disabled={
-                                        busy ||
-                                        freezeControls ||
-                                        loading ||
-                                        Boolean(error)
-                                      }
-                                      onChange={() => {
-                                        void changeStatus(item);
-                                      }}
-                                    />
                                     <button
                                       type="button"
                                       className={`btn btn-sm${showMoveActions ? ' action-item-icon-button' : ''}`}
