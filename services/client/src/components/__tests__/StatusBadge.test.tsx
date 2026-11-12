@@ -8,15 +8,18 @@ describe('StatusBadge', () => {
     expect(screen.getByText('draft')).toBeInTheDocument();
   });
 
-  it('applies a color for a known plan status', () => {
-    render(<StatusBadge status="draft" kind="plan" />);
-    expect(screen.getByText('draft')).toHaveStyle({ color: 'var(--info, #3498db)' });
-  });
-
-  it('applies a color for a known proposal status', () => {
-    render(<StatusBadge status="pending" kind="proposal" />);
-    expect(screen.getByText('pending')).toHaveStyle({ color: 'var(--info, #3498db)' });
-  });
+  it.each([
+    { status: 'draft', kind: 'plan' },
+    { status: 'pending', kind: 'proposal' },
+  ] as const)(
+    'preserves the theme binding and renders the fallback color for $kind',
+    ({ status, kind }) => {
+      render(<StatusBadge status={status} kind={kind} />);
+      const badge = screen.getByText(status);
+      expect(badge.style.color).toBe('var(--info, #3498db)');
+      expect(badge).toHaveStyle({ color: '#3498db' });
+    },
+  );
 
   it('falls back to default styling for final / unknown statuses', () => {
     render(<StatusBadge status="final" kind="plan" />);
