@@ -245,7 +245,7 @@ test('offers edge movement only for open items in ascending Priority view', asyn
 });
 
 for (const scale of [1, 2]) {
-  test(`keeps move buttons and neighboring actions reachable at ${scale}x text`, async ({
+  test(`keeps all action icons square and on one row at ${scale}x text`, async ({
     page,
     fixtureAPI,
   }) => {
@@ -269,12 +269,31 @@ for (const scale of [1, 2]) {
     });
     await expect(top).toBeEnabled();
     await expect(bottom).toBeEnabled();
-    await expect(top).toHaveText('Move to top');
-    await expect(bottom).toHaveText('Move to bottom');
     if (scale === 2) await enlargeComputedText(page);
     const actions = top.locator('..');
     const cell = actions.locator('..');
+    await expect(actions.getByRole('button')).toHaveCount(5);
+    const geometry = await actions.getByRole('button').evaluateAll((buttons) =>
+      buttons.map((button) => {
+        const { x, y, width, height } = button.getBoundingClientRect();
+        return { x, y, width, height };
+      }),
+    );
+    for (const [index, bounds] of geometry.entries()) {
+      expect(Math.abs(bounds.width - bounds.height)).toBeLessThanOrEqual(1);
+      expect(Math.abs(bounds.width - geometry[0].width)).toBeLessThanOrEqual(1);
+      expect(Math.abs(bounds.y - geometry[0].y)).toBeLessThanOrEqual(1);
+      expect(bounds.width).toBeGreaterThanOrEqual(36);
+      if (index > 0) {
+        expect(bounds.x).toBeGreaterThanOrEqual(
+          geometry[index - 1].x + geometry[index - 1].width + 5,
+        );
+      }
+    }
     for (const button of await actions.getByRole('button').all()) {
+      await expect(button).toHaveText('');
+      await expect(button).toHaveAttribute('title', /\S+/);
+      await expect(button.locator('svg[aria-hidden="true"]')).toHaveCount(1);
       await expectControlContained(button, cell);
       await expectControlReachable(button);
       const [bounds, parent] = await Promise.all([
@@ -288,5 +307,8 @@ for (const scale of [1, 2]) {
     }
     await expectDocumentContained(page);
     await expectMainContained(page);
+    await actions.screenshot({
+      path: test.info().outputPath('action-icons.png'),
+    });
   });
 }

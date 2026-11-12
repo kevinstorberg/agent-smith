@@ -11,6 +11,7 @@ import { SortableHeader, SortButton } from './table/SortableHeader';
 import { TableEmptyState } from './ScrollableTable';
 import { Pagination } from './Pagination';
 import { ActionItemStatusButton } from './ActionItemStatusButton';
+import { ActionItemIcon } from './ActionItemIcon';
 import './actionItemQueue.css';
 
 function containProjectCue(cue: HTMLSpanElement | null) {
@@ -362,7 +363,9 @@ export function ActionItemQueueTable({
                                   )}
                                 </td>
                                 <td>
-                                  <div className="flex-row action-item-actions">
+                                  <div
+                                    className={`flex-row action-item-actions${showMoveActions ? ' action-item-actions-icons' : ''}`}
+                                  >
                                     {showMoveActions &&
                                       reorderableView &&
                                       (['top', 'bottom'] as const).map(
@@ -370,7 +373,7 @@ export function ActionItemQueueTable({
                                           <button
                                             key={edge}
                                             type="button"
-                                            className="btn btn-sm"
+                                            className="btn btn-sm action-item-icon-button"
                                             aria-label={`Move ${item.title} to ${edge}`}
                                             title={`Move to ${edge} of the matching action items`}
                                             disabled={
@@ -384,7 +387,7 @@ export function ActionItemQueueTable({
                                               void moveToEdge(item, edge);
                                             }}
                                           >
-                                            Move to {edge}
+                                            <ActionItemIcon name={edge} />
                                           </button>
                                         ),
                                       )}
@@ -392,6 +395,7 @@ export function ActionItemQueueTable({
                                       noun={noun}
                                       item={item}
                                       small
+                                      iconOnly={showMoveActions}
                                       disabled={
                                         busy ||
                                         freezeControls ||
@@ -404,21 +408,31 @@ export function ActionItemQueueTable({
                                     />
                                     <button
                                       type="button"
-                                      className="btn btn-sm"
+                                      className={`btn btn-sm${showMoveActions ? ' action-item-icon-button' : ''}`}
                                       aria-label={`Edit ${item.title}`}
+                                      title={
+                                        showMoveActions ? 'Edit' : undefined
+                                      }
                                       disabled={busy || freezeControls}
                                       onClick={(event) => {
                                         event.stopPropagation();
                                         if (canAct()) onEdit(item);
                                       }}
                                     >
-                                      Edit
+                                      {showMoveActions ? (
+                                        <ActionItemIcon name="edit" />
+                                      ) : (
+                                        'Edit'
+                                      )}
                                     </button>
                                     {deletionEnabled && (
                                       <button
                                         type="button"
-                                        className="btn btn-sm btn-danger"
+                                        className={`btn btn-sm btn-danger${showMoveActions ? ' action-item-icon-button' : ''}`}
                                         aria-label={`Delete ${item.title}`}
+                                        title={
+                                          showMoveActions ? 'Delete' : undefined
+                                        }
                                         disabled={!canRemove()}
                                         onKeyDown={(event) =>
                                           event.stopPropagation()
@@ -434,7 +448,11 @@ export function ActionItemQueueTable({
                                             void removeItem(item);
                                         }}
                                       >
-                                        Delete
+                                        {showMoveActions ? (
+                                          <ActionItemIcon name="delete" />
+                                        ) : (
+                                          'Delete'
+                                        )}
                                       </button>
                                     )}
                                   </div>
