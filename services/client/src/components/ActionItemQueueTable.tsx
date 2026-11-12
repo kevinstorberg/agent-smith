@@ -70,6 +70,7 @@ export function ActionItemQueueTable({
   plural = 'action items',
   showProject = true,
   showDueDate = false,
+  showMoveActions = false,
   scope = 'action-items',
   status,
   sort,
@@ -81,6 +82,7 @@ export function ActionItemQueueTable({
   plural?: string;
   showProject?: boolean;
   showDueDate?: boolean;
+  showMoveActions?: boolean;
   scope?: string;
   status: string;
   sort: ActionItemSort;
@@ -99,6 +101,8 @@ export function ActionItemQueueTable({
     setExpanded,
     startDrag,
     endDrag,
+    canMoveToEdge,
+    moveToEdge,
     canDrag,
     displayed,
     dragSurfaceEnabled,
@@ -359,6 +363,31 @@ export function ActionItemQueueTable({
                                 </td>
                                 <td>
                                   <div className="flex-row action-item-actions">
+                                    {showMoveActions &&
+                                      reorderableView &&
+                                      (['top', 'bottom'] as const).map(
+                                        (edge) => (
+                                          <button
+                                            key={edge}
+                                            type="button"
+                                            className="btn btn-sm"
+                                            aria-label={`Move ${item.title} to ${edge}`}
+                                            title={`Move to ${edge} of the matching action items`}
+                                            disabled={
+                                              !canMoveToEdge(item, edge)
+                                            }
+                                            onKeyDown={(event) =>
+                                              event.stopPropagation()
+                                            }
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              void moveToEdge(item, edge);
+                                            }}
+                                          >
+                                            Move to {edge}
+                                          </button>
+                                        ),
+                                      )}
                                     <ActionItemStatusButton
                                       noun={noun}
                                       item={item}

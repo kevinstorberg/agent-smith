@@ -107,9 +107,9 @@ export function useActionItemQueue({
 }) {
   const [snapshot, setSnapshot] = useState<DragSnapshot | null>(null);
   const drag = useRef<DragSnapshot | null>(null);
-  const dragFocus = useRef<{
+  const orderFocus = useRef<{
     handle: HTMLButtonElement | null;
-    fallback?: HTMLButtonElement;
+    fallback?: HTMLElement;
     view: string;
   } | null>(null);
   const projectTabsRef = useRef<HTMLDivElement>(null);
@@ -117,8 +117,10 @@ export function useActionItemQueue({
   const [pendingId, setPendingId] = useState<number | null>(null);
   const writing = useRef(false);
   const { notify } = useNotification();
+  const readItems = (overrides: ActionItemFilters) =>
+    source.list({ ...filters, ...overrides });
   const list = usePagination<ActionItemRow>(
-    (limit, offset) => source.list({ ...filters, limit, offset }),
+    (limit, offset) => readItems({ limit, offset }),
     [criteria],
     10,
     pagination,
@@ -153,30 +155,7 @@ export function useActionItemQueue({
   useEffect(() => {
     if (expanded && expanded.view !== view) setExpanded(null);
   }, [expanded, view]);
-  const current = useRef({ view, items });
-  useLayoutEffect(() => {
-    current.current = { view, items };
-  });
-  const busy = savingOrder || pendingId !== null || editing;
-  useEffect(() => {
-    if (busy || snapshot) return;
-    const focus = dragFocus.current;
-    dragFocus.current = null;
-    const handle = focus?.handle?.isConnected
-      ? focus.handle
-      : focus?.view === current.current.view
-        ? focus?.fallback
-        : null;
-    if (
-      handle?.isConnected &&
-      !handle.disabled &&
-      document.activeElement === document.body
-    )
-      handle.focus({ preventScroll: true });
-  }, [busy, snapshot]);
-  // Retain SDK handle identity through its post-drop focus lookup.
-  const dragSurfaceEnabled =
-    (reorderableView || projectAssignment) &&
+  const readableView =
     !criteriaPending &&
     list.dataCurrent &&
     !loading &&
@@ -184,6 +163,32 @@ export function useActionItemQueue({
     active &&
     !disabled &&
     !editing;
+  const orderCurrent = reorderableView && readableView;
+  const current = useRef({ view, items, source, orderCurrent });
+  useLayoutEffect(() => {
+    current.current = { view, items, source, orderCurrent };
+  });
+  const busy = savingOrder || pendingId !== null || editing;
+  useEffect(() => {
+    if (busy || snapshot) return;
+    const focus = orderFocus.current;
+    orderFocus.current = null;
+    const handle =
+      focus?.view !== current.current.view
+        ? null
+        : focus?.handle?.isConnected && !focus.handle.disabled
+          ? focus.handle
+          : focus?.fallback;
+    if (
+      handle?.isConnected &&
+      !(handle instanceof HTMLButtonElement && handle.disabled) &&
+      document.activeElement === document.body
+    )
+      handle.focus({ preventScroll: true });
+  }, [busy, snapshot]);
+  // Retain SDK handle identity through its post-drop focus lookup.
+  const dragSurfaceEnabled =
+    (reorderableView || projectAssignment) && readableView;
   const canDrag = dragSurfaceEnabled && !busy;
   const canDragRef = useRef(canDrag);
   useLayoutEffect(() => {
@@ -237,14 +242,11 @@ export function useActionItemQueue({
     );
   }
 
-  async function runRowWrite(
-    item: ActionItemRow,
+  async function runWrite(
     write: () => Promise<unknown>,
     fallbackMessage: string,
   ) {
-    if (!canWrite()) return;
     writing.current = true;
-    setPendingId(item.id);
     try {
       await write();
     } catch (failure) {
@@ -256,6 +258,89 @@ export function useActionItemQueue({
     } finally {
       await finishWrite();
     }
+  }
+
+  async function runRowWrite(
+    item: ActionItemRow,
+    write: () => Promise<unknown>,
+    fallbackMessage: string,
+  ) {
+    if (!canWrite()) return;
+    setPendingId(item.id);
+    await runWrite(write, fallbackMessage);
+  }
+
+  async function runOrderWrite(write: () => Promise<unknown>) {
+    if (!canWrite()) return;
+    setSavingOrder(true);
+    await runWrite(write, 'Could not save this order.');
+  }
+
+  function isCurrentOrderItem(item: ActionItemRow) {
+    const latest = current.current;
+    return (
+      mounted.current &&
+      item.status === 'open' &&
+      latest.orderCurrent &&
+      latest.view === view &&
+      latest.source === source &&
+      latest.items.some(
+        (row) =>
+          row.id === item.id &&
+          row.revision === item.revision &&
+          row.priority === item.priority,
+      )
+    );
+  }
+
+  function canMoveToEdge(item: ActionItemRow, edge: 'top' | 'bottom') {
+    if (!canWrite() || !orderCurrent || item.status !== 'open') return false;
+    const index = items.findIndex(
+      (row) => row.id === item.id && row.revision === item.revision,
+    );
+    if (index === -1) return false;
+    return edge === 'top' ? offset + index > 0 : offset + index < total - 1;
+  }
+
+  async function moveToEdge(item: ActionItemRow, edge: 'top' | 'bottom') {
+    if (!canMoveToEdge(item, edge) || !isCurrentOrderItem(item)) return;
+    const focused = document.activeElement;
+    orderFocus.current = {
+      handle: focused instanceof HTMLButtonElement ? focused : null,
+      fallback:
+        focused instanceof HTMLElement
+          ? (focused.closest<HTMLElement>('.action-items-container') ??
+            undefined)
+          : undefined,
+      view,
+    };
+    setExpanded(null);
+    await runOrderWrite(async () => {
+      const boundary = await readItems({
+        sort: edge === 'top' ? 'manual' : 'manual_desc',
+        limit: 1,
+        offset: 0,
+      });
+      // The source is a snapshot; the move resolves the anchor's live position.
+      if (!isCurrentOrderItem(item)) return;
+      const anchor = boundary.items[0];
+      if (
+        !anchor ||
+        anchor.status !== 'open' ||
+        !Number.isSafeInteger(anchor.id) ||
+        anchor.id <= 0
+      )
+        throw new Error(
+          'The list changed. Refresh before moving this item again.',
+        );
+      if (anchor.id === item.id) return;
+      await source.move(item.id, {
+        expected_revision: item.revision,
+        ...(edge === 'top'
+          ? { before_id: anchor.id }
+          : { after_id: anchor.id }),
+      });
+    });
   }
 
   async function changeStatus(item: ActionItemRow) {
@@ -295,7 +380,7 @@ export function useActionItemQueue({
   function startDrag(start?: DragStart) {
     if (!canDragRef.current || writing.current) return;
     const focused = document.activeElement;
-    dragFocus.current = {
+    orderFocus.current = {
       handle:
         focused instanceof HTMLButtonElement &&
         focused.classList.contains('action-item-drag')
@@ -373,7 +458,7 @@ export function useActionItemQueue({
         setSnapshot(null);
         return;
       }
-      if (dragFocus.current) dragFocus.current.fallback = target.button;
+      if (orderFocus.current) orderFocus.current.fallback = target.button;
       await runRowWrite(
         item,
         () =>
@@ -414,24 +499,18 @@ export function useActionItemQueue({
           expected_revision: moved.revision,
           after_id: reordered[index - 1].id,
         };
-    writing.current = true;
-    setSavingOrder(true);
     setSnapshot({ ...captured, items: reordered });
-    try {
-      await source.move(moved.id, anchor);
-    } catch (failure) {
-      if (!mounted.current) return;
-      setItems(captured.items);
-      setSnapshot(captured);
-      notify(
-        failure instanceof Error
-          ? failure.message
-          : 'Could not save this order.',
-        'error',
-      );
-    } finally {
-      await finishWrite();
-    }
+    await runOrderWrite(async () => {
+      try {
+        await source.move(moved.id, anchor);
+      } catch (failure) {
+        if (mounted.current) {
+          setItems(captured.items);
+          setSnapshot(captured);
+        }
+        throw failure;
+      }
+    });
   }
 
   useLayoutEffect(() => {
@@ -529,6 +608,8 @@ export function useActionItemQueue({
     canDrag,
     startDrag,
     endDrag,
+    canMoveToEdge,
+    moveToEdge,
     changeStatus,
     deletionEnabled: Boolean(removeRow),
     canRemove,
