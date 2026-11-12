@@ -575,7 +575,7 @@ describe('ActionItemsIndexPage', () => {
     ).toBeDisabled();
     expect(
       screen.getByRole('button', { name: 'Complete Task 1' }),
-    ).toHaveTextContent('Complete');
+    ).toHaveAccessibleName('Complete Task 1');
     await act(async () => {
       saving.resolve(actionItem(1, { revision: 2, status: 'completed' }));
     });
@@ -1048,8 +1048,8 @@ describe('ActionItemsIndexPage', () => {
     expect(
       within(actions)
         .getAllByRole('button')
-        .map((button) => button.textContent),
-    ).toEqual(['Reopen', 'Edit', 'Delete']);
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual(['Reopen Task 24', 'Edit Task 24', 'Delete Task 24']);
   });
 
   it('lazily discloses descriptions with native keyboard buttons and one open row', async () => {

@@ -15,6 +15,27 @@
   --action-controls-width: 18em;
 }
 
+.action-items-table .action-item-actions-icons {
+  width: max-content;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.action-item-actions-icons .action-item-icon-button {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  aspect-ratio: 1;
+  padding: 0;
+  line-height: 1;
+}
+
+.action-item-icon-button svg {
+  flex-shrink: 0;
+}
+
 .action-project-tag-sorts {
   display: flex;
   align-items: center;
