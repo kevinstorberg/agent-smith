@@ -15,7 +15,7 @@ import type { ReactNode } from 'react';
 import { StrictMode } from 'react';
 import type { DragStart, DropResult } from '@hello-pangea/dnd';
 import type { ActionItemRow, Paginated } from '../../api';
-import { Route, Routes } from 'react-router';
+import { Link, Route, Routes } from 'react-router';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '../../test-utils';
 import { POLL_INTERVAL_MS, actionItemSortOptions } from '../../constants';
@@ -1710,4 +1710,370 @@ it('announces a pending explicit Retry without replacing accepted rows or insert
     'ascending',
   );
   expect(api.actionItems.update).not.toHaveBeenCalled();
+});
+
+describe('Action item boundary moves', () => {
+  it.each([
+    { edge: 'top', sort: 'manual', anchor: 1, scope: 'project=Work' },
+    {
+      edge: 'bottom',
+      sort: 'manual_desc',
+      anchor: 25,
+      scope: 'unassigned=true',
+    },
+  ] as const)(
+    'moves to $edge across pages while retaining every active filter',
+    async ({ edge, sort, anchor, scope }) => {
+      const page = [
+        actionItem(11),
+        actionItem(12, { revision: 7 }),
+        actionItem(13),
+      ];
+      let moved = false;
+      vi.mocked(api.actionItems.list).mockImplementation(async (filters) => ({
+        items:
+          filters?.limit === 1
+            ? [actionItem(anchor)]
+            : moved
+              ? [page[0], page[2], actionItem(14)]
+              : page,
+        total: 25,
+      }));
+      vi.mocked(api.actionItems.move).mockImplementationOnce(async () => {
+        moved = true;
+        return actionItem(12, { revision: 8 });
+      });
+      renderWithProviders(<ActionItemsIndexPage />, {
+        initialEntries: [
+          `/action-items?${scope}&q=Task&tags=security,product&due_within_hours=24&offset=10`,
+        ],
+      });
+      await screen.findByRole('button', { name: 'Task 12' });
+      const currentFilters = vi.mocked(api.actionItems.list).mock.calls[0][0];
+      expect(currentFilters).toMatchObject({
+        status: 'open',
+        sort: 'manual',
+        q: 'Task',
+        tags: ['security', 'product'],
+        due_within_hours: 24,
+        offset: 10,
+        limit: 10,
+        ...(edge === 'top' ? { project: 'Work' } : { unassigned: true }),
+      });
+      fireEvent.click(
+        screen.getByRole('button', { name: `Move Task 12 to ${edge}` }),
+      );
+      await waitFor(() =>
+        expect(api.actionItems.move).toHaveBeenCalledExactlyOnceWith(12, {
+          expected_revision: 7,
+          [edge === 'top' ? 'before_id' : 'after_id']: anchor,
+        }),
+      );
+      await screen.findByRole('button', { name: 'Task 14' });
+      expect(api.actionItems.list).toHaveBeenNthCalledWith(2, {
+        ...currentFilters,
+        sort,
+        limit: 1,
+        offset: 0,
+      });
+      expect(api.actionItems.list).toHaveBeenLastCalledWith(currentFilters);
+      expect(screen.queryByRole('button', { name: 'Task 12' })).toBeNull();
+    },
+  );
+
+  it.each([1, 3])(
+    'disables redundant edges for a %i-item result',
+    async (count) => {
+      vi.mocked(api.actionItems.list).mockResolvedValue({
+        items: rows.slice(0, count),
+        total: count,
+      });
+      await renderReady();
+      const top = screen.getByRole('button', { name: 'Move Task 1 to top' });
+      const bottom = screen.getByRole('button', {
+        name: `Move Task ${count} to bottom`,
+      });
+      expect(top).toBeDisabled();
+      expect(bottom).toBeDisabled();
+      if (count > 1) {
+        expect(
+          screen.getByRole('button', { name: 'Move Task 2 to top' }),
+        ).toBeEnabled();
+        expect(
+          screen.getByRole('button', { name: 'Move Task 2 to bottom' }),
+        ).toBeEnabled();
+      }
+      fireEvent.click(top);
+      fireEvent.click(bottom);
+      expect(api.actionItems.move).not.toHaveBeenCalled();
+      expect(api.actionItems.list).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    '?sort=title',
+    '?sort=manual_desc',
+    '?status=completed',
+    '?status=all',
+  ])('omits manual move buttons in %s', async (query) => {
+    renderWithProviders(<ActionItemsIndexPage />, {
+      initialEntries: [`/action-items${query}`],
+    });
+    await screen.findByRole('button', { name: 'Task 1' });
+    expect(
+      screen.queryByRole('button', { name: /^Move Task \d+ to (top|bottom)$/ }),
+    ).toBeNull();
+    expect(api.actionItems.move).not.toHaveBeenCalled();
+  });
+
+  it('skips a self-anchor discovered after the displayed row changed position', async () => {
+    await renderReady();
+    vi.mocked(api.actionItems.list).mockResolvedValueOnce({
+      items: [rows[1]],
+      total: 3,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Move Task 2 to top' }));
+    await waitFor(() => expect(api.actionItems.list).toHaveBeenCalledTimes(3));
+    expect(api.actionItems.move).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('button', { name: 'Move Task 2 to top' }),
+    ).toBeEnabled();
+  });
+
+  it('disables boundary controls during pending criteria and enables the accepted filtered result', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await renderReady();
+    const top = screen.getByRole('button', { name: 'Move Task 2 to top' });
+    const bottom = screen.getByRole('button', {
+      name: 'Move Task 2 to bottom',
+    });
+    expect(top).toBeEnabled();
+    expect(bottom).toBeEnabled();
+    fireEvent.change(screen.getByLabelText('Search action items'), {
+      target: { value: 'Task' },
+    });
+    expect(top).toBeDisabled();
+    expect(bottom).toBeDisabled();
+    fireEvent.click(top);
+    expect(api.actionItems.move).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ q: 'Task', offset: 0 }),
+    );
+    expect(top).toBeEnabled();
+    expect(bottom).toBeEnabled();
+  });
+
+  it('freezes lookup, mutation and reconciliation, rejects repeated clicks, then resumes polling', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await renderReady();
+    const lookup = deferred<Paginated<ActionItemRow>>();
+    const saving = deferred<ReturnType<typeof actionItem>>();
+    const reread = deferred<Paginated<ActionItemRow>>();
+    vi.mocked(api.actionItems.list)
+      .mockReturnValueOnce(lookup.promise)
+      .mockReturnValueOnce(reread.promise);
+    vi.mocked(api.actionItems.move).mockReturnValueOnce(saving.promise);
+    const top = screen.getByRole('button', { name: 'Move Task 2 to top' });
+    fireEvent.click(top);
+    fireEvent.click(top);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Move Task 1 to bottom' }),
+    );
+    expect(api.actionItems.list).toHaveBeenCalledTimes(2);
+    expect(api.actionItems.move).not.toHaveBeenCalled();
+    expect(screen.getByRole('status')).toHaveTextContent('Saving order…');
+    for (const control of [
+      top,
+      screen.getByLabelText('Search action items'),
+      screen.getByRole('button', { name: 'Title' }),
+      screen.getByRole('button', { name: 'Complete Task 1' }),
+      screen.getByRole('button', { name: 'Delete Task 1' }),
+    ])
+      expect(control).toBeDisabled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2);
+    });
+    expect(api.actionItems.list).toHaveBeenCalledTimes(2);
+    await act(async () => lookup.resolve({ items: [rows[0]], total: 3 }));
+    expect(api.actionItems.move).toHaveBeenCalledExactlyOnceWith(2, {
+      expected_revision: 1,
+      before_id: 1,
+    });
+    expect(top).toBeDisabled();
+    await act(async () => saving.resolve(actionItem(2, { revision: 2 })));
+    expect(api.actionItems.list).toHaveBeenCalledTimes(3);
+    expect(top).toBeDisabled();
+    expect(screen.getByLabelText('Tags')).toBeDisabled();
+    await act(async () => {
+      reread.resolve({
+        items: [
+          actionItem(2, { revision: 2, priority: 1 }),
+          actionItem(1, { priority: 2 }),
+          rows[2],
+        ],
+        total: 3,
+      });
+    });
+    expect(titles()).toEqual(['Task 2', 'Task 1', 'Task 3']);
+    expect(screen.getByLabelText('Search action items')).toBeEnabled();
+    expect(top).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Move Task 1 to top' }),
+    ).toBeEnabled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+    });
+    expect(api.actionItems.list).toHaveBeenCalledTimes(4);
+    expect(api.actionItems.move).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['lookup', 'move', 'empty boundary'])(
+    'reports a %s failure, reconciles without replaying, and resumes polling',
+    async (stage) => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      renderWithProviders(
+        <>
+          <ActionItemsIndexPage />
+          <NotificationBar />
+        </>,
+        { initialEntries: ['/action-items'] },
+      );
+      await screen.findByRole('button', { name: 'Task 1' });
+      if (stage === 'lookup')
+        vi.mocked(api.actionItems.list).mockRejectedValueOnce(
+          new Error('Boundary unavailable'),
+        );
+      else {
+        vi.mocked(api.actionItems.list).mockResolvedValueOnce({
+          items: stage === 'empty boundary' ? [] : [rows[0]],
+          total: stage === 'empty boundary' ? 0 : 3,
+        });
+        if (stage === 'move')
+          vi.mocked(api.actionItems.move).mockRejectedValueOnce(
+            new ApiError('Source changed', 409),
+          );
+      }
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Move Task 2 to top' }),
+      );
+      await screen.findByRole('alert');
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: 'Move Task 2 to top' }),
+        ).toBeEnabled(),
+      );
+      if (stage === 'lookup')
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'Boundary unavailable',
+        );
+      if (stage === 'move')
+        expect(screen.getByRole('alert')).toHaveTextContent('Source changed');
+      expect(api.actionItems.move).toHaveBeenCalledTimes(
+        stage === 'move' ? 1 : 0,
+      );
+      expect(api.actionItems.list).toHaveBeenCalledTimes(3);
+      expect(titles()).toEqual(['Task 1', 'Task 2', 'Task 3']);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+      });
+      expect(api.actionItems.list).toHaveBeenCalledTimes(4);
+      expect(api.actionItems.move).toHaveBeenCalledTimes(
+        stage === 'move' ? 1 : 0,
+      );
+    },
+  );
+
+  it('blocks edge moves after a failed reconciliation until explicit Retry succeeds', async () => {
+    await renderReady();
+    vi.mocked(api.actionItems.list)
+      .mockResolvedValueOnce({ items: [rows[0]], total: 3 })
+      .mockRejectedValueOnce(new Error('Reread failed'));
+    fireEvent.click(screen.getByRole('button', { name: 'Move Task 2 to top' }));
+    await screen.findByRole('alert');
+    expect(
+      screen.getByRole('button', { name: 'Move Task 2 to top' }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Move Task 2 to top' }));
+    expect(api.actionItems.move).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Move Task 2 to top' }),
+      ).toBeEnabled(),
+    );
+    expect(api.actionItems.move).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([{ revision: 2 }, { priority: 5 }])(
+    'rejects an in-flight poll that changes the source snapshot: %j',
+    async (change) => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      await renderReady();
+      const polling = deferred<Paginated<ActionItemRow>>();
+      const lookup = deferred<Paginated<ActionItemRow>>();
+      vi.mocked(api.actionItems.list)
+        .mockReturnValueOnce(polling.promise)
+        .mockReturnValueOnce(lookup.promise);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+      });
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Move Task 2 to top' }),
+      );
+      await act(async () => {
+        polling.resolve({
+          items: [rows[0], actionItem(2, change), rows[2]],
+          total: 3,
+        });
+      });
+      await act(async () => lookup.resolve({ items: [rows[0]], total: 3 }));
+      expect(api.actionItems.move).not.toHaveBeenCalled();
+      expect(api.actionItems.list).toHaveBeenCalledTimes(4);
+      expect(
+        screen.getByRole('button', { name: 'Move Task 2 to top' }),
+      ).toBeEnabled();
+    },
+  );
+
+  it('does not mutate or reread after unmounting during a boundary lookup', async () => {
+    const rendered = await renderReady();
+    const lookup = deferred<Paginated<ActionItemRow>>();
+    vi.mocked(api.actionItems.list).mockReturnValueOnce(lookup.promise);
+    fireEvent.click(screen.getByRole('button', { name: 'Move Task 2 to top' }));
+    rendered.unmount();
+    await act(async () => lookup.resolve({ items: [rows[0]], total: 3 }));
+    expect(api.actionItems.move).not.toHaveBeenCalled();
+    expect(api.actionItems.list).toHaveBeenCalledTimes(2);
+  });
+
+  it('abandons an obsolete boundary lookup when external navigation changes the current filters', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderWithProviders(
+      <>
+        <Link to="/action-items?q=Changed">Change view</Link>
+        <ActionItemsIndexPage />
+      </>,
+      { initialEntries: ['/action-items'] },
+    );
+    await screen.findByRole('button', { name: 'Task 1' });
+    const lookup = deferred<Paginated<ActionItemRow>>();
+    vi.mocked(api.actionItems.list)
+      .mockReturnValueOnce(lookup.promise)
+      .mockResolvedValue({ items: [actionItem(9)], total: 1 });
+    fireEvent.click(screen.getByRole('button', { name: 'Move Task 2 to top' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Change view' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    await screen.findByRole('button', { name: 'Task 9' });
+    await act(async () => lookup.resolve({ items: [rows[0]], total: 3 }));
+    expect(api.actionItems.move).not.toHaveBeenCalled();
+    expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ q: 'Changed', offset: 0 }),
+    );
+    expect(titles()).toEqual(['Task 9']);
+  });
 });

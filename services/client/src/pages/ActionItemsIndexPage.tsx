@@ -178,6 +178,7 @@ export function ActionItemsIndexPage() {
         onSort={(value) => preferences.setField('sort', value)}
         status={status}
         showDueDate
+        showMoveActions
         onEdit={(item) => navigate(`/action-items/${item.id}?edit=1`)}
       />
     </div>
