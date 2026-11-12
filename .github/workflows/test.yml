@@ -71,7 +71,7 @@ jobs:
     name: ${{ matrix.name }}
     if: ${{ github.event.repository.private == false }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: ${{ matrix.script == 'test:browser' && 30 || 20 }}
     container:
       image: ${{ matrix.container_image || '' }}
       options: ${{ matrix.container_image && '--init --ipc=host' || '' }}
