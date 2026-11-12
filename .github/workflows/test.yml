@@ -53,7 +53,10 @@ jobs:
           sudo apt-get install -y postgresql-common
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get update
-          sudo apt-get install -y postgresql-17 postgresql-17-pgvector
+          # PGDG's +2 rebuild requires an unpublished server; +1 has the same source.
+          # Drop this pin when current server and extension packages resolve together.
+          pgvector_package_version="0.8.7-1.pgdg$(lsb_release -rs)+1"
+          sudo apt-get install -y postgresql-17 "postgresql-17-pgvector=$pgvector_package_version"
 
       - name: Lint Python
         if: matrix.check == 'lint'
