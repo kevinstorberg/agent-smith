@@ -14,7 +14,7 @@ langchain-pinecone>=0.2.0
 langgraph>=1.2.21
 pinecone>=7.0.0
 sentence-transformers==6.3.0
-psycopg2-binary>=2.9.0
+psycopg2-binary>=2.9.13
 pgvector>=0.4.1
 alembic>=1.18.0
 fastapi>=0.115.0
