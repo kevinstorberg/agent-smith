@@ -11,7 +11,7 @@ langchain-community>=0.3.0
 langchain-huggingface==1.2.3
 langchain-openai>=0.3.0
 langchain-pinecone>=0.2.0
-langgraph>=1.0
+langgraph>=1.2.21
 pinecone>=7.0.0
 sentence-transformers==6.3.0
 psycopg2-binary>=2.9.0
