@@ -1,4 +1,5 @@
 """REST API for improvement proposals: review queue + manual generation trigger."""
+
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +16,12 @@ from services.api.models.proposal import (
     get_proposal,
     list_proposals,
 )
-from services.api.routers.base import delete_response, list_response, require_found, query_result
+from services.api.routers.base import (
+    delete_response,
+    list_response,
+    require_found,
+    query_result,
+)
 from services.api.models.shared.listing import sort_pattern
 from services.jobs.models.job import get_job_by_name
 from services.jobs.scheduler import execute_job
@@ -28,6 +34,7 @@ from services.proposals.service import (
     proposed_item,
     reject_proposal,
 )
+from services.proposals.action_items import action_item_details
 
 log = logging.getLogger("proposals.router")
 
@@ -37,7 +44,7 @@ router = APIRouter()
 GENERATE_JOB_NAME = "improvement-proposals"
 
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 def _resolve(operation: Callable[[int], T], proposal_id: int) -> T:
@@ -58,8 +65,12 @@ def list_all(
     sort: Annotated[str, Query(pattern=sort_pattern(PROPOSAL_SORTS))] = "newest",
 ):
     if status is not None and status not in PROPOSAL_STATUSES:
-        raise HTTPException(status_code=422, detail=f"status must be one of {PROPOSAL_STATUSES}")
-    items, total = query_result(list_proposals, status=status, limit=limit, offset=offset, q=q, sort=sort)
+        raise HTTPException(
+            status_code=422, detail=f"status must be one of {PROPOSAL_STATUSES}"
+        )
+    items, total = query_result(
+        list_proposals, status=status, limit=limit, offset=offset, q=q, sort=sort
+    )
     return list_response(items, total)
 
 
@@ -74,6 +85,8 @@ def get_one(proposal_id: int):
     # One response powers the diff UI: the proposed row and the live target.
     proposal["proposed_item"] = proposed_item(proposal)
     proposal["current_target"] = current_target(proposal)
+    if proposal["target_kind"] == "action_item":
+        proposal.update(action_item_details(proposal))
     return proposal
 
 

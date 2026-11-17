@@ -537,6 +537,16 @@ export interface MeetingAnalysisCandidateParams extends PaginationParams {
   before?: string;
 }
 
+export interface MeetingActionItemProposals {
+  status: 'not_queued' | 'pending' | 'running' | 'done' | 'failed';
+  error_type: string | null;
+  proposal_count: number;
+  attempts: number;
+  next_attempt_at: string | null;
+  worker_available: boolean;
+  reason?: string | null;
+}
+
 export interface MeetingProcessingState {
   transcript: Pick<
     MeetingTranscript,
@@ -546,6 +556,7 @@ export interface MeetingProcessingState {
   memories: MeetingGeneration;
   profiles: MeetingGeneration;
   edit_lock_reason: MeetingParticipants['edit_lock_reason'];
+  action_item_proposals?: MeetingActionItemProposals;
 }
 export interface MeetingPerson {
   key: string;
@@ -975,16 +986,19 @@ export interface JobRunResult {
 }
 
 export interface ProposalEvidence {
-  source: 'plan' | 'memory';
+  source: 'plan' | 'memory' | 'meeting';
   id: string;
   note: string;
+  quote?: string;
+  revision?: number;
+  segment_id?: string;
 }
 
 export interface Proposal {
   id: number;
-  target_kind: 'rule' | 'skill' | 'hook' | 'job';
+  target_kind: 'rule' | 'skill' | 'hook' | 'job' | 'action_item';
   action: 'create' | 'update';
-  proposed_item_id: number;
+  proposed_item_id: number | null;
   target_name: string;
   project: string | null;
   target_id: number | null;
@@ -997,8 +1011,13 @@ export interface Proposal {
   created_at: string;
   updated_at: string;
   // Present on GET /proposals/{id}: the proposed row and the live target for diffing.
-  proposed_item?: (Partial<HarnessItem> & Partial<Job>) | null;
-  current_target?: (Partial<HarnessItem> & Partial<Job>) | null;
+  proposed_item?:
+    (Partial<HarnessItem> & Partial<Job> & Partial<ActionItem>) | null;
+  current_target?:
+    (Partial<HarnessItem> & Partial<Job> & Partial<ActionItem>) | null;
+  before_snapshot?: Partial<ActionItem> | null;
+  source_stale?: boolean;
+  source_available?: boolean;
 }
 
 export interface ProposalCounts {
@@ -1333,6 +1352,11 @@ export const api = {
         `/meetings/${encodeURIComponent(id)}/processing`,
         undefined,
         30_000,
+      ),
+    requestActionItemProposals: (id: string, expected_revision: number) =>
+      post<MeetingActionItemProposals>(
+        `/meetings/${encodeURIComponent(id)}/action-item-proposals`,
+        { expected_revision },
       ),
     updateLabels: (
       id: string,

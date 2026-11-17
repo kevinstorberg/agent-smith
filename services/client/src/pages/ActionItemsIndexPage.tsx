@@ -10,6 +10,7 @@ import { ActionItemProjectTabs } from '../components/ActionItemProjects';
 import { projectScope, projectScopeFields } from '../utils/actionItemProjects';
 import { ActionItemDeadlineWindow } from '../components/ActionItemDeadlines';
 import { FilterCheckbox } from '../components/FilterCheckbox';
+import { ButtonLink } from '../components/ButtonLink';
 
 export function ActionItemsIndexPage() {
   const navigate = useNavigate();
@@ -70,17 +71,22 @@ export function ActionItemsIndexPage() {
     <div className="action-items-index-page">
       <div className="page-header">
         <h2 className="page-title">Action items</h2>
-        <Link
-          className="btn btn-primary"
-          style={{ textDecoration: 'none' }}
-          to={
-            project
-              ? `/action-items/new?${new URLSearchParams({ project })}`
-              : '/action-items/new'
-          }
-        >
-          New action item
-        </Link>
+        <div className="flex-wrap" style={{ gap: 8 }}>
+          <ButtonLink to="/proposals?status=pending">
+            Review proposals
+          </ButtonLink>
+          <Link
+            className="btn btn-primary"
+            style={{ textDecoration: 'none' }}
+            to={
+              project
+                ? `/action-items/new?${new URLSearchParams({ project })}`
+                : '/action-items/new'
+            }
+          >
+            New action item
+          </Link>
+        </div>
       </div>
       <ActionItemProjectTabs
         scope={projectScope(project, unassigned)}

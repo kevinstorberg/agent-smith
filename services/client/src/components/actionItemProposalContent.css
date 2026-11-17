@@ -1,0 +1,39 @@
+.scrollable-table .table.action-item-proposal-table {
+  min-width: 0;
+}
+
+.action-item-proposal-table th:first-child {
+  width: 22%;
+}
+
+@media (max-width: 600px) {
+  .action-item-proposal-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .action-item-proposal-table tbody {
+    display: block;
+  }
+
+  .action-item-proposal-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .action-item-proposal-table th:first-child {
+    width: auto;
+  }
+
+  .action-item-proposal-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+}

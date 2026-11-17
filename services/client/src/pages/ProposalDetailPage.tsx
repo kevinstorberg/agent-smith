@@ -8,6 +8,7 @@ import { usePolling } from '../hooks/usePolling';
 import { usePageLifetime } from '../hooks/usePageLifetime';
 import { ContentDiff } from '../components/ContentDiff';
 import { CODE_BOX } from '../components/codeBox';
+import { ActionItemProposalContent } from '../components/ActionItemProposalContent';
 
 const JOB_FIELDS = ['schedule_config', 'input_params', 'description'] as const;
 
@@ -71,8 +72,20 @@ export function ProposalDetailPage() {
   if (!proposal) return <div className="loading">Loading...</div>;
 
   const isJob = proposal.target_kind === 'job';
+  const isActionItem = proposal.target_kind === 'action_item';
   const isUpdate = proposal.action === 'update';
   const targetMissing = isUpdate && !proposal.current_target;
+  const targetStale =
+    isActionItem &&
+    proposal.status === 'pending' &&
+    isUpdate &&
+    !targetMissing &&
+    proposal.current_target?.revision !== proposal.base_version;
+  const sourceStale =
+    isActionItem &&
+    proposal.status === 'pending' &&
+    (proposal.source_stale || proposal.source_available === false);
+  const appliedActionItem = proposal.applied_ref?.action_item_id;
 
   async function review(action: 'approve' | 'reject') {
     setBusy(true);
@@ -124,7 +137,9 @@ export function ProposalDetailPage() {
               <button
                 className="btn btn-primary"
                 onClick={() => review('approve')}
-                disabled={busy || targetMissing}
+                disabled={
+                  busy || targetMissing || targetStale || Boolean(sourceStale)
+                }
               >
                 Approve
               </button>
@@ -157,14 +172,18 @@ export function ProposalDetailPage() {
           }}
         >
           <StatusBadge status={proposal.status} kind="proposal" />
-          <span className="tag">{proposal.target_kind}</span>
+          <span className="tag">
+            {isActionItem ? 'Action item' : proposal.target_kind}
+          </span>
           <span style={{ color: 'var(--text-muted)' }}>
-            {proposal.action}{' '}
+            {isActionItem ? (isUpdate ? 'Update' : 'New') : proposal.action}{' '}
             <strong style={{ color: 'var(--text)' }}>
               {proposal.target_name}
             </strong>
             {proposal.base_version != null &&
-              ` · from v${proposal.base_version}`}
+              (isActionItem
+                ? ` · from revision ${proposal.base_version}`
+                : ` · from v${proposal.base_version}`)}
           </span>
           {proposal.project && (
             <span className="tag tag-project">{proposal.project}</span>
@@ -174,6 +193,28 @@ export function ProposalDetailPage() {
           <p style={{ color: 'var(--danger, #e06c75)', margin: '12px 0 0' }}>
             The target of this proposal was deleted — it can no longer be
             applied.
+          </p>
+        )}
+        {(targetStale || sourceStale) && (
+          <p
+            role="alert"
+            style={{ color: 'var(--danger, #e06c75)', margin: '12px 0 0' }}
+          >
+            {sourceStale
+              ? 'The source meeting changed or is unavailable.'
+              : 'This action item changed after the proposal was generated.'}{' '}
+            Generate a fresh proposal before approving; the reviewed changes
+            below are preserved.
+          </p>
+        )}
+        {typeof appliedActionItem === 'number' && (
+          <p style={{ margin: '12px 0 0' }}>
+            <Link
+              className="text-link"
+              to={`/action-items/${appliedActionItem}`}
+            >
+              Open saved action item
+            </Link>
           </p>
         )}
       </div>
@@ -189,14 +230,35 @@ export function ProposalDetailPage() {
           <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.9 }}>
             {proposal.evidence.map((entry, i) => (
               <li key={i}>
-                {entry.source === 'plan' ? (
+                {entry.source === 'meeting' ? (
+                  <>
+                    <Link
+                      className="text-link"
+                      to={`/meetings/${encodeURIComponent(entry.id)}`}
+                    >
+                      {entry.note || 'Meeting summary'}
+                    </Link>
+                    {entry.quote && (
+                      <blockquote
+                        style={{
+                          whiteSpace: 'pre-wrap',
+                          overflowWrap: 'anywhere',
+                          margin: '8px 0 12px',
+                          lineHeight: 1.6,
+                        }}
+                      >
+                        {entry.quote}
+                      </blockquote>
+                    )}
+                  </>
+                ) : entry.source === 'plan' ? (
                   <Link to={`/plans/${entry.id}`}>plan {entry.id}</Link>
                 ) : (
                   <span style={{ color: 'var(--text-muted)' }}>
                     memory {entry.id}
                   </span>
                 )}
-                {entry.note && (
+                {entry.source !== 'meeting' && entry.note && (
                   <span style={{ color: 'var(--text-muted)' }}>
                     {' — '}
                     {entry.note}
@@ -212,7 +274,12 @@ export function ProposalDetailPage() {
         <div className="section-title">
           {isUpdate ? 'Change' : 'Proposed content'}
         </div>
-        {isUpdate ? (
+        {isActionItem ? (
+          <ActionItemProposalContent
+            proposal={proposal}
+            targetStale={targetStale}
+          />
+        ) : isUpdate ? (
           <ContentDiff before={before} after={after} />
         ) : (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>

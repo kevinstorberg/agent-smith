@@ -29,6 +29,19 @@ def extraction_only(monkeypatch):
     monkeypatch.setattr(PersonaRun, "build_assessments", skip_assessment)
 
 
+@pytest.fixture
+def empty_action_item_analysis(monkeypatch):
+    from services.meetings import action_item_analysis
+
+    async def no_commitments(*args, **kwargs):
+        return {
+            "items": [],
+            "reason": "This provider fixture has no staged Action Item commitments",
+        }
+
+    monkeypatch.setattr(action_item_analysis, "analyze_action_items", no_commitments)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _setup_test_db():
     from services.db.create import create_database

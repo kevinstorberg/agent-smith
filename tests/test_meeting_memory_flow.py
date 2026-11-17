@@ -63,13 +63,31 @@ def agents(monkeypatch, unidentified_speakers):
 
         async def analyze(self, snapshot, window, previous, *, deadline):
             self.analyses.append(copy.deepcopy((snapshot, window, previous)))
-            return {"items": [{
-                "content": "A recorded decision", "kind": "decision",
-                "tags": ["product", "paralign"],
-                "evidence": [{"segment_id": window[0]["id"], "quote": window[0]["text"]}],
-            }], "reason": ""}
+            return {
+                "items": [
+                    {
+                        "content": "A recorded decision",
+                        "kind": "decision",
+                        "tags": ["product", "paralign"],
+                        "evidence": [
+                            {"segment_id": window[0]["id"], "quote": window[0]["text"]}
+                        ],
+                    }
+                ],
+                "reason": "",
+            }
 
-        def publish(self, memory_id, content, repo=None, tags=None, *, created_at, source_type=None, source_id=None):
+        def publish(
+            self,
+            memory_id,
+            content,
+            repo=None,
+            tags=None,
+            *,
+            created_at,
+            source_type=None,
+            source_id=None,
+        ):
             assert source_type == "meeting" and source_id
             frozen = (content, repo, tags, created_at)
             if memory_id in self.stored:
@@ -80,6 +98,7 @@ def agents(monkeypatch, unidentified_speakers):
 
     calls = Calls()
     monkeypatch.setattr(analysis, "analyze_memories", calls.analyze)
+
     async def no_profile_claims(*args, **kwargs):
         return {"items": [], "reason": "No grounded participant claims"}
 
@@ -94,29 +113,55 @@ def ready(source, feed):
     owner = "memory-test-enroller"
     assert digestion_db.claim_transcript([(source.provider, source.account_key)], owner)
     try:
-        digestion_db.save_capture(meeting_id, owner, digestion_db.get_context(meeting_id), {
-            "segments": [segment.to_dict(index) for index, segment in enumerate(feed.segments)], "cursor": None,
-        }, complete=True)
+        digestion_db.save_capture(
+            meeting_id,
+            owner,
+            digestion_db.get_context(meeting_id),
+            {
+                "segments": [
+                    segment.to_dict(index)
+                    for index, segment in enumerate(feed.segments)
+                ],
+                "cursor": None,
+            },
+            complete=True,
+        )
     finally:
         digestion_db.release(meeting_id, owner)
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("UPDATE meeting_digestions SET speaker_status='legacy' WHERE meeting_id=%s", (meeting_id,))
+        cur.execute(
+            "UPDATE meeting_digestions SET speaker_status='legacy' WHERE meeting_id=%s",
+            (meeting_id,),
+        )
     return meeting_id
 
 
 def job(source):
-    return get_job(create_job("MEMFLOW " + source.name, {"minutes": 5}, {
-        "graph_type": "meeting_ingest", "graph_inputs": {"source": source.name}, "timeout": 30,
-    }))
+    return get_job(
+        create_job(
+            "MEMFLOW " + source.name,
+            {"minutes": 5},
+            {
+                "graph_type": "meeting_ingest",
+                "graph_inputs": {"source": source.name},
+                "timeout": 30,
+            },
+        )
+    )
 
 
 def make_due(meeting_id):
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("UPDATE meeting_digestions SET memory_next_attempt_at = clock_timestamp() WHERE meeting_id = %s", (meeting_id,))
+        cur.execute(
+            "UPDATE meeting_digestions SET memory_next_attempt_at = clock_timestamp() WHERE meeting_id = %s",
+            (meeting_id,),
+        )
 
 
 @pytest.mark.asyncio
-async def test_graph_enriches_new_meeting_once_and_preserves_frozen_snapshot_after_edit(source, feed, agents, monkeypatch):
+async def test_graph_enriches_new_meeting_once_and_preserves_frozen_snapshot_after_edit(
+    source, feed, agents, monkeypatch
+):
     from services.meetings import speaker_analysis
 
     inference_calls = []
@@ -125,7 +170,9 @@ async def test_graph_enriches_new_meeting_once_and_preserves_frozen_snapshot_aft
         inference_calls.append(True)
         raise AssertionError("Memory formation must not infer meeting participants")
 
-    monkeypatch.setattr(speaker_analysis, "identify_statements", unexpected_identification)
+    monkeypatch.setattr(
+        speaker_analysis, "identify_statements", unexpected_identification
+    )
     first = json.loads(await dispatch("meeting_ingest", {"source": source.name}))
     row = db.list_summaries(source=source.name)["items"][0]
     assert first["memories"]["outcome"] == "done"
@@ -133,7 +180,11 @@ async def test_graph_enriches_new_meeting_once_and_preserves_frozen_snapshot_aft
     captured = digestion_db.get_record(row["id"])
     frozen = captured["snapshot"]
     snapshot, window, previous = agents.analyses[0]
-    assert snapshot["memory_source"] == captured["memory_artifact"]["input_source"] == "summary"
+    assert (
+        snapshot["memory_source"]
+        == captured["memory_artifact"]["input_source"]
+        == "summary"
+    )
     assert window == [{"id": "summary-0", "text": feed.summaries["one"].summary_text}]
     assert window[0]["text"] != feed.segments[0].text and inference_calls == []
     assert previous == [] and captured["memory_artifact"]["input_snapshot"] == frozen
@@ -142,23 +193,33 @@ async def test_graph_enriches_new_meeting_once_and_preserves_frozen_snapshot_aft
     assert "Granola summary (summary-0)" in next(iter(agents.stored.values()))[0]
 
     await dispatch("meeting_ingest", {"source": source.name})
-    feed.summaries["one"] = replace(note(), summary_text="Edited later", provider_updated_at=STAMP + timedelta(hours=1))
+    feed.summaries["one"] = replace(
+        note(),
+        summary_text="Edited later",
+        provider_updated_at=STAMP + timedelta(hours=1),
+    )
     await dispatch("meeting_ingest", {"source": source.name})
 
     assert len(agents.analyses) == len(agents.publications) == 1
     assert db.get_summary(row["id"])["revision"] == 2
     assert digestion_db.get_record(row["id"])["snapshot"] == frozen
     assert all(client.closed for client in feed.clients)
-    assert "Recorded decision" not in json.dumps(first) and "A recorded decision" not in json.dumps(first)
+    assert "Recorded decision" not in json.dumps(
+        first
+    ) and "A recorded decision" not in json.dumps(first)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("existing", [False, True])
-async def test_noop_and_historical_rows_do_not_call_agent(source, feed, agents, existing):
+async def test_noop_and_historical_rows_do_not_call_agent(
+    source, feed, agents, existing
+):
     if existing:
         meeting_id = enroll(source, feed.summaries["one"])
         with get_connection() as conn, conn.cursor() as cur:
-            cur.execute("DELETE FROM meeting_digestions WHERE meeting_id = %s", (meeting_id,))
+            cur.execute(
+                "DELETE FROM meeting_digestions WHERE meeting_id = %s", (meeting_id,)
+            )
     else:
         feed.summaries = {}
     await dispatch("meeting_ingest", {"source": source.name})
@@ -168,11 +229,15 @@ async def test_noop_and_historical_rows_do_not_call_agent(source, feed, agents, 
 
 
 @pytest.mark.asyncio
-async def test_digest_false_captures_transcript_and_leaves_memory_work_for_enabled_run(source, feed, agents):
+async def test_digest_false_captures_transcript_and_leaves_memory_work_for_enabled_run(
+    source, feed, agents
+):
     await dispatch("meeting_ingest", {"source": source.name, "digest": False})
     meeting_id = db.list_summaries(source=source.name)["items"][0]["id"]
     record = digestion_db.get_record(meeting_id)
-    assert record["transcript_status"] == "ready" and record["memory_status"] == "pending"
+    assert (
+        record["transcript_status"] == "ready" and record["memory_status"] == "pending"
+    )
     await dispatch("meeting_ingest", {"source": source.name, "digest": False})
     assert agents.analyses == agents.publications == []
     await dispatch("meeting_ingest", {"source": source.name})
@@ -180,14 +245,20 @@ async def test_digest_false_captures_transcript_and_leaves_memory_work_for_enabl
 
 
 @pytest.mark.asyncio
-async def test_timeout_resumes_committed_window_without_reanalysis_or_premature_publication(source, ready, agents, monkeypatch):
+async def test_timeout_resumes_committed_window_without_reanalysis_or_premature_publication(
+    source, ready, agents, monkeypatch
+):
     from services.meetings import analysis
 
     summary = "".join(f"Window {index} " + "x" * 51 for index in range(3))
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("UPDATE meeting_summaries SET summary_text=%s WHERE id=%s", (summary, ready))
-        cur.execute("UPDATE meeting_digestions SET snapshot=jsonb_set(snapshot,'{summary_text}',%s) WHERE meeting_id=%s",
-                    (Json(summary), ready))
+        cur.execute(
+            "UPDATE meeting_summaries SET summary_text=%s WHERE id=%s", (summary, ready)
+        )
+        cur.execute(
+            "UPDATE meeting_digestions SET snapshot=jsonb_set(snapshot,'{summary_text}',%s) WHERE meeting_id=%s",
+            (Json(summary), ready),
+        )
     monkeypatch.setattr(enrichment, "WINDOW_CHARS", 60)
     monkeypatch.setattr(enrichment, "AGENT_SECONDS", 0.15)
     original = agents.analyze
@@ -209,9 +280,14 @@ async def test_timeout_resumes_committed_window_without_reanalysis_or_premature_
     assert record["memory_artifact"]["input_snapshot"]["summary_text"] == summary
 
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("UPDATE meeting_summaries SET summary_text='Updated live summary',revision=revision+1 WHERE id=%s", (ready,))
-        cur.execute("UPDATE meeting_digestions SET snapshot=jsonb_set(snapshot,'{summary_text}',%s) WHERE meeting_id=%s",
-                    (Json("Updated capture context"), ready))
+        cur.execute(
+            "UPDATE meeting_summaries SET summary_text='Updated live summary',revision=revision+1 WHERE id=%s",
+            (ready,),
+        )
+        cur.execute(
+            "UPDATE meeting_digestions SET snapshot=jsonb_set(snapshot,'{summary_text}',%s) WHERE meeting_id=%s",
+            (Json("Updated capture context"), ready),
+        )
 
     monkeypatch.setattr(analysis, "analyze_memories", original)
     monkeypatch.setattr(enrichment, "AGENT_SECONDS", 10)
@@ -221,24 +297,53 @@ async def test_timeout_resumes_committed_window_without_reanalysis_or_premature_
         assert run.memory_report["outcome"] == "done"
     record = digestion_db.get_record(ready)
     assert record["memory_artifact"]["offset"] == 3
-    assert [call[1][0]["id"] for call in agents.analyses] == ["summary-0", "summary-1", "summary-2"]
-    assert all(call[0]["summary_text"] == summary and call[0]["memory_source"] == "summary" for call in agents.analyses)
+    assert [call[1][0]["id"] for call in agents.analyses] == [
+        "summary-0",
+        "summary-1",
+        "summary-2",
+    ]
+    assert all(
+        call[0]["summary_text"] == summary and call[0]["memory_source"] == "summary"
+        for call in agents.analyses
+    )
     assert "".join(call[1][0]["text"] for call in agents.analyses) == summary
-    assert all(item["source"] == "summary" for item in record["memory_artifact"]["items"])
+    assert all(
+        item["source"] == "summary" for item in record["memory_artifact"]["items"]
+    )
     assert agents.publications[0] == first_id and len(agents.stored) == 3
 
 
 @pytest.mark.asyncio
-async def test_unmarked_partial_checkpoint_requires_summary_retry_and_discards_unattempted_transcript_candidates(source, ready, agents):
-    legacy = {"id": "6b379f2c-93c9-4bec-b5a9-277e3aa13bf0", "content": "Legacy first decision", "kind": "decision",
-              "tags": ["product"], "evidence": [{"segment_id": "segment-0", "quote": "Legacy transcript first."}]}
-    artifact = {"version": 1, "offset": 1, "total_units": 2, "items": [legacy], "published_ids": [],
-                "created_at": "2026-01-01T00:00:00+00:00", "reason": ""}
-    segments = [{"id": f"segment-{index}", "text": text, "speaker": {}}
-                for index, text in enumerate(["Legacy transcript first.", "Legacy transcript second."])]
+async def test_unmarked_partial_checkpoint_requires_summary_retry_and_discards_unattempted_transcript_candidates(
+    source, ready, agents
+):
+    legacy = {
+        "id": "6b379f2c-93c9-4bec-b5a9-277e3aa13bf0",
+        "content": "Legacy first decision",
+        "kind": "decision",
+        "tags": ["product"],
+        "evidence": [{"segment_id": "segment-0", "quote": "Legacy transcript first."}],
+    }
+    artifact = {
+        "version": 1,
+        "offset": 1,
+        "total_units": 2,
+        "items": [legacy],
+        "published_ids": [],
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "reason": "",
+    }
+    segments = [
+        {"id": f"segment-{index}", "text": text, "speaker": {}}
+        for index, text in enumerate(
+            ["Legacy transcript first.", "Legacy transcript second."]
+        )
+    ]
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("UPDATE meeting_digestions SET transcript=%s,memory_artifact=%s WHERE meeting_id=%s",
-                    (Json({"segments": segments, "cursor": None}), Json(artifact), ready))
+        cur.execute(
+            "UPDATE meeting_digestions SET transcript=%s,memory_artifact=%s WHERE meeting_id=%s",
+            (Json({"segments": segments, "cursor": None}), Json(artifact), ready),
+        )
 
     async with enrichment.DigestionRun(source.name) as run:
         await run.prepare()
@@ -247,8 +352,14 @@ async def test_unmarked_partial_checkpoint_requires_summary_retry_and_discards_u
         assert run.memory_report["error_type"] == "SummaryMemoryRetryRequired"
     assert agents.analyses == agents.publications == []
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("UPDATE meeting_digestions SET memory_status='failed' WHERE meeting_id=%s", (ready,))
-        cur.execute("UPDATE meeting_summaries SET summary_text='Current saved summary.',revision=revision+1 WHERE id=%s", (ready,))
+        cur.execute(
+            "UPDATE meeting_digestions SET memory_status='failed' WHERE meeting_id=%s",
+            (ready,),
+        )
+        cur.execute(
+            "UPDATE meeting_summaries SET summary_text='Current saved summary.',revision=revision+1 WHERE id=%s",
+            (ready,),
+        )
     memory_db.retry_memories(ready)
     reset = digestion_db.get_record(ready)["memory_artifact"]
     assert reset["items"] == [] and reset["next_item_index"] == 1
@@ -258,10 +369,18 @@ async def test_unmarked_partial_checkpoint_requires_summary_retry_and_discards_u
         assert run.memory_report["outcome"] == "done"
 
     saved = digestion_db.get_record(ready)
-    assert len(agents.analyses) == 1 and agents.analyses[0][1] == [{"id": "summary-0", "text": "Current saved summary."}]
-    assert agents.analyses[0][0]["memory_source"] == "summary" and agents.analyses[0][2] == []
+    assert len(agents.analyses) == 1 and agents.analyses[0][1] == [
+        {"id": "summary-0", "text": "Current saved summary."}
+    ]
+    assert (
+        agents.analyses[0][0]["memory_source"] == "summary"
+        and agents.analyses[0][2] == []
+    )
     assert saved["memory_artifact"]["input_source"] == "summary"
-    assert len(saved["memory_artifact"]["items"]) == 1 and saved["memory_artifact"]["items"][0]["source"] == "summary"
+    assert (
+        len(saved["memory_artifact"]["items"]) == 1
+        and saved["memory_artifact"]["items"][0]["source"] == "summary"
+    )
     from uuid import uuid5
 
     new_id = str(uuid5(enrichment._MEMORY_NAMESPACE, f"{ready}:1"))
@@ -270,11 +389,15 @@ async def test_unmarked_partial_checkpoint_requires_summary_retry_and_discards_u
 
 
 @pytest.mark.asyncio
-async def test_receipt_failure_retries_frozen_publication_without_another_agent_call(source, ready, agents, monkeypatch, caplog):
+async def test_receipt_failure_retries_frozen_publication_without_another_agent_call(
+    source, ready, agents, monkeypatch, caplog
+):
     original = memory_db.save_progress
     failed = False
 
-    def fail_first_receipt(meeting_id, owner, transcript_hash, artifact, *, complete=False):
+    def fail_first_receipt(
+        meeting_id, owner, transcript_hash, artifact, *, complete=False
+    ):
         nonlocal failed
         if artifact["published_ids"] and not failed:
             failed = True
@@ -286,7 +409,10 @@ async def test_receipt_failure_retries_frozen_publication_without_another_agent_
     first = await execute_job(scheduled)
     record = digestion_db.get_record(ready)
     assert not first["success"] and "RuntimeError" in first["error"]
-    assert record["memory_artifact"]["offset"] == 1 and record["memory_artifact"]["published_ids"] == []
+    assert (
+        record["memory_artifact"]["offset"] == 1
+        and record["memory_artifact"]["published_ids"] == []
+    )
     assert record["memory_attempts"] == 1 and record["claim_owner"] is None
     assert record["memory_artifact"]["input_source"] == "summary"
     assert record["memory_artifact"]["items"][0]["source"] == "summary"
@@ -296,7 +422,9 @@ async def test_receipt_failure_retries_frozen_publication_without_another_agent_
     make_due(ready)
     second = await execute_job(scheduled)
     assert second["success"] and len(agents.analyses) == 1
-    assert len(agents.stored) == 1 and agents.publications == agents.publications[:1] * 2
+    assert (
+        len(agents.stored) == 1 and agents.publications == agents.publications[:1] * 2
+    )
     assert agents.stored == first_publication
     assert memory_db.get_memories(ready)["status"] == "done"
     executions, total = list_executions_for_job(scheduled["id"])
@@ -304,7 +432,9 @@ async def test_receipt_failure_retries_frozen_publication_without_another_agent_
 
 
 @pytest.mark.asyncio
-async def test_job_cancellation_releases_global_lease_without_counting_failure(source, ready, agents, monkeypatch):
+async def test_job_cancellation_releases_global_lease_without_counting_failure(
+    source, ready, agents, monkeypatch
+):
     from services.meetings import analysis
 
     started = asyncio.Event()
@@ -334,17 +464,24 @@ async def test_job_cancellation_releases_global_lease_without_counting_failure(s
 
 
 @pytest.mark.asyncio
-async def test_deletion_after_final_window_checkpoint_prevents_external_publication(source, ready, agents, monkeypatch):
+async def test_deletion_after_final_window_checkpoint_prevents_external_publication(
+    source, ready, agents, monkeypatch
+):
     original = memory_db.save_progress
     deleted = False
 
-    def delete_after_checkpoint(meeting_id, owner, transcript_hash, artifact, *, complete=False):
+    def delete_after_checkpoint(
+        meeting_id, owner, transcript_hash, artifact, *, complete=False
+    ):
         nonlocal deleted
         original(meeting_id, owner, transcript_hash, artifact, complete=complete)
         if not deleted and artifact["offset"] == 1 and not artifact["published_ids"]:
             deleted = True
             with get_connection() as conn, conn.cursor() as cur:
-                cur.execute("UPDATE meeting_summaries SET available = false WHERE id = %s", (meeting_id,))
+                cur.execute(
+                    "UPDATE meeting_summaries SET available = false WHERE id = %s",
+                    (meeting_id,),
+                )
 
     monkeypatch.setattr(memory_db, "save_progress", delete_after_checkpoint)
     result = await execute_job(job(source))
@@ -355,14 +492,21 @@ async def test_deletion_after_final_window_checkpoint_prevents_external_publicat
 
 
 @pytest.mark.asyncio
-async def test_stale_worker_cannot_write_or_clear_replacement_lease(source, ready, agents):
+async def test_stale_worker_cannot_write_or_clear_replacement_lease(
+    source, ready, agents
+):
     replacement = "replacement-memory-owner"
     try:
         async with enrichment.DigestionRun(source.name) as run:
             await run.prepare()
             with get_connection() as conn, conn.cursor() as cur:
-                cur.execute("UPDATE meeting_digestions SET claim_until = clock_timestamp() - interval '1 second' WHERE meeting_id = %s", (ready,))
-            assert digestion_db.claim_digestion([(source.provider, source.account_key)], replacement)
+                cur.execute(
+                    "UPDATE meeting_digestions SET claim_until = clock_timestamp() - interval '1 second' WHERE meeting_id = %s",
+                    (ready,),
+                )
+            assert digestion_db.claim_digestion(
+                [(source.provider, source.account_key)], replacement
+            )
             with pytest.raises(db.ClaimLostError):
                 await run.generate_memories()
         assert agents.publications == []
@@ -372,12 +516,22 @@ async def test_stale_worker_cannot_write_or_clear_replacement_lease(source, read
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("category,expected", [("APITimeoutError", "APITimeoutError"), ("private error category secret-token", "MemoryAnalysisError")])
-async def test_safe_agent_cause_reaches_job_and_ledger_without_private_message(source, ready, agents, monkeypatch, caplog, category, expected):
+@pytest.mark.parametrize(
+    "category,expected",
+    [
+        ("APITimeoutError", "APITimeoutError"),
+        ("private error category secret-token", "MemoryAnalysisError"),
+    ],
+)
+async def test_safe_agent_cause_reaches_job_and_ledger_without_private_message(
+    source, ready, agents, monkeypatch, caplog, category, expected
+):
     from services.meetings import analysis
 
     async def failed(*args, **kwargs):
-        raise analysis.MemoryAnalysisError("private model response secret-token", error_type=category)
+        raise analysis.MemoryAnalysisError(
+            "private model response secret-token", error_type=category
+        )
 
     monkeypatch.setattr(analysis, "analyze_memories", failed)
     scheduled = job(source)
@@ -386,7 +540,16 @@ async def test_safe_agent_cause_reaches_job_and_ledger_without_private_message(s
     report = json.loads(result["error"].split("MeetingSyncError: ", 1)[1])
     assert report["memories"]["error_type"] == expected
     record = digestion_db.get_record(ready)
-    assert record["memory_error"] == expected and record["memory_attempts"] == 1 and record["claim_owner"] is None
-    assert "private" not in result["error"] + caplog.text and "secret-token" not in result["error"] + caplog.text
+    assert (
+        record["memory_error"] == expected
+        and record["memory_attempts"] == 1
+        and record["claim_owner"] is None
+    )
+    observed = result["error"] + caplog.text
+    assert (
+        "private model response" not in observed
+        and "private error category" not in observed
+        and "secret-token" not in observed
+    )
     executions, total = list_executions_for_job(scheduled["id"])
     assert total == 1 and executions[0]["status"] == "failed"

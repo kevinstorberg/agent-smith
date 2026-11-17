@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
 import psycopg2
 from psycopg2.errors import LockNotAvailable, QueryCanceled
+from psycopg2.extensions import connection as Connection
 from psycopg2.extras import Json, RealDictCursor
 from pydantic import TypeAdapter
 
@@ -117,13 +118,23 @@ def _resolve_scope(cursor, profile_id: str | None) -> _Scope:
     return _Scope(str(owner["id"]))
 
 
+def acquire_write_lock(cursor) -> None:
+    cursor.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (_WRITE_LOCK,)
+    )
+
+
 @contextmanager
-def _cursor(profile_id: str | None, *, write: bool):
+def _cursor(profile_id: str | None, *, write: bool, conn: Connection | None = None):
+    if conn is not None and (profile_id is not None or not write):
+        raise ValueError("External transactions support only global action item writes")
     with _storage_errors(), ExitStack() as stack:
         if write and profile_id is not None:
             cursor = stack.enter_context(profile_db.profile_write_cursor())
         else:
-            connection = stack.enter_context(get_connection())
+            connection = stack.enter_context(
+                get_connection() if conn is None else nullcontext(conn)
+            )
             cursor = stack.enter_context(
                 connection.cursor(cursor_factory=RealDictCursor)
             )
@@ -132,10 +143,7 @@ def _cursor(profile_id: str | None, *, write: bool):
             cursor.execute("SET LOCAL lock_timeout = '5s'")
             cursor.execute("SET LOCAL statement_timeout = '6s'")
             if write:
-                cursor.execute(
-                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-                    (_WRITE_LOCK,),
-                )
+                acquire_write_lock(cursor)
             else:
                 cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             cursor.execute("SET LOCAL statement_timeout = '5s'")
@@ -364,9 +372,7 @@ def merge_profile_queue(cursor, source_id: str, target_id: str) -> None:
     if source == target:
         raise ValueError("Select two different discussion profiles to merge")
     try:
-        cursor.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (_WRITE_LOCK,)
-        )
+        acquire_write_lock(cursor)
         offset = _append_position(cursor, target) - 1
         cursor.execute(
             """UPDATE action_items SET profile_id=%s,sort_key=sort_key+%s,
@@ -403,7 +409,7 @@ class Queue:
         }:
             raise ValueError("Profile discussion topics do not support deadline fields")
 
-    def create(self, payload: Create | dict) -> dict:
+    def create(self, payload: Create | dict, *, conn: Connection | None = None) -> dict:
         request = Create.model_validate(payload)
         self._validate_scope_fields(request)
         original = request.model_dump(exclude={"request_id"})
@@ -411,7 +417,7 @@ class Queue:
         deadline = original.pop("due_at")
         if deadline is not None:
             original["due_at"] = deadline.isoformat()
-        with _cursor(self.profile_id, write=True) as (cursor, scope):
+        with _cursor(self.profile_id, write=True, conn=conn) as (cursor, scope):
             if request.request_id is not None:
                 cursor.execute(
                     "SELECT id,create_payload,deleted_at FROM action_items WHERE request_id=%s AND scope_key=%s",
@@ -518,11 +524,13 @@ class Queue:
                 result["profile_id"] = scope.profile_id
             return result
 
-    def update(self, item_id: int, payload: Patch | dict) -> dict:
+    def update(
+        self, item_id: int, payload: Patch | dict, *, conn: Connection | None = None
+    ) -> dict:
         item_id, patch = _id(item_id), Patch.model_validate(payload)
         self._validate_scope_fields(patch)
         changes = patch.model_dump(exclude_unset=True, exclude={"expected_revision"})
-        with _cursor(self.profile_id, write=True) as (cursor, scope):
+        with _cursor(self.profile_id, write=True, conn=conn) as (cursor, scope):
             before = _live(cursor, item_id, scope, patch.expected_revision)
             if "project" in changes:
                 changes["project"] = _project_name(cursor, changes["project"])
@@ -611,8 +619,8 @@ def profile_queue(profile_id: str) -> Queue:
     return Queue(profile_id)
 
 
-def create(payload: Create | dict) -> dict:
-    return Queue(None).create(payload)
+def create(payload: Create | dict, *, conn: Connection | None = None) -> dict:
+    return Queue(None).create(payload, conn=conn)
 
 
 def get(item_id: int) -> dict:
@@ -623,8 +631,10 @@ def list_items(payload: Query | dict | None = None) -> dict:
     return Queue(None).list_items(payload)
 
 
-def update(item_id: int, payload: Patch | dict) -> dict:
-    return Queue(None).update(item_id, payload)
+def update(
+    item_id: int, payload: Patch | dict, *, conn: Connection | None = None
+) -> dict:
+    return Queue(None).update(item_id, payload, conn=conn)
 
 
 def delete(item_id: int, payload: Delete | dict) -> dict:
