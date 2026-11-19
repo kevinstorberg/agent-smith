@@ -1,16 +1,4 @@
-"""Stage, persist, promote, and reject improvement proposals.
-
-This module is the single boundary between proposal producers (the improve
-graph) and consumers (the proposals API router). Proposed content is stored
-as a state='proposed' row in the real target table — harness rows
-additionally unversioned (version IS NULL) so they are invisible to every
-latest-version query — and approval PROMOTES that row in place instead of
-copying content.
-
-The LLM agent is a trust boundary: every proposal passes ``stage_proposal``
-before anything is written, and ``promote_proposal`` re-validates the target
-inside the promoting transaction.
-"""
+"""Decide proposals atomically while keeping unapproved drafts out of live queues."""
 
 from __future__ import annotations
 
@@ -38,6 +26,12 @@ from services.db import get_connection
 from services.jobs.models.job import get_job, get_job_by_name
 from services.jobs.schedule import parse_interval
 from services.jobs.service import validate_input_params
+from services.proposals import action_items as action_item_proposals
+from services.proposals.errors import (
+    DuplicateProposalError,
+    ProposalConflictError,
+    ProposalNotFoundError,
+)
 
 HARNESS_KINDS = ("rule", "skill", "hook")
 VALID_KINDS = (*HARNESS_KINDS, "job")
@@ -49,21 +43,9 @@ RATIONALE_MAX = 2000
 BODY_MAX = 20000
 
 
-class DuplicateProposalError(ValueError):
-    """The same change is already pending or was recently rejected."""
-
-
-class ProposalConflictError(RuntimeError):
-    """The target moved (deleted, renamed, or re-versioned) since the proposal was filed."""
-
-
-class ProposalNotFoundError(LookupError):
-    pass
-
-
 @contextmanager
 def _decision(
-    proposal_id: int, *, pending_only: bool = True
+    proposal_id: int, *, pending_only: bool = True, replay_status: str | None = None
 ) -> Iterator[tuple[RealDictCursor, dict]]:
     if type(proposal_id) is not int or proposal_id <= 0:
         raise ValueError("Proposal id must be a positive integer")
@@ -83,6 +65,11 @@ def _decision(
             if kind in HARNESS_KINDS:
                 # Matching the Harness lock order prevents decision/write deadlocks.
                 stack.enter_context(harness_write(kind, conn=conn))
+            elif kind == "action_item":
+                from services.action_items.db import acquire_write_lock
+
+                cur.execute("SET LOCAL TIME ZONE 'UTC'")
+                acquire_write_lock(cur)
             cur.execute(
                 "SELECT * FROM improvement_proposals WHERE id=%s FOR UPDATE",
                 (proposal_id,),
@@ -94,7 +81,8 @@ def _decision(
                 raise ProposalConflictError(
                     "Proposal identity changed. Refresh before deciding again."
                 )
-            if pending_only and proposal["status"] != "pending":
+            replay = kind == "action_item" and proposal["status"] == replay_status
+            if pending_only and proposal["status"] != "pending" and not replay:
                 raise ProposalConflictError(
                     f"Proposal {proposal_id} is {proposal['status']}, not pending"
                 )
@@ -516,38 +504,41 @@ def _promote_job(cur, proposal: dict) -> dict:
 
 
 def promote_proposal(proposal_id: int) -> dict:
-    """Approve: promote the proposed row in place and mark the proposal applied.
-
-    Re-validates the target inside the transaction; raises ProposalConflictError
-    when the target moved (the proposal stays pending for the user to decide).
-    Returns the updated proposal record.
-    """
-    with _decision(proposal_id) as (cur, proposal):
-        applied_ref = (
-            _promote_job(cur, proposal)
-            if proposal["target_kind"] == "job"
-            else _promote_harness(cur, proposal)
-        )
+    """Apply reviewed content and approval atomically; stale targets remain pending."""
+    with _decision(proposal_id, replay_status="approved") as (cur, proposal):
+        if proposal["status"] == "approved":
+            return ProposalModel.serialize_timestamps(proposal)
+        if proposal["target_kind"] == "action_item":
+            applied_ref = action_item_proposals.promote(cur, proposal)
+        elif proposal["target_kind"] == "job":
+            applied_ref = _promote_job(cur, proposal)
+        else:
+            applied_ref = _promote_harness(cur, proposal)
         assert applied_ref, "promotion produced no applied_ref"
         return _record_decision(cur, proposal_id, "approved", applied_ref)
 
 
 def reject_proposal(proposal_id: int) -> dict:
-    """Reject: keep both rows for audit/dedup, flip their states."""
-    with _decision(proposal_id) as (cur, proposal):
-        table = (
-            "background_jobs"
-            if proposal["target_kind"] == "job"
-            else VALID_TABLES[proposal["target_kind"]]
-        )
-        cur.execute(
-            f"UPDATE {table} SET state='rejected', updated_at=clock_timestamp() WHERE id=%s AND state='proposed' RETURNING id",
-            (proposal["proposed_item_id"],),
-        )
-        if cur.fetchone() is None:
-            raise ProposalConflictError(
-                "Proposed content changed or is no longer available. Refresh before deciding again."
+    """Record a rejection without changing live tasks."""
+    with _decision(proposal_id, replay_status="rejected") as (cur, proposal):
+        if proposal["status"] == "rejected":
+            return ProposalModel.serialize_timestamps(proposal)
+        if proposal["target_kind"] == "action_item":
+            action_item_proposals.reserve_dismissal(cur, proposal)
+        else:
+            table = (
+                "background_jobs"
+                if proposal["target_kind"] == "job"
+                else VALID_TABLES[proposal["target_kind"]]
             )
+            cur.execute(
+                f"UPDATE {table} SET state='rejected', updated_at=clock_timestamp() WHERE id=%s AND state='proposed' RETURNING id",
+                (proposal["proposed_item_id"],),
+            )
+            if cur.fetchone() is None:
+                raise ProposalConflictError(
+                    "Proposed content changed or is no longer available. Refresh before deciding again."
+                )
         return _record_decision(cur, proposal_id, "rejected")
 
 
@@ -555,15 +546,21 @@ def delete_proposal(proposal_id: int) -> None:
     """Delete the master row and its proposed row — unless that row was
     promoted, in which case it is live content and must survive."""
     with _decision(proposal_id, pending_only=False) as (cur, proposal):
-        table = (
-            "background_jobs"
-            if proposal["target_kind"] == "job"
-            else VALID_TABLES[proposal["target_kind"]]
-        )
-        cur.execute(
-            f"DELETE FROM {table} WHERE id=%s AND state!='active'",
-            (proposal["proposed_item_id"],),
-        )
+        if proposal["target_kind"] == "action_item":
+            if proposal["status"] != "approved":
+                action_item_proposals.reserve_dismissal(
+                    cur, proposal, allow_existing=True
+                )
+        else:
+            table = (
+                "background_jobs"
+                if proposal["target_kind"] == "job"
+                else VALID_TABLES[proposal["target_kind"]]
+            )
+            cur.execute(
+                f"DELETE FROM {table} WHERE id=%s AND state!='active'",
+                (proposal["proposed_item_id"],),
+            )
         cur.execute("DELETE FROM improvement_proposals WHERE id=%s", (proposal_id,))
         if cur.rowcount != 1:
             raise RuntimeError("Locked proposal disappeared during deletion")
@@ -571,6 +568,8 @@ def delete_proposal(proposal_id: int) -> None:
 
 def proposed_item(proposal: dict) -> dict | None:
     """The proposed row backing a proposal (content for the diff UI)."""
+    if proposal["target_kind"] == "action_item":
+        return action_item_proposals.proposed_item(proposal)
     if proposal["target_kind"] == "job":
         return get_job(proposal["proposed_item_id"])
     return get_item_by_id(proposal["target_kind"], proposal["proposed_item_id"])
@@ -578,6 +577,8 @@ def proposed_item(proposal: dict) -> dict | None:
 
 def current_target(proposal: dict) -> dict | None:
     """The latest active version of the proposal's target, or None if deleted."""
+    if proposal["target_kind"] == "action_item":
+        return action_item_proposals.current_target(proposal)
     if proposal["target_kind"] == "job":
         return get_job_by_name(proposal["target_name"])
     with get_connection() as conn:

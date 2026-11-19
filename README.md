@@ -571,6 +571,32 @@ The memory agent prioritizes important information, material decisions, risks, b
 explicit action items. A commitment includes the task, owner, due phrase and dependencies
 when supported by the summary; missing owners or deadlines are never invented.
 
+The `propose_action_items` node also compares new meeting summaries with saved Action Items,
+including completed tasks, and previous proposals. Open **Review proposals** from Action Items
+or a meeting to review **New** and **Update** suggestions, their meeting quotations, and the
+before/after values. **Approve** applies the reviewed change; **Reject** leaves tasks unchanged.
+Suggestions stay outside the task queue until approval. No owner setup is required.
+
+This analysis has its own progress and retries, independent of transcript capture or successful
+memory generation. Only meetings first imported after the migration qualify automatically;
+historical meetings require **Generate proposals** on their Overview tab. A running Meetings
+graph job must cover that connection. Summary changes refresh analysis only for already-enrolled
+meetings. Unchanged imports do not repeat model calls, and `digest=false` skips proposal analysis.
+
+Approval checks the saved source and task revisions, including changes made while a proposal
+waited for review. Changed or deleted inputs require a fresh proposal; task reprioritization
+also changes its revision. Rejected changes stay dismissed across meetings and retries.
+Deleting an approved proposal's history preserves the task. Ambiguous task matches are omitted
+with a reason, and unclear deadline wording is retained without inventing a timestamp.
+
+Each stage attempt has a 150-second budget and at most three failed attempts, with delays starting
+at 60 seconds and increasing fivefold with 20% jitter; terminal failures can be retried from the
+meeting. Saved candidates and publication checkpoints survive continuation or process restart.
+Matching requires the complete inventory: more than 200 tasks, 200 prior proposals, 60,000 summary
+characters, or 120,000 total context characters produces a visible capacity error instead of
+silently searching partial data. `MEETING_ACTION_ITEMS_MODEL_*` settings select the model using
+the existing graph model configuration; its default preset is Kimi K3.
+
 Meetings have their own purpose and subject labels, such as `product`, `security`, `paralign`,
 `roadmapping`, `growth` and `operations`. New memory extraction proposes these labels in its
 existing agent call. On a saved meeting, edit labels directly or use **Suggest labels** to

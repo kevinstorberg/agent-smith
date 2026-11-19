@@ -16,7 +16,9 @@ from services.api.models.shared.listing import sort_pattern
 
 router = APIRouter()
 router.include_router(profiles_router, prefix="/profiles", include_in_schema=False)
-router.include_router(vocabulary_router, prefix="/vocabulary", tags=["meeting vocabulary"])
+router.include_router(
+    vocabulary_router, prefix="/vocabulary", tags=["meeting vocabulary"]
+)
 
 
 class MeetingParticipantRequest(BaseModel):
@@ -47,6 +49,11 @@ class MeetingLabelSuggestionRequest(BaseModel):
     expected_revision: int = Field(ge=0, strict=True)
 
 
+class ActionItemProposalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(gt=0, strict=True)
+
+
 def _label_change(action, *args):
     try:
         return action(*args)
@@ -63,7 +70,10 @@ def _meeting_change(action, *args):
         return action(*args)
     except management_db.MeetingNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from None
-    except (management_db.MeetingManagementConflict, profile_db.ProfileRevisionConflict) as error:
+    except (
+        management_db.MeetingManagementConflict,
+        profile_db.ProfileRevisionConflict,
+    ) as error:
         raise HTTPException(status_code=409, detail=str(error)) from None
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
@@ -83,9 +93,15 @@ def list_all(
 ):
     try:
         return db.list_summaries(
-            source=empty_to_none(source), project=empty_to_none(project), query=empty_to_none(q),
-            after=empty_to_none(after), before=empty_to_none(before), limit=limit, offset=offset,
-            labels=labels or None, sort=sort,
+            source=empty_to_none(source),
+            project=empty_to_none(project),
+            query=empty_to_none(q),
+            after=empty_to_none(after),
+            before=empty_to_none(before),
+            limit=limit,
+            offset=offset,
+            labels=labels or None,
+            sort=sort,
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
@@ -94,7 +110,9 @@ def list_all(
 @router.get("/status")
 def status(source: str = Query("", max_length=100)):
     if source and not source.strip():
-        raise HTTPException(status_code=422, detail="Meeting source filter must be nonblank")
+        raise HTTPException(
+            status_code=422, detail="Meeting source filter must be nonblank"
+        )
     return db.source_status(empty_to_none(source))
 
 
@@ -106,39 +124,81 @@ def get_one(summary_id: UUID):
 
 @router.patch("/{summary_id}/labels")
 def update_labels(summary_id: UUID, body: MeetingLabelsRequest):
-    return _label_change(labels_db.update, str(summary_id), body.expected_revision, body.labels, body.expected_meeting_revision)
+    return _label_change(
+        labels_db.update,
+        str(summary_id),
+        body.expected_revision,
+        body.labels,
+        body.expected_meeting_revision,
+    )
 
 
 @router.post("/{summary_id}/labels/suggest")
 async def suggest_labels(summary_id: UUID, body: MeetingLabelSuggestionRequest):
     from services.meetings.analysis import AnalysisBudgetExpired
-    from services.meetings.label_analysis import LabelAnalysisError, SUGGEST_SECONDS, suggest_labels as suggest
+    from services.meetings.label_analysis import (
+        LabelAnalysisError,
+        SUGGEST_SECONDS,
+        suggest_labels as suggest,
+    )
     from services.meetings.service import run_db
 
     key = str(summary_id)
     attempt = asyncio.timeout(SUGGEST_SECONDS)
     try:
         async with attempt:
-            original = await run_db(_label_change, labels_db.snapshot, key, body.expected_revision)
+            original = await run_db(
+                _label_change, labels_db.snapshot, key, body.expected_revision
+            )
             result = await suggest(original, deadline=attempt.when())
-            latest = await run_db(_label_change, labels_db.snapshot, key, body.expected_revision)
+            latest = await run_db(
+                _label_change, labels_db.snapshot, key, body.expected_revision
+            )
             if latest["revision"] != original["revision"]:
-                raise HTTPException(status_code=409, detail="Meeting summary changed; generate a new suggestion")
+                raise HTTPException(
+                    status_code=409,
+                    detail="Meeting summary changed; generate a new suggestion",
+                )
     except AnalysisBudgetExpired:
-        raise HTTPException(status_code=504, detail="Label suggestions timed out; saved labels are unchanged") from None
+        raise HTTPException(
+            status_code=504,
+            detail="Label suggestions timed out; saved labels are unchanged",
+        ) from None
     except TimeoutError:
         if not attempt.expired():
             raise
-        raise HTTPException(status_code=504, detail="Label suggestions timed out; saved labels are unchanged") from None
+        raise HTTPException(
+            status_code=504,
+            detail="Label suggestions timed out; saved labels are unchanged",
+        ) from None
     except LabelAnalysisError as error:
-        raise HTTPException(status_code=502, detail=f"Label suggestions failed ({error.error_type}); saved labels are unchanged") from None
-    return {"labels": result["labels"], "labels_revision": original["labels_revision"], "meeting_revision": original["revision"]}
+        raise HTTPException(
+            status_code=502,
+            detail=f"Label suggestions failed ({error.error_type}); saved labels are unchanged",
+        ) from None
+    return {
+        "labels": result["labels"],
+        "labels_revision": original["labels_revision"],
+        "meeting_revision": original["revision"],
+    }
 
 
 @router.get("/{summary_id}/processing")
 def get_processing(summary_id: UUID):
     key = str(summary_id)
     return require_found(processing_db.get_processing(key), "Meeting", key)
+
+
+@router.post("/{summary_id}/action-item-proposals", status_code=202)
+def propose_action_items(summary_id: UUID, body: ActionItemProposalRequest):
+    from services.meetings import action_item_db
+
+    try:
+        return _meeting_change(
+            action_item_db.request, str(summary_id), body.expected_revision
+        )
+    except action_item_db.NoWorkerError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from None
 
 
 @router.get("/{summary_id}/participants")
@@ -149,13 +209,25 @@ def get_participants(summary_id: UUID):
 
 @router.put("/{summary_id}/participants")
 def update_participants(summary_id: UUID, body: MeetingParticipantsRequest):
-    entries = [person.model_dump(mode="json", exclude_none=True) for person in body.participants]
-    return _meeting_change(management_db.update_participants, str(summary_id), body.expected_revision, entries, body.expected_transcript_hash)
+    entries = [
+        person.model_dump(mode="json", exclude_none=True)
+        for person in body.participants
+    ]
+    return _meeting_change(
+        management_db.update_participants,
+        str(summary_id),
+        body.expected_revision,
+        entries,
+        body.expected_transcript_hash,
+    )
 
 
 @router.post("/{summary_id}/identify-participants")
 def identify_participants(summary_id: UUID):
-    raise HTTPException(status_code=410, detail="Automatic participant identification has been removed. Assign transcript statements manually.")
+    raise HTTPException(
+        status_code=410,
+        detail="Automatic participant identification has been removed. Assign transcript statements manually.",
+    )
 
 
 @router.post("/{summary_id}/process")
@@ -170,7 +242,11 @@ def get_transcript(
     offset: int = Query(0, ge=0),
 ):
     key = str(summary_id)
-    return require_found(digestion_db.get_transcript(key, limit=limit, offset=offset), "Meeting summary", key)
+    return require_found(
+        digestion_db.get_transcript(key, limit=limit, offset=offset),
+        "Meeting summary",
+        key,
+    )
 
 
 @router.delete("/{summary_id}/transcript")

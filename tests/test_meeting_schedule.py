@@ -19,21 +19,38 @@ from services.jobs.scoping import job_runs_on_device
 from services.meetings import db, digestion_db, factory
 from services.meetings.config import load_source_config
 from services.meetings.schedule import configure_schedule
-from services.meetings.types import MeetingSummary, NotePage, NoteReference, TranscriptPage, TranscriptSegment
+from services.meetings.types import (
+    MeetingSummary,
+    NotePage,
+    NoteReference,
+    TranscriptPage,
+    TranscriptSegment,
+)
 from tests.conftest import clean_meeting_rows
 
 
 @pytest.fixture
-def source(monkeypatch):
+def source(monkeypatch, empty_action_item_analysis):
     name, account = "schedule-" + uuid4().hex, "account-" + uuid4().hex
-    monkeypatch.setenv("MEETING_SOURCES_JSON", json.dumps({name: {
-        "provider": "test", "account_key": account, "api_key_env": "MEETING_SCHEDULE_TEST_KEY",
-    }}))
+    monkeypatch.setenv(
+        "MEETING_SOURCES_JSON",
+        json.dumps(
+            {
+                name: {
+                    "provider": "test",
+                    "account_key": account,
+                    "api_key_env": "MEETING_SCHEDULE_TEST_KEY",
+                }
+            }
+        ),
+    )
     monkeypatch.setenv("MEETING_SCHEDULE_TEST_KEY", "not-a-real-credential")
     config = load_source_config(name)
     yield config
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("DELETE FROM background_jobs WHERE name = %s", ("Meetings: " + name,))
+        cur.execute(
+            "DELETE FROM background_jobs WHERE name = %s", ("Meetings: " + name,)
+        )
     clean_meeting_rows(account)
 
 
@@ -43,7 +60,11 @@ def test_schedule_is_idempotent_and_explicitly_scoped_to_one_device(source):
     job = get_job(job_id)
     assert job["name"] == "Meetings: " + source.name
     assert job["schedule_config"] == {"minutes": 15}
-    assert job["input_params"] == {"graph_type": "meeting_ingest", "graph_inputs": {"source": source.name}, "timeout": 600}
+    assert job["input_params"] == {
+        "graph_type": "meeting_ingest",
+        "graph_inputs": {"source": source.name},
+        "timeout": 600,
+    }
     configs = list_configs(job_id)
     assert len(configs) == 1
     assert configs[0]["device"] == "meeting-device"
@@ -85,7 +106,17 @@ def test_schedule_rejects_unknown_source_before_writing(source):
     assert get_job_by_name("Meetings: unknown-meeting-source") is None
 
 
-@pytest.mark.parametrize("params", [{"command": "echo unrelated"}, {"graph_type": "meeting_ingest", "graph_inputs": {"source": "another-source"}, "timeout": 300}])
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"command": "echo unrelated"},
+        {
+            "graph_type": "meeting_ingest",
+            "graph_inputs": {"source": "another-source"},
+            "timeout": 300,
+        },
+    ],
+)
 def test_schedule_does_not_overwrite_unrelated_job_with_same_name(source, params):
     job_id = create_job("Meetings: " + source.name, {"hours": 1}, params)
     with pytest.raises(ValueError):
@@ -119,9 +150,19 @@ def test_concurrent_configuration_creates_one_job_and_one_device_scope(source):
 
 
 @pytest.mark.asyncio
-async def test_fifteen_minute_schedule_fires_twice_and_restart_uses_actual_history(source, monkeypatch, unidentified_speakers):
+async def test_fifteen_minute_schedule_fires_twice_and_restart_uses_actual_history(
+    source, monkeypatch, unidentified_speakers
+):
     stamp = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    summary = MeetingSummary("scheduled-note", "A scheduled meeting", "A durable decision", None, "https://example.test/note", stamp, stamp)
+    summary = MeetingSummary(
+        "scheduled-note",
+        "A scheduled meeting",
+        "A durable decision",
+        None,
+        "https://example.test/note",
+        stamp,
+        stamp,
+    )
     providers = []
 
     class Provider:
@@ -191,7 +232,9 @@ async def test_fifteen_minute_schedule_fires_twice_and_restart_uses_actual_histo
 
 
 @pytest.mark.asyncio
-async def test_scheduler_shutdown_interrupts_meeting_graph_and_releases_source_claim(source, monkeypatch):
+async def test_scheduler_shutdown_interrupts_meeting_graph_and_releases_source_claim(
+    source, monkeypatch
+):
     entered = asyncio.Event()
     providers = []
 

@@ -1,22 +1,39 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, fireEvent, waitFor, act } from '@testing-library/react';
+import {
+  screen,
+  fireEvent,
+  waitFor,
+  act,
+  within,
+} from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { POLL_INTERVAL_MS } from '../../constants';
 import { ProposalDetailPage } from '../ProposalDetailPage';
+import { actionItemProposal } from './actionItemProposalFixture';
 
 const mockNavigate = vi.fn();
 const mockNotify = vi.fn();
 
 vi.mock('react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router')>();
-  return { ...actual, useNavigate: () => mockNavigate, useParams: () => ({ id: '1' }) };
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+    useParams: () => ({ id: '1' }),
+  };
 });
 
 vi.mock('../../context/useNotification', async () => {
-  const actual = await vi.importActual<typeof import('../../context/useNotification')>('../../context/useNotification');
+  const actual = await vi.importActual<
+    typeof import('../../context/useNotification')
+  >('../../context/useNotification');
   return {
     ...actual,
-    useNotification: () => ({ notify: mockNotify, notifications: [], dismiss: vi.fn() }),
+    useNotification: () => ({
+      notify: mockNotify,
+      notifications: [],
+      dismiss: vi.fn(),
+    }),
   };
 });
 
@@ -57,7 +74,10 @@ const ruleUpdateProposal = {
   created_at: '2026-06-01T10:00:00Z',
   updated_at: '2026-06-01T10:00:00Z',
   proposed_item: { content: { body: '## DRY rule, clarified', metadata: {} } },
-  current_target: { content: { body: '## DRY rule', metadata: {} }, version: 3 },
+  current_target: {
+    content: { body: '## DRY rule', metadata: {} },
+    version: 3,
+  },
 };
 
 beforeEach(() => {
@@ -72,17 +92,130 @@ afterEach(() => {
 });
 
 describe('ProposalDetailPage', () => {
+  it('shows a meeting-backed action item update as reviewed field changes', async () => {
+    mockGet.mockResolvedValue(actionItemProposal());
+    renderWithProviders(<ProposalDetailPage />);
+
+    const changes = await screen.findByRole('region', {
+      name: 'Proposed action item changes',
+    });
+    expect(
+      within(changes).getByRole('rowheader', { name: 'Deadline' }),
+    ).toBeInTheDocument();
+    expect(
+      within(changes).queryByRole('rowheader', { name: 'Description' }),
+    ).not.toBeInTheDocument();
+    expect(within(changes).getByText(/November 18, 2026/)).toBeInTheDocument();
+    expect(within(changes).getByText(/November 20, 2026/)).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Release planning' }),
+    ).toHaveAttribute('href', '/meetings/meeting-123');
+    expect(
+      screen.getByText(
+        'Move the release report deadline to Friday at 5 PM UTC.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeEnabled();
+  });
+
+  it('renders a new action item and links to its saved result after approval', async () => {
+    const proposal = actionItemProposal({
+      action: 'create',
+      target_id: null,
+      base_version: null,
+      before_snapshot: null,
+      current_target: null,
+    });
+    mockGet.mockResolvedValue(proposal);
+    mockApprove.mockResolvedValue({
+      ...proposal,
+      status: 'approved',
+      applied_ref: { action_item_id: 35 },
+    });
+    renderWithProviders(<ProposalDetailPage />);
+
+    const content = await screen.findByRole('region', {
+      name: 'Proposed action item',
+    });
+    expect(
+      within(content).getByRole('rowheader', { name: 'Title' }),
+    ).toBeInTheDocument();
+    expect(
+      within(content).getByText('Send the release report'),
+    ).toBeInTheDocument();
+    expect(
+      within(content).queryByRole('columnheader', { name: 'Before' }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(
+      await screen.findByRole('link', { name: 'Open saved action item' }),
+    ).toHaveAttribute('href', '/action-items/35');
+  });
+
+  it('keeps the reviewed snapshot when the live action item changed', async () => {
+    const proposal = actionItemProposal();
+    mockGet.mockResolvedValue({
+      ...proposal,
+      current_target: {
+        ...proposal.current_target,
+        revision: 4,
+        due_at: '2026-12-01T17:00:00Z',
+      },
+    });
+    renderWithProviders(<ProposalDetailPage />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'This action item changed',
+    );
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    const changes = screen.getByRole('region', {
+      name: 'Proposed action item changes',
+    });
+    expect(within(changes).getByText(/November 18, 2026/)).toBeInTheDocument();
+    expect(
+      within(changes).queryByText(/December 1, 2026/),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByText('Current saved action item', { selector: 'summary' }),
+    );
+    expect(
+      within(
+        screen.getByRole('region', { name: 'Current saved action item' }),
+      ).getByText(/December 1, 2026/),
+    ).toBeInTheDocument();
+    expect(mockApprove).not.toHaveBeenCalled();
+  });
+
+  it.each([{ source_stale: true }, { source_available: false }])(
+    'blocks approval after meeting source drift: %j',
+    async (flags) => {
+      mockGet.mockResolvedValue(actionItemProposal(flags));
+      renderWithProviders(<ProposalDetailPage />);
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'The source meeting changed or is unavailable.',
+      );
+      expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled();
+    },
+  );
+
   it('renders rationale, evidence links, and a highlighted unified diff for updates', async () => {
     renderWithProviders(<ProposalDetailPage />);
 
     expect(await screen.findByText('Clarify the DRY rule')).toBeInTheDocument();
     expect(screen.getByText(/step 1 is misread/)).toBeInTheDocument();
-    expect(screen.getByText('plan 12').closest('a')).toHaveAttribute('href', '/plans/12');
+    expect(screen.getByText('plan 12').closest('a')).toHaveAttribute(
+      'href',
+      '/plans/12',
+    );
     expect(screen.getByText('memory abc')).toBeInTheDocument();
 
     const removed = screen.getByText('## DRY rule').closest('[data-diff]');
     expect(removed).toHaveAttribute('data-diff', 'remove');
-    const added = screen.getByText('## DRY rule, clarified').closest('[data-diff]');
+    const added = screen
+      .getByText('## DRY rule, clarified')
+      .closest('[data-diff]');
     expect(added).toHaveAttribute('data-diff', 'add');
   });
 
@@ -114,7 +247,11 @@ describe('ProposalDetailPage', () => {
   it('does not poll while a review action is busy', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     let resolveApprove: (value: unknown) => void = () => undefined;
-    mockApprove.mockReturnValue(new Promise(resolve => { resolveApprove = resolve; }));
+    mockApprove.mockReturnValue(
+      new Promise((resolve) => {
+        resolveApprove = resolve;
+      }),
+    );
     renderWithProviders(<ProposalDetailPage />);
 
     fireEvent.click(await screen.findByText('Approve'));
@@ -142,13 +279,18 @@ describe('ProposalDetailPage', () => {
   });
 
   it('surfaces approve conflicts and reloads', async () => {
-    mockApprove.mockRejectedValue(new Error('rule changed (v3 -> v4) after this proposal was filed'));
+    mockApprove.mockRejectedValue(
+      new Error('rule changed (v3 -> v4) after this proposal was filed'),
+    );
     renderWithProviders(<ProposalDetailPage />);
 
     fireEvent.click(await screen.findByText('Approve'));
 
     await waitFor(() =>
-      expect(mockNotify).toHaveBeenCalledWith(expect.stringMatching(/approve failed: rule changed/), 'error'),
+      expect(mockNotify).toHaveBeenCalledWith(
+        expect.stringMatching(/approve failed: rule changed/),
+        'error',
+      ),
     );
     expect(mockGet).toHaveBeenCalledTimes(2);
   });

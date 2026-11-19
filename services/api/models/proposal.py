@@ -1,8 +1,8 @@
 """Improvement proposal master records.
 
-A proposal row holds reasoning and review state only; the proposed content
-itself lives as a state='proposed' row in the target table (harness_* or
-background_jobs) referenced by ``proposed_item_id``.
+A proposal row holds reasoning and review state. Harness and job content lives
+in a proposed target row; Action Item drafts use separate proposal payloads so
+they never appear in live task queues before approval.
 """
 
 from __future__ import annotations

@@ -1,4 +1,5 @@
 """Import all configured meeting connections, or one optional named source."""
+
 from __future__ import annotations
 
 import asyncio
@@ -7,7 +8,11 @@ from typing import NotRequired, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from services.meetings.enrichment import DigestionRun, GRAPH_WORK_SECONDS, IMPORT_SECONDS
+from services.meetings.enrichment import (
+    DigestionRun,
+    GRAPH_WORK_SECONDS,
+    IMPORT_SECONDS,
+)
 from services.meetings.processing import graph_outcome
 
 INPUT_SCHEMA = {"source": "string?", "digest": "boolean?"}
@@ -15,7 +20,9 @@ INPUT_SCHEMA = {"source": "string?", "digest": "boolean?"}
 
 def validate_input_values(inputs: dict) -> None:
     if "meeting_id" in inputs:
-        raise ValueError("meeting_ingest no longer supports meeting_id: automatic participant identification was removed")
+        raise ValueError(
+            "meeting_ingest no longer supports meeting_id: automatic participant identification was removed"
+        )
 
 
 class State(TypedDict):
@@ -29,8 +36,16 @@ async def _sync_summaries(state: State) -> dict:
     from services.meetings.service import sync_sources
 
     if await state["digestion"].prepare_manual():
-        return {"result": {"outcome": "completed", "summary_outcome": "skipped", "transcript": state["digestion"].transcript_report}}
-    result = await sync_sources(state.get("source"), run_budget_seconds=IMPORT_SECONDS, raise_on_failure=False)
+        return {
+            "result": {
+                "outcome": "completed",
+                "summary_outcome": "skipped",
+                "transcript": state["digestion"].transcript_report,
+            }
+        }
+    result = await sync_sources(
+        state.get("source"), run_budget_seconds=IMPORT_SECONDS, raise_on_failure=False
+    )
     result["summary_outcome"] = result["outcome"]
     await state["digestion"].prepare()
     result["transcript"] = state["digestion"].transcript_report
@@ -43,7 +58,24 @@ async def _generate_memories(state: State) -> dict:
 
 
 def _next_stage(state: State) -> str:
-    return "generate_memories" if state["digestion"].has_memory_work() else END
+    return (
+        "generate_memories"
+        if state["digestion"].has_memory_work()
+        else "propose_action_items"
+    )
+
+
+async def _propose_action_items(state: State) -> dict:
+    from services.meetings.action_item_run import ActionItemRun
+
+    if not state.get("digest", True):
+        return {"result": {**state["result"], "action_items": {"outcome": "disabled"}}}
+    async with ActionItemRun(
+        state.get("source"), deadline=state["digestion"].deadline
+    ) as run:
+        await run.prepare()
+        await run.generate_proposals()
+        return {"result": {**state["result"], "action_items": run.report}}
 
 
 class MeetingGraph:
@@ -59,14 +91,24 @@ class MeetingGraph:
         validate_input_values(inputs)
         state = {}
         try:
-            async with DigestionRun(inputs.get("source"), digest=inputs.get("digest", True)) as run:
+            async with DigestionRun(
+                inputs.get("source"), digest=inputs.get("digest", True)
+            ) as run:
                 async with asyncio.timeout(GRAPH_WORK_SECONDS):
                     state = await self.graph.ainvoke({**inputs, "digestion": run})
         except asyncio.CancelledError:
             raise
         except Exception as error:
-            raise MeetingSyncError(json.dumps({"outcome": "failed", "error_type": type(error).__name__})) from None
-        result = graph_outcome(state["result"], [state["result"].get(key, {}) for key in ("transcript", "memories")])
+            raise MeetingSyncError(
+                json.dumps({"outcome": "failed", "error_type": type(error).__name__})
+            ) from None
+        result = graph_outcome(
+            state["result"],
+            [
+                state["result"].get(key, {})
+                for key in ("transcript", "memories", "action_items")
+            ],
+        )
         state["result"] = result
         if result.get("outcome") == "failed":
             raise MeetingSyncError(json.dumps(result, sort_keys=True)) from None
@@ -77,7 +119,9 @@ def build_graph():
     graph = StateGraph(State)
     graph.add_node("sync_summaries", _sync_summaries)
     graph.add_node("generate_memories", _generate_memories)
+    graph.add_node("propose_action_items", _propose_action_items)
     graph.add_edge(START, "sync_summaries")
     graph.add_conditional_edges("sync_summaries", _next_stage)
-    graph.add_edge("generate_memories", END)
+    graph.add_edge("generate_memories", "propose_action_items")
+    graph.add_edge("propose_action_items", END)
     return MeetingGraph(graph.compile())

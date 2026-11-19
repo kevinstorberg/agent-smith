@@ -333,6 +333,10 @@ def _save_summary(
         ),
     )
     status = "created" if old is None else "updated" if changed else "unchanged"
+    if changed and available:
+        from services.meetings.action_item_db import enroll as enroll_action_items
+
+        enroll_action_items(cur, summary_id, revision, content_hash, create=old is None)
     if status == "created":
         from services.meetings.digestion_db import enroll
 

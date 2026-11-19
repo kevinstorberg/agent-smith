@@ -3,6 +3,7 @@ import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { POLL_INTERVAL_MS } from '../../constants';
 import { ProposalsIndexPage } from '../ProposalsIndexPage';
+import { actionItemProposal } from './actionItemProposalFixture';
 
 const mockNavigate = vi.fn();
 
@@ -77,13 +78,11 @@ const fakeProposals = [
   },
 ];
 
-beforeEach(() => {
-  document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
-  vi.clearAllMocks();
-  mockUsePagination.mockReturnValue({
-    items: fakeProposals,
+function paginationState(items = fakeProposals) {
+  return {
+    items,
     setItems: mockSetItems,
-    total: 2,
+    total: items.length,
     loading: false,
     initialLoading: false,
     dataCurrent: true,
@@ -92,7 +91,13 @@ beforeEach(() => {
     setLimit: mockSetLimit,
     setOffset: mockSetOffset,
     refresh: mockRefresh,
-  });
+  };
+}
+
+beforeEach(() => {
+  document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
+  vi.clearAllMocks();
+  mockUsePagination.mockReturnValue(paginationState());
   mockCounts.mockResolvedValue({ pending: 2, approved: 1, rejected: 0 });
   mockGenerate.mockResolvedValue({ started: true, job_id: 7 });
   mockApprove.mockResolvedValue({ id: 1, status: 'approved' });
@@ -100,6 +105,29 @@ beforeEach(() => {
 });
 
 describe('ProposalsIndexPage', () => {
+  it('identifies new and updated action item proposals without creating tasks', async () => {
+    mockUsePagination.mockReturnValue(
+      paginationState([
+        actionItemProposal(),
+        actionItemProposal({
+          id: 2,
+          action: 'create',
+          title: 'New: Prepare agenda',
+        }),
+      ]),
+    );
+    renderWithProviders(<ProposalsIndexPage />, {
+      initialEntries: ['/proposals'],
+    });
+
+    expect(screen.getAllByText('Action item')).toHaveLength(2);
+    expect(screen.getByText('New', { exact: true })).toBeInTheDocument();
+    expect(screen.getByText('Update', { exact: true })).toBeInTheDocument();
+    await waitFor(() => expect(mockCounts).toHaveBeenCalled());
+    expect(mockApprove).not.toHaveBeenCalled();
+    expect(mockReject).not.toHaveBeenCalled();
+  });
+
   it('renders proposals with kind and target', async () => {
     renderWithProviders(<ProposalsIndexPage />, {
       initialEntries: ['/proposals'],
