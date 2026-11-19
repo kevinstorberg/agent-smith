@@ -31,6 +31,7 @@ from services.api.routers import harness_router
 from services.costs.collector import pinecone_collector
 
 from services.api.routers import (
+    action_item_proposals,
     action_items,
     audit,
     chat,
@@ -132,6 +133,11 @@ app.include_router(evals.router, prefix="/api/evals", tags=["evals"])
 app.include_router(plans.router, prefix="/api/plans", tags=["plans"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
 app.include_router(proposals.router, prefix="/api/proposals", tags=["proposals"])
+app.include_router(
+    action_item_proposals.router,
+    prefix="/api/action-item-proposals",
+    tags=["action item proposals"],
+)
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
 app.include_router(
     eval_configs.router, prefix="/api/eval-configs", tags=["eval-configs"]

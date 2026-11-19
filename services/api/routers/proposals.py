@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
-from typing import Annotated, TypeVar
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Query
 
@@ -21,20 +20,18 @@ from services.api.routers.base import (
     list_response,
     require_found,
     query_result,
+    resolve_proposal as _resolve,
 )
 from services.api.models.shared.listing import sort_pattern
 from services.jobs.models.job import get_job_by_name
 from services.jobs.scheduler import execute_job
 from services.proposals.service import (
-    ProposalConflictError,
-    ProposalNotFoundError,
     current_target,
     delete_proposal,
     promote_proposal,
     proposed_item,
     reject_proposal,
 )
-from services.action_items.proposals import action_item_details
 
 log = logging.getLogger("proposals.router")
 
@@ -42,18 +39,6 @@ router = APIRouter()
 
 # Name of the background job the "Generate now" button (and the scheduler) runs.
 GENERATE_JOB_NAME = "improvement-proposals"
-
-
-T = TypeVar("T")
-
-
-def _resolve(operation: Callable[[int], T], proposal_id: int) -> T:
-    try:
-        return operation(proposal_id)
-    except ProposalNotFoundError as error:
-        raise HTTPException(404, str(error)) from None
-    except ProposalConflictError as error:
-        raise HTTPException(409, str(error)) from None
 
 
 @router.get("")
@@ -85,8 +70,6 @@ def get_one(proposal_id: int):
     # One response powers the diff UI: the proposed row and the live target.
     proposal["proposed_item"] = proposed_item(proposal)
     proposal["current_target"] = current_target(proposal)
-    if proposal["target_kind"] == "action_item":
-        proposal.update(action_item_details(proposal))
     return proposal
 
 

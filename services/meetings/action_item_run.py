@@ -10,7 +10,7 @@ from services.action_items.proposal_contracts import (
 from services.meetings.digestion import configured_sources
 from services.meetings.service import run_db
 from services.action_items.proposals import decision_context, stage_and_persist
-from services.proposals.service import DuplicateProposalError, ProposalConflictError
+from services.proposals.errors import DuplicateProposalError, ProposalConflictError
 
 
 class ActionItemRun(processing.ProcessingRun):

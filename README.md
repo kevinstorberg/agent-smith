@@ -572,14 +572,25 @@ explicit action items. A commitment includes the task, owner, due phrase and dep
 when supported by the summary; missing owners or deadlines are never invented.
 
 The `propose_action_items` node also compares new meeting summaries with saved Action Items,
-including completed tasks, and previous proposals. Open **Review proposals** from Action Items
-or a meeting to review **New** and **Update** suggestions, their meeting quotations, and the
+including completed tasks, and previous proposals. Open **Proposed action items** from Action Items or Workspace
+to review **New** and **Update** suggestions on the dedicated Action Item review pages, their meeting quotations, and the
 before/after values. **Approve** applies the reviewed change; **Reject** leaves tasks unchanged.
 Suggestions stay outside the task queue until approval. No owner setup is required.
 
+Action Item proposals have independent review records in `action_item_proposals`, with their
+own `/api/action-item-proposals` endpoints and `/action-items/proposals` screens. Harness
+and job improvement proposals remain in their separate Operations review queue.
+
+Before upgrading to the independent review schema, stop all application instances that can
+generate or decide proposals, then apply the migration through the confirmed database workflow
+and start the updated application. Active generation leases must expire before migration.
+Existing proposal IDs, frozen evidence, decisions, dismissal receipts and generation checkpoints
+are preserved. Once independent proposal IDs overlap, rollback requires a pre-upgrade backup;
+`alembic downgrade` refuses that collision before changing any data.
+
 This analysis has its own progress and retries, independent of transcript capture or successful
 memory generation. Only meetings first imported after the migration qualify automatically;
-historical meetings require **Generate proposals** on their Overview tab. A running Meetings
+historical meetings require **Propose action items** on their Overview tab. A running Meetings
 graph job must cover that connection. Summary changes refresh analysis only for already-enrolled
 meetings. Unchanged imports do not repeat model calls, and `digest=false` skips proposal analysis.
 

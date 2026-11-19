@@ -985,36 +985,49 @@ export interface JobRunResult {
   exit_code: number | null;
 }
 
-export interface ProposalEvidence {
-  source: 'plan' | 'memory' | 'meeting';
-  id: string;
-  note: string;
-  quote?: string;
-  revision?: number;
-  segment_id?: string;
-}
+export type ProposalStatus = 'pending' | 'approved' | 'rejected';
 
-export interface Proposal {
+interface ReviewMetadata {
   id: number;
-  target_kind: 'rule' | 'skill' | 'hook' | 'job' | 'action_item';
   action: 'create' | 'update';
-  proposed_item_id: number | null;
   target_name: string;
   project: string | null;
   target_id: number | null;
   base_version: number | null;
   title: string;
   rationale: string;
-  evidence: ProposalEvidence[];
-  status: 'pending' | 'approved' | 'rejected';
-  applied_ref: Record<string, unknown> | null;
+  status: ProposalStatus;
   created_at: string;
   updated_at: string;
-  // Present on GET /proposals/{id}: the proposed row and the live target for diffing.
-  proposed_item?:
-    (Partial<HarnessItem> & Partial<Job> & Partial<ActionItem>) | null;
-  current_target?:
-    (Partial<HarnessItem> & Partial<Job> & Partial<ActionItem>) | null;
+}
+
+export interface ProposalEvidence {
+  source: 'plan' | 'memory';
+  id: string;
+  note: string;
+}
+
+export interface Proposal extends ReviewMetadata {
+  target_kind: 'rule' | 'skill' | 'hook' | 'job';
+  proposed_item_id: number;
+  evidence: ProposalEvidence[];
+  applied_ref: Record<string, unknown> | null;
+  proposed_item?: (Partial<HarnessItem> & Partial<Job>) | null;
+  current_target?: (Partial<HarnessItem> & Partial<Job>) | null;
+}
+
+export interface ActionItemProposal extends ReviewMetadata {
+  evidence: {
+    source: 'meeting';
+    id: string;
+    note: string;
+    quote: string;
+    revision: number;
+    segment_id?: string;
+  }[];
+  applied_ref: { action_item_id: number } | null;
+  proposed_item?: Partial<ActionItem> | null;
+  current_target?: Partial<ActionItem> | null;
   before_snapshot?: Partial<ActionItem> | null;
   source_stale?: boolean;
   source_available?: boolean;
@@ -1800,6 +1813,24 @@ export const api = {
       remove: (jobId: number, configId: number) =>
         del(`/jobs/${jobId}/configs/${configId}`),
     },
+  },
+  actionItemProposals: {
+    list: (status?: string, pagination?: ResourceListParams) => {
+      const params = resourceListParams(pagination);
+      if (status) params.status = status;
+      return get<Paginated<ActionItemProposal>>(
+        '/action-item-proposals',
+        params,
+      );
+    },
+    counts: () => get<ProposalCounts>('/action-item-proposals/counts'),
+    get: (id: number) =>
+      get<ActionItemProposal>(`/action-item-proposals/${id}`),
+    approve: (id: number) =>
+      post<ActionItemProposal>(`/action-item-proposals/${id}/approve`, {}),
+    reject: (id: number) =>
+      post<ActionItemProposal>(`/action-item-proposals/${id}/reject`, {}),
+    remove: (id: number) => del(`/action-item-proposals/${id}`),
   },
   proposals: {
     list: (status?: string, pagination?: ResourceListParams) => {

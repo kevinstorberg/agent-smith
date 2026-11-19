@@ -1,4 +1,4 @@
-import type { ActionItem, Proposal } from '../api';
+import type { ActionItem, ActionItemProposal } from '../api';
 import { DateCell } from './table';
 import { ScrollableTable } from './ScrollableTable';
 import './actionItemProposalContent.css';
@@ -45,7 +45,7 @@ export function ActionItemProposalContent({
   proposal,
   targetStale,
 }: {
-  proposal: Proposal;
+  proposal: ActionItemProposal;
   targetStale: boolean;
 }) {
   const isUpdate = proposal.action === 'update';

@@ -3,7 +3,6 @@ import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { POLL_INTERVAL_MS } from '../../constants';
 import { ProposalsIndexPage } from '../ProposalsIndexPage';
-import { actionItemProposal } from './actionItemProposalFixture';
 
 const mockNavigate = vi.fn();
 
@@ -105,29 +104,6 @@ beforeEach(() => {
 });
 
 describe('ProposalsIndexPage', () => {
-  it('identifies new and updated action item proposals without creating tasks', async () => {
-    mockUsePagination.mockReturnValue(
-      paginationState([
-        actionItemProposal(),
-        actionItemProposal({
-          id: 2,
-          action: 'create',
-          title: 'New: Prepare agenda',
-        }),
-      ]),
-    );
-    renderWithProviders(<ProposalsIndexPage />, {
-      initialEntries: ['/proposals'],
-    });
-
-    expect(screen.getAllByText('Action item')).toHaveLength(2);
-    expect(screen.getByText('New', { exact: true })).toBeInTheDocument();
-    expect(screen.getByText('Update', { exact: true })).toBeInTheDocument();
-    await waitFor(() => expect(mockCounts).toHaveBeenCalled());
-    expect(mockApprove).not.toHaveBeenCalled();
-    expect(mockReject).not.toHaveBeenCalled();
-  });
-
   it('renders proposals with kind and target', async () => {
     renderWithProviders(<ProposalsIndexPage />, {
       initialEntries: ['/proposals'],

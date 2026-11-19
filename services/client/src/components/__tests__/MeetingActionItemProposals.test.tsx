@@ -48,15 +48,17 @@ describe('MeetingActionItemProposals', () => {
 
   it('queues explicit historical analysis using the reviewed meeting revision', async () => {
     render();
-    fireEvent.click(screen.getByRole('button', { name: 'Generate proposals' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Propose action items' }),
+    );
     await waitFor(() => expect(request).toHaveBeenCalledWith('meeting-123', 7));
     expect(changed).toHaveBeenCalledOnce();
     expect(await screen.findByRole('status')).toHaveTextContent(
       'Action items stay unchanged until you approve.',
     );
     expect(
-      screen.getByRole('link', { name: 'Review proposals' }),
-    ).toHaveAttribute('href', '/proposals?status=pending');
+      screen.getByRole('link', { name: 'Review proposed action items' }),
+    ).toHaveAttribute('href', '/action-items/proposals?status=pending');
   });
 
   it.each(['pending', 'running'] as const)(
@@ -73,12 +75,12 @@ describe('MeetingActionItemProposals', () => {
   it('disables generation until status loads and when no worker is available', () => {
     const view = render(null);
     expect(
-      screen.getByRole('button', { name: 'Generate proposals' }),
+      screen.getByRole('button', { name: 'Propose action items' }),
     ).toBeDisabled();
     view.unmount();
     render({ ...state, worker_available: false });
     expect(
-      screen.getByRole('button', { name: 'Generate proposals' }),
+      screen.getByRole('button', { name: 'Propose action items' }),
     ).toBeDisabled();
     expect(
       screen.getByText(/Enable a meeting ingestion job/),
@@ -108,7 +110,9 @@ describe('MeetingActionItemProposals', () => {
       status: 'failed',
       error_type: 'ActionItemAnalysisError',
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Retry proposals' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Retry Action Item proposals' }),
+    );
     expect(await screen.findByRole('status')).toHaveTextContent(
       'Meeting changed. Refresh before generating proposals.',
     );

@@ -157,6 +157,12 @@ export interface ViewSettings extends Record<
     limit: PageLimit;
     offset: number;
   };
+  actionItemProposals: {
+    q: string;
+    status: '' | (typeof PROPOSAL_STATUSES)[number];
+    limit: PageLimit;
+    offset: number;
+  };
   proposals: {
     q: string;
     status: '' | (typeof PROPOSAL_STATUSES)[number];
@@ -439,6 +445,16 @@ const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
       agent: choice(['', ...ALL_AGENTS]),
       status: choice(['', ...AUDIT_STATUSES]),
       sort: choice(AUDIT_SORT_OPTIONS.map((option) => option.value)),
+      limit: pageLimit,
+      offset: pageOffset,
+    },
+  },
+  actionItemProposals: {
+    pathname: '/action-items/proposals',
+    defaults: { q: '', status: 'pending', limit: 10, offset: 0 },
+    fields: {
+      q: text,
+      status: choice(['', ...PROPOSAL_STATUSES]),
       limit: pageLimit,
       offset: pageOffset,
     },

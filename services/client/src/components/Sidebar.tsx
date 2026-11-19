@@ -10,6 +10,7 @@ const NAV_SECTIONS = [
     label: 'Workspace',
     links: [
       { path: '/action-items', label: 'Action items' },
+      { path: '/action-items/proposals', label: 'Proposed action items' },
       { path: '/chat', label: 'Chat' },
       { path: '/costs', label: 'Costs' },
       { path: '/meetings', label: 'Meetings' },
@@ -272,6 +273,10 @@ export function Sidebar() {
                       <NavLink
                         key={link.path}
                         to={link.path}
+                        end={
+                          link.path === '/action-items' &&
+                          pathname.startsWith('/action-items/proposals')
+                        }
                         onClick={followNavigation}
                         className={navClass}
                       >

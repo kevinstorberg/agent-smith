@@ -18,6 +18,8 @@ import { ProjectsIndexPage } from './pages/ProjectsIndexPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { JobsIndexPage } from './pages/JobsIndexPage';
 import { JobDetailPage } from './pages/JobDetailPage';
+import { ActionItemProposalsIndexPage } from './pages/ActionItemProposalsIndexPage';
+import { ActionItemProposalDetailPage } from './pages/ActionItemProposalDetailPage';
 import { ProposalsIndexPage } from './pages/ProposalsIndexPage';
 import { ProposalDetailPage } from './pages/ProposalDetailPage';
 import { AuditIndexPage } from './pages/AuditIndexPage';
@@ -106,6 +108,18 @@ export default function App() {
             />
             <Route path="/memory" element={<MemoryPage />} />
             <Route path="/action-items" element={<ActionItemsIndexPage />} />
+            <Route
+              path="/action-items/proposals"
+              element={<ActionItemProposalsIndexPage />}
+            />
+            <Route
+              path="/action-items/proposals/:id"
+              element={
+                <DetailRoute>
+                  <ActionItemProposalDetailPage />
+                </DetailRoute>
+              }
+            />
             <Route path="/projects" element={<ProjectsIndexPage />} />
             <Route path="/projects/:id" element={<ProjectDetailPage />} />
             <Route

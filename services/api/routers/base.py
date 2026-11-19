@@ -35,7 +35,7 @@ def update_fields(body) -> dict:
 
 
 def paginate(items: list, offset: int, limit: int) -> tuple[list, int]:
-    return items[offset:offset + limit], len(items)
+    return items[offset : offset + limit], len(items)
 
 
 def resolve_project(value: str | None) -> str:
@@ -43,3 +43,14 @@ def resolve_project(value: str | None) -> str:
 
 
 from scripts.shared.validation import empty_to_none  # noqa: F401
+
+
+def resolve_proposal(operation: Callable[[int], R], proposal_id: int) -> R:
+    from services.proposals.errors import ProposalConflictError, ProposalNotFoundError
+
+    try:
+        return operation(proposal_id)
+    except ProposalNotFoundError as error:
+        raise HTTPException(404, str(error)) from None
+    except ProposalConflictError as error:
+        raise HTTPException(409, str(error)) from None

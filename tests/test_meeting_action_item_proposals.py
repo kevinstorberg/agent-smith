@@ -46,7 +46,7 @@ def clean_generated_proposals(source):
             (source.account_key,),
         )
         cursor.execute(
-            """DELETE FROM improvement_proposals WHERE id IN (
+            """DELETE FROM action_item_proposals WHERE id IN (
                 SELECT payload.proposal_id FROM action_item_proposal_payloads payload
                 JOIN meeting_summaries meeting ON meeting.id=payload.meeting_id
                 WHERE meeting.account_key=%s)""",
@@ -133,7 +133,7 @@ def candidate(
 def proposal_rows(source):
     with get_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cursor:
         cursor.execute(
-            """SELECT proposal.* FROM improvement_proposals proposal
+            """SELECT proposal.* FROM action_item_proposals proposal
                JOIN action_item_proposal_payloads payload ON payload.proposal_id=proposal.id
                JOIN meeting_summaries meeting ON meeting.id=payload.meeting_id
                WHERE meeting.account_key=%s ORDER BY proposal.id""",
