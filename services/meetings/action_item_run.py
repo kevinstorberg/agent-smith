@@ -3,14 +3,14 @@ from __future__ import annotations
 from copy import deepcopy
 
 from services.meetings import action_item_analysis, action_item_db, processing
-from services.proposals.action_item_contracts import (
+from services.action_items.proposal_contracts import (
     ActionItemContextTooLarge,
     MAX_CONTEXT_ITEMS,
 )
 from services.meetings.digestion import configured_sources
 from services.meetings.service import run_db
-from services.proposals.action_items import decision_context, stage_and_persist
-from services.proposals.service import DuplicateProposalError, ProposalConflictError
+from services.action_items.proposals import decision_context, stage_and_persist
+from services.proposals.errors import DuplicateProposalError, ProposalConflictError
 
 
 class ActionItemRun(processing.ProcessingRun):

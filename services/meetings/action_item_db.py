@@ -6,7 +6,7 @@ from psycopg2.extras import Json
 
 from services.action_items import db as tasks
 from services.meetings import db, management_db, stage_db
-from services.proposals.action_item_contracts import (
+from services.action_items.proposal_contracts import (
     ActionItemContextTooLarge,
     MAX_CONTEXT_ITEMS,
 )

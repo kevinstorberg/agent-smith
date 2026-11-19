@@ -10,7 +10,7 @@ from services.meetings.analysis import (
     MeetingAnalysisError,
     run_analysis,
 )
-from services.proposals.action_item_contracts import (
+from services.action_items.proposal_contracts import (
     ActionItemCandidate as ActionItemCandidate,
     ActionItemContextTooLarge as ActionItemContextTooLarge,
     MAX_CONTEXT_ITEMS,

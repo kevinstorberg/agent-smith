@@ -49,7 +49,7 @@ export function MeetingActionItemProposals({
       aria-labelledby="meeting-action-item-proposals-title"
     >
       <h3 className="section-title" id="meeting-action-item-proposals-title">
-        Action item proposals
+        Proposed Action Items
       </h3>
       <p>
         {state ? LABELS[state.status] : 'Loading proposal status…'}
@@ -96,10 +96,12 @@ export function MeetingActionItemProposals({
             : active
               ? 'Generating proposals…'
               : state?.status === 'failed'
-                ? 'Retry proposals'
-                : 'Generate proposals'}
+                ? 'Retry Action Item proposals'
+                : 'Propose action items'}
         </button>
-        <ButtonLink to="/proposals?status=pending">Review proposals</ButtonLink>
+        <ButtonLink to="/action-items/proposals?status=pending">
+          Review proposed action items
+        </ButtonLink>
       </div>
       {state && !state.worker_available && (
         <p className="text-muted-sm">

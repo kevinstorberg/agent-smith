@@ -10,9 +10,10 @@ from psycopg2.extras import Json, RealDictCursor
 
 from services.action_items import db as tasks
 from services.action_items.contracts import Create
-from services.api.models.proposal import ProposalModel
+from services.api.models.action_item_proposal import ActionItemProposalModel
 from services.db import get_connection
-from services.proposals.action_item_contracts import ActionItemCandidate, TASK_FIELDS
+from services.action_items.proposal_contracts import ActionItemCandidate, TASK_FIELDS
+from services.proposals.decisions import decision, record_decision
 from services.proposals.errors import DuplicateProposalError, ProposalConflictError
 
 _REQUEST_NAMESPACE = UUID("2052d8d4-8f84-55e7-9b45-0926e679c4ca")
@@ -128,7 +129,7 @@ def _was_dismissed(cursor, decision_key: str) -> bool:
 def _has_live_pending(cursor, decision_key: str) -> bool:
     cursor.execute(
         """SELECT 1 FROM action_item_proposal_payloads payload
-        JOIN improvement_proposals proposal ON proposal.id=payload.proposal_id
+        JOIN action_item_proposals proposal ON proposal.id=payload.proposal_id
         JOIN meeting_summaries meeting ON meeting.id=payload.meeting_id
         WHERE payload.decision_key=%s AND proposal.status='pending' AND meeting.available
           AND meeting.revision=payload.source_revision AND meeting.content_hash=payload.source_hash
@@ -230,11 +231,9 @@ def stage_and_persist(
                 ]
             )
             name = changes.get("title") or before["title"]
-            proposal_id = ProposalModel.create(
+            proposal_id = ActionItemProposalModel.create(
                 conn=conn,
-                target_kind="action_item",
                 action=item.action,
-                proposed_item_id=None,
                 target_name=name,
                 project=changes.get(
                     "project", before.get("project") if before else None
@@ -273,9 +272,9 @@ def stage_and_persist(
                 ),
             )
             cursor.execute(
-                "SELECT * FROM improvement_proposals WHERE id=%s", (proposal_id,)
+                "SELECT * FROM action_item_proposals WHERE id=%s", (proposal_id,)
             )
-            return ProposalModel.serialize_timestamps(dict(cursor.fetchone()))
+            return ActionItemProposalModel.serialize_timestamps(dict(cursor.fetchone()))
     except UniqueViolation:
         raise DuplicateProposalError(
             "An equivalent Action Item proposal was already filed"
@@ -384,9 +383,7 @@ def decision_context(limit: int = 200) -> dict:
     with get_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cursor:
         cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
         cursor.execute("SET LOCAL statement_timeout = '5s'")
-        cursor.execute(
-            "SELECT count(*) AS total FROM improvement_proposals WHERE target_kind='action_item'"
-        )
+        cursor.execute("SELECT count(*) AS total FROM action_item_proposals")
         total = cursor.fetchone()["total"]
         cursor.execute(
             """SELECT proposal.id,proposal.status,proposal.action,proposal.target_id,proposal.target_name,
@@ -395,10 +392,67 @@ def decision_context(limit: int = 200) -> dict:
                           OR meeting.content_hash<>payload.source_hash) AS source_stale,
                       (proposal.action='update' AND (item.id IS NULL OR item.deleted_at IS NOT NULL
                           OR item.revision<>proposal.base_version)) AS target_stale
-               FROM improvement_proposals proposal JOIN action_item_proposal_payloads payload ON payload.proposal_id=proposal.id
+               FROM action_item_proposals proposal JOIN action_item_proposal_payloads payload ON payload.proposal_id=proposal.id
                LEFT JOIN meeting_summaries meeting ON meeting.id=payload.meeting_id
                LEFT JOIN action_items item ON item.id=proposal.target_id AND item.scope_key='global'
-               WHERE proposal.target_kind='action_item' ORDER BY proposal.id DESC LIMIT %s""",
+               ORDER BY proposal.id DESC LIMIT %s""",
             (limit,),
         )
         return {"items": [dict(row) for row in cursor.fetchall()], "total": total}
+
+
+def _prepare_decision(cursor, stack, proposal):
+    cursor.execute("SET LOCAL TIME ZONE 'UTC'")
+    tasks.acquire_write_lock(cursor)
+
+
+def _decision(
+    proposal_id: int, *, replay_status: str | None, pending_only: bool = True
+):
+    return decision(
+        proposal_id,
+        model=ActionItemProposalModel,
+        connect=get_connection,
+        prepare=_prepare_decision,
+        identity_fields=("action", "target_id", "base_version", "fingerprint"),
+        replay_status=replay_status,
+        pending_only=pending_only,
+    )
+
+
+def _record_decision(
+    cursor, proposal_id: int, status: str, applied_ref: dict | None = None
+) -> dict:
+    return record_decision(
+        cursor, proposal_id, status, applied_ref, model=ActionItemProposalModel
+    )
+
+
+def promote_proposal(proposal_id: int) -> dict:
+    with _decision(proposal_id, replay_status="approved") as (cursor, proposal):
+        if proposal["status"] == "approved":
+            return ActionItemProposalModel.serialize_timestamps(proposal)
+        applied = promote(cursor, proposal)
+        return _record_decision(cursor, proposal_id, "approved", applied)
+
+
+def reject_proposal(proposal_id: int) -> dict:
+    with _decision(proposal_id, replay_status="rejected") as (cursor, proposal):
+        if proposal["status"] == "rejected":
+            return ActionItemProposalModel.serialize_timestamps(proposal)
+        reserve_dismissal(cursor, proposal)
+        return _record_decision(cursor, proposal_id, "rejected")
+
+
+def delete_proposal(proposal_id: int) -> None:
+    with _decision(proposal_id, replay_status=None, pending_only=False) as (
+        cursor,
+        proposal,
+    ):
+        if proposal["status"] != "approved":
+            reserve_dismissal(cursor, proposal, allow_existing=True)
+        cursor.execute("DELETE FROM action_item_proposals WHERE id=%s", (proposal_id,))
+        if cursor.rowcount != 1:
+            raise RuntimeError(
+                "Locked Action Item proposal disappeared during deletion"
+            )

@@ -1,21 +1,21 @@
-"""Improvement proposal master records.
-
-A proposal row holds reasoning and review state. Harness and job content lives
-in a proposed target row; Action Item drafts use separate proposal payloads so
-they never appear in live task queues before approval.
-"""
+"""Harness and job improvement review records."""
 
 from __future__ import annotations
+
+from functools import partial
 
 from services.api.models.base import BaseModel
 from services.db import get_connection
 from services.api.models.shared.listing import (
     bidirectional_sorts,
-    search_pattern,
-    sort_clause,
 )
 
-PROPOSAL_STATUSES = ("pending", "approved", "rejected")
+from services.api.models.shared.proposal_reviews import (
+    PROPOSAL_STATUSES as PROPOSAL_STATUSES,
+    count_reviews,
+    list_reviews,
+)
+
 PROPOSAL_SORTS = bidirectional_sorts(
     {
         ("title", "title_desc"): ("lower(title)",),
@@ -32,41 +32,8 @@ class ProposalModel(BaseModel):
     json_fields = {"evidence", "applied_ref"}
 
 
-def list_proposals(
-    status: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
-    *,
-    q: str | None = None,
-    sort: str = "newest",
-) -> tuple[list[dict], int]:
-    clauses, params = [], []
-    if status:
-        assert status in PROPOSAL_STATUSES, f"Invalid status: {status}"
-        clauses.append("status = %s")
-        params.append(status)
-    pattern = search_pattern(q)
-    if pattern is not None:
-        clauses.append("(title ILIKE %s OR target_name ILIKE %s)")
-        params.extend([pattern, pattern])
-    where = "WHERE " + " AND ".join(clauses) if clauses else ""
-    return ProposalModel.list(
-        where=where,
-        params=tuple(params),
-        order_by=sort_clause(sort, PROPOSAL_SORTS),
-        limit=limit,
-        offset=offset,
-    )
-
-
-def count_by_status() -> dict[str, int]:
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT status, COUNT(*) FROM improvement_proposals GROUP BY status"
-            )
-            counts = dict(cur.fetchall())
-    return {status: counts.get(status, 0) for status in PROPOSAL_STATUSES}
+list_proposals = partial(list_reviews, ProposalModel, PROPOSAL_SORTS)
+count_by_status = partial(count_reviews, ProposalModel)
 
 
 def existing_fingerprints(rejected_within_days: int = 30) -> set[str]:

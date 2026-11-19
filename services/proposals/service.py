@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import ExitStack, contextmanager
 import hashlib
 import json
 
 import psycopg2
-from psycopg2.errors import DeadlockDetected, LockNotAvailable, QueryCanceled
+
 from psycopg2.extras import Json, RealDictCursor
 
 from scripts.shared.validation import MAX_NAME_LENGTH, validate_item_name
@@ -26,11 +24,11 @@ from services.db import get_connection
 from services.jobs.models.job import get_job, get_job_by_name
 from services.jobs.schedule import parse_interval
 from services.jobs.service import validate_input_params
-from services.proposals import action_items as action_item_proposals
+from services.proposals.decisions import decision, record_decision
 from services.proposals.errors import (
     DuplicateProposalError,
     ProposalConflictError,
-    ProposalNotFoundError,
+    ProposalNotFoundError as ProposalNotFoundError,
 )
 
 HARNESS_KINDS = ("rule", "skill", "hook")
@@ -43,74 +41,29 @@ RATIONALE_MAX = 2000
 BODY_MAX = 20000
 
 
-@contextmanager
-def _decision(
-    proposal_id: int, *, pending_only: bool = True, replay_status: str | None = None
-) -> Iterator[tuple[RealDictCursor, dict]]:
-    if type(proposal_id) is not int or proposal_id <= 0:
-        raise ValueError("Proposal id must be a positive integer")
-    try:
-        with get_connection() as conn, ExitStack() as stack:
-            cur = stack.enter_context(conn.cursor(cursor_factory=RealDictCursor))
-            cur.execute("SET LOCAL lock_timeout = '3s'")
-            cur.execute("SET LOCAL statement_timeout = '5s'")
-            cur.execute(
-                "SELECT target_kind FROM improvement_proposals WHERE id=%s",
-                (proposal_id,),
-            )
-            hint = cur.fetchone()
-            if hint is None:
-                raise ProposalNotFoundError(f"Proposal {proposal_id} not found")
-            kind = hint["target_kind"]
-            if kind in HARNESS_KINDS:
-                # Matching the Harness lock order prevents decision/write deadlocks.
-                stack.enter_context(harness_write(kind, conn=conn))
-            elif kind == "action_item":
-                from services.action_items.db import acquire_write_lock
+def _prepare_decision(cur, stack, proposal):
+    kind = proposal["target_kind"]
+    if kind in HARNESS_KINDS:
+        stack.enter_context(harness_write(kind, conn=cur.connection))
 
-                cur.execute("SET LOCAL TIME ZONE 'UTC'")
-                acquire_write_lock(cur)
-            cur.execute(
-                "SELECT * FROM improvement_proposals WHERE id=%s FOR UPDATE",
-                (proposal_id,),
-            )
-            proposal = cur.fetchone()
-            if proposal is None:
-                raise ProposalNotFoundError(f"Proposal {proposal_id} not found")
-            if proposal["target_kind"] != kind:
-                raise ProposalConflictError(
-                    "Proposal identity changed. Refresh before deciding again."
-                )
-            replay = kind == "action_item" and proposal["status"] == replay_status
-            if pending_only and proposal["status"] != "pending" and not replay:
-                raise ProposalConflictError(
-                    f"Proposal {proposal_id} is {proposal['status']}, not pending"
-                )
-            yield cur, dict(proposal)
-    except (HarnessWriteConflict, LockNotAvailable, QueryCanceled, DeadlockDetected):
-        raise ProposalConflictError(
-            "Proposal is busy. Refresh before trying again."
-        ) from None
-    except psycopg2.IntegrityError as error:
-        raise ProposalConflictError(
-            "Proposal target changed concurrently. Refresh before trying again."
-        ) from error
+
+def _decision(proposal_id: int, *, pending_only: bool = True):
+    return decision(
+        proposal_id,
+        model=ProposalModel,
+        connect=get_connection,
+        prepare=_prepare_decision,
+        identity_fields=("target_kind",),
+        replay_status=None,
+        pending_only=pending_only,
+        busy_errors=(HarnessWriteConflict,),
+    )
 
 
 def _record_decision(
-    cur: RealDictCursor, proposal_id: int, status: str, applied_ref: dict | None = None
+    cur, proposal_id: int, status: str, applied_ref: dict | None = None
 ) -> dict:
-    cur.execute(
-        """UPDATE improvement_proposals SET status=%s, applied_ref=%s, updated_at=clock_timestamp()
-        WHERE id=%s AND status='pending' RETURNING *""",
-        (status, Json(applied_ref) if applied_ref is not None else None, proposal_id),
-    )
-    result = cur.fetchone()
-    if result is None:
-        raise ProposalConflictError(
-            "Proposal was already decided. Refresh before deciding again."
-        )
-    return ProposalModel.serialize_timestamps(dict(result))
+    return record_decision(cur, proposal_id, status, applied_ref, model=ProposalModel)
 
 
 def compute_fingerprint(
@@ -505,12 +458,8 @@ def _promote_job(cur, proposal: dict) -> dict:
 
 def promote_proposal(proposal_id: int) -> dict:
     """Apply reviewed content and approval atomically; stale targets remain pending."""
-    with _decision(proposal_id, replay_status="approved") as (cur, proposal):
-        if proposal["status"] == "approved":
-            return ProposalModel.serialize_timestamps(proposal)
-        if proposal["target_kind"] == "action_item":
-            applied_ref = action_item_proposals.promote(cur, proposal)
-        elif proposal["target_kind"] == "job":
+    with _decision(proposal_id) as (cur, proposal):
+        if proposal["target_kind"] == "job":
             applied_ref = _promote_job(cur, proposal)
         else:
             applied_ref = _promote_harness(cur, proposal)
@@ -520,25 +469,20 @@ def promote_proposal(proposal_id: int) -> dict:
 
 def reject_proposal(proposal_id: int) -> dict:
     """Record a rejection without changing live tasks."""
-    with _decision(proposal_id, replay_status="rejected") as (cur, proposal):
-        if proposal["status"] == "rejected":
-            return ProposalModel.serialize_timestamps(proposal)
-        if proposal["target_kind"] == "action_item":
-            action_item_proposals.reserve_dismissal(cur, proposal)
-        else:
-            table = (
-                "background_jobs"
-                if proposal["target_kind"] == "job"
-                else VALID_TABLES[proposal["target_kind"]]
+    with _decision(proposal_id) as (cur, proposal):
+        table = (
+            "background_jobs"
+            if proposal["target_kind"] == "job"
+            else VALID_TABLES[proposal["target_kind"]]
+        )
+        cur.execute(
+            f"UPDATE {table} SET state='rejected', updated_at=clock_timestamp() WHERE id=%s AND state='proposed' RETURNING id",
+            (proposal["proposed_item_id"],),
+        )
+        if cur.fetchone() is None:
+            raise ProposalConflictError(
+                "Proposed content changed or is no longer available. Refresh before deciding again."
             )
-            cur.execute(
-                f"UPDATE {table} SET state='rejected', updated_at=clock_timestamp() WHERE id=%s AND state='proposed' RETURNING id",
-                (proposal["proposed_item_id"],),
-            )
-            if cur.fetchone() is None:
-                raise ProposalConflictError(
-                    "Proposed content changed or is no longer available. Refresh before deciding again."
-                )
         return _record_decision(cur, proposal_id, "rejected")
 
 
@@ -546,21 +490,15 @@ def delete_proposal(proposal_id: int) -> None:
     """Delete the master row and its proposed row — unless that row was
     promoted, in which case it is live content and must survive."""
     with _decision(proposal_id, pending_only=False) as (cur, proposal):
-        if proposal["target_kind"] == "action_item":
-            if proposal["status"] != "approved":
-                action_item_proposals.reserve_dismissal(
-                    cur, proposal, allow_existing=True
-                )
-        else:
-            table = (
-                "background_jobs"
-                if proposal["target_kind"] == "job"
-                else VALID_TABLES[proposal["target_kind"]]
-            )
-            cur.execute(
-                f"DELETE FROM {table} WHERE id=%s AND state!='active'",
-                (proposal["proposed_item_id"],),
-            )
+        table = (
+            "background_jobs"
+            if proposal["target_kind"] == "job"
+            else VALID_TABLES[proposal["target_kind"]]
+        )
+        cur.execute(
+            f"DELETE FROM {table} WHERE id=%s AND state!='active'",
+            (proposal["proposed_item_id"],),
+        )
         cur.execute("DELETE FROM improvement_proposals WHERE id=%s", (proposal_id,))
         if cur.rowcount != 1:
             raise RuntimeError("Locked proposal disappeared during deletion")
@@ -568,8 +506,6 @@ def delete_proposal(proposal_id: int) -> None:
 
 def proposed_item(proposal: dict) -> dict | None:
     """The proposed row backing a proposal (content for the diff UI)."""
-    if proposal["target_kind"] == "action_item":
-        return action_item_proposals.proposed_item(proposal)
     if proposal["target_kind"] == "job":
         return get_job(proposal["proposed_item_id"])
     return get_item_by_id(proposal["target_kind"], proposal["proposed_item_id"])
@@ -577,8 +513,6 @@ def proposed_item(proposal: dict) -> dict | None:
 
 def current_target(proposal: dict) -> dict | None:
     """The latest active version of the proposal's target, or None if deleted."""
-    if proposal["target_kind"] == "action_item":
-        return action_item_proposals.current_target(proposal)
     if proposal["target_kind"] == "job":
         return get_job_by_name(proposal["target_name"])
     with get_connection() as conn:

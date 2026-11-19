@@ -1,9 +1,9 @@
-import type { Proposal } from '../../api';
+import type { ActionItemProposal } from '../../api';
 import { actionItem } from './actionItemFixture';
 
 export function actionItemProposal(
-  overrides: Partial<Proposal> = {},
-): Proposal {
+  overrides: Partial<ActionItemProposal> = {},
+): ActionItemProposal {
   const before = actionItem(12, {
     title: 'Send the release report',
     description: 'Send the report to the team.',
@@ -13,9 +13,7 @@ export function actionItemProposal(
   });
   return {
     id: 1,
-    target_kind: 'action_item',
     action: 'update',
-    proposed_item_id: null,
     target_name: before.title,
     project: before.project,
     target_id: before.id,

@@ -242,19 +242,9 @@ export function ProposalsIndexPage() {
                 >
                   <td>{proposal.title}</td>
                   <td>
-                    <span className="tag">
-                      {proposal.target_kind === 'action_item'
-                        ? 'Action item'
-                        : proposal.target_kind}
-                    </span>
+                    <span className="tag">{proposal.target_kind}</span>
                   </td>
-                  <td>
-                    {proposal.target_kind === 'action_item'
-                      ? proposal.action === 'create'
-                        ? 'New'
-                        : 'Update'
-                      : proposal.action}
-                  </td>
+                  <td>{proposal.action}</td>
                   <td>{proposal.target_name}</td>
                   <td>
                     <DateCell date={proposal.created_at} />

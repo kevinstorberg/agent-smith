@@ -74,6 +74,7 @@ describe('Sidebar', () => {
       'Plans',
       'Profiles',
       'Projects',
+      'Proposed action items',
     ]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
@@ -89,7 +90,7 @@ describe('Sidebar', () => {
     );
   });
 
-  it('orders named groups by workspace, harness and operations, retaining all 18 alphabetized links', () => {
+  it('orders named groups by workspace, harness and operations, retaining all 19 alphabetized links', () => {
     renderSidebar();
     expect(
       screen
@@ -110,11 +111,12 @@ describe('Sidebar', () => {
         'Plans',
         'Profiles',
         'Projects',
+        'Proposed action items',
       ],
       ['Agents', 'Hooks', 'Memory', 'Rules', 'Skills', 'Tools'],
       ['Audit', 'Evals', 'Jobs', 'Proposals', 'Results'],
     ]);
-    expect(screen.getAllByRole('link')).toHaveLength(18);
+    expect(screen.getAllByRole('link')).toHaveLength(19);
   });
 
   it('supports mouse, Enter and Space disclosure while removing collapsed links from keyboard navigation', async () => {

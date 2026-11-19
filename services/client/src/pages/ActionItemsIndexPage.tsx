@@ -72,8 +72,8 @@ export function ActionItemsIndexPage() {
       <div className="page-header">
         <h2 className="page-title">Action items</h2>
         <div className="flex-wrap" style={{ gap: 8 }}>
-          <ButtonLink to="/proposals?status=pending">
-            Review proposals
+          <ButtonLink to="/action-items/proposals?status=pending">
+            Proposed action items
           </ButtonLink>
           <Link
             className="btn btn-primary"
