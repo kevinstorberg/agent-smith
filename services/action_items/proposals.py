@@ -12,7 +12,7 @@ from services.action_items import db as tasks
 from services.action_items.contracts import Create
 from services.api.models.proposal import ProposalModel
 from services.db import get_connection
-from services.proposals.action_item_contracts import ActionItemCandidate, TASK_FIELDS
+from services.action_items.proposal_contracts import ActionItemCandidate, TASK_FIELDS
 from services.proposals.errors import DuplicateProposalError, ProposalConflictError
 
 _REQUEST_NAMESPACE = UUID("2052d8d4-8f84-55e7-9b45-0926e679c4ca")

@@ -19,7 +19,7 @@ from services.jobs.models.job import get_job
 from services.meetings import db, enrichment, factory
 from services.meetings.analysis import AnalysisBudgetExpired
 from services.meetings.service import MeetingSyncError
-from services.proposals import action_items as proposals
+from services.action_items import proposals as proposals
 from tests.conftest import jobs_cleanup
 from tests.test_meeting_sync import STAMP, note, page, source as source
 

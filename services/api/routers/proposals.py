@@ -34,7 +34,7 @@ from services.proposals.service import (
     proposed_item,
     reject_proposal,
 )
-from services.proposals.action_items import action_item_details
+from services.action_items.proposals import action_item_details
 
 log = logging.getLogger("proposals.router")
 

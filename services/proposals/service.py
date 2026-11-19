@@ -26,7 +26,7 @@ from services.db import get_connection
 from services.jobs.models.job import get_job, get_job_by_name
 from services.jobs.schedule import parse_interval
 from services.jobs.service import validate_input_params
-from services.proposals import action_items as action_item_proposals
+from services.action_items import proposals as action_item_proposals
 from services.proposals.errors import (
     DuplicateProposalError,
     ProposalConflictError,

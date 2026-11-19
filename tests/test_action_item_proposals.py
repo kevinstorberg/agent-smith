@@ -15,7 +15,8 @@ from services.db import get_connection
 from services.meetings import db as meetings
 from services.meetings.config import SourceConfig
 from services.meetings.types import MeetingSummary
-from services.proposals import action_items, service
+from services.action_items import proposals as action_items
+from services.proposals import service
 from tests.conftest import clean_meeting_rows
 from tests.test_proposal_decision_concurrency import (
     decide,
