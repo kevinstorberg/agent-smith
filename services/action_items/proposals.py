@@ -343,11 +343,57 @@ def promote(cursor, proposal: dict) -> dict:
     return {"action_item_id": task["id"]}
 
 
-def proposed_item(proposal: dict) -> dict:
+def review_details(proposals: list[dict]) -> list[dict]:
+    if not proposals:
+        return []
+    ids = [proposal["id"] for proposal in proposals]
+    if len(ids) > 100 or any(type(key) is not int or key <= 0 for key in ids):
+        raise ValueError("Review details require at most 100 positive proposal IDs")
     with get_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cursor:
-        payload = _payload(cursor, proposal["id"])
-    before = payload["before_snapshot"] or {}
-    return {**{field: before.get(field) for field in TASK_FIELDS}, **payload["changes"]}
+        cursor.execute(
+            """SELECT payload.proposal_id, payload.before_snapshot, payload.changes,
+                      coalesce(meeting.available, false) AS source_available,
+                      (meeting.id IS NULL OR NOT meeting.available
+                       OR meeting.revision <> payload.source_revision
+                       OR meeting.content_hash <> payload.source_hash) AS source_stale,
+                      (proposal.action = 'update' AND
+                       (target.id IS NULL OR target.deleted_at IS NOT NULL
+                        OR target.revision <> proposal.base_version)) AS target_stale
+               FROM action_item_proposal_payloads payload
+               JOIN action_item_proposals proposal ON proposal.id = payload.proposal_id
+               LEFT JOIN meeting_summaries meeting ON meeting.id = payload.meeting_id
+               LEFT JOIN action_items target ON target.id = proposal.target_id
+               WHERE payload.proposal_id = ANY(%s)""",
+            (ids,),
+        )
+        details = {row["proposal_id"]: dict(row) for row in cursor.fetchall()}
+    if set(ids) != details.keys():
+        raise ProposalConflictError(
+            "An Action Item proposal payload is missing; refresh before reviewing"
+        )
+    result = []
+    for proposal in proposals:
+        payload = details[proposal["id"]]
+        before = payload["before_snapshot"] or {}
+        result.append(
+            {
+                **proposal,
+                **{
+                    key: payload[key]
+                    for key in (
+                        "before_snapshot",
+                        "source_available",
+                        "source_stale",
+                        "target_stale",
+                    )
+                },
+                "proposed_item": {
+                    **{field: before.get(field) for field in TASK_FIELDS},
+                    **payload["changes"],
+                },
+            }
+        )
+    return result
 
 
 def current_target(proposal: dict) -> dict | None:
@@ -357,24 +403,6 @@ def current_target(proposal: dict) -> dict | None:
         return tasks.get(proposal["target_id"])
     except tasks.NotFound:
         return None
-
-
-def action_item_details(proposal: dict) -> dict:
-    with get_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cursor:
-        payload = _payload(cursor, proposal["id"])
-        cursor.execute(
-            "SELECT available,revision,content_hash FROM meeting_summaries WHERE id=%s",
-            (payload["meeting_id"],),
-        )
-        source = cursor.fetchone()
-    available = bool(source and source["available"])
-    return {
-        "before_snapshot": payload["before_snapshot"],
-        "source_available": available,
-        "source_stale": not available
-        or source["revision"] != payload["source_revision"]
-        or source["content_hash"] != payload["source_hash"],
-    }
 
 
 def decision_context(limit: int = 200) -> dict:

@@ -1031,6 +1031,7 @@ export interface ActionItemProposal extends ReviewMetadata {
   before_snapshot?: Partial<ActionItem> | null;
   source_stale?: boolean;
   source_available?: boolean;
+  target_stale?: boolean;
 }
 
 export interface ProposalCounts {
@@ -1821,15 +1822,33 @@ export const api = {
       return get<Paginated<ActionItemProposal>>(
         '/action-item-proposals',
         params,
+        ACTION_ITEM_TIMEOUT_MS,
       );
     },
-    counts: () => get<ProposalCounts>('/action-item-proposals/counts'),
+    counts: () =>
+      get<ProposalCounts>(
+        '/action-item-proposals/counts',
+        undefined,
+        ACTION_ITEM_TIMEOUT_MS,
+      ),
     get: (id: number) =>
-      get<ActionItemProposal>(`/action-item-proposals/${id}`),
+      get<ActionItemProposal>(
+        `/action-item-proposals/${id}`,
+        undefined,
+        ACTION_ITEM_TIMEOUT_MS,
+      ),
     approve: (id: number) =>
-      post<ActionItemProposal>(`/action-item-proposals/${id}/approve`, {}),
+      post<ActionItemProposal>(
+        `/action-item-proposals/${id}/approve`,
+        {},
+        ACTION_ITEM_TIMEOUT_MS,
+      ),
     reject: (id: number) =>
-      post<ActionItemProposal>(`/action-item-proposals/${id}/reject`, {}),
+      post<ActionItemProposal>(
+        `/action-item-proposals/${id}/reject`,
+        {},
+        ACTION_ITEM_TIMEOUT_MS,
+      ),
     remove: (id: number) => del(`/action-item-proposals/${id}`),
   },
   proposals: {

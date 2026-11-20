@@ -113,6 +113,33 @@ async def test_supported_completion_is_minimal_and_prior_rejections_are_supplied
 
 
 @pytest.mark.asyncio
+async def test_missing_update_identifiers_get_specific_feedback_and_can_be_corrected(
+    model,
+):
+    missing = {
+        **NEW,
+        "action": "update",
+        "changes": {"status": "completed"},
+        "evidence": [
+            {
+                "segment_id": "summary-0",
+                "quote": "Morgan confirmed the report is complete.",
+            }
+        ],
+    }
+    corrected = {**missing, "target_id": 7, "expected_revision": 2}
+    instance = model(
+        call("stage_action_items", items=[missing]),
+        call("stage_action_items", items=[corrected]),
+    )
+    result = await analyze_action_items(SNAPSHOT, [TASK], [], ["Work"])
+    assert len(result["items"]) == 1
+    assert result["items"][0]["target_id"] == 7
+    feedback = str(instance.seen[1])
+    assert "target_id" in feedback and "expected_revision" in feedback
+
+
+@pytest.mark.asyncio
 async def test_context_overflow_fails_before_model_creation(monkeypatch):
     monkeypatch.setattr(
         agents,

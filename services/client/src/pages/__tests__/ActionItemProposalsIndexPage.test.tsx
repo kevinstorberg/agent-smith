@@ -1,17 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { ActionItemProposalsIndexPage } from '../ActionItemProposalsIndexPage';
 import { actionItemProposal } from './actionItemProposalFixture';
 import { api } from '../../api';
+import type { ActionItemProposal } from '../../api';
 
 vi.mock('../../api', () => ({
-  api: { actionItemProposals: { list: vi.fn(), counts: vi.fn() } },
+  api: {
+    actionItemProposals: {
+      list: vi.fn(),
+      counts: vi.fn(),
+      approve: vi.fn(),
+      reject: vi.fn(),
+    },
+  },
 }));
 
 beforeEach(() => {
   document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   vi.mocked(api.actionItemProposals.list).mockResolvedValue({
     items: [actionItemProposal()],
     total: 1,
@@ -21,6 +29,12 @@ beforeEach(() => {
     approved: 0,
     rejected: 0,
   });
+  vi.mocked(api.actionItemProposals.approve).mockResolvedValue(
+    actionItemProposal({ status: 'approved' }),
+  );
+  vi.mocked(api.actionItemProposals.reject).mockResolvedValue(
+    actionItemProposal({ status: 'rejected' }),
+  );
 });
 
 function render() {
@@ -30,6 +44,218 @@ function render() {
 }
 
 describe('Proposed Action Items', () => {
+  it('shows the actual proposed changes and their evidence in the list', async () => {
+    render();
+    expect(
+      await screen.findByRole('region', {
+        name: 'Proposed action item changes',
+      }),
+    ).toHaveTextContent('Deadline');
+    expect(screen.getByText(/November 18, 2026/)).toBeInTheDocument();
+    expect(screen.getByText(/November 20, 2026/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Move the release report deadline to Friday at 5 PM UTC.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it.each(['approve', 'reject'] as const)(
+    'can %s directly and refresh the list and counts',
+    async (action) => {
+      render();
+      const button = await screen.findByRole('button', {
+        name: action === 'approve' ? 'Accept' : 'Reject',
+      });
+      vi.mocked(api.actionItemProposals.list).mockResolvedValue({
+        items: [],
+        total: 0,
+      });
+      fireEvent.click(button);
+      await waitFor(() =>
+        expect(api.actionItemProposals[action]).toHaveBeenCalledExactlyOnceWith(
+          1,
+        ),
+      );
+      expect(
+        await screen.findByText('No pending proposed Action Items'),
+      ).toBeInTheDocument();
+      expect(api.actionItemProposals.counts).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it.each([
+    { source_stale: true },
+    { source_available: false },
+    { target_stale: true },
+  ])('blocks stale acceptance but permits rejection: %j', async (flags) => {
+    vi.mocked(api.actionItemProposals.list).mockResolvedValue({
+      items: [actionItemProposal(flags)],
+      total: 1,
+    });
+    render();
+    expect(
+      await screen.findByRole('button', { name: 'Accept' }),
+    ).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled();
+  });
+
+  it.each(['approved', 'rejected'] as const)(
+    'has no decision controls on %s records',
+    async (status) => {
+      vi.mocked(api.actionItemProposals.list).mockResolvedValue({
+        items: [actionItemProposal({ status })],
+        total: 1,
+      });
+      render();
+      await screen.findByRole('link', { name: 'Send the release report' });
+      expect(
+        screen.queryByRole('button', { name: 'Accept' }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Reject' }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it('allows only one decision until the response and refresh finish', async () => {
+    let resolve!: (value: ActionItemProposal) => void;
+    vi.mocked(api.actionItemProposals.approve).mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    render();
+    const accept = await screen.findByRole('button', {
+      name: 'Accept',
+    });
+    const reject = screen.getByRole('button', { name: 'Reject' });
+    fireEvent.click(accept);
+    fireEvent.click(accept);
+    fireEvent.click(reject);
+    expect(api.actionItemProposals.approve).toHaveBeenCalledTimes(1);
+    expect(api.actionItemProposals.reject).not.toHaveBeenCalled();
+    expect(reject).toBeDisabled();
+    vi.mocked(api.actionItemProposals.list).mockResolvedValue({
+      items: [],
+      total: 0,
+    });
+    await act(async () => resolve(actionItemProposal({ status: 'approved' })));
+    expect(
+      await screen.findByText('No pending proposed Action Items'),
+    ).toBeInTheDocument();
+  });
+
+  it('refreshes the current filter when it changes during a decision', async () => {
+    let resolve!: (value: ActionItemProposal) => void;
+    vi.mocked(api.actionItemProposals.approve).mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    render();
+    fireEvent.click(await screen.findByRole('button', { name: 'Accept' }));
+    fireEvent.click(screen.getByRole('button', { name: 'approved (0)' }));
+    await waitFor(() =>
+      expect(api.actionItemProposals.list).toHaveBeenLastCalledWith(
+        'approved',
+        expect.any(Object),
+      ),
+    );
+    await act(async () => resolve(actionItemProposal({ status: 'approved' })));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'approved (0)' }),
+      ).toHaveAttribute('aria-pressed', 'true'),
+    );
+    expect(api.actionItemProposals.list).toHaveBeenLastCalledWith(
+      'approved',
+      expect.any(Object),
+    );
+  });
+
+  it('retains unresolved proposals after a decision conflict and releases the lock', async () => {
+    vi.mocked(api.actionItemProposals.approve).mockRejectedValue(
+      new Error('Source changed'),
+    );
+    render();
+    fireEvent.click(await screen.findByRole('button', { name: 'Accept' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Source changed',
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled(),
+    );
+    expect(
+      screen.getByRole('link', { name: 'Send the release report' }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
+    await waitFor(() =>
+      expect(api.actionItemProposals.reject).toHaveBeenCalledExactlyOnceWith(1),
+    );
+  });
+
+  it('can retry a failed refresh after a successful decision', async () => {
+    render();
+    const accept = await screen.findByRole('button', {
+      name: 'Accept',
+    });
+    vi.mocked(api.actionItemProposals.list).mockRejectedValueOnce(
+      new Error('Read failed'),
+    );
+    fireEvent.click(accept);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not load proposed Action Items',
+    );
+    vi.mocked(api.actionItemProposals.list).mockResolvedValue({
+      items: [],
+      total: 0,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(
+      await screen.findByText('No pending proposed Action Items'),
+    ).toBeInTheDocument();
+    expect(api.actionItemProposals.approve).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns to the preceding page after deciding the last item', async () => {
+    let decided = false;
+    vi.mocked(api.actionItemProposals.list).mockImplementation(
+      async (_status, options) => ({
+        items:
+          options?.offset === 10
+            ? decided
+              ? []
+              : [actionItemProposal({ id: 11 })]
+            : [actionItemProposal()],
+        total: decided ? 10 : 11,
+      }),
+    );
+    vi.mocked(api.actionItemProposals.reject).mockImplementation(async () => {
+      decided = true;
+      return actionItemProposal({ id: 11, status: 'rejected' });
+    });
+    render();
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
+    await waitFor(() =>
+      expect(api.actionItemProposals.list).toHaveBeenLastCalledWith(
+        'pending',
+        expect.objectContaining({ offset: 10 }),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
+    await waitFor(() =>
+      expect(api.actionItemProposals.list).toHaveBeenLastCalledWith(
+        'pending',
+        expect.objectContaining({ offset: 0 }),
+      ),
+    );
+    expect(await screen.findByRole('button', { name: 'Accept' })).toBeEnabled();
+    expect(api.actionItemProposals.reject).toHaveBeenCalledExactlyOnceWith(11);
+  });
   it('loads its own records and links to its own review page', async () => {
     render();
     expect(

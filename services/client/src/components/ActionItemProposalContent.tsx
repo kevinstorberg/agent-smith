@@ -44,19 +44,23 @@ function TaskValue({
 export function ActionItemProposalContent({
   proposal,
   targetStale,
+  compact = false,
 }: {
   proposal: ActionItemProposal;
   targetStale: boolean;
+  compact?: boolean;
 }) {
   const isUpdate = proposal.action === 'update';
   const before = proposal.before_snapshot ?? proposal.current_target;
   const after = proposal.proposed_item;
-  const fields = FIELDS.filter(
-    ([field]) =>
-      !isUpdate ||
-      JSON.stringify(valueOf(before, field)) !==
-        JSON.stringify(valueOf(after, field)),
-  );
+  const fields = FIELDS.filter(([field]) => {
+    const value = valueOf(after, field);
+    if (isUpdate)
+      return JSON.stringify(valueOf(before, field)) !== JSON.stringify(value);
+    if (!compact || field === 'title') return true;
+    if (field === 'status' && value === 'open') return false;
+    return Array.isArray(value) ? value.length > 0 : value !== '';
+  });
 
   return (
     <>
