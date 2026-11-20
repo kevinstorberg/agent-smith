@@ -9,6 +9,104 @@ import { actionItemProposal } from '../src/pages/__tests__/actionItemProposalFix
 import { meetingFixture } from '../src/pages/__tests__/meetingFixture';
 import type { MeetingActionItemProposals } from '../src/api';
 
+test('accepts and rejects from the list without navigation or confirmation', async ({
+  page,
+  fixtureAPI,
+}, testInfo) => {
+  let proposals = [
+    actionItemProposal(),
+    actionItemProposal({
+      id: 2,
+      action: 'create',
+      target_id: null,
+      base_version: null,
+      before_snapshot: null,
+      current_target: null,
+    }),
+  ];
+  fixtureAPI.get('/api/action-item-proposals', () => ({
+    items: proposals.filter((item) => item.status === 'pending'),
+    total: proposals.filter((item) => item.status === 'pending').length,
+  }));
+  fixtureAPI.get('/api/action-item-proposals/counts', () => ({
+    pending: proposals.filter((item) => item.status === 'pending').length,
+    approved: proposals.filter((item) => item.status === 'approved').length,
+    rejected: proposals.filter((item) => item.status === 'rejected').length,
+  }));
+  for (const [id, action, status] of [
+    [1, 'approve', 'approved'],
+    [2, 'reject', 'rejected'],
+  ] as const) {
+    fixtureAPI.mock(
+      'POST',
+      `/api/action-item-proposals/${id}/${action}`,
+      () => {
+        proposals = proposals.map((item) =>
+          item.id === id ? { ...item, status } : item,
+        );
+        return proposals.find((item) => item.id === id);
+      },
+    );
+  }
+  page.on('dialog', () => {
+    throw new Error('Quick decisions must not require confirmation');
+  });
+  await page.goto('/action-items/proposals');
+  const cards = page
+    .getByRole('list', { name: 'Proposed Action Items', exact: true })
+    .getByRole('listitem');
+  await expect(cards).toHaveCount(2);
+  await expect(
+    cards.first().getByRole('rowheader', { name: 'Deadline' }),
+  ).toBeVisible();
+  await expect(
+    cards
+      .first()
+      .getByText('Move the release report deadline to Friday at 5 PM UTC.'),
+  ).toBeVisible();
+  await enlargeComputedText(page);
+  for (const card of await cards.all()) {
+    for (const name of ['Accept', 'Reject']) {
+      await expectControlContained(
+        card.getByRole('button', { name, exact: true }),
+        card,
+      );
+    }
+  }
+  await expectDocumentContained(page);
+  await testInfo.attach('action-item-quick-decisions.png', {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: 'image/png',
+  });
+  await cards
+    .first()
+    .getByRole('button', { name: 'Accept', exact: true })
+    .click();
+  await expect(cards).toHaveCount(1);
+  await expect(
+    page.getByRole('button', { name: 'approved (1)' }),
+  ).toBeVisible();
+  await cards
+    .first()
+    .getByRole('button', { name: 'Reject', exact: true })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'No pending proposed Action Items' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'rejected (1)' }),
+  ).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe('/action-items/proposals');
+  expect(
+    fixtureAPI.requests
+      .filter((entry) => entry.method !== 'GET')
+      .map((entry) => new URL(entry.url).pathname),
+  ).toEqual([
+    '/api/action-item-proposals/1/approve',
+    '/api/action-item-proposals/2/reject',
+  ]);
+});
+
 test('proposed Action Items have a separate workspace list and review endpoint', async ({
   page,
   fixtureAPI,

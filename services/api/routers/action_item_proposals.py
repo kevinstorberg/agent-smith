@@ -36,7 +36,7 @@ def list_all(
     items, total = query_result(
         list_proposals, status=status, limit=limit, offset=offset, q=q, sort=sort
     )
-    return {"items": items, "total": total}
+    return {"items": proposals.review_details(items), "total": total}
 
 
 @router.get("/counts")
@@ -50,10 +50,8 @@ def get_one(proposal_id: int = Path(gt=0)):
         get_proposal(proposal_id), "Action Item proposal", proposal_id
     )
     return {
-        **proposal,
-        "proposed_item": proposals.proposed_item(proposal),
+        **proposals.review_details([proposal])[0],
         "current_target": proposals.current_target(proposal),
-        **proposals.action_item_details(proposal),
     }
 
 

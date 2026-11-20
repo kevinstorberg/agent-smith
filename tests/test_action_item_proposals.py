@@ -138,6 +138,44 @@ def test_approval_creates_once_and_replays_the_receipt_after_later_edit_or_delet
     assert tasks.list_items({"status": "all"})["total"] == 1
 
 
+def test_list_includes_frozen_changes_and_live_conflict_flags(source, client):
+    new = action_items.stage_and_persist(source, candidate())
+    task = tasks.create({"title": "Complete the integration review"})
+    update = action_items.stage_and_persist(
+        source, candidate(target=task, changes={"status": "completed"})
+    )
+    response = client.get("/action-item-proposals?status=pending")
+    assert response.status_code == 200
+    rows = {row["id"]: row for row in response.json()["items"]}
+    assert rows[new["id"]]["proposed_item"]["title"] == "Send the design document"
+    preview = rows[update["id"]]
+    assert preview["before_snapshot"] == task
+    assert preview["proposed_item"]["status"] == "completed"
+    assert preview["source_available"] is True
+    assert preview["source_stale"] is False and preview["target_stale"] is False
+    tasks.update(task["id"], {"expected_revision": 1, "description": "Manual edit"})
+    change_source(source)
+    rows = {
+        row["id"]: row for row in client.get("/action-item-proposals").json()["items"]
+    }
+    assert rows[update["id"]]["target_stale"] is True
+    assert rows[new["id"]]["target_stale"] is False
+    assert all(row["source_stale"] for row in rows.values())
+    assert rows[update["id"]]["before_snapshot"] == task
+    assert rows[update["id"]]["proposed_item"]["description"] == task["description"]
+
+
+def test_review_never_returns_a_proposal_without_its_payload(source):
+    proposal = action_items.stage_and_persist(source, candidate())
+    with get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            "DELETE FROM action_item_proposal_payloads WHERE proposal_id=%s",
+            (proposal["id"],),
+        )
+    with pytest.raises(action_items.ProposalConflictError, match="payload is missing"):
+        action_items.review_details([proposal])
+
+
 def test_rejection_is_durable_across_meetings_and_explicit_creation_defaults(
     source, source_factory
 ):
@@ -261,7 +299,7 @@ def test_task_edit_blocks_old_approval_and_allows_new_immutable_review(source):
     assert new["id"] != old["id"]
     action_items.promote_proposal(new["id"])
     assert tasks.get(original["id"])["description"] == "New user notes"
-    assert action_items.action_item_details(old)["before_snapshot"] == original
+    assert action_items.review_details([old])[0]["before_snapshot"] == original
 
 
 def change_source(source):
@@ -329,7 +367,7 @@ def test_missing_or_unavailable_source_blocks_approval_but_retains_audit(
     with pytest.raises(action_items.ProposalConflictError):
         action_items.promote_proposal(proposal["id"])
     assert get_proposal(proposal["id"])["status"] == "pending"
-    assert action_items.action_item_details(proposal)["source_available"] is False
+    assert action_items.review_details([proposal])[0]["source_available"] is False
     action_items.reject_proposal(proposal["id"])
 
 

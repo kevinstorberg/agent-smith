@@ -19,6 +19,34 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('Action Item proposal review', () => {
+  it('bounds decisions and recovery reads using the existing Action Item timeout', async () => {
+    globalThis.fetch = mockFetch({});
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    await api.actionItemProposals.list('pending', { limit: 10, offset: 0 });
+    await api.actionItemProposals.counts();
+    await api.actionItemProposals.get(119);
+    await api.actionItemProposals.approve(119);
+    await api.actionItemProposals.reject(120);
+    expect(timeout.mock.calls).toEqual(
+      Array.from({ length: 5 }, () => [30_000]),
+    );
+    for (const [, options] of vi.mocked(globalThis.fetch).mock.calls) {
+      expect(options?.signal).toBeInstanceOf(AbortSignal);
+    }
+  });
+
+  it('reports uncertain decision timeouts without automatically retrying', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockRejectedValue(new DOMException('Deadline', 'TimeoutError'));
+    await expect(api.actionItemProposals.approve(119)).rejects.toThrow(
+      'Refresh to check whether your change was saved',
+    );
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('Harness anchored moves', () => {
   it('sends raw source and visible-anchor timestamp tokens through the real fetch boundary', async () => {
     globalThis.fetch = mockFetch({

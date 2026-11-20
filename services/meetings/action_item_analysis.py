@@ -122,7 +122,18 @@ async def analyze_action_items(
     return await run_analysis(
         context,
         model_role="meeting_action_items",
-        tools=[context.configure_stage(stage_action_items)],
+        tools=[
+            context.configure_stage(
+                stage_action_items,
+                validation_feedback=(
+                    "Staging rejected. Replace the entire items list with corrected items, without duplicates. "
+                    "Every update MUST include target_id and expected_revision copied from the supplied inventory, "
+                    "alongside action, changes, rationale and exact summary-0 evidence. "
+                    "A create requires changes.title and no target_id or expected_revision. "
+                    "Use at most 20 items and only supported task fields; do not invent next steps from status notes."
+                ),
+            )
+        ],
         data=data,
         system_prompt=(
             "Identify explicit unsaved Action Items and meaningful changes to existing Action Items from this meeting. "
@@ -135,7 +146,21 @@ async def analyze_action_items(
             "A previously approved update can be proposed again when the current task state differs and this meeting explicitly supports the change. "
             "If target matching is ambiguous, "
             "omit the candidate and explain the ambiguity in reason. Do not invent tasks or assignees. "
+            "Create a new Action Item ONLY when the summary explicitly requests a concrete next step or records "
+            "a commitment to perform unfinished work. Its title must state the actual action or deliverable. "
+            "Status-only observations, pending calls, waiting on someone, blockers, deferred possibilities, "
+            "background information and already completed work are not new Action Items. For example, "
+            "'Vendor call still pending (earlier meeting ran over)' creates nothing: never invent 'reschedule', "
+            "'follow up' or 'hold the call' from that observation. In contrast, 'Reschedule the vendor call' "
+            "or 'Hold the launch review on Friday' explicitly directs an action and can create a task. "
+            "A named owner is not required for an explicit instruction, but never invent one. "
+            "Every action in the title and description must be supported by the cited evidence; "
+            "do not add inferred next steps to make a status observation sound actionable. "
+            "These restrictions on creation do not prevent explicitly supported updates to existing items, "
+            "including marking an existing item complete; completed work must never create a new item. "
             "A create needs changes.title; updates need the exact supplied target_id and expected_revision. "
+            "For example, completing inventory item id=7 revision=2 requires action='update', target_id=7, "
+            "expected_revision=2 and changes={'status':'completed'}, plus rationale and evidence. "
             "If an assignee is named, preserve that attribution in the rationale and description for human review. "
             "Include the named assignee in the title when otherwise identical commitments belong to different people. "
             "Cite exact summary-0 quotes supporting the commitment and material change. Use minimal changes, preserving "
