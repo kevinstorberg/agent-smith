@@ -42,5 +42,7 @@ class Siblings:
             f"UPDATE {self.table} SET sort_key={expression} WHERE {self.clause} AND {bounds}",
             (*self.values, *limits),
         )
-        cursor.execute(f"UPDATE {self.table} SET sort_key=%s WHERE id=%s", (target, entry_id))
+        cursor.execute(
+            f"UPDATE {self.table} SET sort_key=%s WHERE id=%s", (target, entry_id)
+        )
         return True

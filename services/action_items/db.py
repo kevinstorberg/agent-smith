@@ -38,7 +38,9 @@ from services.meetings.db import MeetingStorageError
 
 _WRITE_LOCK = "agent-smith:action-items-write"
 _TASK_ROWS = "action_items a LEFT JOIN action_item_projects p ON p.id=a.project_id"
-_PROJECT_ROWS = "action_item_ordered_items a LEFT JOIN action_item_projects p ON p.id=a.project_id"
+_PROJECT_ROWS = (
+    "action_item_ordered_items a LEFT JOIN action_item_projects p ON p.id=a.project_id"
+)
 _PUBLIC = "a.id, a.title, a.description, p.name AS project, a.tags, a.status, a.completed_at, a.revision, a.created_at, a.updated_at, a.queue_priority AS priority"
 _LIST = _PUBLIC.replace("a.description, ", "")
 _SORTS = {
@@ -552,7 +554,10 @@ class Queue:
                     changes["completed_at"] = cursor.fetchone()["completed_at"]
                 else:
                     changes.update(
-                        sort_key=_append_position(cursor, scope) if scope.profile_id else None, completed_at=None
+                        sort_key=_append_position(cursor, scope)
+                        if scope.profile_id
+                        else None,
+                        completed_at=None,
                     )
             columns = ", ".join(f"{key}=%s" for key in changes)
             cursor.execute(
@@ -560,7 +565,9 @@ class Queue:
                 (*changes.values(), item_id, scope.key),
             )
             if scope.profile_id is None and "status" in changes:
-                queue_db.task_activity(cursor, item_id, active=changes["status"] == "open")
+                queue_db.task_activity(
+                    cursor, item_id, active=changes["status"] == "open"
+                )
             if before["sort_key"] is not None and changes.get("status") == "completed":
                 _compact(cursor, before["sort_key"], scope)
             return _read(cursor, item_id, scope)
@@ -589,7 +596,9 @@ class Queue:
         with _cursor(self.profile_id, write=True) as (cursor, scope):
             source = _live(cursor, item_id, scope, request.expected_revision)
             if scope.profile_id is None:
-                queue_db.legacy_move(cursor, source, anchor_id, after=request.after_id is not None)
+                queue_db.legacy_move(
+                    cursor, source, anchor_id, after=request.after_id is not None
+                )
                 return _read(cursor, item_id, scope)
             cursor.execute(
                 "SELECT sort_key FROM action_items WHERE id=%s AND scope_key=%s AND deleted_at IS NULL AND status='open' FOR UPDATE",

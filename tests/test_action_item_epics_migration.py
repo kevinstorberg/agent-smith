@@ -17,13 +17,19 @@ def test_epic_migration_preserves_flat_history_and_profiles(monkeypatch):
         migration = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
         command.upgrade(migration, "e4b7c9d2a6f1")
         with psycopg2.connect(url) as conn, conn.cursor() as cursor:
-            cursor.execute("INSERT INTO action_items(title,sort_key) VALUES('Existing',1) RETURNING id,revision,created_at")
+            cursor.execute(
+                "INSERT INTO action_items(title,sort_key) VALUES('Existing',1) RETURNING id,revision,created_at"
+            )
             before = cursor.fetchone()
         command.upgrade(migration, "head")
         with psycopg2.connect(url) as conn, conn.cursor() as cursor:
-            cursor.execute("SELECT a.id,a.revision,a.created_at,a.sort_key,p.priority FROM action_items a JOIN action_item_global_positions p ON p.action_item_id=a.id")
+            cursor.execute(
+                "SELECT a.id,a.revision,a.created_at,a.sort_key,p.priority FROM action_items a JOIN action_item_global_positions p ON p.action_item_id=a.id"
+            )
             assert cursor.fetchone() == (*before, None, 1)
-            cursor.execute("SELECT condeferrable,condeferred FROM pg_constraint WHERE conname='action_item_queue_order'")
+            cursor.execute(
+                "SELECT condeferrable,condeferred FROM pg_constraint WHERE conname='action_item_queue_order'"
+            )
             assert cursor.fetchone() == (True, True)
         command.downgrade(migration, "e4b7c9d2a6f1")
         with psycopg2.connect(url) as conn, conn.cursor() as cursor:
@@ -31,8 +37,13 @@ def test_epic_migration_preserves_flat_history_and_profiles(monkeypatch):
             assert cursor.fetchone() == (*before, 1)
         command.upgrade(migration, "head")
         with psycopg2.connect(url) as conn, conn.cursor() as cursor:
-            cursor.execute("INSERT INTO action_item_epics(title,request_id,create_payload) VALUES('Keep history','00000000-0000-0000-0000-000000000001','{}') RETURNING id")
+            cursor.execute(
+                "INSERT INTO action_item_epics(title,request_id,create_payload) VALUES('Keep history','00000000-0000-0000-0000-000000000001','{}') RETURNING id"
+            )
             epic_id = cursor.fetchone()[0]
-            cursor.execute("INSERT INTO action_item_queue_entries(epic_id,sort_key) VALUES(%s,2)", (epic_id,))
+            cursor.execute(
+                "INSERT INTO action_item_queue_entries(epic_id,sort_key) VALUES(%s,2)",
+                (epic_id,),
+            )
         with pytest.raises(RuntimeError, match="Epic history"):
             command.downgrade(migration, "e4b7c9d2a6f1")

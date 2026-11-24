@@ -10,7 +10,13 @@ from fastapi import (
 )
 
 from services.action_items import db, queue_db
-from services.action_items.queue_contracts import EpicCreate, EpicPatch, EpicRemove, Membership, QueueMove
+from services.action_items.queue_contracts import (
+    EpicCreate,
+    EpicPatch,
+    EpicRemove,
+    Membership,
+    QueueMove,
+)
 from services.action_items.contracts import (
     Create,
     Delete,

@@ -84,6 +84,8 @@ class QueueMove(Contract):
         anchor = self.before or self.after
         if self.source.kind == anchor.kind and self.source.id == anchor.id:
             raise ValueError("Source and anchor must differ")
-        if self.parent is not None and (self.source.kind != "item" or anchor.kind != "item"):
+        if self.parent is not None and (
+            self.source.kind != "item" or anchor.kind != "item"
+        ):
             raise ValueError("Only Action Items may be reordered within an Epic")
         return self

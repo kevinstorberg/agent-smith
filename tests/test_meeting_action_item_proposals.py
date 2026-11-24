@@ -569,7 +569,9 @@ async def test_actual_inventory_above_old_row_limit_reaches_model_completely(
         assert proposal_rows(source) == []
     finally:
         with get_connection() as conn, conn.cursor() as cursor:
-            cursor.execute("DELETE FROM action_item_queue_entries WHERE action_item_id IN (SELECT id FROM action_items WHERE title LIKE 'AIFLOW inventory %')")
+            cursor.execute(
+                "DELETE FROM action_item_queue_entries WHERE action_item_id IN (SELECT id FROM action_items WHERE title LIKE 'AIFLOW inventory %')"
+            )
             cursor.execute(
                 "DELETE FROM action_items WHERE title LIKE 'AIFLOW inventory %'"
             )

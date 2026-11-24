@@ -1,4 +1,5 @@
 """Order global Action Items and one-level Epics in one authoritative queue."""
+
 from alembic import op
 
 revision = "f7a2d8c4b9e3"
@@ -131,9 +132,15 @@ def upgrade() -> None:
 def downgrade() -> None:
     connection = op.get_bind()
     connection.exec_driver_sql("SET LOCAL lock_timeout = '5s'")
-    connection.exec_driver_sql("LOCK TABLE action_items,action_item_epics,action_item_queue_entries IN ACCESS EXCLUSIVE MODE")
-    if connection.exec_driver_sql("SELECT EXISTS(SELECT 1 FROM action_item_epics)").scalar():
-        raise RuntimeError("Cannot remove Epic history; restore from a backup to roll back Epics")
+    connection.exec_driver_sql(
+        "LOCK TABLE action_items,action_item_epics,action_item_queue_entries IN ACCESS EXCLUSIVE MODE"
+    )
+    if connection.exec_driver_sql(
+        "SELECT EXISTS(SELECT 1 FROM action_item_epics)"
+    ).scalar():
+        raise RuntimeError(
+            "Cannot remove Epic history; restore from a backup to roll back Epics"
+        )
     op.execute("""
         DROP TRIGGER action_item_queue_task_check ON action_items;
         DROP TRIGGER action_item_queue_epic_check ON action_item_epics;
