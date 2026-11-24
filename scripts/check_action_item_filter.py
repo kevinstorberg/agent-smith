@@ -230,6 +230,29 @@ def cases():
             0,
         )
     )
+    quote = "Move the integration review deadline to December 4, 2026 at 17:00 UTC, replacing the previous December 2 deadline."
+    updated = {
+        "action": "update",
+        "target_id": 7,
+        "expected_revision": 1,
+        "changes": {"due_at": "2026-12-04T17:00:00Z"},
+        "rationale": "Explicitly revised deadline",
+        "evidence": [{"segment_id": "summary-0", "quote": quote}],
+    }
+    saved = task("Integration review")
+    saved["data"]["due_at"] = "2026-12-01T17:00:00Z"
+    pending = proposal("Integration review", action="update", target=7)
+    pending["data"].update(
+        base_version=1,
+        changes={"due_at": "2026-12-02T17:00:00Z"},
+        before_snapshot=dict(saved["data"]),
+        evidence=[
+            {
+                "quote": "Set the integration review deadline to December 2, 2026 at 17:00 UTC."
+            }
+        ],
+    )
+    result.append(("newer_explicit_deadline", quote, [updated], [saved, pending], 1, 1))
     return result
 
 
