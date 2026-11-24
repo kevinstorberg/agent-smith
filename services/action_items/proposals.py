@@ -294,12 +294,8 @@ def _payload(cursor, proposal_id: int) -> dict:
     return dict(row)
 
 
-def reserve_dismissal(cursor, proposal: dict, *, allow_existing: bool = False) -> dict:
+def reserve_dismissal(cursor, proposal: dict) -> dict:
     payload = _payload(cursor, proposal["id"])
-    if not allow_existing and _was_dismissed(cursor, payload["decision_key"]):
-        raise ProposalConflictError(
-            "An equivalent Action Item change was already decided. Refresh before deciding again."
-        )
     cursor.execute(
         "INSERT INTO action_item_proposal_receipts(decision_key,proposal_id) VALUES(%s,%s) ON CONFLICT DO NOTHING",
         (payload["decision_key"], proposal["id"]),
@@ -478,7 +474,7 @@ def delete_proposal(proposal_id: int) -> None:
         proposal,
     ):
         if proposal["status"] != "approved":
-            reserve_dismissal(cursor, proposal, allow_existing=True)
+            reserve_dismissal(cursor, proposal)
         cursor.execute("DELETE FROM action_item_proposals WHERE id=%s", (proposal_id,))
         if cursor.rowcount != 1:
             raise RuntimeError(
