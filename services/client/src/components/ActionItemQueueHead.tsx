@@ -11,6 +11,7 @@ export function ActionItemQueueHead({
   status,
   showProject = true,
   showDueDate = false,
+  showUpdated = !showDueDate,
 }: {
   sort: ActionItemSort;
   onSort: (sort: ActionItemSort) => void;
@@ -19,6 +20,7 @@ export function ActionItemQueueHead({
   status: string;
   showProject?: boolean;
   showDueDate?: boolean;
+  showUpdated?: boolean;
 }) {
   const sorting = { sort, onSort, current, disabled };
   const columns = ACTION_ITEM_SORT_COLUMNS;
@@ -64,12 +66,16 @@ export function ActionItemQueueHead({
             Tags
           </SortableHeader>
         )}
-        <SortableHeader
-          {...sorting}
-          column={showDueDate ? columns.due : columns.updated}
-        >
-          {showDueDate ? 'Due date' : 'Updated'}
-        </SortableHeader>
+        {showDueDate && (
+          <SortableHeader {...sorting} column={columns.due}>
+            Due date
+          </SortableHeader>
+        )}
+        {showUpdated && (
+          <SortableHeader {...sorting} column={columns.updated}>
+            Updated
+          </SortableHeader>
+        )}
         <th scope="col">Actions</th>
       </tr>
     </thead>

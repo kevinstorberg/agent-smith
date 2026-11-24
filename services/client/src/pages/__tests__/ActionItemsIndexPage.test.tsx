@@ -1068,7 +1068,14 @@ describe('ActionItemsIndexPage', () => {
       within(screen.getByRole('table'))
         .getAllByRole('columnheader')
         .map((header) => header.textContent?.replace(/[▲▼↕]/g, '')),
-    ).toEqual(['Priority', 'Title', 'Project/Tags', 'Due date', 'Actions']);
+    ).toEqual([
+      'Priority',
+      'Title',
+      'Project/Tags',
+      'Due date',
+      'Updated',
+      'Actions',
+    ]);
     expect(
       [
         ...screen.getByRole('table').querySelectorAll('.action-item-priority'),
@@ -1121,7 +1128,7 @@ describe('ActionItemsIndexPage', () => {
     expect(title).toHaveAttribute('aria-controls', 'action-description-1');
     expect(
       screen.getByRole('region', { name: 'Task 1' }).closest('td'),
-    ).toHaveAttribute('colspan', '5');
+    ).toHaveAttribute('colspan', '6');
     await user.keyboard(' ');
     expect(
       screen.queryByRole('region', { name: /^Task \d+$/ }),
@@ -1648,6 +1655,7 @@ describe('Action item column sorting', () => {
       ['Tags', 'tags_asc', 'tags_desc'],
       ['Due date', 'due_asc', 'due_desc'],
       ['Priority', 'manual', 'manual_desc'],
+      ['Updated', 'updated', 'updated_asc'],
     ]) {
       fireEvent.click(screen.getByRole('button', { name: label }));
       await waitFor(() =>

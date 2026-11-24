@@ -324,6 +324,68 @@ for (const collapsed of [false, true]) {
   });
 }
 
+test('Epic headers sort child rows and show updated timestamps while preserving membership', async ({
+  page,
+  fixtureAPI,
+}) => {
+  const members = [
+    actionItem(2, { title: 'Zulu work', updated_at: '2026-11-24T12:00:00Z' }),
+    actionItem(3, { title: 'Alpha work', updated_at: '2026-11-25T12:00:00Z' }),
+  ];
+  fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
+  fixtureAPI.get('/api/action-items/queue', ({ url }: APIRequest) => {
+    const sort = url.searchParams.get('sort');
+    const children = [...members].sort((left, right) =>
+      sort === 'title'
+        ? left.title.localeCompare(right.title)
+        : sort === 'updated'
+          ? right.updated_at.localeCompare(left.updated_at)
+          : left.updated_at.localeCompare(right.updated_at),
+    );
+    return {
+      items: [
+        epicGroup(10, children),
+        ...queuePage({ items: [actionItem(4)], total: 1 }).items,
+      ],
+      total: 2,
+      matching_count: 3,
+    };
+  });
+  await page.goto('/action-items');
+  const region = page.getByRole('region', {
+    name: 'Epic Release',
+    exact: true,
+  });
+  const table = region.getByRole('table', {
+    name: 'Action items in Epic Release',
+    exact: true,
+  });
+  const titles = table.locator('.action-item-title');
+  await expect(
+    table.getByRole('columnheader', { name: 'Updated', exact: true }),
+  ).toBeVisible();
+  await expect(table.locator('.action-updated-cell').first()).toContainText(
+    'Nov 24',
+  );
+  await table.getByRole('button', { name: 'Title', exact: true }).click();
+  await expect(titles).toHaveText(['›Alpha work', '›Zulu work']);
+  await table.getByRole('button', { name: 'Updated', exact: true }).click();
+  await expect(
+    table.getByRole('columnheader', { name: 'Updated', exact: true }),
+  ).toHaveAttribute('aria-sort', 'descending');
+  await table.getByRole('button', { name: 'Updated', exact: true }).click();
+  await expect(titles).toHaveText(['›Zulu work', '›Alpha work']);
+  await expect(
+    region.getByRole('button', { name: 'Task 4', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Task 4', exact: true }),
+  ).toBeVisible();
+  expect(fixtureAPI.requests.filter((entry) => entry.method !== 'GET')).toEqual(
+    [],
+  );
+});
+
 test('child keyboard ordering uses only its complete parent cohort and Escape makes no write', async ({
   page,
   fixtureAPI,
