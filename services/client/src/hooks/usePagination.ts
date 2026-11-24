@@ -38,6 +38,7 @@ export function usePagination<T>(
 ) {
   if (options.page && !options.onPageChange)
     throw new Error('Controlled pagination requires onPageChange');
+  const [result, setResult] = useState<Paginated<T> | null>(null);
   const [items, setItems] = useState<T[]>([]);
   const [resultView, setResultView] = useState<{
     filters: unknown[];
@@ -143,6 +144,7 @@ export function usePagination<T>(
             return;
           }
           setItems(res.items);
+          setResult(res);
           setResultView({ filters: requestFilters, limit, offset });
           setTotal(res.total);
           setError(null);
@@ -186,6 +188,7 @@ export function usePagination<T>(
     resultView.offset === offset &&
     sameFilters(deps, resultView.filters);
   return {
+    result,
     items,
     setItems,
     total,

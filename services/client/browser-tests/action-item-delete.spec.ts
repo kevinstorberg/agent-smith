@@ -1,3 +1,4 @@
+import { flatQueueFixture } from './actionItemQueueFixture';
 import { test, expect, type APIRequest } from './fixtures';
 import { actionItem } from '../src/pages/__tests__/actionItemFixture';
 import {
@@ -14,7 +15,7 @@ test('Action Items confirms cancellation and keyboard deletion with the displaye
 }) => {
   let rows = [actionItem(1, { revision: 7 }), actionItem(2)];
   let deletes = 0;
-  fixtureAPI.get('/api/action-items', () => ({
+  flatQueueFixture(fixtureAPI, () => ({
     items: rows,
     total: rows.length,
   }));
@@ -70,7 +71,7 @@ for (const scale of [1, 2]) {
       title:
         'A longer action item title with project context and useful identifying detail',
     });
-    fixtureAPI.get('/api/action-items', { items: [row], total: 1 });
+    flatQueueFixture(fixtureAPI, { items: [row], total: 1 });
     await page.goto('/action-items');
     const remove = page.getByRole('button', {
       name: `Delete ${row.title}`,

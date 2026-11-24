@@ -1,3 +1,4 @@
+import { flatQueueFixture } from './actionItemQueueFixture';
 import { test, expect, type APIRequest } from './fixtures';
 import { actionItem, deferred } from '../src/pages/__tests__/actionItemFixture';
 import { profileFixture } from '../src/pages/__tests__/profileFixture';
@@ -30,7 +31,7 @@ test('Action Items header toggles preserve filters, reset page two, and restore 
     items: [{ id: 1, name: 'Work', created_at: '2026-11-01T12:00:00Z' }],
     total: 1,
   });
-  fixtureAPI.get('/api/action-items', ({ url }: APIRequest) =>
+  flatQueueFixture(fixtureAPI, ({ url }: APIRequest) =>
     response(url.searchParams.get('offset') === '10' ? 11 : 1),
   );
   await page.goto('/action-items?project=Work&tags=security&q=Task&keep=1');
@@ -52,7 +53,9 @@ test('Action Items header toggles preserve filters, reset page two, and restore 
   ).toHaveAttribute('aria-sort', 'ascending');
   const reads = fixtureAPI.requests
     .slice(start)
-    .filter((entry) => new URL(entry.url).pathname === '/api/action-items');
+    .filter(
+      (entry) => new URL(entry.url).pathname === '/api/action-items/queue',
+    );
   expect(reads).toHaveLength(1);
   expect(Object.fromEntries(new URL(reads[0].url).searchParams)).toMatchObject({
     project: 'Work',
@@ -110,7 +113,7 @@ test('Action Item keyboard sorts retain rows and focus, reject stale responses, 
   const asc = deferred<ReturnType<typeof response>>();
   const desc = deferred<ReturnType<typeof response>>();
   fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
-  fixtureAPI.get('/api/action-items', ({ url }: APIRequest) =>
+  flatQueueFixture(fixtureAPI, ({ url }: APIRequest) =>
     url.searchParams.get('sort') === 'title'
       ? asc.promise
       : url.searchParams.get('sort') === 'title_desc'
@@ -181,7 +184,7 @@ for (const scope of ['action-items', 'discussion-topics'] as const) {
     }, testInfo) => {
       if (scope === 'action-items') {
         fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
-        fixtureAPI.get('/api/action-items', response(1, 1));
+        flatQueueFixture(fixtureAPI, response(1, 1));
         await page.goto('/action-items');
       } else {
         fixtureAPI.get(`/api/profiles/${profileFixture.id}`, profileFixture);
@@ -225,7 +228,7 @@ test('Empty Action Items keep usable headers and contained feedback at both hori
   fixtureAPI,
 }) => {
   fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
-  fixtureAPI.get('/api/action-items', { items: [], total: 0 });
+  flatQueueFixture(fixtureAPI, { items: [], total: 0 });
   await page.goto('/action-items');
   const region = page.getByRole('region', {
     name: 'action items list',
@@ -308,20 +311,20 @@ test('Explicit Action Item Retry announces its pending read without adding refre
   fixtureAPI,
 }) => {
   fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
-  fixtureAPI.get('/api/action-items', response(1));
+  flatQueueFixture(fixtureAPI, response(1));
   await page.goto('/action-items');
   const table = page.getByRole('table');
   await expect(
     page.getByRole('button', { name: 'Task 1', exact: true }),
   ).toBeVisible();
-  fixtureAPI.get('/api/action-items', { detail: 'Synthetic failed read' }, 500);
+  flatQueueFixture(fixtureAPI, { detail: 'Synthetic failed read' }, 500);
   await table.getByRole('button', { name: 'Title', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText(
     'Could not refresh action items.',
   );
   await expect(table).toHaveAttribute('aria-busy', 'false');
   const retry = deferred<ReturnType<typeof response>>();
-  fixtureAPI.get('/api/action-items', () => retry.promise);
+  flatQueueFixture(fixtureAPI, () => retry.promise);
   await page.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(table).toHaveAttribute('aria-busy', 'true');
   await expect(

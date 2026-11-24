@@ -1,3 +1,4 @@
+import { flatQueueFixture } from './actionItemQueueFixture';
 import { test, expect, type APIRequest } from './fixtures';
 import { actionItem } from '../src/pages/__tests__/actionItemFixture';
 import type { Page } from '@playwright/test';
@@ -25,7 +26,7 @@ function projectFixture(
     })),
     total: 3,
   });
-  fixtureAPI.get('/api/action-items', ({ url }: APIRequest) => {
+  flatQueueFixture(fixtureAPI, ({ url }: APIRequest) => {
     const matches =
       (!url.searchParams.get('project') ||
         url.searchParams.get('project') === item.project) &&
@@ -200,7 +201,7 @@ test('source-folder assignment refreshes membership and restores focus to the de
   const reads = fixtureAPI.requests.filter(
     (entry) =>
       entry.method === 'GET' &&
-      new URL(entry.url).pathname === '/api/action-items',
+      new URL(entry.url).pathname === '/api/action-items/queue',
   );
   const latest = new URL(reads.at(-1)!.url);
   expect(latest.searchParams.get('project')).toBe('Source');
@@ -324,7 +325,7 @@ test('conflicted project drops refresh the displayed revision and require a new 
     '/api/action-items/1',
     ({ request }: APIRequest) => {
       writes.push(request.postDataJSON());
-      fixtureAPI.get('/api/action-items', {
+      flatQueueFixture(fixtureAPI, {
         items: [actionItem(1, { project: 'Source', revision: 2 })],
         total: 1,
       });

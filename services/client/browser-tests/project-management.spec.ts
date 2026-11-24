@@ -1,3 +1,4 @@
+import { flatQueueFixture } from './actionItemQueueFixture';
 import { test, expect, type APIRequest } from './fixtures';
 import { actionItem } from '../src/pages/__tests__/actionItemFixture';
 import { expectSortableHeaderLayout } from './sortableHeaderLayout';
@@ -26,7 +27,7 @@ test('project management follows the existing workspace, form and action-item na
     items: [project],
     total: 1,
   }));
-  fixtureAPI.get('/api/action-items', () => ({
+  flatQueueFixture(fixtureAPI, () => ({
     items: [actionItem(1, { project: project.name })],
     total: 1,
   }));

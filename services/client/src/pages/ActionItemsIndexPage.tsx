@@ -1,8 +1,8 @@
 import { Link, useNavigate } from 'react-router';
-import { api } from '../api';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
-import { useActionItemQueue } from '../hooks/useActionItemQueue';
-import { ActionItemQueueTable } from '../components/ActionItemQueueTable';
+import { useActionItemGroupedQueue } from '../hooks/useActionItemGroupedQueue';
+import { ActionItemGroupedQueue } from '../components/ActionItemGroupedQueue';
+import { NewEpicControl } from '../components/ActionItemEpicControls';
 import { actionItemTags } from '../utils/actionItems';
 import { ACTION_ITEM_STATUSES, defaultActionItemSort } from '../constants';
 import { useViewPreferences } from '../hooks/useViewPreferences';
@@ -31,9 +31,7 @@ export function ActionItemsIndexPage() {
     queryInput.trim() !== query ||
     tagsInput.trim() !== tags ||
     dueHoursInput !== dueHours;
-  const queue = useActionItemQueue({
-    source: api.actionItems,
-    removeRow: api.actionItems.remove,
+  const queue = useActionItemGroupedQueue({
     filters: {
       status,
       sort,
@@ -62,7 +60,6 @@ export function ActionItemsIndexPage() {
       tagsInput,
     ]),
     reorderableView: status === 'open' && sort === 'manual',
-    projectAssignment: true,
     criteriaPending,
     pagination: { ...preferences.pagination, enabled: !criteriaPending },
   });
@@ -75,6 +72,7 @@ export function ActionItemsIndexPage() {
           <ButtonLink to="/action-items/proposals?status=pending">
             Proposed action items
           </ButtonLink>
+          <NewEpicControl queue={queue} />
           <Link
             className="btn btn-primary"
             style={{ textDecoration: 'none' }}
@@ -92,7 +90,7 @@ export function ActionItemsIndexPage() {
         scope={projectScope(project, unassigned)}
         onChange={(scope) => preferences.setFields(projectScopeFields(scope))}
         disabled={freezeControls}
-        paused={queue.busy || Boolean(queue.snapshot)}
+        paused={queue.busy || queue.editing || Boolean(queue.snapshot)}
         dropTargetsRef={queue.projectTabsRef}
         dropProject={queue.snapshot?.project}
         dragging={Boolean(queue.snapshot) && !queue.busy}
@@ -178,13 +176,42 @@ export function ActionItemsIndexPage() {
           </>
         }
       />
-      <ActionItemQueueTable
+      {queue.created &&
+        !queue.items.some(
+          (root) => root.kind === 'epic' && root.epic.id === queue.created?.id,
+        ) && (
+          <p role="status">
+            Epic “{queue.created.title}” created.{' '}
+            <button
+              className="btn btn-sm"
+              disabled={queue.freezeControls}
+              onClick={() =>
+                queue.showCreated((position) => {
+                  preferences.setFields({
+                    status: 'open',
+                    sort: 'manual',
+                    q: '',
+                    project: '',
+                    unassigned: false,
+                    due_within_hours: null,
+                    tags: '',
+                  });
+                  preferences.setField(
+                    'offset',
+                    Math.floor((position - 1) / queue.limit) * queue.limit,
+                  );
+                })
+              }
+            >
+              Show Epic
+            </button>
+          </p>
+        )}
+      <ActionItemGroupedQueue
         queue={queue}
         sort={sort}
         onSort={(value) => preferences.setField('sort', value)}
         status={status}
-        showDueDate
-        showMoveActions
         onEdit={(item) => navigate(`/action-items/${item.id}?edit=1`)}
       />
     </div>

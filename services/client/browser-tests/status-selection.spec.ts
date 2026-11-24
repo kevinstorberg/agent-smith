@@ -1,3 +1,4 @@
+import { flatQueueFixture } from './actionItemQueueFixture';
 import type { Locator, Page, TestInfo } from '@playwright/test';
 import type {
   MeetingParticipants,
@@ -275,7 +276,7 @@ for (const view of views) {
       page,
       fixtureAPI,
     }, info) => {
-      fixtureAPI.get('/api/action-items', ({ url }: APIRequest) => {
+      flatQueueFixture(fixtureAPI, ({ url }: APIRequest) => {
         const status =
           url.searchParams.get('status') === 'completed' ? 'completed' : 'open';
         return {

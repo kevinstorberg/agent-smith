@@ -1,5 +1,6 @@
+import { flatQueueFixture } from './actionItemQueueFixture';
 import { test, expect, type APIRequest } from './fixtures';
-import type { ActionItem, ActionItemMove } from '../src/api';
+import type { ActionItem, ActionItemQueueMove } from '../src/api';
 import { actionItem } from '../src/pages/__tests__/actionItemFixture';
 import {
   expectControlContained,
@@ -43,7 +44,7 @@ function queueFixture(fixtureAPI: QueueFixtureAPI, project: string | null) {
     return [hidden, matching];
   }).flat();
   let rows = initial.map((item, index) => ({ ...item, priority: index + 1 }));
-  const writes: ActionItemMove[] = [];
+  const writes: ActionItemQueueMove[] = [];
   const reads: URL[] = [];
   fixtureAPI.get('/api/action-items/projects', {
     items: ['Work', 'Other'].map((name, index) => ({
@@ -53,7 +54,7 @@ function queueFixture(fixtureAPI: QueueFixtureAPI, project: string | null) {
     })),
     total: 2,
   });
-  fixtureAPI.get('/api/action-items', ({ url }: APIRequest) => {
+  flatQueueFixture(fixtureAPI, ({ url }: APIRequest) => {
     reads.push(url);
     const params = url.searchParams;
     const query = params.get('q')?.toLowerCase();
@@ -83,22 +84,22 @@ function queueFixture(fixtureAPI: QueueFixtureAPI, project: string | null) {
       total: matching.length,
     };
   });
-  fixtureAPI.mock('POST', '/api/action-items/11/move', ({ request }) => {
-    const body = request.postDataJSON() as ActionItemMove;
-    expect(body.expected_revision).toBe(7);
+  fixtureAPI.mock('POST', '/api/action-items/queue/move', ({ request }) => {
+    const body = request.postDataJSON() as ActionItemQueueMove;
+    expect(body.source).toEqual({ kind: 'item', id: 11, expected_revision: 7 });
     writes.push(body);
     const moved = rows.find((item) => item.id === 11)!;
     const remaining = rows.filter((item) => item.id !== moved.id);
     const anchor = remaining.findIndex(
-      (item) => item.id === (body.before_id ?? body.after_id),
+      (item) => item.id === (body.before ?? body.after)!.id,
     );
     expect(anchor).toBeGreaterThanOrEqual(0);
-    remaining.splice(anchor + (body.after_id === undefined ? 0 : 1), 0, {
+    remaining.splice(anchor + (body.after === undefined ? 0 : 1), 0, {
       ...moved,
       revision: moved.revision + 1,
     });
     rows = remaining.map((item, index) => ({ ...item, priority: index + 1 }));
-    return rows.find((item) => item.id === moved.id)!;
+    return { saved: true };
   });
   return { initial, writes, reads, rows: () => rows };
 }
@@ -133,8 +134,10 @@ for (const edge of ['top', 'bottom'] as const) {
     await move.focus();
     await page.keyboard.press(edge === 'top' ? 'Enter' : 'Space');
     const expectedMove = {
-      expected_revision: 7,
-      ...(edge === 'top' ? { before_id: 1 } : { after_id: 25 }),
+      source: { kind: 'item', id: 11, expected_revision: 7 },
+      ...(edge === 'top'
+        ? { before: { kind: 'item', id: 1, expected_revision: 1 } }
+        : { after: { kind: 'item', id: 25, expected_revision: 1 } }),
     };
     await expect.poll(() => queue.writes).toEqual([expectedMove]);
     await expect(move).toHaveCount(0);
@@ -217,7 +220,7 @@ test('offers edge movement only for open items in ascending Priority view', asyn
   fixtureAPI,
 }) => {
   fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
-  fixtureAPI.get('/api/action-items', ({ url }: APIRequest) => ({
+  flatQueueFixture(fixtureAPI, ({ url }: APIRequest) => ({
     items: [
       actionItem(1, {
         status:
@@ -254,7 +257,7 @@ for (const scale of [1, 2]) {
         'Review the longer action item with project details and supporting context',
     });
     fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
-    fixtureAPI.get('/api/action-items', {
+    flatQueueFixture(fixtureAPI, {
       items: [actionItem(1), row, actionItem(3)],
       total: 3,
     });
@@ -272,7 +275,7 @@ for (const scale of [1, 2]) {
     if (scale === 2) await enlargeComputedText(page);
     const actions = top.locator('..');
     const cell = actions.locator('..');
-    await expect(actions.getByRole('button')).toHaveCount(5);
+    await expect(actions.getByRole('button')).toHaveCount(6);
     const geometry = await actions.getByRole('button').evaluateAll((buttons) =>
       buttons.map((button) => {
         const { x, y, width, height } = button.getBoundingClientRect();

@@ -1,3 +1,4 @@
+import { queuePage } from './actionItemEpicFixture';
 import {
   act,
   fireEvent,
@@ -21,6 +22,14 @@ vi.mock('../../api', async (original) => {
     ...actual,
     api: {
       ...actual.api,
+      actionItemQueue: { list: vi.fn(), move: vi.fn(), setEpic: vi.fn() },
+      actionItemEpics: {
+        list: vi.fn(),
+        create: vi.fn(),
+        rename: vi.fn(),
+        remove: vi.fn(),
+      },
+
       actionItems: {
         list: vi.fn(),
         get: vi.fn(),
@@ -81,17 +90,19 @@ beforeEach(() => {
     catalog = catalog.filter((item) => item.id !== id);
     return { deleted: true, id };
   });
-  vi.mocked(api.actionItems.list).mockImplementation(async (filters = {}) => {
-    const selected = rows.filter(
-      (item) =>
-        (!filters.project || item.project === filters.project) &&
-        (!filters.unassigned || item.project === null) &&
-        (!filters.status ||
-          filters.status === 'all' ||
-          item.status === filters.status),
-    );
-    return { items: selected, total: selected.length };
-  });
+  vi.mocked(api.actionItemQueue.list).mockImplementation(
+    async (filters = {}) => {
+      const selected = rows.filter(
+        (item) =>
+          (!filters.project || item.project === filters.project) &&
+          (!filters.unassigned || item.project === null) &&
+          (!filters.status ||
+            filters.status === 'all' ||
+            item.status === filters.status),
+      );
+      return queuePage({ items: selected, total: selected.length });
+    },
+  );
   vi.mocked(api.actionItems.get).mockImplementation(async (id) =>
     actionItem(id),
   );
@@ -122,7 +133,7 @@ describe('first-class project navigation', () => {
       vi.advanceTimersByTime(POLL_INTERVAL_MS);
     });
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ project: 'Renamed work' }),
       ),
     );
@@ -146,7 +157,7 @@ describe('first-class project navigation', () => {
     ).toHaveAttribute('aria-selected', 'true');
     fireEvent.click(within(tabs).getByRole('tab', { name: 'Work' }));
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ project: 'Work', offset: 0 }),
       ),
     );
@@ -154,13 +165,13 @@ describe('first-class project navigation', () => {
       target: { value: 'security' },
     });
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ project: 'Work', tags: ['security'] }),
       ),
     );
     fireEvent.click(screen.getByRole('tab', { name: 'Completed' }));
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({
           status: 'completed',
           project: 'Work',
@@ -186,7 +197,7 @@ describe('first-class project navigation', () => {
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Unassigned only' }));
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ unassigned: true, project: undefined }),
       ),
     );
@@ -195,18 +206,18 @@ describe('first-class project navigation', () => {
       within(tabs).getByRole('tab', { name: 'Project: Unassigned' }),
     );
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ project: 'Unassigned' }),
       ),
     );
     expect(
-      vi.mocked(api.actionItems.list).mock.lastCall?.[0]?.unassigned,
+      vi.mocked(api.actionItemQueue.list).mock.lastCall?.[0]?.unassigned,
     ).not.toBe(true);
     fireEvent.click(
       within(tabs).getByRole('tab', { name: 'Project: All projects' }),
     );
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ project: 'All projects' }),
       ),
     );
@@ -229,7 +240,7 @@ describe('first-class project navigation', () => {
     expect(checkbox).not.toBeChecked();
     expect(checkbox).toBeDisabled();
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ project: 'Work' }),
       ),
     );
@@ -264,7 +275,7 @@ describe('first-class project navigation', () => {
       'true',
     );
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({
           unassigned: true,
           project: undefined,
@@ -279,7 +290,7 @@ describe('first-class project navigation', () => {
     );
     await userEvent.click(checkbox);
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({
           project: undefined,
           status: 'completed',
@@ -292,7 +303,7 @@ describe('first-class project navigation', () => {
       ),
     );
     expect(
-      vi.mocked(api.actionItems.list).mock.lastCall?.[0]?.unassigned,
+      vi.mocked(api.actionItemQueue.list).mock.lastCall?.[0]?.unassigned,
     ).not.toBe(true);
     expect(screen.getByLabelText('Tags')).toHaveValue('security');
     expect(screen.getByLabelText('Hours')).toHaveValue(5);
@@ -312,7 +323,7 @@ describe('first-class project navigation', () => {
       'Select All projects to filter unassigned items.',
     );
     expect(
-      vi.mocked(api.actionItems.list).mock.lastCall?.[0]?.unassigned,
+      vi.mocked(api.actionItemQueue.list).mock.lastCall?.[0]?.unassigned,
     ).not.toBe(true);
   });
 
@@ -329,7 +340,7 @@ describe('first-class project navigation', () => {
     ).toHaveAttribute('aria-selected', 'true');
     expect(api.actionItemProjects.create).toHaveBeenCalledWith('New group');
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ project: 'New group', offset: 0 }),
       ),
     );
@@ -422,24 +433,24 @@ describe('first-class project navigation', () => {
   });
 
   it('never commits a deferred prior project response into the new scope', async () => {
-    const old = deferred<{ items: typeof rows; total: number }>();
+    const old = deferred<ReturnType<typeof queuePage>>();
     renderPage();
     const tabs = await screen.findByRole('tablist', {
       name: 'Action item projects',
     });
-    vi.mocked(api.actionItems.list)
+    vi.mocked(api.actionItemQueue.list)
       .mockReturnValueOnce(old.promise)
-      .mockResolvedValueOnce({ items: [rows[1]], total: 1 });
+      .mockResolvedValueOnce(queuePage({ items: [rows[1]], total: 1 }));
     fireEvent.click(within(tabs).getByRole('tab', { name: 'Work' }));
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ project: 'Work' }),
       ),
     );
     fireEvent.click(within(tabs).getByRole('tab', { name: 'Other' }));
     await screen.findByRole('button', { name: 'Task 2' });
     await act(async () => {
-      old.resolve({ items: [rows[0]], total: 1 });
+      old.resolve(queuePage({ items: [rows[0]], total: 1 }));
     });
     expect(
       screen.queryByRole('button', { name: 'Task 1' }),
@@ -646,7 +657,7 @@ it('restores a selected project and preserves independent saved status and tags'
     'aria-selected',
     'true',
   );
-  expect(api.actionItems.list).toHaveBeenCalledWith(
+  expect(api.actionItemQueue.list).toHaveBeenCalledWith(
     expect.objectContaining({
       project: 'Work',
       status: 'completed',

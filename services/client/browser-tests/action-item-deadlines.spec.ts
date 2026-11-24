@@ -1,3 +1,4 @@
+import { flatQueueFixture } from './actionItemQueueFixture';
 import { test, expect, type APIRequest } from './fixtures';
 import { actionItem } from '../src/pages/__tests__/actionItemFixture';
 import {
@@ -36,7 +37,7 @@ for (const sample of deadlineSamples) {
       page,
       fixtureAPI,
     }, testInfo) => {
-      fixtureAPI.get('/api/action-items', {
+      flatQueueFixture(fixtureAPI, {
         items: [
           actionItem(1, {
             due_at: sample.expected,
@@ -121,7 +122,7 @@ test('list date column gives null and omitted deadlines an explicit placeholder'
   page,
   fixtureAPI,
 }) => {
-  fixtureAPI.get('/api/action-items', {
+  flatQueueFixture(fixtureAPI, {
     items: [actionItem(1, { due_at: null }), actionItem(2)],
     total: 2,
   });
@@ -238,24 +239,24 @@ test('hours window stays independent and filtered keyboard drag retains visible 
     actionItem(1, { due_at: '2026-11-05T15:00:00Z', priority: 3 }),
     actionItem(2, { due_at: '2026-11-06T15:00:00Z', priority: 7 }),
   ];
-  fixtureAPI.get('/api/action-items', ({ url }: APIRequest) => {
+  flatQueueFixture(fixtureAPI, ({ url }: APIRequest) => {
     expect(url.searchParams.get('project')).toBe('Work');
     expect(url.searchParams.get('tags')).toBe('security');
     return { items: rows, total: rows.length };
   });
   fixtureAPI.mock(
     'POST',
-    '/api/action-items/1/move',
+    '/api/action-items/queue/move',
     ({ request }: APIRequest) => {
       expect(request.postDataJSON()).toEqual({
-        expected_revision: 1,
-        after_id: 2,
+        source: { kind: 'item', id: 1, expected_revision: 1 },
+        after: { kind: 'item', id: 2, expected_revision: 1 },
       });
       rows = [
         actionItem(2, { due_at: rows[1].due_at, priority: 6 }),
         actionItem(1, { due_at: rows[0].due_at, priority: 7, revision: 2 }),
       ];
-      return rows[1];
+      return { saved: true };
     },
   );
   await page.goto(
@@ -310,7 +311,7 @@ for (const scale of [1, 2]) {
     page,
     fixtureAPI,
   }, testInfo) => {
-    fixtureAPI.get('/api/action-items', { items: [], total: 0 });
+    flatQueueFixture(fixtureAPI, { items: [], total: 0 });
     await page.goto('/action-items?due_within_hours=24');
     if (scale === 2) await enlargeComputedText(page);
     const checkbox = page.getByRole('checkbox', { name: 'Deadline window' });

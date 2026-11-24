@@ -1,3 +1,4 @@
+import { queuePage } from './actionItemEpicFixture';
 import {
   act,
   fireEvent,
@@ -21,6 +22,14 @@ vi.mock('../../api', async (original) => {
     ...actual,
     api: {
       ...actual.api,
+      actionItemQueue: { list: vi.fn(), move: vi.fn(), setEpic: vi.fn() },
+      actionItemEpics: {
+        list: vi.fn(),
+        create: vi.fn(),
+        rename: vi.fn(),
+        remove: vi.fn(),
+      },
+
       actionItems: {
         list: vi.fn(),
         get: vi.fn(),
@@ -55,10 +64,12 @@ function renderPage(path = '/action-items') {
 beforeEach(() => {
   vi.resetAllMocks();
   document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
-  vi.mocked(api.actionItems.list).mockResolvedValue({
-    items: rows,
-    total: rows.length,
-  });
+  vi.mocked(api.actionItemQueue.list).mockResolvedValue(
+    queuePage({
+      items: rows,
+      total: rows.length,
+    }),
+  );
   vi.mocked(api.actionItems.get).mockResolvedValue(rows[0]);
   vi.mocked(api.actionItems.create).mockResolvedValue(actionItem(3));
   vi.mocked(api.actionItems.update).mockResolvedValue(
@@ -248,7 +259,7 @@ describe('independent deadline window', () => {
       screen.getByRole('checkbox', { name: 'Deadline window' }),
     ).not.toBeChecked();
     expect(
-      vi.mocked(api.actionItems.list).mock.lastCall?.[0],
+      vi.mocked(api.actionItemQueue.list).mock.lastCall?.[0],
     ).not.toHaveProperty('due_within_hours');
   });
 
@@ -259,7 +270,7 @@ describe('independent deadline window', () => {
     });
     fireEvent.click(enabled);
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({
           due_within_hours: 24,
           project: 'Work',
@@ -273,7 +284,7 @@ describe('independent deadline window', () => {
     for (const value of [5, 48]) {
       fireEvent.change(slider, { target: { value: String(value) } });
       await waitFor(() =>
-        expect(api.actionItems.list).toHaveBeenLastCalledWith(
+        expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
           expect.objectContaining({
             due_within_hours: value,
             project: 'Work',
@@ -287,7 +298,7 @@ describe('independent deadline window', () => {
     fireEvent.click(enabled);
     await waitFor(() =>
       expect(
-        vi.mocked(api.actionItems.list).mock.lastCall?.[0],
+        vi.mocked(api.actionItemQueue.list).mock.lastCall?.[0],
       ).not.toHaveProperty('due_within_hours'),
     );
     expect(screen.getByRole('tab', { name: 'Work' })).toHaveAttribute(
@@ -299,15 +310,17 @@ describe('independent deadline window', () => {
   it('does not send invalid hours while the numeric control is being edited', async () => {
     renderPage('/action-items?due_within_hours=24');
     const hours = await screen.findByRole('spinbutton', { name: 'Hours' });
-    await waitFor(() => expect(api.actionItems.list).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(api.actionItemQueue.list).toHaveBeenCalledTimes(1),
+    );
     fireEvent.change(hours, { target: { value: '' } });
     fireEvent.blur(hours);
     expect(hours).toHaveValue(24);
-    expect(api.actionItems.list).toHaveBeenCalledTimes(1);
+    expect(api.actionItemQueue.list).toHaveBeenCalledTimes(1);
     fireEvent.change(hours, { target: { value: '169' } });
     fireEvent.blur(hours);
     expect(hours).toHaveValue(24);
-    expect(api.actionItems.list).toHaveBeenCalledTimes(1);
+    expect(api.actionItemQueue.list).toHaveBeenCalledTimes(1);
   });
 
   it('restores the hours window before the first request and allows an explicit URL to clear it', async () => {
@@ -321,7 +334,7 @@ describe('independent deadline window', () => {
     expect(
       await screen.findByRole('checkbox', { name: 'Deadline window' }),
     ).toBeChecked();
-    expect(api.actionItems.list).toHaveBeenCalledWith(
+    expect(api.actionItemQueue.list).toHaveBeenCalledWith(
       expect.objectContaining({
         due_within_hours: 48,
         project: 'Work',
@@ -335,7 +348,7 @@ describe('independent deadline window', () => {
     ).not.toBeChecked();
     await waitFor(() =>
       expect(
-        vi.mocked(api.actionItems.list).mock.lastCall?.[0],
+        vi.mocked(api.actionItemQueue.list).mock.lastCall?.[0],
       ).not.toHaveProperty('due_within_hours'),
     );
   });
@@ -345,24 +358,24 @@ describe('independent deadline window', () => {
     const slider = await screen.findByRole('slider', {
       name: 'Upcoming hours',
     });
-    const old = deferred<{ items: typeof rows; total: number }>();
-    vi.mocked(api.actionItems.list)
+    const old = deferred<ReturnType<typeof queuePage>>();
+    vi.mocked(api.actionItemQueue.list)
       .mockReturnValueOnce(old.promise)
-      .mockResolvedValueOnce({ items: [rows[1]], total: 1 });
+      .mockResolvedValueOnce(queuePage({ items: [rows[1]], total: 1 }));
     fireEvent.change(slider, { target: { value: '5' } });
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ due_within_hours: 5 }),
       ),
     );
     fireEvent.change(slider, { target: { value: '48' } });
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ due_within_hours: 48 }),
       ),
     );
     await act(async () => {
-      old.resolve({ items: [rows[0]], total: 1 });
+      old.resolve(queuePage({ items: [rows[0]], total: 1 }));
     });
     expect(
       screen.queryByRole('button', { name: 'Task 1' }),

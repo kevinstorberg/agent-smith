@@ -1,3 +1,4 @@
+import { flatQueueFixture } from './actionItemQueueFixture';
 import { test, expect } from './fixtures';
 import { actionItem } from '../src/pages/__tests__/actionItemFixture';
 import type { Page } from '@playwright/test';
@@ -30,7 +31,7 @@ const views: PollingView[] = [
   {
     name: 'action items',
     path: '/action-items?q=review&project=work&limit=25&offset=50',
-    endpoint: '/api/action-items',
+    endpoint: '/api/action-items/queue',
   },
   {
     name: 'memory list',
@@ -120,7 +121,13 @@ for (const view of scenarios) {
           setTimeout(resolve, view.responseDelayMs),
         );
       }
-      return { items: [], total };
+      return {
+        items: [],
+        total,
+        ...(view.endpoint === '/api/action-items/queue'
+          ? { matching_count: 0 }
+          : {}),
+      };
     });
     for (const [path, body] of view.related ?? []) fixtureAPI.get(path, body);
     await freezeClock(page);
@@ -183,7 +190,7 @@ test('Action items display agent updates, pause while hidden, and stop polling a
   fixtureAPI,
 }) => {
   let title = 'Original action item';
-  fixtureAPI.get('/api/action-items', () => ({
+  flatQueueFixture(fixtureAPI, () => ({
     items: [actionItem(1, { title })],
     total: 1,
   }));
@@ -195,7 +202,7 @@ test('Action items display agent updates, pause while hidden, and stop polling a
   ).toBeVisible();
   const reads = () =>
     fixtureAPI.requests.filter(
-      (request) => new URL(request.url).pathname === '/api/action-items',
+      (request) => new URL(request.url).pathname === '/api/action-items/queue',
     ).length;
   title = 'Updated by an agent';
   await page.clock.runFor(15_000);

@@ -54,7 +54,7 @@ const cases: PreferenceCase[] = [
   {
     title: 'Action items',
     path: '/action-items',
-    api: '/api/action-items',
+    api: '/api/action-items/queue',
     queryLabel: 'Search action items',
     cookie: mergeViewCookie('', 'actionItems', {
       ...defaultView('actionItems'),
