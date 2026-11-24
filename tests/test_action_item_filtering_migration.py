@@ -175,3 +175,30 @@ def test_action_item_filtering_migration_replacement_delete_keeps_audit_and_refu
         )
     with pytest.raises(RuntimeError, match="Cannot downgrade filtered"):
         command.downgrade(migration, PARENT)
+
+
+def test_action_item_filtering_migration_validates_rejected_receipts_keys_and_later_source_defaults(
+    legacy_database,
+):
+    migration, url, _, _, _ = setup_previous(legacy_database)
+    command.upgrade(migration, REVISION)
+    before = datetime.now(timezone.utc)
+    with psycopg2.connect(url) as conn, conn.cursor() as cursor:
+        cursor.execute(
+            "DELETE FROM action_item_proposal_receipts WHERE proposal_id=702"
+        )
+        cursor.execute(
+            "INSERT INTO action_item_proposal_receipts(decision_key,proposal_id) VALUES(%s,702)",
+            ("2" * 64,),
+        )
+        cursor.execute(
+            "INSERT INTO meeting_sync_state(provider,account_key,source_name,config_fingerprint) VALUES('test','late-created','Later','hash') RETURNING action_items_activated_at"
+        )
+        activated = cursor.fetchone()[0]
+        assert before <= activated <= datetime.now(timezone.utc)
+    with pytest.raises(psycopg2.errors.CheckViolation, match="original decision key"):
+        with psycopg2.connect(url) as conn, conn.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO action_item_proposal_receipts(decision_key,proposal_id) VALUES(%s,700) ON CONFLICT DO NOTHING",
+                ("9" * 64,),
+            )

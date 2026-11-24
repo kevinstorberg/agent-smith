@@ -14,6 +14,7 @@ from services.meetings.enrichment import (
     IMPORT_SECONDS,
 )
 from services.meetings.processing import graph_outcome
+from services.meetings.action_item_run import ActionItemRun
 
 INPUT_SCHEMA = {"source": "string?", "digest": "boolean?"}
 
@@ -30,6 +31,7 @@ class State(TypedDict):
     digest: NotRequired[bool]
     result: dict
     digestion: DigestionRun
+    action_item_run: ActionItemRun
 
 
 async def _sync_summaries(state: State) -> dict:
@@ -61,21 +63,29 @@ def _next_stage(state: State) -> str:
     return (
         "generate_memories"
         if state["digestion"].has_memory_work()
-        else "propose_action_items"
+        else "generate_action_items"
     )
 
 
-async def _propose_action_items(state: State) -> dict:
-    from services.meetings.action_item_run import ActionItemRun
-
+async def _generate_action_items(state: State) -> dict:
     if not state.get("digest", True):
         return {"result": {**state["result"], "action_items": {"outcome": "disabled"}}}
-    async with ActionItemRun(
-        state.get("source"), deadline=state["digestion"].deadline
-    ) as run:
-        await run.prepare()
-        await run.generate_proposals()
-        return {"result": {**state["result"], "action_items": run.report}}
+    run = state["action_item_run"]
+    await run.prepare()
+    await run.generate_candidates()
+    return {"result": {**state["result"], "action_items": run.report}}
+
+
+async def _filter_action_items(state: State) -> dict:
+    if state.get("digest", True):
+        await state["action_item_run"].filter_candidates()
+        return {
+            "result": {
+                **state["result"],
+                "action_items": state["action_item_run"].report,
+            }
+        }
+    return {}
 
 
 class MeetingGraph:
@@ -94,8 +104,17 @@ class MeetingGraph:
             async with DigestionRun(
                 inputs.get("source"), digest=inputs.get("digest", True)
             ) as run:
-                async with asyncio.timeout(GRAPH_WORK_SECONDS):
-                    state = await self.graph.ainvoke({**inputs, "digestion": run})
+                async with ActionItemRun(
+                    inputs.get("source"), deadline=run.deadline
+                ) as action_items:
+                    async with asyncio.timeout(GRAPH_WORK_SECONDS):
+                        state = await self.graph.ainvoke(
+                            {
+                                **inputs,
+                                "digestion": run,
+                                "action_item_run": action_items,
+                            }
+                        )
         except asyncio.CancelledError:
             raise
         except Exception as error:
@@ -119,9 +138,18 @@ def build_graph():
     graph = StateGraph(State)
     graph.add_node("sync_summaries", _sync_summaries)
     graph.add_node("generate_memories", _generate_memories)
-    graph.add_node("propose_action_items", _propose_action_items)
+    graph.add_node("generate_action_items", _generate_action_items)
+    graph.add_node("filter_action_items", _filter_action_items)
     graph.add_edge(START, "sync_summaries")
-    graph.add_conditional_edges("sync_summaries", _next_stage)
-    graph.add_edge("generate_memories", "propose_action_items")
-    graph.add_edge("propose_action_items", END)
+    graph.add_conditional_edges(
+        "sync_summaries",
+        _next_stage,
+        {
+            "generate_memories": "generate_memories",
+            "generate_action_items": "generate_action_items",
+        },
+    )
+    graph.add_edge("generate_memories", "generate_action_items")
+    graph.add_edge("generate_action_items", "filter_action_items")
+    graph.add_edge("filter_action_items", END)
     return MeetingGraph(graph.compile())

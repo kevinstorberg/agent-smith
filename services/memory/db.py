@@ -110,6 +110,11 @@ def _get_embeddings() -> Embeddings:
     return _embeddings
 
 
+def get_embeddings() -> Embeddings:
+    """Share the serialized encoder without opening a memory vector store."""
+    return _get_embeddings()
+
+
 def get_memory_token_budget() -> MemoryTokenBudget:
     factory = getattr(_get_embeddings(), "memory_token_budget", None)
     if not callable(factory):

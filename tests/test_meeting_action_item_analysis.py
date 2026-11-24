@@ -147,7 +147,9 @@ async def test_context_overflow_fails_before_model_creation(monkeypatch):
         lambda *args, **kwargs: pytest.fail("Must fail before model use"),
     )
     with pytest.raises(ActionItemContextTooLarge):
-        await analyze_action_items(SNAPSHOT, [TASK] * 201, [], [])
+        await analyze_action_items(
+            SNAPSHOT, [{**TASK, "description": "x" * 1000}] * 201, [], []
+        )
     with pytest.raises(ActionItemContextTooLarge):
         await analyze_action_items(
             {**SNAPSHOT, "summary_text": "x" * 60_001}, [], [], []

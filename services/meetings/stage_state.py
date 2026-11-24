@@ -17,7 +17,7 @@ def progress(row: dict | None, stage: str, *, total_units: int | None = None) ->
         }
     artifact = row.get(stage + "_artifact") or {}
     return {
-        "processed_units": artifact.get("offset", 0),
+        "processed_units": artifact.get("work_units", artifact.get("offset", 0)),
         "total_units": artifact.get("total_units", total_units),
         "staged_count": len(artifact.get("draft_assignments", []))
         if stage == "speaker"
