@@ -30,6 +30,7 @@ export function actionItemProposal(
       },
     ],
     status: 'pending',
+    superseded_by_id: null,
     applied_ref: null,
     created_at: '2026-11-17T12:00:00Z',
     updated_at: '2026-11-17T12:00:00Z',

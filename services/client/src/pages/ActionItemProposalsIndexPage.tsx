@@ -3,10 +3,11 @@ import { Link } from 'react-router';
 import { api } from '../api';
 import type { ActionItemProposal } from '../api';
 import { ActionItemProposalContent } from '../components/ActionItemProposalContent';
+import { ActionItemProposalSupersession } from '../components/ActionItemProposalSupersession';
 import { FilterBar } from '../components/FilterBar';
 import { Pagination } from '../components/Pagination';
 import { DateCell } from '../components/table';
-import { PROPOSAL_STATUSES } from '../constants';
+import { ACTION_ITEM_PROPOSAL_STATUSES } from '../constants';
 import { useNotification } from '../context/useNotification';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { useApiRead } from '../hooks/useApiRead';
@@ -120,7 +121,7 @@ export function ActionItemProposalsIndexPage() {
             }
           >
             <option value="">All statuses</option>
-            {PROPOSAL_STATUSES.map((value) => (
+            {ACTION_ITEM_PROPOSAL_STATUSES.map((value) => (
               <option key={value} value={value}>
                 {value[0].toUpperCase() + value.slice(1)}
                 {counts.data && !counts.error && !q
@@ -238,6 +239,7 @@ export function ActionItemProposalsIndexPage() {
                     )}
                   </div>
                 </div>
+                <ActionItemProposalSupersession proposal={proposal} />
                 {proposal.status === 'pending' && stale && (
                   <p role="alert">
                     The source meeting or saved Action Item changed or is

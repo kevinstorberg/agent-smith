@@ -18,10 +18,11 @@ def list_reviews(
     *,
     q: str | None = None,
     sort: str = "newest",
+    statuses: tuple[str, ...] = PROPOSAL_STATUSES,
 ) -> tuple[list[dict], int]:
     clauses, params = [], []
     if status:
-        assert status in PROPOSAL_STATUSES, f"Invalid proposal status: {status}"
+        assert status in statuses, f"Invalid proposal status: {status}"
         clauses.append("status = %s")
         params.append(status)
     pattern = search_pattern(q)
@@ -37,7 +38,9 @@ def list_reviews(
     )
 
 
-def count_reviews(model: type[BaseModel]) -> dict[str, int]:
+def count_reviews(
+    model: type[BaseModel], *, statuses: tuple[str, ...] = PROPOSAL_STATUSES
+) -> dict[str, int]:
     with get_connection() as conn, conn.cursor() as cursor:
         cursor.execute(
             sql.SQL("SELECT status, count(*) FROM {} GROUP BY status").format(
@@ -45,4 +48,4 @@ def count_reviews(model: type[BaseModel]) -> dict[str, int]:
             )
         )
         counts = dict(cursor.fetchall())
-    return {status: counts.get(status, 0) for status in PROPOSAL_STATUSES}
+    return {status: counts.get(status, 0) for status in statuses}

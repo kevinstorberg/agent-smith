@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Path, Query
 from services.action_items import proposals
 from services.api.models.action_item_proposal import (
     PROPOSAL_SORTS,
-    PROPOSAL_STATUSES,
+    ACTION_ITEM_PROPOSAL_STATUSES,
     count_by_status,
     get_proposal,
     list_proposals,
@@ -31,8 +31,10 @@ def list_all(
     q: Annotated[str, Query(max_length=1000)] = "",
     sort: Annotated[str, Query(pattern=sort_pattern(PROPOSAL_SORTS))] = "newest",
 ):
-    if status is not None and status not in PROPOSAL_STATUSES:
-        raise HTTPException(422, f"status must be one of {PROPOSAL_STATUSES}")
+    if status is not None and status not in ACTION_ITEM_PROPOSAL_STATUSES:
+        raise HTTPException(
+            422, f"status must be one of {ACTION_ITEM_PROPOSAL_STATUSES}"
+        )
     items, total = query_result(
         list_proposals, status=status, limit=limit, offset=offset, q=q, sort=sort
     )

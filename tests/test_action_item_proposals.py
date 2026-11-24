@@ -91,6 +91,41 @@ def candidate(*, title="Send the design document", changes=None, target=None):
     }
 
 
+def test_superseded_history_is_filterable_and_cannot_be_decided(source, client):
+    from services.api.models.shared.proposal_reviews import PROPOSAL_STATUSES
+    from services.api.routers.proposals import router as harness_router
+
+    client.app.include_router(harness_router, prefix="/proposals")
+    previous = action_items.stage_and_persist(source, candidate())
+    replacement = action_items.stage_and_persist(
+        source, candidate(title="Complete the integration review")
+    )
+    with get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            "UPDATE action_item_proposals SET status='superseded',superseded_by_id=%s WHERE id=%s",
+            (replacement["id"], previous["id"]),
+        )
+    counts = client.get("/action-item-proposals/counts").json()
+    assert counts == {"pending": 1, "approved": 0, "rejected": 0, "superseded": 1}
+    history = client.get("/action-item-proposals?status=superseded").json()
+    assert history["total"] == 1
+    assert history["items"][0]["id"] == previous["id"]
+    detail = client.get(f"/action-item-proposals/{previous['id']}").json()
+    assert detail["superseded_by_id"] == replacement["id"]
+    assert detail["proposed_item"]["title"] == "Send the design document"
+    assert detail["evidence"] == previous["evidence"]
+    for action in ("approve", "reject"):
+        assert (
+            client.post(f"/action-item-proposals/{previous['id']}/{action}").status_code
+            == 409
+        )
+    assert client.get(f"/action-item-proposals/{previous['id']}").json() == detail
+    assert tasks.list_items({"status": "all"})["total"] == 0
+    assert PROPOSAL_STATUSES == ("pending", "approved", "rejected")
+    assert client.get("/proposals?status=superseded").status_code == 422
+    assert set(client.get("/proposals/counts").json()) == set(PROPOSAL_STATUSES)
+
+
 def test_generation_persists_detached_review_without_creating_a_task(source, client):
     proposal = action_items.stage_and_persist(source, candidate())
     assert "target_kind" not in proposal and proposal["status"] == "pending"

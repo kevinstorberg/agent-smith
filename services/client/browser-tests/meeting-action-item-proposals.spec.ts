@@ -72,6 +72,7 @@ test('compact create rows expose decisions and keep complete context recoverable
     pending: proposals.length,
     approved: 0,
     rejected: 0,
+    superseded: 0,
   });
   await page.goto('/action-items/proposals');
   const rows = page
@@ -159,6 +160,7 @@ test('review failures have one persistent visible error and retain the pending r
     pending: 1,
     approved: 0,
     rejected: 0,
+    superseded: 0,
   });
   fixtureAPI.mock(
     'POST',
@@ -213,6 +215,7 @@ test('supporting context stays open through a normal poll without submitting a d
     pending: 1,
     approved: 0,
     rejected: 0,
+    superseded: 0,
   });
   await page.goto('/action-items/proposals');
   const details = page
@@ -259,6 +262,7 @@ test('accepts and rejects from the list without navigation or confirmation', asy
     pending: proposals.filter((item) => item.status === 'pending').length,
     approved: proposals.filter((item) => item.status === 'approved').length,
     rejected: proposals.filter((item) => item.status === 'rejected').length,
+    superseded: 0,
   }));
   for (const [id, action, status] of [
     [1, 'approve', 'approved'],
@@ -352,6 +356,7 @@ test('proposed Action Items have a separate workspace list and review endpoint',
     pending: 1,
     approved: 0,
     rejected: 0,
+    superseded: 0,
   });
   fixtureAPI.get('/api/action-item-proposals/1', proposal);
   await page.goto('/action-items/proposals');
@@ -418,6 +423,7 @@ test('an empty Action Item review queue explains task generation without harness
     pending: 0,
     approved: 0,
     rejected: 0,
+    superseded: 0,
   });
   await page.goto('/action-items/proposals');
   await expect(

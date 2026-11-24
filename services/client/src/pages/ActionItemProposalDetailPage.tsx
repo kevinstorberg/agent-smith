@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { api } from '../api';
 import { ActionItemProposalContent } from '../components/ActionItemProposalContent';
+import { ActionItemProposalSupersession } from '../components/ActionItemProposalSupersession';
 import { StatusBadge } from '../components/StatusBadge';
 import { useNotification } from '../context/useNotification';
 import { useApiMutation } from '../hooks/useApiMutation';
@@ -116,6 +117,7 @@ export function ActionItemProposalDetailPage() {
             <span className="tag tag-project">{proposal.project}</span>
           )}
         </div>
+        <ActionItemProposalSupersession proposal={proposal} />
         {targetMissing && (
           <p role="alert">
             The Action Item was deleted. This update can no longer be approved.
