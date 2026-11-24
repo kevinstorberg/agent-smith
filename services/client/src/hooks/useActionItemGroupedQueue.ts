@@ -37,6 +37,28 @@ const reference = (root: ActionItemQueueRoot) =>
         expected_revision: root.item.revision,
       }
     : { kind: 'epic' as const, ...epicReference(root.epic) };
+const rootSignature = (roots: ActionItemQueueRoot[]) =>
+  JSON.stringify(
+    roots.map((root) =>
+      root.kind === 'item'
+        ? [root.kind, root.item.id, root.item.revision, root.position]
+        : [
+            root.kind,
+            root.epic.id,
+            root.epic.revision,
+            root.epic.cohort,
+            root.epic.position,
+          ],
+    ),
+  );
+const childSignature = (group: ActionItemEpicGroup) =>
+  JSON.stringify(
+    group.children.map((child) => [
+      child.item.id,
+      child.item.revision,
+      child.position,
+    ]),
+  );
 interface GroupDrag extends ProjectDragSnapshot {
   roots: ActionItemQueueRoot[];
   items: ActionItemRow[];
@@ -81,7 +103,7 @@ export function useActionItemGroupedQueue({
   const view = JSON.stringify([viewKey, list.limit, list.offset]);
   const readable =
     list.dataCurrent && !criteriaPending && !list.loading && !list.error;
-  const signature = JSON.stringify(list.items);
+  const signature = rootSignature(list.items);
   const current = useRef({ view, signature, readable, items: list.items });
   useLayoutEffect(() => {
     current.current = { view, signature, readable, items: list.items };
@@ -259,7 +281,7 @@ export function useActionItemGroupedQueue({
     if (!canAct()) return;
     setReviewError(null);
     rememberFocus();
-    await writes.runWrite(
+    const removed = await writes.runWrite(
       () =>
         api.actionItemEpics.remove(epic.id, {
           expected_revision: epic.revision,
@@ -268,6 +290,8 @@ export function useActionItemGroupedQueue({
       'Could not remove this Epic.',
       { pendingId: -epic.id },
     );
+    if (removed && writes.mounted.current)
+      setCreated((current) => (current?.id === epic.id ? null : current));
   }
   function canMoveRoot(root: ActionItemQueueRoot, edge: 'top' | 'bottom') {
     const index = list.items.findIndex(
@@ -393,6 +417,18 @@ export function useActionItemGroupedQueue({
     const captured = drag.current;
     drag.current = null;
     if (!captured || !writes.mounted.current) return;
+    const liveParent = captured.parent
+      ? current.current.items.find(
+          (root): root is ActionItemEpicGroup =>
+            root.kind === 'epic' && root.epic.id === captured.parent!.epic.id,
+        )
+      : undefined;
+    const sameChildren =
+      !captured.parent ||
+      Boolean(
+        liveParent &&
+        childSignature(captured.parent) === childSignature(liveParent),
+      );
     const targets = projectTargets(projectTabsRef.current);
     const sameProjects =
       !captured.projects ||
@@ -407,6 +443,7 @@ export function useActionItemGroupedQueue({
       captured.view !== current.current.view ||
       captured.signature !== current.current.signature ||
       !sameProjects ||
+      !sameChildren ||
       !current.current.readable ||
       result.reason === 'CANCEL'
     ) {
@@ -520,6 +557,7 @@ export function useActionItemGroupedQueue({
     deletionEnabled: true,
     canRemove: canAct,
     canAct,
+    canSubmit: () => canWrite() && !showing,
     expandedId: expanded?.view === view ? expanded.id : null,
     setExpanded,
     canMoveToEdge,

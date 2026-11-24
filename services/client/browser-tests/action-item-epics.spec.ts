@@ -4,7 +4,7 @@ import type {
   ActionItemQueueMove,
   ActionItemQueueRoot,
 } from '../src/api';
-import { actionItem } from '../src/pages/__tests__/actionItemFixture';
+import { actionItem, deferred } from '../src/pages/__tests__/actionItemFixture';
 import {
   epicGroup,
   queuePage,
@@ -153,16 +153,25 @@ test('Epics support create, singleton membership, collapse, rename, and removal 
   await page.getByRole('button', { name: 'Save Epic', exact: true }).click();
   const group = page.getByRole('region', { name: 'Epic Launch', exact: true });
   await expect(group).toBeVisible();
+  await expect(group.getByText('0 items', { exact: true })).toBeVisible();
   await page
     .getByRole('button', { name: 'Move Task 1 to Epic', exact: true })
     .click();
+  await page
+    .getByRole('combobox', { name: 'Move to Epic', exact: true })
+    .waitFor({ state: 'visible' });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: testInfo.outputPath('epic-membership-picker.png'),
+    fullPage: true,
+  });
   await page
     .getByRole('combobox', { name: 'Move to Epic', exact: true })
     .selectOption('20');
   await expect(
     group.getByRole('button', { name: 'Task 1', exact: true }),
   ).toBeVisible();
-  await expect(group.getByText('1 of 1 matching')).toBeVisible();
+  await expect(group.getByText('1 item', { exact: true })).toBeVisible();
   await group.getByRole('button', { name: 'Launch', exact: true }).click();
   await expect(
     group.getByRole('button', { name: 'Task 1', exact: true }),
@@ -179,6 +188,7 @@ test('Epics support create, singleton membership, collapse, rename, and removal 
     exact: true,
   });
   await expect(renamed).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: testInfo.outputPath('epic-singleton.png'),
     fullPage: true,
@@ -188,6 +198,7 @@ test('Epics support create, singleton membership, collapse, rename, and removal 
   await expectMainContained(page);
   for (const control of await renamed.getByRole('button').all())
     await expectControlContained(control, page.locator('main'));
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: testInfo.outputPath('epic-singleton-enlarged.png'),
     fullPage: true,
@@ -195,6 +206,11 @@ test('Epics support create, singleton membership, collapse, rename, and removal 
   await renamed
     .getByLabel('Actions for Epic Launch checklist', { exact: true })
     .click();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: testInfo.outputPath('epic-menu-enlarged.png'),
+    fullPage: true,
+  });
   page.once('dialog', (dialog) => {
     expect(dialog.message()).toContain('kept and ungrouped');
     void dialog.accept();
@@ -207,6 +223,9 @@ test('Epics support create, singleton membership, collapse, rename, and removal 
     page.getByRole('button', { name: 'Task 1', exact: true }),
   ).toBeVisible();
   expect(writes).toHaveLength(3);
+  await expect(
+    page.getByRole('button', { name: 'Show Epic', exact: true }),
+  ).toHaveCount(0);
 });
 
 for (const collapsed of [false, true]) {
@@ -388,6 +407,12 @@ test('ambiguous inline creation keeps its UUID and reviewed membership for an ex
   await expect(
     page.getByRole('textbox', { name: 'Epic name', exact: true }),
   ).toHaveValue('Retry group');
+  const name = page.getByRole('textbox', { name: 'Epic name', exact: true });
+  await expect(name).toHaveAttribute('readonly');
+  await name.focus();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.type('Changed title');
+  await expect(name).toHaveValue('Retry group');
   await page.getByRole('button', { name: 'Save Epic', exact: true }).click();
   await expect.poll(() => requests.length).toBe(2);
   expect(requests[1]).toEqual(requests[0]);
@@ -468,4 +493,111 @@ test('filtered whole-root edge movement preserves hidden membership and reports 
     path: testInfo.outputPath('epic-filtered-stale.png'),
     fullPage: true,
   });
+});
+
+test('a failed membership selection stays canonical and permits the same explicit destination again', async ({
+  page,
+  fixtureAPI,
+}) => {
+  const source = epicGroup();
+  const destination = { ...epicGroup(20).epic, title: 'Next group' };
+  let attempts = 0;
+  fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
+  fixtureAPI.get('/api/action-items/queue', {
+    items: [source],
+    total: 1,
+    matching_count: 1,
+  });
+  fixtureAPI.get('/api/action-items/epics', {
+    items: [source.epic, destination],
+  });
+  fixtureAPI.mock(
+    'POST',
+    '/api/action-items/2/epic',
+    ({ request }: APIRequest) => {
+      attempts++;
+      expect(request.postDataJSON().destination.id).toBe(20);
+      return { detail: 'Synthetic membership conflict' };
+    },
+    409,
+  );
+  await page.goto('/action-items');
+  await page
+    .getByRole('button', { name: 'Move Task 2 to Epic', exact: true })
+    .click();
+  const picker = page.getByRole('combobox', {
+    name: 'Move to Epic',
+    exact: true,
+  });
+  await picker.selectOption('20');
+  await expect(page.getByRole('alert')).toContainText(
+    'Synthetic membership conflict',
+  );
+  await expect(picker).toHaveValue('10');
+  await expect(picker).toBeEnabled();
+  expect(attempts).toBe(1);
+  await picker.selectOption('20');
+  await expect.poll(() => attempts).toBe(2);
+  await expect(picker).toHaveValue('10');
+});
+
+test('an in-flight child content refresh preserves a structural whole-Epic drag', async ({
+  page,
+  fixtureAPI,
+}) => {
+  await page.clock.install();
+  const original = epicGroup();
+  const changed = epicGroup(10, [
+    actionItem(2, { title: 'Updated child content', revision: 2 }),
+  ]);
+  const tail = queuePage({ items: [actionItem(4)], total: 1 }).items[0];
+  const pending = deferred<unknown>();
+  let reads = 0;
+  let writes = 0;
+  fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
+  fixtureAPI.get('/api/action-items/queue', () => {
+    reads++;
+    if (reads === 2) return pending.promise;
+    return {
+      items: writes ? [tail, changed] : [original, tail],
+      total: 2,
+      matching_count: 2,
+    };
+  });
+  fixtureAPI.mock(
+    'POST',
+    '/api/action-items/queue/move',
+    ({ request }: APIRequest) => {
+      writes++;
+      expect(request.postDataJSON().source).toEqual({
+        kind: 'epic',
+        id: 10,
+        expected_revision: 3,
+        cohort: 'cohort-10',
+      });
+      return { saved: true };
+    },
+  );
+  await page.goto('/action-items');
+  const handle = page.getByRole('button', {
+    name: 'Reorder Epic Release',
+    exact: true,
+  });
+  await expect(handle).toBeEnabled();
+  await page.clock.fastForward(15_000);
+  await expect.poll(() => reads).toBe(2);
+  await handle.focus();
+  await page.keyboard.press('Space');
+  const response = page.waitForResponse(
+    (url) => new URL(url.url()).pathname === '/api/action-items/queue',
+  );
+  pending.resolve({ items: [changed, tail], total: 2, matching_count: 2 });
+  await response;
+  await page.clock.runFor(32);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Space');
+  await expect.poll(() => writes).toBe(1);
+  await expect(
+    page.getByRole('button', { name: 'Updated child content', exact: true }),
+  ).toBeVisible();
 });

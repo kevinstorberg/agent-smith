@@ -62,23 +62,26 @@ function useEpicEditor(
 export function EpicNameForm({
   initial = '',
   label = 'Epic name',
+  lockedTitle,
   busy,
   onSave,
   onCancel,
 }: {
   initial?: string;
   label?: string;
+  lockedTitle?: string;
   busy: boolean;
   onSave: (title: string) => Promise<boolean>;
   onCancel: () => void;
 }) {
   const [title, setTitle] = useState(initial);
+  const name = lockedTitle ?? title;
   return (
     <form
       className="epic-name-form"
       onSubmit={async (event) => {
         event.preventDefault();
-        if (!busy && title.trim() && (await onSave(title.trim()))) onCancel();
+        if (!busy && name.trim() && (await onSave(name.trim()))) onCancel();
       }}
       onKeyDown={(event) => {
         event.stopPropagation();
@@ -92,12 +95,15 @@ export function EpicNameForm({
           autoFocus
           required
           maxLength={200}
-          value={title}
+          value={name}
+          readOnly={lockedTitle !== undefined}
           disabled={busy}
-          onChange={(event) => setTitle(event.target.value)}
+          onChange={(event) => {
+            if (lockedTitle === undefined) setTitle(event.target.value);
+          }}
         />
       </label>
-      <button className="btn btn-primary" disabled={busy || !title.trim()}>
+      <button className="btn btn-primary" disabled={busy || !name.trim()}>
         Save Epic
       </button>
       <button type="button" className="btn" disabled={busy} onClick={onCancel}>
@@ -116,23 +122,30 @@ function EpicCreateForm({
   item?: ActionItemRow;
   onClose: () => void;
 }) {
-  const receipt = useRef<ActionItemEpicCreate | null>(null);
+  const [receipt, setReceipt] = useState<ActionItemEpicCreate | null>(null);
   return (
-    <EpicNameForm
-      busy={queue.busy}
-      onCancel={onClose}
-      onSave={async (title) => {
-        if (!receipt.current || receipt.current.title !== title)
-          receipt.current = {
+    <>
+      <EpicNameForm
+        busy={queue.busy}
+        lockedTitle={receipt?.title}
+        onCancel={onClose}
+        onSave={async (title) => {
+          if (!queue.canSubmit()) return false;
+          const payload = receipt ?? {
             title,
             request_id: crypto.randomUUID(),
             ...(item
               ? { item_id: item.id, membership: queue.membership(item) }
               : {}),
           };
-        return queue.createEpic(receipt.current);
-      }}
-    />
+          if (!receipt) setReceipt(payload);
+          return queue.createEpic(payload);
+        }}
+      />
+      {receipt && !queue.busy && (
+        <p>Retry “{receipt.title}” or cancel to start again.</p>
+      )}
+    </>
   );
 }
 
@@ -164,7 +177,8 @@ function EpicPicker({
   onClose: () => void;
 }) {
   const read = useApiRead(api.actionItemEpics.list);
-  const [selected, setSelected] = useState(String(queue.parentId(item) ?? ''));
+  const [creating, setCreating] = useState(false);
+  const selected = creating ? 'new' : String(queue.parentId(item) ?? '');
   return (
     <div
       className="epic-picker"
@@ -192,7 +206,7 @@ function EpicPicker({
           disabled={queue.busy || read.loading || Boolean(read.error)}
           onChange={async (event) => {
             const value = event.target.value;
-            setSelected(value);
+            setCreating(value === 'new');
             if (value === 'new') return;
             const destination = value
               ? read.data?.items.find((epic) => String(epic.id) === value)
