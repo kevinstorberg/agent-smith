@@ -46,6 +46,7 @@ def test_epic_http_lifecycle_and_strict_boundaries(client):
     assert db.get(child["id"])["title"] == "Child"
     assert client.get("/api/action-items/queue?parent=1").status_code == 422
     assert client.post("/api/action-items/epics", json={"title": " ", "request_id": str(uuid4())}).status_code == 422
+    assert client.post("/api/action-items/epics", json={"title": "Bad\0name", "request_id": str(uuid4())}).status_code == 422
     assert client.patch(f"/api/action-items/{child['id']}", json={"expected_revision": db.get(child["id"])["revision"], "epic_id": 1}).status_code == 422
 
 

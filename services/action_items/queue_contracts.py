@@ -21,8 +21,18 @@ class Membership(Contract):
     destination: EpicReference | None = None
 
 
-class EpicCreate(Contract):
+class EpicTitle(Contract):
     title: Title
+
+    @field_validator("title")
+    @classmethod
+    def reject_nul(cls, value):
+        if "\0" in value:
+            raise ValueError("Epic title cannot contain NUL characters")
+        return value
+
+
+class EpicCreate(EpicTitle):
     request_id: str
     item_id: PositiveInt | None = None
     membership: Membership | None = None
@@ -41,8 +51,8 @@ class EpicCreate(Contract):
         return self
 
 
-class EpicPatch(Delete):
-    title: Title
+class EpicPatch(EpicTitle, Delete):
+    pass
 
 
 class EpicRemove(Delete):

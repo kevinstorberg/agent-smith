@@ -143,6 +143,7 @@ def create_epic(payload: EpicCreate | dict) -> dict:
 
 
 def rename_epic(epic_id: int, payload: EpicPatch | dict) -> dict:
+    epic_id = _tasks()._id(epic_id)
     request = EpicPatch.model_validate(payload)
     with _tasks()._cursor(None, write=True) as (cursor, _):
         before = _epic(cursor, epic_id, expected=request)
@@ -152,6 +153,7 @@ def rename_epic(epic_id: int, payload: EpicPatch | dict) -> dict:
 
 
 def remove_epic(epic_id: int, payload: EpicRemove | dict) -> dict:
+    epic_id = _tasks()._id(epic_id)
     request = EpicRemove.model_validate(payload)
     with _tasks()._cursor(None, write=True) as (cursor, _):
         before = _epic(cursor, epic_id, expected=request)
@@ -170,6 +172,7 @@ def remove_epic(epic_id: int, payload: EpicRemove | dict) -> dict:
 
 
 def set_membership(item_id: int, payload: Membership | dict) -> dict:
+    item_id = _tasks()._id(item_id)
     request = Membership.model_validate(payload)
     with _tasks()._cursor(None, write=True) as (cursor, scope):
         _move_membership(cursor, item_id, request)
