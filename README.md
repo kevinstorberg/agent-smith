@@ -256,6 +256,37 @@ after an uncertain failure to retrieve the existing task without duplicating or 
 it. Deleted request IDs remain reserved. No meeting graph or model call runs as a side
 effect of managing tasks.
 
+Use **New Epic** in the saved list to create a collapsible group, including an empty
+or single-item Epic. An item's **Move to Epic** control selects an existing Epic,
+creates one inline, or removes its membership. Epic headers offer rename and removal;
+removing an Epic keeps its Action Items and unwraps them into the same root position.
+Epics have one level and move alongside standalone Action Items. Child order is separate
+from root order; completing an item keeps its membership, and reopening appends it inside
+that Epic. Projects and tags remain independent of Epic membership.
+
+The grouped screen applies filters to children, then paginates complete root groups;
+an Epic is never split across pages. Its matching count distinguishes visible children
+from its complete membership. Empty or completed-only Epic headers remain manageable in
+unfiltered Open. Title sorts by Epic names, Updated uses the latest group/member update,
+and Newest uses the group's creation time. Due uses the earliest matching deadline,
+Completed the latest completion, and Project/Tags the smallest nonempty matching value;
+missing values sort last. These views do not change saved manual order.
+
+`GET /api/action-items/queue` supplies grouped roots and complete structural snapshots;
+`/api/action-items/epics` manages Epics, `POST /api/action-items/{id}/epic` explicitly
+changes membership, and `POST /api/action-items/queue/move` reorders root groups or
+same-Epic children. Mutations require current revisions and relevant membership snapshots.
+The existing task REST/MCP list/get responses remain flat and retain their exact fields;
+manual task priority flattens the group order. Existing task moves work within one sibling
+scope. A cross-Epic/root move conflicts instead of silently changing membership or moving
+other items; manage that change through the explicit Epic UI. Models do not assign Epics.
+
+The Epic migration moves global ordering into one queue-entry table while preserving task
+IDs, fields, creation receipts, timestamps, revisions, and profile discussion order. Stop
+writers, migrate, and restart the updated application together; mixed-version writers are
+unsupported. Downgrade reconstructs the old order only when no Epic history exists and
+refuses to discard existing Epics or memberships.
+
 Projects have an independent catalog with immutable IDs and exact, case-sensitive names;
 tags remain separate labels. `GET`/`POST /api/action-items/projects` and
 `action_item_project_list`/`action_item_project_create` list or create groups without tasks.

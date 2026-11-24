@@ -228,6 +228,62 @@ export interface ActionItemFilters extends PaginationParams {
   sort?: ActionItemSort;
 }
 
+export interface ActionItemEpic {
+  id: number;
+  title: string;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+  entry_id: number;
+  position: number;
+  cohort: string;
+  total_count?: number;
+}
+export interface ActionItemEpicReference {
+  id: number;
+  expected_revision: number;
+  cohort: string;
+}
+export interface ActionItemMembership {
+  expected_revision: number;
+  expected_parent?: ActionItemEpicReference | null;
+  destination?: ActionItemEpicReference | null;
+}
+export interface ActionItemEpicCreate {
+  title: string;
+  request_id: string;
+  item_id?: number;
+  membership?: ActionItemMembership;
+}
+export interface ActionItemQueueEntry {
+  kind: 'item';
+  item: ActionItemRow;
+  entry_id: number;
+  parent_epic_id: number | null;
+  position: number | null;
+}
+export interface ActionItemEpicGroup {
+  kind: 'epic';
+  epic: ActionItemEpic;
+  children: ActionItemQueueEntry[];
+  matching_count: number;
+  total_count: number;
+}
+export type ActionItemQueueRoot = ActionItemQueueEntry | ActionItemEpicGroup;
+export interface ActionItemGroupedPage extends Paginated<ActionItemQueueRoot> {
+  matching_count: number;
+}
+export type ActionItemEntryReference =
+  | { kind: 'item'; id: number; expected_revision: number }
+  | { kind: 'epic'; id: number; expected_revision: number; cohort: string };
+export type ActionItemQueueMove = {
+  source: ActionItemEntryReference;
+  parent?: ActionItemEpicReference | null;
+} & (
+  | { before: ActionItemEntryReference; after?: never }
+  | { after: ActionItemEntryReference; before?: never }
+);
+
 export interface ProfileDiscussionTopicRow extends Omit<
   ActionItemRow,
   'due_at'
@@ -1183,6 +1239,15 @@ function topicPath(profileId: string, id?: number): string {
   return `/profiles/${encodeURIComponent(profileId)}/discussion-topics${id === undefined ? '' : `/${id}`}`;
 }
 
+function actionItemFilterParams(filters: ActionItemFilters) {
+  const params = itemFilterParams(filters);
+  if (filters.project) params.project = filters.project;
+  if (filters.unassigned) params.unassigned = 'true';
+  if (filters.due_within_hours !== undefined)
+    params.due_within_hours = String(filters.due_within_hours);
+  return params;
+}
+
 export const api = {
   projects: {
     list: (params?: ResourceListParams) =>
@@ -1223,11 +1288,7 @@ export const api = {
   },
   actionItems: {
     list: (filters: ActionItemFilters = {}) => {
-      const params = itemFilterParams(filters);
-      if (filters.project) params.project = filters.project;
-      if (filters.unassigned) params.unassigned = 'true';
-      if (filters.due_within_hours !== undefined)
-        params.due_within_hours = String(filters.due_within_hours);
+      const params = actionItemFilterParams(filters);
       return get<Paginated<ActionItemRow>>(
         '/action-items',
         params,
@@ -1249,6 +1310,48 @@ export const api = {
     move: (id: number, body: ActionItemMove) =>
       post<ActionItem>(
         `/action-items/${id}/move`,
+        body,
+        ACTION_ITEM_TIMEOUT_MS,
+      ),
+  },
+  actionItemQueue: {
+    list: (filters: ActionItemFilters = {}) =>
+      get<ActionItemGroupedPage>(
+        '/action-items/queue',
+        actionItemFilterParams(filters),
+        ACTION_ITEM_TIMEOUT_MS,
+      ),
+    move: (body: ActionItemQueueMove) =>
+      post<{ saved: boolean }>(
+        '/action-items/queue/move',
+        body,
+        ACTION_ITEM_TIMEOUT_MS,
+      ),
+    setEpic: (id: number, body: ActionItemMembership) =>
+      post<ActionItem>(
+        `/action-items/${id}/epic`,
+        body,
+        ACTION_ITEM_TIMEOUT_MS,
+      ),
+  },
+  actionItemEpics: {
+    list: () =>
+      get<{ items: ActionItemEpic[] }>(
+        '/action-items/epics',
+        undefined,
+        ACTION_ITEM_TIMEOUT_MS,
+      ),
+    create: (body: ActionItemEpicCreate) =>
+      post<ActionItemEpic>('/action-items/epics', body, ACTION_ITEM_TIMEOUT_MS),
+    rename: (id: number, body: { title: string; expected_revision: number }) =>
+      patch<ActionItemEpic>(
+        `/action-items/epics/${id}`,
+        body,
+        ACTION_ITEM_TIMEOUT_MS,
+      ),
+    remove: (id: number, body: { expected_revision: number; cohort: string }) =>
+      del<{ deleted: boolean; id: number }>(
+        `/action-items/epics/${id}`,
         body,
         ACTION_ITEM_TIMEOUT_MS,
       ),

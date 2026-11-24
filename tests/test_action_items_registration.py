@@ -18,37 +18,76 @@ from tests.conftest import clean_harness_rows
 @pytest.fixture(autouse=True)
 def isolated_action_items_tool(monkeypatch):
     clean_harness_rows("action-items")
-    monkeypatch.setattr(seed, "MCP_SERVERS", [entry for entry in seed.MCP_SERVERS if entry[0] == "action-items"])
+    monkeypatch.setattr(
+        seed,
+        "MCP_SERVERS",
+        [entry for entry in seed.MCP_SERVERS if entry[0] == "action-items"],
+    )
     yield
     clean_harness_rows("action-items")
 
 
-def assert_seed_discovery_sync_preserves_custom_settings(service_name, agent, tmp_path, monkeypatch):
+def assert_seed_discovery_sync_preserves_custom_settings(
+    service_name, agent, tmp_path, monkeypatch
+):
     seed.seed_mcp_servers()
     tool = get_tool(service_name)
-    assert collect_tools_from_db(agent)[service_name]["url"] == f"{MCP_BASE}/mcp/{service_name}/"
+    assert (
+        collect_tools_from_db(agent)[service_name]["url"]
+        == f"{MCP_BASE}/mcp/{service_name}/"
+    )
     original_collect = collect_tools_from_db
-    monkeypatch.setattr("services.api.models.tool.collect_tools_from_db", lambda selected: {service_name: original_collect(selected)[service_name]})
+    monkeypatch.setattr(
+        "services.api.models.tool.collect_tools_from_db",
+        lambda selected: {service_name: original_collect(selected)[service_name]},
+    )
     destination = tmp_path / ("client.toml" if agent == "codex" else "client.json")
-    destination.write_text('unrelated = "keep"\n' if agent == "codex" else '{"unrelated":"keep"}', encoding="utf-8")
+    destination.write_text(
+        'unrelated = "keep"\n' if agent == "codex" else '{"unrelated":"keep"}',
+        encoding="utf-8",
+    )
     monkeypatch.setitem(AGENT_TARGETS[agent], "mcp_file", str(destination))
     monkeypatch.setattr(mcp_utils, "REPO_ROOT", tmp_path)
     assert mcp_utils.sync_mcp(agent, dry_run=False) == []
-    configured = tomllib.loads(destination.read_text()) if agent == "codex" else json.loads(destination.read_text())
+    configured = (
+        tomllib.loads(destination.read_text())
+        if agent == "codex"
+        else json.loads(destination.read_text())
+    )
     assert configured["unrelated"] == "keep"
     url_key = "httpUrl" if agent == "gemini" else "url"
-    assert configured[AGENT_TARGETS[agent]["mcp_key"]][service_name][url_key] == f"{MCP_BASE}/mcp/{service_name}/"
-    update_content("tool", tool["id"], {"body": "My notes", "metadata": {"url": "http://localhost:9999/custom/", "description": "Customized"}})
+    assert (
+        configured[AGENT_TARGETS[agent]["mcp_key"]][service_name][url_key]
+        == f"{MCP_BASE}/mcp/{service_name}/"
+    )
+    update_content(
+        "tool",
+        tool["id"],
+        {
+            "body": "My notes",
+            "metadata": {
+                "url": "http://localhost:9999/custom/",
+                "description": "Customized",
+            },
+        },
+    )
     with get_connection() as connection, connection.cursor() as cursor:
-        cursor.execute("UPDATE harness_configs SET enabled=false WHERE item_type='tool' AND item_id=%s", (tool["id"],))
+        cursor.execute(
+            "UPDATE harness_configs SET enabled=false WHERE item_type='tool' AND item_id=%s",
+            (tool["id"],),
+        )
     customized = get_item_by_id("tool", tool["id"])
     seed.seed_mcp_servers()
     assert get_item_by_id("tool", tool["id"]) == customized
 
 
 @pytest.mark.parametrize("agent", ["claude", "codex"])
-def test_action_items_seed_discovery_sync_and_custom_settings_survive(agent, tmp_path, monkeypatch):
-    assert_seed_discovery_sync_preserves_custom_settings("action-items", agent, tmp_path, monkeypatch)
+def test_action_items_seed_discovery_sync_and_custom_settings_survive(
+    agent, tmp_path, monkeypatch
+):
+    assert_seed_discovery_sync_preserves_custom_settings(
+        "action-items", agent, tmp_path, monkeypatch
+    )
 
 
 def test_action_items_seed_is_idempotent_and_tasks_never_become_harness_items():
@@ -62,8 +101,14 @@ def test_action_items_seed_is_idempotent_and_tasks_never_become_harness_items():
     try:
         assert get_tool(task["title"]) is None
         with get_connection() as connection, connection.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) FROM harness_tools WHERE name='action-items'")
+            cursor.execute(
+                "SELECT COUNT(*) FROM harness_tools WHERE name='action-items'"
+            )
             assert cursor.fetchone()[0] == 1
     finally:
         with get_connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM action_item_queue_entries WHERE action_item_id=%s",
+                (task["id"],),
+            )
             cursor.execute("DELETE FROM action_items WHERE id=%s", (task["id"],))

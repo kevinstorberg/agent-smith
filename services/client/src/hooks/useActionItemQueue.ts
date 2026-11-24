@@ -12,6 +12,12 @@ import type { PaginationOptions } from './usePagination';
 import { usePagination } from './usePagination';
 import { usePolling } from './usePolling';
 import { useNotification } from '../context/useNotification';
+import { useActionItemWrites } from './useActionItemWrites';
+import {
+  useActionItemProjectDrag,
+  projectTargets,
+  type ProjectTarget,
+} from './useActionItemProjectDrag';
 
 export interface ActionItemQueueSource {
   list: (filters: ActionItemFilters) => Promise<Paginated<ActionItemRow>>;
@@ -26,54 +32,6 @@ interface DragSnapshot {
   project?: string | null;
   mode?: DragStart['mode'];
   itemId?: string;
-}
-
-interface ProjectTarget {
-  id: string;
-  name: string;
-  button: HTMLButtonElement;
-}
-
-function projectTargets(tabs: HTMLDivElement | null): ProjectTarget[] {
-  return Array.from(
-    tabs?.querySelectorAll<HTMLButtonElement>('button[data-project-id]') ?? [],
-    (button) => ({
-      id: button.dataset.projectId!,
-      name: button.dataset.projectName!,
-      button,
-    }),
-  );
-}
-
-function projectAtPoint(
-  tabs: HTMLDivElement | null,
-  targets: ProjectTarget[],
-  x: number,
-  y: number,
-) {
-  const strip = tabs?.getBoundingClientRect();
-  if (
-    !strip ||
-    x < strip.left ||
-    x > strip.right ||
-    y < strip.top ||
-    y > strip.bottom
-  )
-    return null;
-  return (
-    targets.find(({ button }) => {
-      const rect = button.getBoundingClientRect();
-      return (
-        button.isConnected &&
-        rect.width > 0 &&
-        rect.height > 0 &&
-        x >= rect.left &&
-        x <= rect.right &&
-        y >= rect.top &&
-        y <= rect.bottom
-      );
-    })?.name ?? null
-  );
 }
 
 export function useActionItemQueue({
@@ -107,15 +65,7 @@ export function useActionItemQueue({
 }) {
   const [snapshot, setSnapshot] = useState<DragSnapshot | null>(null);
   const drag = useRef<DragSnapshot | null>(null);
-  const orderFocus = useRef<{
-    handle: HTMLButtonElement | null;
-    fallback?: HTMLElement;
-    view: string;
-  } | null>(null);
   const projectTabsRef = useRef<HTMLDivElement>(null);
-  const [savingOrder, setSavingOrder] = useState(false);
-  const [pendingId, setPendingId] = useState<number | null>(null);
-  const writing = useRef(false);
   const { notify } = useNotification();
   const readItems = (overrides: ActionItemFilters) =>
     source.list({ ...filters, ...overrides });
@@ -137,16 +87,9 @@ export function useActionItemQueue({
     setItems,
   } = list;
   const latestRefresh = useRef(refresh);
-  const mounted = useRef(false);
   useLayoutEffect(() => {
     latestRefresh.current = refresh;
   }, [refresh]);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
   const view = JSON.stringify([viewKey, limit, offset]);
   const [expanded, setExpanded] = useState<{ id: number; view: string } | null>(
     null,
@@ -168,24 +111,23 @@ export function useActionItemQueue({
   useLayoutEffect(() => {
     current.current = { view, items, source, orderCurrent };
   });
-  const busy = savingOrder || pendingId !== null || editing;
-  useEffect(() => {
-    if (busy || snapshot) return;
-    const focus = orderFocus.current;
-    orderFocus.current = null;
-    const handle =
-      focus?.view !== current.current.view
-        ? null
-        : focus?.handle?.isConnected && !focus.handle.disabled
-          ? focus.handle
-          : focus?.fallback;
-    if (
-      handle?.isConnected &&
-      !(handle instanceof HTMLButtonElement && handle.disabled) &&
-      document.activeElement === document.body
-    )
-      handle.focus({ preventScroll: true });
-  }, [busy, snapshot]);
+  const writes = useActionItemWrites({
+    refresh,
+    view,
+    paused: Boolean(snapshot),
+    editing,
+    canStart: canWrite,
+    onError: (message) => notify(message, 'error'),
+    onFinish: () => setSnapshot(null),
+  });
+  const {
+    writing,
+    mounted,
+    busy,
+    savingOrder,
+    pendingId,
+    focus: orderFocusRef,
+  } = writes;
   // Retain SDK handle identity through its post-drop focus lookup.
   const dragSurfaceEnabled =
     (reorderableView || projectAssignment) && readableView;
@@ -220,16 +162,6 @@ export function useActionItemQueue({
     pagination?.clampOffset,
   ]);
 
-  async function finishWrite() {
-    if (mounted.current) await latestRefresh.current({ showLoading: false });
-    writing.current = false;
-    if (mounted.current) {
-      setPendingId(null);
-      setSavingOrder(false);
-      setSnapshot(null);
-    }
-  }
-
   function canWrite() {
     return (
       !writing.current &&
@@ -242,38 +174,15 @@ export function useActionItemQueue({
     );
   }
 
-  async function runWrite(
-    write: () => Promise<unknown>,
-    fallbackMessage: string,
-  ) {
-    writing.current = true;
-    try {
-      await write();
-    } catch (failure) {
-      if (mounted.current)
-        notify(
-          failure instanceof Error ? failure.message : fallbackMessage,
-          'error',
-        );
-    } finally {
-      await finishWrite();
-    }
-  }
-
   async function runRowWrite(
     item: ActionItemRow,
     write: () => Promise<unknown>,
     fallbackMessage: string,
   ) {
-    if (!canWrite()) return;
-    setPendingId(item.id);
-    await runWrite(write, fallbackMessage);
+    await writes.runWrite(write, fallbackMessage, { pendingId: item.id });
   }
-
   async function runOrderWrite(write: () => Promise<unknown>) {
-    if (!canWrite()) return;
-    setSavingOrder(true);
-    await runWrite(write, 'Could not save this order.');
+    await writes.runWrite(write, 'Could not save this order.', { order: true });
   }
 
   function isCurrentOrderItem(item: ActionItemRow) {
@@ -305,7 +214,7 @@ export function useActionItemQueue({
   async function moveToEdge(item: ActionItemRow, edge: 'top' | 'bottom') {
     if (!canMoveToEdge(item, edge) || !isCurrentOrderItem(item)) return;
     const focused = document.activeElement;
-    orderFocus.current = {
+    orderFocusRef.current = {
       handle: focused instanceof HTMLButtonElement ? focused : null,
       fallback:
         focused instanceof HTMLElement
@@ -380,7 +289,7 @@ export function useActionItemQueue({
   function startDrag(start?: DragStart) {
     if (!canDragRef.current || writing.current) return;
     const focused = document.activeElement;
-    orderFocus.current = {
+    orderFocusRef.current = {
       handle:
         focused instanceof HTMLButtonElement &&
         focused.classList.contains('action-item-drag')
@@ -458,7 +367,7 @@ export function useActionItemQueue({
         setSnapshot(null);
         return;
       }
-      if (orderFocus.current) orderFocus.current.fallback = target.button;
+      if (orderFocusRef.current) orderFocusRef.current.fallback = target.button;
       await runRowWrite(
         item,
         () =>
@@ -513,76 +422,12 @@ export function useActionItemQueue({
     });
   }
 
-  useLayoutEffect(() => {
-    if (!projectAssignment) return;
-    function selectProject(project: string | null) {
-      if (!drag.current || drag.current.project === project) return;
-      drag.current = { ...drag.current, project };
-      setSnapshot(drag.current);
-    }
-    function pointer(x: number, y: number) {
-      const captured = drag.current;
-      if (captured?.mode !== 'FLUID') return;
-      selectProject(
-        projectAtPoint(projectTabsRef.current, captured.projects ?? [], x, y),
-      );
-    }
-    const mouse = (event: MouseEvent) => pointer(event.clientX, event.clientY);
-    const touch = (event: TouchEvent) => {
-      const point = event.changedTouches[0];
-      if (point) pointer(point.clientX, point.clientY);
-    };
-    function keyboard(event: KeyboardEvent) {
-      const captured = drag.current;
-      if (captured?.mode !== 'SNAP') return;
-      if (['ArrowUp', 'ArrowDown', 'Escape'].includes(event.key)) {
-        selectProject(null);
-        return;
-      }
-      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-      const targets = captured.projects ?? [];
-      if (!targets.length) return;
-      const previous = targets.findIndex(
-        ({ name }) => name === captured.project,
-      );
-      const next =
-        previous === -1
-          ? event.key === 'ArrowRight'
-            ? 0
-            : targets.length - 1
-          : (previous +
-              (event.key === 'ArrowRight' ? 1 : -1) +
-              targets.length) %
-            targets.length;
-      selectProject(targets[next].name);
-      targets[next].button.scrollIntoView?.({
-        block: 'nearest',
-        inline: 'nearest',
-      });
-    }
-    // Register before the SDK installs its active gesture listeners.
-    window.addEventListener('mousemove', mouse, {
-      capture: true,
-      passive: true,
-    });
-    window.addEventListener('mouseup', mouse, { capture: true, passive: true });
-    window.addEventListener('touchmove', touch, {
-      capture: true,
-      passive: true,
-    });
-    window.addEventListener('touchend', touch, {
-      capture: true,
-      passive: true,
-    });
-    window.addEventListener('keydown', keyboard, true);
-    return () => {
-      window.removeEventListener('mousemove', mouse, true);
-      window.removeEventListener('mouseup', mouse, true);
-      window.removeEventListener('touchmove', touch, true);
-      window.removeEventListener('touchend', touch, true);
-      window.removeEventListener('keydown', keyboard, true);
-    };
-  }, [projectAssignment]);
+  useActionItemProjectDrag({
+    enabled: projectAssignment,
+    drag,
+    setSnapshot,
+    projectTabsRef,
+  });
 
   const previousActive = useRef(active);
   useEffect(() => {

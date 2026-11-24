@@ -33,7 +33,7 @@ test.beforeEach(async ({ fixtureAPI }) => {
   fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
   for (const path of [
     ...Object.keys(TYPE_PATHS).map((type) => `/api/harness/items/${type}`),
-    '/api/action-items',
+    '/api/action-items/queue',
     '/api/profiles',
     '/api/jobs/graph/persona',
     '/api/memory/list',

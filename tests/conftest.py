@@ -154,6 +154,27 @@ def audit_cleanup(*patterns: str):
     return _clean
 
 
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_call(item):
+    outcome = yield
+    name = item.path.name
+    if (
+        outcome.excinfo is None
+        and "migration" not in name
+        and any(
+            part in name
+            for part in (
+                "action_item",
+                "profile_discussion_queue",
+                "project_management",
+            )
+        )
+    ):
+        from tests.action_item_queue_helpers import assert_action_item_queue
+
+        assert_action_item_queue()
+
+
 def action_item_owner(label: str) -> str:
     from uuid import NAMESPACE_URL, uuid5
 
