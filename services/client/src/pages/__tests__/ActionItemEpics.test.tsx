@@ -226,6 +226,9 @@ describe('saved Action Item Epics', () => {
     );
     expect(input).toHaveValue('One group');
     expect(input).toBeEnabled();
+    expect(input).toHaveAttribute('readonly');
+    fireEvent.change(input, { target: { value: 'Changed after uncertainty' } });
+    expect(input).toHaveValue('One group');
     fireEvent.click(button);
     await waitFor(() =>
       expect(api.actionItemEpics.create).toHaveBeenCalledTimes(2),
@@ -355,5 +358,52 @@ describe('saved Action Item Epics', () => {
     );
     expect(screen.getByRole('alert')).toHaveTextContent('Source changed');
     expect(api.actionItemQueue.setEpic).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores the canonical parent after a conflict so the same destination can be chosen again', async () => {
+    const first = epicGroup();
+    const current = epicGroup();
+    current.epic = { ...current.epic, revision: 4, cohort: 'fresh-source' };
+    const destination = { ...epicGroup(20).epic, title: 'Next group' };
+    vi.mocked(api.actionItemQueue.list)
+      .mockResolvedValueOnce({ items: [first], total: 1, matching_count: 1 })
+      .mockResolvedValue({ items: [current], total: 1, matching_count: 1 });
+    vi.mocked(api.actionItemEpics.list).mockResolvedValue({
+      items: [first.epic, destination],
+    });
+    vi.mocked(api.actionItemQueue.setEpic)
+      .mockRejectedValueOnce(new ApiError('Changed source', 409))
+      .mockResolvedValue(actionItem(2));
+    renderWithProviders(<ActionItemsIndexPage />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Move Task 2 to Epic' }),
+    );
+    const picker = await screen.findByRole('combobox', {
+      name: 'Move to Epic',
+    });
+    await waitFor(() => expect(picker).toBeEnabled());
+    fireEvent.change(picker, { target: { value: '20' } });
+    await waitFor(() =>
+      expect(api.actionItemQueue.list).toHaveBeenCalledTimes(2),
+    );
+    expect(picker).toHaveValue('10');
+    expect(screen.getByRole('alert')).toHaveTextContent('Changed source');
+    expect(api.actionItemQueue.setEpic).toHaveBeenCalledTimes(1);
+    fireEvent.change(picker, { target: { value: '20' } });
+    await waitFor(() =>
+      expect(api.actionItemQueue.setEpic).toHaveBeenCalledTimes(2),
+    );
+    expect(vi.mocked(api.actionItemQueue.setEpic).mock.calls[1]).toEqual([
+      2,
+      {
+        expected_revision: 1,
+        expected_parent: {
+          id: 10,
+          expected_revision: 4,
+          cohort: 'fresh-source',
+        },
+        destination: { id: 20, expected_revision: 3, cohort: 'cohort-20' },
+      },
+    ]);
   });
 });

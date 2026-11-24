@@ -155,7 +155,9 @@ function EpicEntry({
                     {epic.title}
                   </button>
                   <span className="epic-matching-count">
-                    {group.matching_count} of {group.total_count} matching
+                    {group.matching_count === group.total_count
+                      ? `${group.total_count} ${group.total_count === 1 ? 'item' : 'items'}`
+                      : `${group.matching_count} of ${group.total_count} matching`}
                   </span>
                 </div>
                 <div className="action-item-epic-actions">
