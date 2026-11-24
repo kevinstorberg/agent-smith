@@ -22,9 +22,7 @@ def execute(sql, params=()):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "first_seen", ["2026-11-19T23:59:59Z", "2026-11-20T00:00:00Z"]
-)
+@pytest.mark.parametrize("first_seen", ["2026-11-19T23:59:59Z", "2026-11-20T00:00:00Z"])
 async def test_missing_action_item_run_is_not_automatically_recovered(
     source, saved, monkeypatch, first_seen
 ):
