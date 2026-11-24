@@ -240,12 +240,16 @@ for (const collapsed of [false, true]) {
       ...queuePage({ items: [actionItem(4)], total: 1 }).items,
     ];
     const writes: ActionItemQueueMove[] = [];
+    const keyboardRefresh = deferred<void>();
+    let keyboardRefreshPending = false;
     fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
-    fixtureAPI.get('/api/action-items/queue', () => ({
-      items: roots,
-      total: 3,
-      matching_count: 4,
-    }));
+    fixtureAPI.get('/api/action-items/queue', async () => {
+      if (writes.length === 1) {
+        keyboardRefreshPending = true;
+        await keyboardRefresh.promise;
+      }
+      return { items: roots, total: 3, matching_count: 4 };
+    });
     fixtureAPI.mock(
       'POST',
       '/api/action-items/queue/move',
@@ -278,14 +282,32 @@ for (const collapsed of [false, true]) {
       name: 'Reorder Epic Release',
       exact: true,
     });
-    await handle.focus();
-    await page.keyboard.press('Space');
-    await page.keyboard.press('ArrowUp');
-    await page.keyboard.press('Space');
-    await expect.poll(() => writes.length).toBe(1);
-    expect(writes[0]).toMatchObject({
-      before: { kind: 'item', id: 1, expected_revision: 1 },
-    });
+    try {
+      await handle.focus();
+      await page.keyboard.press('Space');
+      await page.keyboard.press('ArrowUp');
+      await page.keyboard.press('Space');
+      await expect.poll(() => writes.length).toBe(1);
+      expect(writes[0]).toMatchObject({
+        before: { kind: 'item', id: 1, expected_revision: 1 },
+      });
+      await expect.poll(() => keyboardRefreshPending).toBe(true);
+      await expect(handle).toBeDisabled();
+    } finally {
+      keyboardRefresh.resolve();
+    }
+    await expect
+      .poll(() =>
+        page
+          .locator(
+            '.action-item-grouped-table > tbody > tr[data-rfd-draggable-id]',
+          )
+          .evaluateAll((rows) =>
+            rows.map((row) => row.getAttribute('data-rfd-draggable-id')),
+          ),
+      )
+      .toEqual(['epic:10', 'item:1', 'item:4']);
+    await expect(handle).toBeEnabled();
     const target = page.getByRole('button', {
       name: 'Reorder Task 4',
       exact: true,
@@ -303,6 +325,10 @@ for (const collapsed of [false, true]) {
       from!.y + from!.height / 2 + 8,
       { steps: 4 },
     );
+    await expect(region.locator('xpath=ancestor::tr[1]')).toHaveCSS(
+      'position',
+      'fixed',
+    );
     const targetRow = target.locator('xpath=ancestor::tr[1]');
     await targetRow.scrollIntoViewIfNeeded();
     const to = await targetRow.boundingBox();
@@ -311,6 +337,9 @@ for (const collapsed of [false, true]) {
       to!.x + 30,
       Math.min(page.viewportSize()!.height - 10, to!.y + to!.height - 8),
       { steps: 20 },
+    );
+    await expect(page.locator('[id^="rfd-announcement-"]')).toHaveText(
+      /You have moved the item from position 1\s+to position 3/,
     );
     await page.mouse.up();
     await expect.poll(() => writes.length).toBe(2);
