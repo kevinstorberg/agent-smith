@@ -1,3 +1,4 @@
+import { flatQueueFixture } from './actionItemQueueFixture';
 import { test, expect, type APIRequest } from './fixtures';
 import { actionItem } from '../src/pages/__tests__/actionItemFixture';
 import {
@@ -34,7 +35,7 @@ test('projects persist independently and assignment leaves tags and status filte
       return saved;
     },
   );
-  fixtureAPI.get('/api/action-items', ({ url }: APIRequest) => {
+  flatQueueFixture(fixtureAPI, ({ url }: APIRequest) => {
     const params = url.searchParams;
     const items = rows.filter(
       (row) =>
@@ -73,7 +74,7 @@ test('projects persist independently and assignment leaves tags and status filte
       fixtureAPI.requests.some((entry) => {
         const url = new URL(entry.url);
         return (
-          url.pathname === '/api/action-items' &&
+          url.pathname === '/api/action-items/queue' &&
           url.searchParams.get('project') === 'Work' &&
           url.searchParams.get('tags') === 'security'
         );
@@ -171,7 +172,7 @@ for (const scale of [1, 2]) {
       total: 1,
     });
     const rows = [actionItem(1), actionItem(2, { project: null })];
-    fixtureAPI.get('/api/action-items', ({ url }: APIRequest) => {
+    flatQueueFixture(fixtureAPI, ({ url }: APIRequest) => {
       const items = rows.filter(
         (row) =>
           (url.searchParams.get('unassigned') !== 'true' ||
@@ -241,7 +242,9 @@ for (const scale of [1, 2]) {
     ).toBeVisible();
     const lastRead = () =>
       fixtureAPI.requests
-        .filter((entry) => new URL(entry.url).pathname === '/api/action-items')
+        .filter(
+          (entry) => new URL(entry.url).pathname === '/api/action-items/queue',
+        )
         .at(-1);
     await expect
       .poll(() => new URL(lastRead()!.url).searchParams.get('unassigned'))
@@ -291,7 +294,7 @@ for (const scale of [1, 2]) {
       items,
       total: items.length,
     });
-    fixtureAPI.get('/api/action-items', { items: [actionItem(1)], total: 1 });
+    flatQueueFixture(fixtureAPI, { items: [actionItem(1)], total: 1 });
     fixtureAPI.mock(
       'POST',
       '/api/action-items/projects',
@@ -375,14 +378,15 @@ for (const scale of [1, 2]) {
     await expect(name).toBeFocused();
     await name.fill('Retained project draft');
     const before = fixtureAPI.requests.filter(
-      (entry) => new URL(entry.url).pathname === '/api/action-items',
+      (entry) => new URL(entry.url).pathname === '/api/action-items/queue',
     ).length;
     await page.clock.fastForward(15_000);
     await expect
       .poll(
         () =>
           fixtureAPI.requests.filter(
-            (entry) => new URL(entry.url).pathname === '/api/action-items',
+            (entry) =>
+              new URL(entry.url).pathname === '/api/action-items/queue',
           ).length,
       )
       .toBeGreaterThan(before);
@@ -420,7 +424,7 @@ for (const scale of [1, 2]) {
       items,
       total: items.length,
     });
-    fixtureAPI.get('/api/action-items', { items: [], total: 0 });
+    flatQueueFixture(fixtureAPI, { items: [], total: 0 });
     await page.goto('/action-items');
     const groups = page.getByRole('tablist', { name: 'Action item projects' });
     await expect(groups.getByRole('tab')).toHaveCount(51);
@@ -469,7 +473,7 @@ test('a project-filtered keyboard drag keeps global priorities and anchored revi
   const project = { id: 1, name: 'Work', created_at: '2026-11-01T12:00:00Z' };
   let rows = [actionItem(1, { priority: 3 }), actionItem(2, { priority: 7 })];
   fixtureAPI.get('/api/action-items/projects', { items: [project], total: 1 });
-  fixtureAPI.get('/api/action-items', ({ url }: APIRequest) => {
+  flatQueueFixture(fixtureAPI, ({ url }: APIRequest) => {
     expect(url.searchParams.get('project')).toBe('Work');
     expect(url.searchParams.get('tags')).toBe('security');
     return { items: rows, total: rows.length };
@@ -477,18 +481,18 @@ test('a project-filtered keyboard drag keeps global priorities and anchored revi
   let moves = 0;
   fixtureAPI.mock(
     'POST',
-    '/api/action-items/1/move',
+    '/api/action-items/queue/move',
     ({ request }: APIRequest) => {
       expect(request.postDataJSON()).toEqual({
-        expected_revision: 1,
-        after_id: 2,
+        source: { kind: 'item', id: 1, expected_revision: 1 },
+        after: { kind: 'item', id: 2, expected_revision: 1 },
       });
       moves += 1;
       rows = [
         actionItem(2, { priority: 6 }),
         actionItem(1, { priority: 7, revision: 2 }),
       ];
-      return rows[1];
+      return { saved: true };
     },
   );
   await page.goto('/action-items?project=Work&tags=security');

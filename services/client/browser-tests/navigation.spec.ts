@@ -1,3 +1,4 @@
+import { flatQueueFixture } from './actionItemQueueFixture';
 import { test, expect } from './fixtures';
 import { expectDocumentContained, expectMainContained } from './geometry';
 
@@ -6,7 +7,7 @@ test('Navigation stays compact on mobile and supports keyboard recovery', async 
   fixtureAPI,
 }) => {
   fixtureAPI.get('/api/memory/list', { items: [], total: 0 });
-  fixtureAPI.get('/api/action-items', { items: [], total: 0 });
+  flatQueueFixture(fixtureAPI, { items: [], total: 0 });
   await page.goto('/memory');
   await expect(
     page.getByRole('heading', { name: 'Memory', exact: true }),

@@ -1,4 +1,5 @@
 const paths = {
+  epic: 'M3 5h7l2 3h9v12H3zM12 11v6m-3-3h6',
   top: 'M12 19V7m-5 5 5-5 5 5M5 4h14',
   bottom: 'M12 5v12m-5-5 5 5 5-5M5 20h14',
   complete: 'm5 12 4 4L19 6',

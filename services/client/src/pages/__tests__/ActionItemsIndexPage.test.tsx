@@ -1,3 +1,4 @@
+import { queuePage, queueMove } from './actionItemEpicFixture';
 import {
   defaultView,
   mergeViewCookie,
@@ -14,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { StrictMode } from 'react';
 import type { DragStart, DropResult } from '@hello-pangea/dnd';
-import type { ActionItemRow, Paginated } from '../../api';
+import type { ActionItemGroupedPage } from '../../api';
 import { Link, Route, Routes } from 'react-router';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '../../test-utils';
@@ -83,6 +84,13 @@ vi.mock('@hello-pangea/dnd', () => ({
 vi.mock('../../api', async (original) => ({
   ...(await original<typeof import('../../api')>()),
   api: {
+    actionItemQueue: { list: vi.fn(), move: vi.fn(), setEpic: vi.fn() },
+    actionItemEpics: {
+      list: vi.fn(),
+      create: vi.fn(),
+      rename: vi.fn(),
+      remove: vi.fn(),
+    },
     actionItemProjects: { list: vi.fn(), create: vi.fn(), remove: vi.fn() },
     actionItems: {
       list: vi.fn(),
@@ -97,7 +105,7 @@ import { api, ApiError } from '../../api';
 
 const rows = [actionItem(1), actionItem(2), actionItem(3)];
 const drop = (source = 0, destination = 2, id = 1): DropResult => ({
-  draggableId: String(id),
+  draggableId: `item:${id}`,
   type: 'DEFAULT',
   source: { droppableId: 'action-items', index: source },
   destination: { droppableId: 'action-items', index: destination },
@@ -124,16 +132,16 @@ beforeEach(() => {
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   drag.start = null;
   drag.end = null;
-  vi.mocked(api.actionItems.list).mockResolvedValue({ items: rows, total: 3 });
+  vi.mocked(api.actionItemQueue.list).mockResolvedValue(
+    queuePage({ items: rows, total: 3 }),
+  );
   vi.mocked(api.actionItems.get).mockImplementation(async (id) =>
     actionItem(id),
   );
   vi.mocked(api.actionItems.update).mockResolvedValue(
     actionItem(1, { revision: 2, status: 'completed' }),
   );
-  vi.mocked(api.actionItems.move).mockResolvedValue(
-    actionItem(1, { revision: 2 }),
-  );
+  vi.mocked(api.actionItemQueue.move).mockResolvedValue({ saved: true });
   vi.mocked(api.actionItems.remove).mockResolvedValue({ deleted: true, id: 1 });
 });
 afterEach(() => {
@@ -152,7 +160,7 @@ async function renderReady() {
 function liftToProject(project = 'Paralign') {
   act(() => {
     drag.start!({
-      draggableId: '1',
+      draggableId: 'item:1',
       type: 'DEFAULT',
       mode: 'SNAP',
       source: { droppableId: 'action-items', index: 0 },
@@ -196,11 +204,11 @@ describe('ActionItemsIndexPage', () => {
     for (const [name, listener] of observers) {
       expect(removed).toHaveBeenCalledWith(name, listener, true);
     }
-    const reads = vi.mocked(api.actionItems.list).mock.calls.length;
+    const reads = vi.mocked(api.actionItemQueue.list).mock.calls.length;
     await act(async () => drag.end?.(drop(0, 0)));
     fireEvent.mouseUp(window, { clientX: 100, clientY: 20 });
     expect(api.actionItems.update).not.toHaveBeenCalled();
-    expect(api.actionItems.list).toHaveBeenCalledTimes(reads);
+    expect(api.actionItemQueue.list).toHaveBeenCalledTimes(reads);
   });
   it('assigns the exact captured project with only revision and project in a same-index drop', async () => {
     await renderReady();
@@ -210,8 +218,8 @@ describe('ActionItemsIndexPage', () => {
       expected_revision: 1,
       project: 'Paralign',
     });
-    expect(api.actionItems.move).not.toHaveBeenCalled();
-    expect(api.actionItems.list).toHaveBeenCalledTimes(2);
+    expect(api.actionItemQueue.move).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.list).toHaveBeenCalledTimes(2);
   });
 
   it.each(['cancel', 'same project', 'vertical movement'])(
@@ -228,7 +236,7 @@ describe('ActionItemsIndexPage', () => {
         }),
       );
       expect(api.actionItems.update).not.toHaveBeenCalled();
-      expect(api.actionItems.move).not.toHaveBeenCalled();
+      expect(api.actionItemQueue.move).not.toHaveBeenCalled();
     },
   );
 
@@ -244,7 +252,7 @@ describe('ActionItemsIndexPage', () => {
         }),
       );
       expect(api.actionItems.update).toHaveBeenCalledOnce();
-      expect(api.actionItems.move).not.toHaveBeenCalled();
+      expect(api.actionItemQueue.move).not.toHaveBeenCalled();
     },
   );
 
@@ -260,8 +268,8 @@ describe('ActionItemsIndexPage', () => {
       if (change === 'replaced') target.setAttribute('data-project-id', '999');
       await act(async () => drag.end!(drop()));
       expect(api.actionItems.update).not.toHaveBeenCalled();
-      expect(api.actionItems.move).not.toHaveBeenCalled();
-      expect(api.actionItems.list).toHaveBeenCalledTimes(2);
+      expect(api.actionItemQueue.move).not.toHaveBeenCalled();
+      expect(api.actionItemQueue.list).toHaveBeenCalledTimes(2);
     },
   );
 
@@ -348,10 +356,10 @@ describe('ActionItemsIndexPage', () => {
 
   it('serializes assignment and keeps controls frozen through the canonical read', async () => {
     const saving = deferred<ReturnType<typeof actionItem>>();
-    const reading = deferred<Paginated<ActionItemRow>>();
+    const reading = deferred<ActionItemGroupedPage>();
     vi.mocked(api.actionItems.update).mockReturnValueOnce(saving.promise);
     await renderReady();
-    vi.mocked(api.actionItems.list).mockReturnValueOnce(reading.promise);
+    vi.mocked(api.actionItemQueue.list).mockReturnValueOnce(reading.promise);
     liftToProject();
     let ended!: Promise<void>;
     await act(async () => {
@@ -366,7 +374,7 @@ describe('ActionItemsIndexPage', () => {
     });
     expect(screen.getByLabelText('Search action items')).toBeDisabled();
     await act(async () => {
-      reading.resolve({ items: rows, total: 3 });
+      reading.resolve(queuePage({ items: rows, total: 3 }));
       await ended;
     });
     expect(screen.getByLabelText('Search action items')).toBeEnabled();
@@ -390,7 +398,7 @@ describe('ActionItemsIndexPage', () => {
       liftToProject();
       await act(async () => drag.end!(drop(0, 0)));
       expect(api.actionItems.update).toHaveBeenCalledOnce();
-      expect(api.actionItems.move).not.toHaveBeenCalled();
+      expect(api.actionItemQueue.move).not.toHaveBeenCalled();
       expect(screen.getByRole('alert')).toHaveTextContent(failure.message);
       expect(titles()).toEqual(['Task 1', 'Task 2', 'Task 3']);
       expect(screen.getByLabelText('Search action items')).toBeEnabled();
@@ -425,7 +433,7 @@ describe('ActionItemsIndexPage', () => {
         expected_revision: 1,
         project: 'Paralign',
       });
-      expect(api.actionItems.move).not.toHaveBeenCalled();
+      expect(api.actionItemQueue.move).not.toHaveBeenCalled();
     },
   );
   it('refreshes the saved action item page at 15 seconds without writing', async () => {
@@ -437,16 +445,18 @@ describe('ActionItemsIndexPage', () => {
       limit: 25,
       offset: 50,
     });
-    vi.mocked(api.actionItems.list).mockResolvedValue({
-      items: rows,
-      total: 100,
-    });
+    vi.mocked(api.actionItemQueue.list).mockResolvedValue(
+      queuePage({
+        items: rows,
+        total: 100,
+      }),
+    );
     await act(async () => {
       renderWithProviders(<ActionItemsIndexPage />, {
         initialEntries: ['/action-items'],
       });
     });
-    const read = vi.mocked(api.actionItems.list);
+    const read = vi.mocked(api.actionItemQueue.list);
     const params = read.mock.calls.at(-1)![0];
     expect(params).toMatchObject({
       q: 'Task',
@@ -464,7 +474,7 @@ describe('ActionItemsIndexPage', () => {
     });
     expect(read).toHaveBeenCalledExactlyOnceWith(params);
     expect(api.actionItems.update).not.toHaveBeenCalled();
-    expect(api.actionItems.move).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.move).not.toHaveBeenCalled();
     expect(api.actionItems.remove).not.toHaveBeenCalled();
   });
   it('restores filtered manual ordering and preserves saved criteria during ordinary sort changes', async () => {
@@ -476,13 +486,15 @@ describe('ActionItemsIndexPage', () => {
       limit: 25,
       offset: 50,
     });
-    vi.mocked(api.actionItems.list).mockResolvedValue({
-      items: rows,
-      total: 100,
-    });
+    vi.mocked(api.actionItemQueue.list).mockResolvedValue(
+      queuePage({
+        items: rows,
+        total: 100,
+      }),
+    );
     await renderReady();
-    expect(api.actionItems.list).toHaveBeenCalledTimes(1);
-    expect(api.actionItems.list).toHaveBeenCalledWith({
+    expect(api.actionItemQueue.list).toHaveBeenCalledTimes(1);
+    expect(api.actionItemQueue.list).toHaveBeenCalledWith({
       status: 'open',
       sort: 'manual',
       q: 'Task',
@@ -496,7 +508,7 @@ describe('ActionItemsIndexPage', () => {
     ).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'Title' }));
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith({
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith({
         status: 'open',
         sort: 'title',
         q: 'Task',
@@ -533,8 +545,8 @@ describe('ActionItemsIndexPage', () => {
       initialEntries: ['/action-items?q=&status=all&sort=manual'],
     });
     await screen.findByRole('button', { name: 'Task 1' });
-    expect(api.actionItems.list).toHaveBeenCalledTimes(1);
-    expect(api.actionItems.list).toHaveBeenCalledWith(
+    expect(api.actionItemQueue.list).toHaveBeenCalledTimes(1);
+    expect(api.actionItemQueue.list).toHaveBeenCalledWith(
       expect.objectContaining({
         q: undefined,
         status: 'all',
@@ -583,13 +595,15 @@ describe('ActionItemsIndexPage', () => {
 
   it('uses tab-specific sorts and reopens completed items through explicit state', async () => {
     await renderReady();
-    vi.mocked(api.actionItems.list).mockResolvedValue({
-      items: [actionItem(1, { status: 'completed', revision: 4 })],
-      total: 1,
-    });
+    vi.mocked(api.actionItemQueue.list).mockResolvedValue(
+      queuePage({
+        items: [actionItem(1, { status: 'completed', revision: 4 })],
+        total: 1,
+      }),
+    );
     fireEvent.click(screen.getByRole('tab', { name: 'Completed' }));
     await screen.findByRole('button', { name: 'Reopen Task 1' });
-    expect(api.actionItems.list).toHaveBeenLastCalledWith(
+    expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
       expect.objectContaining({ status: 'completed', sort: 'completed' }),
     );
     expect(
@@ -604,7 +618,7 @@ describe('ActionItemsIndexPage', () => {
     );
     fireEvent.click(screen.getByRole('tab', { name: 'All' }));
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ status: 'all', sort: 'newest' }),
       ),
     );
@@ -612,10 +626,12 @@ describe('ActionItemsIndexPage', () => {
 
   it('debounces typing once, keeps search focused, and resets paging before the new query', async () => {
     vi.useFakeTimers();
-    vi.mocked(api.actionItems.list).mockResolvedValue({
-      items: rows,
-      total: 25,
-    });
+    vi.mocked(api.actionItemQueue.list).mockResolvedValue(
+      queuePage({
+        items: rows,
+        total: 25,
+      }),
+    );
     renderWithProviders(<ActionItemsIndexPage />, {
       initialEntries: ['/action-items'],
     });
@@ -627,10 +643,10 @@ describe('ActionItemsIndexPage', () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(api.actionItems.list).toHaveBeenLastCalledWith(
+    expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
       expect.objectContaining({ offset: 10 }),
     );
-    vi.mocked(api.actionItems.list).mockClear();
+    vi.mocked(api.actionItemQueue.list).mockClear();
     const search = screen.getByLabelText('Search action items');
     search.focus();
     fireEvent.change(search, { target: { value: 'Ro' } });
@@ -641,12 +657,12 @@ describe('ActionItemsIndexPage', () => {
     await act(async () => {
       vi.advanceTimersByTime(299);
     });
-    expect(api.actionItems.list).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.list).not.toHaveBeenCalled();
     await act(async () => {
       vi.advanceTimersByTime(1);
     });
-    expect(api.actionItems.list).toHaveBeenCalledTimes(1);
-    expect(api.actionItems.list).toHaveBeenCalledWith(
+    expect(api.actionItemQueue.list).toHaveBeenCalledTimes(1);
+    expect(api.actionItemQueue.list).toHaveBeenCalledWith(
       expect.objectContaining({ q: 'Roadmap', offset: 0 }),
     );
     expect(search).toHaveFocus();
@@ -666,7 +682,7 @@ describe('ActionItemsIndexPage', () => {
     await act(async () => {
       vi.advanceTimersByTime(300);
     });
-    expect(api.actionItems.list).toHaveBeenLastCalledWith(
+    expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
       expect.objectContaining({
         project: 'Paralign',
         tags: ['product', 'security'],
@@ -675,7 +691,7 @@ describe('ActionItemsIndexPage', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Title' }));
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({
           sort: 'title',
           project: 'Paralign',
@@ -688,13 +704,15 @@ describe('ActionItemsIndexPage', () => {
   it('ignores late search responses after newer criteria return', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await renderReady();
-    const stale = deferred<Paginated<ActionItemRow>>();
-    vi.mocked(api.actionItems.list)
+    const stale = deferred<ActionItemGroupedPage>();
+    vi.mocked(api.actionItemQueue.list)
       .mockReturnValueOnce(stale.promise)
-      .mockResolvedValueOnce({
-        items: [actionItem(4, { title: 'Current result' })],
-        total: 1,
-      });
+      .mockResolvedValueOnce(
+        queuePage({
+          items: [actionItem(4, { title: 'Current result' })],
+          total: 1,
+        }),
+      );
     fireEvent.change(screen.getByLabelText('Search action items'), {
       target: { value: 'old' },
     });
@@ -709,21 +727,23 @@ describe('ActionItemsIndexPage', () => {
     });
     await screen.findByRole('button', { name: 'Current result' });
     await act(async () => {
-      stale.resolve({
-        items: [actionItem(5, { title: 'Stale result' })],
-        total: 1,
-      });
+      stale.resolve(
+        queuePage({
+          items: [actionItem(5, { title: 'Stale result' })],
+          total: 1,
+        }),
+      );
     });
     expect(screen.queryByText('Stale result')).not.toBeInTheDocument();
     expect(screen.getByText('Current result')).toBeVisible();
   });
 
   it('clamps an emptied last page after completion', async () => {
-    vi.mocked(api.actionItems.list)
-      .mockResolvedValueOnce({ items: rows, total: 11 })
-      .mockResolvedValueOnce({ items: [actionItem(11)], total: 11 })
-      .mockResolvedValueOnce({ items: [], total: 10 })
-      .mockResolvedValueOnce({ items: rows, total: 10 });
+    vi.mocked(api.actionItemQueue.list)
+      .mockResolvedValueOnce(queuePage({ items: rows, total: 11 }))
+      .mockResolvedValueOnce(queuePage({ items: [actionItem(11)], total: 11 }))
+      .mockResolvedValueOnce(queuePage({ items: [], total: 10 }))
+      .mockResolvedValueOnce(queuePage({ items: rows, total: 10 }));
     await renderReady();
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await screen.findByRole('button', { name: 'Complete Task 11' });
@@ -733,7 +753,7 @@ describe('ActionItemsIndexPage', () => {
       expected_revision: 1,
       status: 'completed',
     });
-    expect(api.actionItems.list).toHaveBeenLastCalledWith(
+    expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
       expect.objectContaining({ offset: 0 }),
     );
   });
@@ -742,14 +762,16 @@ describe('ActionItemsIndexPage', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const saving = deferred<ReturnType<typeof actionItem>>();
     vi.mocked(api.actionItems.update).mockReturnValueOnce(saving.promise);
-    vi.mocked(api.actionItems.list).mockResolvedValue({
-      items: rows,
-      total: 25,
-    });
+    vi.mocked(api.actionItemQueue.list).mockResolvedValue(
+      queuePage({
+        items: rows,
+        total: 25,
+      }),
+    );
     await renderReady();
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ offset: 10 }),
       ),
     );
@@ -761,16 +783,16 @@ describe('ActionItemsIndexPage', () => {
       vi.advanceTimersByTime(300);
     });
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ offset: 0, q: 'Current scope' }),
       ),
     );
-    vi.mocked(api.actionItems.list).mockClear();
+    vi.mocked(api.actionItemQueue.list).mockClear();
     await act(async () => {
       saving.resolve(actionItem(1, { status: 'completed' }));
     });
-    expect(api.actionItems.list).toHaveBeenCalledTimes(1);
-    expect(api.actionItems.list).toHaveBeenCalledWith(
+    expect(api.actionItemQueue.list).toHaveBeenCalledTimes(1);
+    expect(api.actionItemQueue.list).toHaveBeenCalledWith(
       expect.objectContaining({ offset: 0, q: 'Current scope' }),
     );
   });
@@ -781,11 +803,11 @@ describe('ActionItemsIndexPage', () => {
     const rendered = await renderReady();
     fireEvent.click(screen.getByRole('button', { name: 'Complete Task 1' }));
     rendered.unmount();
-    vi.mocked(api.actionItems.list).mockClear();
+    vi.mocked(api.actionItemQueue.list).mockClear();
     await act(async () => {
       saving.resolve(actionItem(1, { status: 'completed' }));
     });
-    expect(api.actionItems.list).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.list).not.toHaveBeenCalled();
   });
 
   it('sends page-end relative intent after the last visible neighbor and freezes controls through its save', async () => {
@@ -793,17 +815,19 @@ describe('ActionItemsIndexPage', () => {
       actionItem(index + 11),
     );
     const saving = deferred<ReturnType<typeof actionItem>>();
-    vi.mocked(api.actionItems.move).mockReturnValueOnce(saving.promise);
-    vi.mocked(api.actionItems.list)
-      .mockResolvedValueOnce({ items: rows, total: 25 })
-      .mockResolvedValue({ items: page, total: 25 });
+    vi.mocked(api.actionItemQueue.move).mockReturnValueOnce(
+      saving.promise.then(() => ({ saved: true })),
+    );
+    vi.mocked(api.actionItemQueue.list)
+      .mockResolvedValueOnce(queuePage({ items: rows, total: 25 }))
+      .mockResolvedValue(queuePage({ items: page, total: 25 }));
     renderWithProviders(<ActionItemsIndexPage />, {
       initialEntries: ['/action-items'],
     });
     await screen.findByRole('button', { name: 'Task 1' });
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await screen.findByRole('button', { name: 'Task 11' });
-    expect(api.actionItems.list).toHaveBeenLastCalledWith(
+    expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
       expect.objectContaining({ offset: 10 }),
     );
     act(() => {
@@ -814,10 +838,12 @@ describe('ActionItemsIndexPage', () => {
       ended = drag.end!(drop(0, 9, 11));
       await Promise.resolve();
     });
-    expect(api.actionItems.move).toHaveBeenCalledWith(11, {
-      expected_revision: 1,
-      after_id: 20,
-    });
+    expect(api.actionItemQueue.move).toHaveBeenCalledWith(
+      queueMove(11, {
+        expected_revision: 1,
+        after_id: 20,
+      }),
+    );
     expect(titles().at(-1)).toBe('Task 11');
     expect(screen.getAllByLabelText('Priority updating')).toHaveLength(10);
     expect(screen.getByLabelText('Search action items')).toBeDisabled();
@@ -841,10 +867,12 @@ describe('ActionItemsIndexPage', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await renderReady();
     const subset = [actionItem(1), actionItem(3), actionItem(5)];
-    vi.mocked(api.actionItems.list).mockResolvedValue({
-      items: subset,
-      total: 3,
-    });
+    vi.mocked(api.actionItemQueue.list).mockResolvedValue(
+      queuePage({
+        items: subset,
+        total: 3,
+      }),
+    );
     fireEvent.change(screen.getByLabelText('Search action items'), {
       target: { value: 'Task' },
     });
@@ -863,7 +891,9 @@ describe('ActionItemsIndexPage', () => {
       screen.getByRole('button', { name: 'Reorder Task 1' }),
     ).toBeEnabled();
     const saving = deferred<ReturnType<typeof actionItem>>();
-    vi.mocked(api.actionItems.move).mockReturnValueOnce(saving.promise);
+    vi.mocked(api.actionItemQueue.move).mockReturnValueOnce(
+      saving.promise.then(() => ({ saved: true })),
+    );
     act(() => {
       drag.start!();
     });
@@ -872,20 +902,24 @@ describe('ActionItemsIndexPage', () => {
       ended = drag.end!(drop(0, 2, 1));
       await Promise.resolve();
     });
-    expect(api.actionItems.move).toHaveBeenCalledWith(1, {
-      expected_revision: 1,
-      after_id: 5,
-    });
+    expect(api.actionItemQueue.move).toHaveBeenCalledWith(
+      queueMove(1, {
+        expected_revision: 1,
+        after_id: 5,
+      }),
+    );
     expect(titles()).toEqual(['Task 3', 'Task 5', 'Task 1']);
     expect(screen.getAllByLabelText('Priority updating')).toHaveLength(3);
-    vi.mocked(api.actionItems.list).mockResolvedValue({
-      items: [
-        actionItem(3, { priority: 2 }),
-        actionItem(5, { priority: 4 }),
-        actionItem(1, { revision: 2, priority: 5 }),
-      ],
-      total: 3,
-    });
+    vi.mocked(api.actionItemQueue.list).mockResolvedValue(
+      queuePage({
+        items: [
+          actionItem(3, { priority: 2 }),
+          actionItem(5, { priority: 4 }),
+          actionItem(1, { revision: 2, priority: 5 }),
+        ],
+        total: 3,
+      }),
+    );
     await act(async () => {
       saving.resolve(actionItem(1, { revision: 2, priority: 5 }));
       await ended;
@@ -905,21 +939,25 @@ describe('ActionItemsIndexPage', () => {
     await act(async () => {
       await drag.end!(drop(2, 0, 3));
     });
-    expect(api.actionItems.move).toHaveBeenCalledWith(3, {
-      expected_revision: 1,
-      before_id: 1,
-    });
+    expect(api.actionItemQueue.move).toHaveBeenCalledWith(
+      queueMove(3, {
+        expected_revision: 1,
+        before_id: 1,
+      }),
+    );
   });
 
   it('retains the same disabled handles throughout a move and its delayed reconciliation', async () => {
     const saving = deferred<ReturnType<typeof actionItem>>();
-    const reread = deferred<Paginated<ActionItemRow>>();
-    vi.mocked(api.actionItems.move).mockReturnValueOnce(saving.promise);
+    const reread = deferred<ActionItemGroupedPage>();
+    vi.mocked(api.actionItemQueue.move).mockReturnValueOnce(
+      saving.promise.then(() => ({ saved: true })),
+    );
     await renderReady();
     const table = screen.getByRole('table');
     const handles = screen.getAllByRole('button', { name: /^Reorder / });
     handles[0].focus();
-    vi.mocked(api.actionItems.list).mockReturnValueOnce(reread.promise);
+    vi.mocked(api.actionItemQueue.list).mockReturnValueOnce(reread.promise);
     act(() => drag.start!());
     let ended!: Promise<void>;
     await act(async () => {
@@ -943,10 +981,12 @@ describe('ActionItemsIndexPage', () => {
     expect(screen.getByRole('table')).toBe(table);
     for (const handle of handles) expect(handle).toBeDisabled();
     await act(async () => {
-      reread.resolve({
-        items: [rows[1], rows[2], actionItem(1, { revision: 2 })],
-        total: 3,
-      });
+      reread.resolve(
+        queuePage({
+          items: [rows[1], rows[2], actionItem(1, { revision: 2 })],
+          total: 3,
+        }),
+      );
       await ended;
     });
     expect(screen.getByRole('table')).toBe(table);
@@ -956,7 +996,9 @@ describe('ActionItemsIndexPage', () => {
 
   it('does not steal focus when the user moves away during reconciliation', async () => {
     const saving = deferred<ReturnType<typeof actionItem>>();
-    vi.mocked(api.actionItems.move).mockReturnValueOnce(saving.promise);
+    vi.mocked(api.actionItemQueue.move).mockReturnValueOnce(
+      saving.promise.then(() => ({ saved: true })),
+    );
     await renderReady();
     screen.getByRole('button', { name: 'Reorder Task 1' }).focus();
     act(() => drag.start!());
@@ -977,7 +1019,7 @@ describe('ActionItemsIndexPage', () => {
   it('retains populated rows after a failed move reread and blocks stale completion until Retry succeeds', async () => {
     await renderReady();
     const table = screen.getByRole('table');
-    vi.mocked(api.actionItems.list).mockRejectedValueOnce(
+    vi.mocked(api.actionItemQueue.list).mockRejectedValueOnce(
       new Error('Synthetic read failure'),
     );
     act(() => drag.start!());
@@ -995,7 +1037,7 @@ describe('ActionItemsIndexPage', () => {
     expect(
       screen.getByRole('button', { name: 'Complete Task 1' }),
     ).toBeDisabled();
-    expect(api.actionItems.move).toHaveBeenCalledTimes(1);
+    expect(api.actionItemQueue.move).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() =>
       expect(
@@ -1003,17 +1045,19 @@ describe('ActionItemsIndexPage', () => {
       ).toBeEnabled(),
     );
     expect(screen.getByRole('table')).toBe(table);
-    expect(api.actionItems.move).toHaveBeenCalledTimes(1);
+    expect(api.actionItemQueue.move).toHaveBeenCalledTimes(1);
     expect(api.actionItems.update).not.toHaveBeenCalled();
   });
 
   it('shows actual queue priorities in filtered title order and completed rows', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await renderReady();
-    vi.mocked(api.actionItems.list).mockResolvedValue({
-      items: [actionItem(24), actionItem(13), actionItem(3)],
-      total: 3,
-    });
+    vi.mocked(api.actionItemQueue.list).mockResolvedValue(
+      queuePage({
+        items: [actionItem(24), actionItem(13), actionItem(3)],
+        total: 3,
+      }),
+    );
     fireEvent.click(screen.getByRole('tab', { name: 'Work' }));
     await act(async () => {
       vi.advanceTimersByTime(300);
@@ -1033,10 +1077,12 @@ describe('ActionItemsIndexPage', () => {
     expect(
       screen.queryByRole('button', { name: /Reorder/ }),
     ).not.toBeInTheDocument();
-    vi.mocked(api.actionItems.list).mockResolvedValue({
-      items: [actionItem(24, { status: 'completed' })],
-      total: 1,
-    });
+    vi.mocked(api.actionItemQueue.list).mockResolvedValue(
+      queuePage({
+        items: [actionItem(24, { status: 'completed' })],
+        total: 1,
+      }),
+    );
     fireEvent.click(screen.getByRole('tab', { name: 'Completed' }));
     await screen.findByRole('button', { name: 'Reopen Task 24' });
     expect(screen.getByLabelText('No open queue priority')).toHaveTextContent(
@@ -1049,7 +1095,12 @@ describe('ActionItemsIndexPage', () => {
       within(actions)
         .getAllByRole('button')
         .map((button) => button.getAttribute('aria-label')),
-    ).toEqual(['Reopen Task 24', 'Edit Task 24', 'Delete Task 24']);
+    ).toEqual([
+      'Reopen Task 24',
+      'Edit Task 24',
+      'Delete Task 24',
+      'Move Task 24 to Epic',
+    ]);
   });
 
   it('lazily discloses descriptions with native keyboard buttons and one open row', async () => {
@@ -1115,10 +1166,12 @@ describe('ActionItemsIndexPage', () => {
 
   it('closes descriptions before drag capture and when paging or filters change', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.mocked(api.actionItems.list).mockResolvedValue({
-      items: rows,
-      total: 25,
-    });
+    vi.mocked(api.actionItemQueue.list).mockResolvedValue(
+      queuePage({
+        items: rows,
+        total: 25,
+      }),
+    );
     await renderReady();
     fireEvent.click(screen.getByRole('button', { name: 'Task 1' }));
     await screen.findByRole('region', { name: 'Task 1' });
@@ -1162,25 +1215,32 @@ describe('ActionItemsIndexPage', () => {
   it('rejects a drag when only the queue positions changed during an in-flight poll', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await renderReady();
-    const polling = deferred<Paginated<ActionItemRow>>();
-    vi.mocked(api.actionItems.list).mockReturnValueOnce(polling.promise);
+    const polling = deferred<ActionItemGroupedPage>();
+    vi.mocked(api.actionItemQueue.list).mockReturnValueOnce(polling.promise);
     await act(async () => {
       vi.advanceTimersByTime(POLL_INTERVAL_MS);
     });
     act(() => drag.start!());
     await act(async () => {
-      polling.resolve({
-        items: rows.map((item) => ({ ...item, priority: item.priority! + 1 })),
-        total: 4,
-      });
+      polling.resolve(
+        queuePage({
+          items: rows.map((item) => ({
+            ...item,
+            priority: item.priority! + 1,
+          })),
+          total: 4,
+        }),
+      );
     });
     await act(async () => drag.end!(drop()));
-    expect(api.actionItems.move).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.move).not.toHaveBeenCalled();
   });
 
   it('rolls an optimistic reorder back and reloads persisted order after a conflict', async () => {
     const saving = deferred<ReturnType<typeof actionItem>>();
-    vi.mocked(api.actionItems.move).mockReturnValueOnce(saving.promise);
+    vi.mocked(api.actionItemQueue.move).mockReturnValueOnce(
+      saving.promise.then(() => ({ saved: true })),
+    );
     await renderReady();
     act(() => {
       drag.start!();
@@ -1199,7 +1259,7 @@ describe('ActionItemsIndexPage', () => {
     expect(
       screen.getByRole('button', { name: 'Complete Task 1' }),
     ).toBeEnabled();
-    expect(api.actionItems.list).toHaveBeenCalledTimes(2);
+    expect(api.actionItemQueue.list).toHaveBeenCalledTimes(2);
   });
 
   it('blocks captured drag callbacks while filters are pending', async () => {
@@ -1216,7 +1276,7 @@ describe('ActionItemsIndexPage', () => {
     await act(async () => {
       await oldEnd(drop());
     });
-    expect(api.actionItems.move).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.move).not.toHaveBeenCalled();
     expect(
       screen.getByRole('button', { name: 'Reorder Task 1' }),
     ).toBeDisabled();
@@ -1231,8 +1291,8 @@ describe('ActionItemsIndexPage', () => {
   it('keeps displayed rows frozen and cancels a drag if an already-started read changes membership', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await renderReady();
-    const polling = deferred<Paginated<ActionItemRow>>();
-    vi.mocked(api.actionItems.list).mockReturnValueOnce(polling.promise);
+    const polling = deferred<ActionItemGroupedPage>();
+    vi.mocked(api.actionItemQueue.list).mockReturnValueOnce(polling.promise);
     await act(async () => {
       vi.advanceTimersByTime(POLL_INTERVAL_MS);
     });
@@ -1240,13 +1300,13 @@ describe('ActionItemsIndexPage', () => {
       drag.start!();
     });
     await act(async () => {
-      polling.resolve({ items: [rows[0], rows[2]], total: 2 });
+      polling.resolve(queuePage({ items: [rows[0], rows[2]], total: 2 }));
     });
     expect(titles()).toEqual(['Task 1', 'Task 2', 'Task 3']);
     await act(async () => {
       await drag.end!(drop());
     });
-    expect(api.actionItems.move).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.move).not.toHaveBeenCalled();
   });
 
   it('pauses polling during a drag and ignores canceled or unchanged drops', async () => {
@@ -1260,11 +1320,11 @@ describe('ActionItemsIndexPage', () => {
     await act(async () => {
       drag.start!();
     });
-    vi.mocked(api.actionItems.list).mockClear();
+    vi.mocked(api.actionItemQueue.list).mockClear();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2);
     });
-    expect(api.actionItems.list).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.list).not.toHaveBeenCalled();
     await act(async () => {
       await drag.end!({ ...drop(), destination: null, reason: 'CANCEL' });
     });
@@ -1274,11 +1334,11 @@ describe('ActionItemsIndexPage', () => {
     await act(async () => {
       await drag.end!(drop(0, 0));
     });
-    expect(api.actionItems.move).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.move).not.toHaveBeenCalled();
   });
 
   it('keeps labeled filters available through loading and retryable read failures', async () => {
-    vi.mocked(api.actionItems.list).mockRejectedValueOnce(
+    vi.mocked(api.actionItemQueue.list).mockRejectedValueOnce(
       new Error('Private diagnostic'),
     );
     renderWithProviders(<ActionItemsIndexPage />, {
@@ -1310,11 +1370,11 @@ describe('Action Items list deletion', () => {
   it('confirms the displayed title and leaves cancellation without writes or refreshes', async () => {
     vi.mocked(window.confirm).mockReturnValue(false);
     await ready();
-    vi.mocked(api.actionItems.list).mockClear();
+    vi.mocked(api.actionItemQueue.list).mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Delete Task 1' }));
     expect(window.confirm).toHaveBeenCalledWith('Delete action item “Task 1”?');
     expect(api.actionItems.remove).not.toHaveBeenCalled();
-    expect(api.actionItems.list).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.list).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Task 1' })).toHaveAttribute(
       'aria-expanded',
       'false',
@@ -1324,12 +1384,14 @@ describe('Action Items list deletion', () => {
 
   it('sends the displayed revision once and holds all row actions through reconciliation', async () => {
     const saving = deferred<{ deleted: boolean; id: number }>();
-    const refresh = deferred<Paginated<ActionItemRow>>();
-    vi.mocked(api.actionItems.list)
-      .mockResolvedValueOnce({
-        items: [actionItem(1, { revision: 7 }), ...rows.slice(1)],
-        total: 3,
-      })
+    const refresh = deferred<ActionItemGroupedPage>();
+    vi.mocked(api.actionItemQueue.list)
+      .mockResolvedValueOnce(
+        queuePage({
+          items: [actionItem(1, { revision: 7 }), ...rows.slice(1)],
+          total: 3,
+        }),
+      )
       .mockReturnValueOnce(refresh.promise);
     vi.mocked(api.actionItems.remove).mockReturnValueOnce(saving.promise);
     await ready();
@@ -1354,7 +1416,9 @@ describe('Action Items list deletion', () => {
     expect(
       screen.getByRole('button', { name: 'Delete Task 2' }),
     ).toBeDisabled();
-    await act(async () => refresh.resolve({ items: rows.slice(1), total: 2 }));
+    await act(async () =>
+      refresh.resolve(queuePage({ items: rows.slice(1), total: 2 })),
+    );
     expect(
       screen.queryByRole('button', { name: 'Task 1' }),
     ).not.toBeInTheDocument();
@@ -1365,12 +1429,14 @@ describe('Action Items list deletion', () => {
     vi.mocked(api.actionItems.remove).mockRejectedValueOnce(
       new ApiError('Action item changed', 409),
     );
-    vi.mocked(api.actionItems.list)
-      .mockResolvedValueOnce({ items: rows, total: 3 })
-      .mockResolvedValue({
-        items: [actionItem(1, { revision: 9 }), ...rows.slice(1)],
-        total: 3,
-      });
+    vi.mocked(api.actionItemQueue.list)
+      .mockResolvedValueOnce(queuePage({ items: rows, total: 3 }))
+      .mockResolvedValue(
+        queuePage({
+          items: [actionItem(1, { revision: 9 }), ...rows.slice(1)],
+          total: 3,
+        }),
+      );
     await ready();
     fireEvent.click(screen.getByRole('button', { name: 'Delete Task 1' }));
     await screen.findByRole('alert');
@@ -1409,11 +1475,11 @@ describe('Action Items list deletion', () => {
   });
 
   it('clamps a last page emptied by deletion and refreshes the preceding page', async () => {
-    vi.mocked(api.actionItems.list)
-      .mockResolvedValueOnce({ items: rows, total: 11 })
-      .mockResolvedValueOnce({ items: [actionItem(11)], total: 11 })
-      .mockResolvedValueOnce({ items: [], total: 10 })
-      .mockResolvedValue({ items: rows, total: 10 });
+    vi.mocked(api.actionItemQueue.list)
+      .mockResolvedValueOnce(queuePage({ items: rows, total: 11 }))
+      .mockResolvedValueOnce(queuePage({ items: [actionItem(11)], total: 11 }))
+      .mockResolvedValueOnce(queuePage({ items: [], total: 10 }))
+      .mockResolvedValue(queuePage({ items: rows, total: 10 }));
     await ready();
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     fireEvent.click(
@@ -1421,7 +1487,7 @@ describe('Action Items list deletion', () => {
     );
     await screen.findByRole('button', { name: 'Task 1' });
     expect(api.actionItems.remove).toHaveBeenCalledWith(11, 1);
-    expect(api.actionItems.list).toHaveBeenLastCalledWith(
+    expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
       expect.objectContaining({ offset: 0 }),
     );
     expect(
@@ -1433,14 +1499,16 @@ describe('Action Items list deletion', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const saving = deferred<{ deleted: boolean; id: number }>();
     vi.mocked(api.actionItems.remove).mockReturnValueOnce(saving.promise);
-    vi.mocked(api.actionItems.list).mockResolvedValue({
-      items: rows,
-      total: 25,
-    });
+    vi.mocked(api.actionItemQueue.list).mockResolvedValue(
+      queuePage({
+        items: rows,
+        total: 25,
+      }),
+    );
     await ready();
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ offset: 10 }),
       ),
     );
@@ -1450,15 +1518,15 @@ describe('Action Items list deletion', () => {
     });
     await act(async () => vi.advanceTimersByTime(300));
     await waitFor(() =>
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ q: 'Current filter', offset: 0 }),
       ),
     );
-    vi.mocked(api.actionItems.list).mockClear();
+    vi.mocked(api.actionItemQueue.list).mockClear();
     await act(async () => saving.resolve({ deleted: true, id: 1 }));
     expect(api.actionItems.remove).toHaveBeenCalledWith(1, 1);
-    expect(api.actionItems.list).toHaveBeenCalledTimes(1);
-    expect(api.actionItems.list).toHaveBeenCalledWith(
+    expect(api.actionItemQueue.list).toHaveBeenCalledTimes(1);
+    expect(api.actionItemQueue.list).toHaveBeenCalledWith(
       expect.objectContaining({ q: 'Current filter', offset: 0 }),
     );
   });
@@ -1472,12 +1540,12 @@ describe('Action Items list deletion', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Delete Task 1' }));
       expect(api.actionItems.remove).toHaveBeenCalledWith(1, 1);
       rendered.rerender(<NotificationBar />);
-      vi.mocked(api.actionItems.list).mockClear();
+      vi.mocked(api.actionItemQueue.list).mockClear();
       await act(async () => {
         if (outcome === 'resolve') saving.resolve({ deleted: true, id: 1 });
         else saving.reject(new Error('Late failure'));
       });
-      expect(api.actionItems.list).not.toHaveBeenCalled();
+      expect(api.actionItemQueue.list).not.toHaveBeenCalled();
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     },
   );
@@ -1511,7 +1579,7 @@ describe('Action Items list deletion', () => {
   it('blocks deletion after a failed refresh until a successful Retry', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await ready();
-    vi.mocked(api.actionItems.list).mockRejectedValueOnce(
+    vi.mocked(api.actionItemQueue.list).mockRejectedValueOnce(
       new Error('Read failed'),
     );
     await act(async () => vi.advanceTimersByTime(POLL_INTERVAL_MS));
@@ -1548,7 +1616,7 @@ describe('Action Items list deletion', () => {
           'false',
         );
         expect(api.actionItems.get).not.toHaveBeenCalled();
-        expect(api.actionItems.move).not.toHaveBeenCalled();
+        expect(api.actionItemQueue.move).not.toHaveBeenCalled();
         await act(async () => saving.resolve({ deleted: true, id: 1 }));
       } finally {
         window.removeEventListener('keydown', bubbled);
@@ -1559,10 +1627,12 @@ describe('Action Items list deletion', () => {
 
 describe('Action item column sorting', () => {
   it('toggles visible columns and resets paging while retaining projects and filters without writes', async () => {
-    vi.mocked(api.actionItems.list).mockResolvedValue({
-      items: rows,
-      total: 60,
-    });
+    vi.mocked(api.actionItemQueue.list).mockResolvedValue(
+      queuePage({
+        items: rows,
+        total: 60,
+      }),
+    );
     renderWithProviders(<ActionItemsIndexPage />, {
       initialEntries: [
         '/action-items?project=Work&tags=security&limit=25&offset=25&sort=updated',
@@ -1581,7 +1651,7 @@ describe('Action item column sorting', () => {
     ]) {
       fireEvent.click(screen.getByRole('button', { name: label }));
       await waitFor(() =>
-        expect(api.actionItems.list).toHaveBeenLastCalledWith(
+        expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
           expect.objectContaining({
             project: 'Work',
             tags: ['security'],
@@ -1593,26 +1663,28 @@ describe('Action item column sorting', () => {
       );
       fireEvent.click(screen.getByRole('button', { name: label }));
       await waitFor(() =>
-        expect(api.actionItems.list).toHaveBeenLastCalledWith(
+        expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
           expect.objectContaining({ sort: descending, offset: 0 }),
         ),
       );
     }
-    expect(api.actionItems.move).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.move).not.toHaveBeenCalled();
     expect(api.actionItems.update).not.toHaveBeenCalled();
   });
 
   it('retains focused headers through a pending first page, failed sort, retry and empty result', async () => {
-    const initial = deferred<Paginated<ActionItemRow>>();
-    vi.mocked(api.actionItems.list).mockReturnValueOnce(initial.promise);
+    const initial = deferred<ActionItemGroupedPage>();
+    vi.mocked(api.actionItemQueue.list).mockReturnValueOnce(initial.promise);
     renderWithProviders(<ActionItemsIndexPage />, {
       initialEntries: ['/action-items'],
     });
     const title = screen.getByRole('button', { name: 'Title' });
     expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
-    await act(async () => initial.resolve({ items: rows, total: 3 }));
-    const sorted = deferred<Paginated<ActionItemRow>>();
-    vi.mocked(api.actionItems.list).mockReturnValueOnce(sorted.promise);
+    await act(async () =>
+      initial.resolve(queuePage({ items: rows, total: 3 })),
+    );
+    const sorted = deferred<ActionItemGroupedPage>();
+    vi.mocked(api.actionItemQueue.list).mockReturnValueOnce(sorted.promise);
     title.focus();
     fireEvent.click(title);
     expect(title).toHaveFocus();
@@ -1625,10 +1697,12 @@ describe('Action item column sorting', () => {
     expect(
       screen.getByRole('columnheader', { name: 'Title' }),
     ).not.toHaveAttribute('aria-sort');
-    vi.mocked(api.actionItems.list).mockResolvedValueOnce({
-      items: [],
-      total: 0,
-    });
+    vi.mocked(api.actionItemQueue.list).mockResolvedValueOnce(
+      queuePage({
+        items: [],
+        total: 0,
+      }),
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() =>
       expect(
@@ -1644,8 +1718,8 @@ it('keeps sorting quiet and reports pending retries while protecting retained ro
   await renderReady();
   const table = screen.getByRole('table');
   const title = screen.getByRole('button', { name: 'Title' });
-  const pending = deferred<Paginated<ActionItemRow>>();
-  vi.mocked(api.actionItems.list).mockReturnValueOnce(pending.promise);
+  const pending = deferred<ActionItemGroupedPage>();
+  vi.mocked(api.actionItemQueue.list).mockReturnValueOnce(pending.promise);
   title.focus();
   fireEvent.click(title);
   expect(table).toHaveAttribute('aria-busy', 'true');
@@ -1667,12 +1741,12 @@ it('keeps sorting quiet and reports pending retries while protecting retained ro
   expect(
     screen.getByRole('columnheader', { name: 'Title' }),
   ).not.toHaveAttribute('aria-sort');
-  const retry = deferred<Paginated<ActionItemRow>>();
-  vi.mocked(api.actionItems.list).mockReturnValueOnce(retry.promise);
+  const retry = deferred<ActionItemGroupedPage>();
+  vi.mocked(api.actionItemQueue.list).mockReturnValueOnce(retry.promise);
   fireEvent.click(title);
   expect(table).toHaveAttribute('aria-busy', 'true');
   expect(title).toHaveFocus();
-  await act(async () => retry.resolve({ items: [], total: 0 }));
+  await act(async () => retry.resolve(queuePage({ items: [], total: 0 })));
   expect(table).toHaveAttribute('aria-busy', 'false');
   expect(screen.getByRole('columnheader', { name: 'Title' })).toHaveAttribute(
     'aria-sort',
@@ -1680,22 +1754,22 @@ it('keeps sorting quiet and reports pending retries while protecting retained ro
   );
   expect(screen.getByText('No open action items found.')).toBeVisible();
   expect(title).toHaveFocus();
-  expect(api.actionItems.move).not.toHaveBeenCalled();
+  expect(api.actionItemQueue.move).not.toHaveBeenCalled();
   expect(api.actionItems.update).not.toHaveBeenCalled();
   expect(api.actionItems.remove).not.toHaveBeenCalled();
 });
 
 it('announces a pending explicit Retry without replacing accepted rows or inserting loading prose', async () => {
   await renderReady();
-  vi.mocked(api.actionItems.list).mockRejectedValueOnce(
+  vi.mocked(api.actionItemQueue.list).mockRejectedValueOnce(
     new Error('Unavailable sort read'),
   );
   fireEvent.click(screen.getByRole('button', { name: 'Title' }));
   await screen.findByRole('alert');
   const table = screen.getByRole('table');
   expect(table).toHaveAttribute('aria-busy', 'false');
-  const retry = deferred<Paginated<ActionItemRow>>();
-  vi.mocked(api.actionItems.list).mockReturnValueOnce(retry.promise);
+  const retry = deferred<ActionItemGroupedPage>();
+  vi.mocked(api.actionItemQueue.list).mockReturnValueOnce(retry.promise);
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
   await waitFor(() => expect(table).toHaveAttribute('aria-busy', 'true'));
   expect(screen.getByRole('button', { name: 'Task 1' })).toBeInTheDocument();
@@ -1703,7 +1777,9 @@ it('announces a pending explicit Retry without replacing accepted rows or insert
   expect(
     screen.getByRole('button', { name: 'Complete Task 1' }),
   ).toBeDisabled();
-  await act(async () => retry.resolve({ items: [actionItem(1)], total: 1 }));
+  await act(async () =>
+    retry.resolve(queuePage({ items: [actionItem(1)], total: 1 })),
+  );
   expect(table).toHaveAttribute('aria-busy', 'false');
   expect(screen.getByRole('columnheader', { name: 'Title' })).toHaveAttribute(
     'aria-sort',
@@ -1730,18 +1806,20 @@ describe('Action item boundary moves', () => {
         actionItem(13),
       ];
       let moved = false;
-      vi.mocked(api.actionItems.list).mockImplementation(async (filters) => ({
-        items:
-          filters?.limit === 1
-            ? [actionItem(anchor)]
-            : moved
-              ? [page[0], page[2], actionItem(14)]
-              : page,
-        total: 25,
-      }));
-      vi.mocked(api.actionItems.move).mockImplementationOnce(async () => {
+      vi.mocked(api.actionItemQueue.list).mockImplementation(async (filters) =>
+        queuePage({
+          items:
+            filters?.limit === 1
+              ? [actionItem(anchor)]
+              : moved
+                ? [page[0], page[2], actionItem(14)]
+                : page,
+          total: 25,
+        }),
+      );
+      vi.mocked(api.actionItemQueue.move).mockImplementationOnce(async () => {
         moved = true;
-        return actionItem(12, { revision: 8 });
+        return { saved: true };
       });
       renderWithProviders(<ActionItemsIndexPage />, {
         initialEntries: [
@@ -1749,7 +1827,8 @@ describe('Action item boundary moves', () => {
         ],
       });
       await screen.findByRole('button', { name: 'Task 12' });
-      const currentFilters = vi.mocked(api.actionItems.list).mock.calls[0][0];
+      const currentFilters = vi.mocked(api.actionItemQueue.list).mock
+        .calls[0][0];
       expect(currentFilters).toMatchObject({
         status: 'open',
         sort: 'manual',
@@ -1764,19 +1843,21 @@ describe('Action item boundary moves', () => {
         screen.getByRole('button', { name: `Move Task 12 to ${edge}` }),
       );
       await waitFor(() =>
-        expect(api.actionItems.move).toHaveBeenCalledExactlyOnceWith(12, {
-          expected_revision: 7,
-          [edge === 'top' ? 'before_id' : 'after_id']: anchor,
-        }),
+        expect(api.actionItemQueue.move).toHaveBeenCalledExactlyOnceWith(
+          queueMove(12, {
+            expected_revision: 7,
+            [edge === 'top' ? 'before_id' : 'after_id']: anchor,
+          }),
+        ),
       );
       await screen.findByRole('button', { name: 'Task 14' });
-      expect(api.actionItems.list).toHaveBeenNthCalledWith(2, {
+      expect(api.actionItemQueue.list).toHaveBeenNthCalledWith(2, {
         ...currentFilters,
         sort,
         limit: 1,
         offset: 0,
       });
-      expect(api.actionItems.list).toHaveBeenLastCalledWith(currentFilters);
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(currentFilters);
       expect(screen.queryByRole('button', { name: 'Task 12' })).toBeNull();
     },
   );
@@ -1784,10 +1865,12 @@ describe('Action item boundary moves', () => {
   it.each([1, 3])(
     'disables redundant edges for a %i-item result',
     async (count) => {
-      vi.mocked(api.actionItems.list).mockResolvedValue({
-        items: rows.slice(0, count),
-        total: count,
-      });
+      vi.mocked(api.actionItemQueue.list).mockResolvedValue(
+        queuePage({
+          items: rows.slice(0, count),
+          total: count,
+        }),
+      );
       await renderReady();
       const top = screen.getByRole('button', { name: 'Move Task 1 to top' });
       const bottom = screen.getByRole('button', {
@@ -1805,8 +1888,8 @@ describe('Action item boundary moves', () => {
       }
       fireEvent.click(top);
       fireEvent.click(bottom);
-      expect(api.actionItems.move).not.toHaveBeenCalled();
-      expect(api.actionItems.list).toHaveBeenCalledTimes(1);
+      expect(api.actionItemQueue.move).not.toHaveBeenCalled();
+      expect(api.actionItemQueue.list).toHaveBeenCalledTimes(1);
     },
   );
 
@@ -1823,18 +1906,22 @@ describe('Action item boundary moves', () => {
     expect(
       screen.queryByRole('button', { name: /^Move Task \d+ to (top|bottom)$/ }),
     ).toBeNull();
-    expect(api.actionItems.move).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.move).not.toHaveBeenCalled();
   });
 
   it('skips a self-anchor discovered after the displayed row changed position', async () => {
     await renderReady();
-    vi.mocked(api.actionItems.list).mockResolvedValueOnce({
-      items: [rows[1]],
-      total: 3,
-    });
+    vi.mocked(api.actionItemQueue.list).mockResolvedValueOnce(
+      queuePage({
+        items: [rows[1]],
+        total: 3,
+      }),
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Move Task 2 to top' }));
-    await waitFor(() => expect(api.actionItems.list).toHaveBeenCalledTimes(3));
-    expect(api.actionItems.move).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(api.actionItemQueue.list).toHaveBeenCalledTimes(3),
+    );
+    expect(api.actionItemQueue.move).not.toHaveBeenCalled();
     expect(
       screen.getByRole('button', { name: 'Move Task 2 to top' }),
     ).toBeEnabled();
@@ -1855,11 +1942,11 @@ describe('Action item boundary moves', () => {
     expect(top).toBeDisabled();
     expect(bottom).toBeDisabled();
     fireEvent.click(top);
-    expect(api.actionItems.move).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.move).not.toHaveBeenCalled();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
     });
-    expect(api.actionItems.list).toHaveBeenLastCalledWith(
+    expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
       expect.objectContaining({ q: 'Task', offset: 0 }),
     );
     expect(top).toBeEnabled();
@@ -1869,21 +1956,23 @@ describe('Action item boundary moves', () => {
   it('freezes lookup, mutation and reconciliation, rejects repeated clicks, then resumes polling', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await renderReady();
-    const lookup = deferred<Paginated<ActionItemRow>>();
+    const lookup = deferred<ActionItemGroupedPage>();
     const saving = deferred<ReturnType<typeof actionItem>>();
-    const reread = deferred<Paginated<ActionItemRow>>();
-    vi.mocked(api.actionItems.list)
+    const reread = deferred<ActionItemGroupedPage>();
+    vi.mocked(api.actionItemQueue.list)
       .mockReturnValueOnce(lookup.promise)
       .mockReturnValueOnce(reread.promise);
-    vi.mocked(api.actionItems.move).mockReturnValueOnce(saving.promise);
+    vi.mocked(api.actionItemQueue.move).mockReturnValueOnce(
+      saving.promise.then(() => ({ saved: true })),
+    );
     const top = screen.getByRole('button', { name: 'Move Task 2 to top' });
     fireEvent.click(top);
     fireEvent.click(top);
     fireEvent.click(
       screen.getByRole('button', { name: 'Move Task 1 to bottom' }),
     );
-    expect(api.actionItems.list).toHaveBeenCalledTimes(2);
-    expect(api.actionItems.move).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.list).toHaveBeenCalledTimes(2);
+    expect(api.actionItemQueue.move).not.toHaveBeenCalled();
     expect(screen.getByRole('status')).toHaveTextContent('Saving order…');
     for (const control of [
       top,
@@ -1896,26 +1985,32 @@ describe('Action item boundary moves', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2);
     });
-    expect(api.actionItems.list).toHaveBeenCalledTimes(2);
-    await act(async () => lookup.resolve({ items: [rows[0]], total: 3 }));
-    expect(api.actionItems.move).toHaveBeenCalledExactlyOnceWith(2, {
-      expected_revision: 1,
-      before_id: 1,
-    });
+    expect(api.actionItemQueue.list).toHaveBeenCalledTimes(2);
+    await act(async () =>
+      lookup.resolve(queuePage({ items: [rows[0]], total: 3 })),
+    );
+    expect(api.actionItemQueue.move).toHaveBeenCalledExactlyOnceWith(
+      queueMove(2, {
+        expected_revision: 1,
+        before_id: 1,
+      }),
+    );
     expect(top).toBeDisabled();
     await act(async () => saving.resolve(actionItem(2, { revision: 2 })));
-    expect(api.actionItems.list).toHaveBeenCalledTimes(3);
+    expect(api.actionItemQueue.list).toHaveBeenCalledTimes(3);
     expect(top).toBeDisabled();
     expect(screen.getByLabelText('Tags')).toBeDisabled();
     await act(async () => {
-      reread.resolve({
-        items: [
-          actionItem(2, { revision: 2, priority: 1 }),
-          actionItem(1, { priority: 2 }),
-          rows[2],
-        ],
-        total: 3,
-      });
+      reread.resolve(
+        queuePage({
+          items: [
+            actionItem(2, { revision: 2, priority: 1 }),
+            actionItem(1, { priority: 2 }),
+            rows[2],
+          ],
+          total: 3,
+        }),
+      );
     });
     expect(titles()).toEqual(['Task 2', 'Task 1', 'Task 3']);
     expect(screen.getByLabelText('Search action items')).toBeEnabled();
@@ -1926,8 +2021,8 @@ describe('Action item boundary moves', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
     });
-    expect(api.actionItems.list).toHaveBeenCalledTimes(4);
-    expect(api.actionItems.move).toHaveBeenCalledTimes(1);
+    expect(api.actionItemQueue.list).toHaveBeenCalledTimes(4);
+    expect(api.actionItemQueue.move).toHaveBeenCalledTimes(1);
   });
 
   it.each(['lookup', 'move', 'empty boundary'])(
@@ -1943,16 +2038,18 @@ describe('Action item boundary moves', () => {
       );
       await screen.findByRole('button', { name: 'Task 1' });
       if (stage === 'lookup')
-        vi.mocked(api.actionItems.list).mockRejectedValueOnce(
+        vi.mocked(api.actionItemQueue.list).mockRejectedValueOnce(
           new Error('Boundary unavailable'),
         );
       else {
-        vi.mocked(api.actionItems.list).mockResolvedValueOnce({
-          items: stage === 'empty boundary' ? [] : [rows[0]],
-          total: stage === 'empty boundary' ? 0 : 3,
-        });
+        vi.mocked(api.actionItemQueue.list).mockResolvedValueOnce(
+          queuePage({
+            items: stage === 'empty boundary' ? [] : [rows[0]],
+            total: stage === 'empty boundary' ? 0 : 3,
+          }),
+        );
         if (stage === 'move')
-          vi.mocked(api.actionItems.move).mockRejectedValueOnce(
+          vi.mocked(api.actionItemQueue.move).mockRejectedValueOnce(
             new ApiError('Source changed', 409),
           );
       }
@@ -1971,16 +2068,16 @@ describe('Action item boundary moves', () => {
         );
       if (stage === 'move')
         expect(screen.getByRole('alert')).toHaveTextContent('Source changed');
-      expect(api.actionItems.move).toHaveBeenCalledTimes(
+      expect(api.actionItemQueue.move).toHaveBeenCalledTimes(
         stage === 'move' ? 1 : 0,
       );
-      expect(api.actionItems.list).toHaveBeenCalledTimes(3);
+      expect(api.actionItemQueue.list).toHaveBeenCalledTimes(3);
       expect(titles()).toEqual(['Task 1', 'Task 2', 'Task 3']);
       await act(async () => {
         await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
       });
-      expect(api.actionItems.list).toHaveBeenCalledTimes(4);
-      expect(api.actionItems.move).toHaveBeenCalledTimes(
+      expect(api.actionItemQueue.list).toHaveBeenCalledTimes(4);
+      expect(api.actionItemQueue.move).toHaveBeenCalledTimes(
         stage === 'move' ? 1 : 0,
       );
     },
@@ -1988,8 +2085,8 @@ describe('Action item boundary moves', () => {
 
   it('blocks edge moves after a failed reconciliation until explicit Retry succeeds', async () => {
     await renderReady();
-    vi.mocked(api.actionItems.list)
-      .mockResolvedValueOnce({ items: [rows[0]], total: 3 })
+    vi.mocked(api.actionItemQueue.list)
+      .mockResolvedValueOnce(queuePage({ items: [rows[0]], total: 3 }))
       .mockRejectedValueOnce(new Error('Reread failed'));
     fireEvent.click(screen.getByRole('button', { name: 'Move Task 2 to top' }));
     await screen.findByRole('alert');
@@ -1997,14 +2094,14 @@ describe('Action item boundary moves', () => {
       screen.getByRole('button', { name: 'Move Task 2 to top' }),
     ).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Move Task 2 to top' }));
-    expect(api.actionItems.move).toHaveBeenCalledTimes(1);
+    expect(api.actionItemQueue.move).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() =>
       expect(
         screen.getByRole('button', { name: 'Move Task 2 to top' }),
       ).toBeEnabled(),
     );
-    expect(api.actionItems.move).toHaveBeenCalledTimes(1);
+    expect(api.actionItemQueue.move).toHaveBeenCalledTimes(1);
   });
 
   it.each([{ revision: 2 }, { priority: 5 }])(
@@ -2012,9 +2109,9 @@ describe('Action item boundary moves', () => {
     async (change) => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       await renderReady();
-      const polling = deferred<Paginated<ActionItemRow>>();
-      const lookup = deferred<Paginated<ActionItemRow>>();
-      vi.mocked(api.actionItems.list)
+      const polling = deferred<ActionItemGroupedPage>();
+      const lookup = deferred<ActionItemGroupedPage>();
+      vi.mocked(api.actionItemQueue.list)
         .mockReturnValueOnce(polling.promise)
         .mockReturnValueOnce(lookup.promise);
       await act(async () => {
@@ -2024,14 +2121,18 @@ describe('Action item boundary moves', () => {
         screen.getByRole('button', { name: 'Move Task 2 to top' }),
       );
       await act(async () => {
-        polling.resolve({
-          items: [rows[0], actionItem(2, change), rows[2]],
-          total: 3,
-        });
+        polling.resolve(
+          queuePage({
+            items: [rows[0], actionItem(2, change), rows[2]],
+            total: 3,
+          }),
+        );
       });
-      await act(async () => lookup.resolve({ items: [rows[0]], total: 3 }));
-      expect(api.actionItems.move).not.toHaveBeenCalled();
-      expect(api.actionItems.list).toHaveBeenCalledTimes(4);
+      await act(async () =>
+        lookup.resolve(queuePage({ items: [rows[0]], total: 3 })),
+      );
+      expect(api.actionItemQueue.move).not.toHaveBeenCalled();
+      expect(api.actionItemQueue.list).toHaveBeenCalledTimes(4);
       expect(
         screen.getByRole('button', { name: 'Move Task 2 to top' }),
       ).toBeEnabled();
@@ -2040,13 +2141,15 @@ describe('Action item boundary moves', () => {
 
   it('does not mutate or reread after unmounting during a boundary lookup', async () => {
     const rendered = await renderReady();
-    const lookup = deferred<Paginated<ActionItemRow>>();
-    vi.mocked(api.actionItems.list).mockReturnValueOnce(lookup.promise);
+    const lookup = deferred<ActionItemGroupedPage>();
+    vi.mocked(api.actionItemQueue.list).mockReturnValueOnce(lookup.promise);
     fireEvent.click(screen.getByRole('button', { name: 'Move Task 2 to top' }));
     rendered.unmount();
-    await act(async () => lookup.resolve({ items: [rows[0]], total: 3 }));
-    expect(api.actionItems.move).not.toHaveBeenCalled();
-    expect(api.actionItems.list).toHaveBeenCalledTimes(2);
+    await act(async () =>
+      lookup.resolve(queuePage({ items: [rows[0]], total: 3 })),
+    );
+    expect(api.actionItemQueue.move).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.list).toHaveBeenCalledTimes(2);
   });
 
   it('abandons an obsolete boundary lookup when external navigation changes the current filters', async () => {
@@ -2059,19 +2162,21 @@ describe('Action item boundary moves', () => {
       { initialEntries: ['/action-items'] },
     );
     await screen.findByRole('button', { name: 'Task 1' });
-    const lookup = deferred<Paginated<ActionItemRow>>();
-    vi.mocked(api.actionItems.list)
+    const lookup = deferred<ActionItemGroupedPage>();
+    vi.mocked(api.actionItemQueue.list)
       .mockReturnValueOnce(lookup.promise)
-      .mockResolvedValue({ items: [actionItem(9)], total: 1 });
+      .mockResolvedValue(queuePage({ items: [actionItem(9)], total: 1 }));
     fireEvent.click(screen.getByRole('button', { name: 'Move Task 2 to top' }));
     fireEvent.click(screen.getByRole('link', { name: 'Change view' }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
     });
     await screen.findByRole('button', { name: 'Task 9' });
-    await act(async () => lookup.resolve({ items: [rows[0]], total: 3 }));
-    expect(api.actionItems.move).not.toHaveBeenCalled();
-    expect(api.actionItems.list).toHaveBeenLastCalledWith(
+    await act(async () =>
+      lookup.resolve(queuePage({ items: [rows[0]], total: 3 })),
+    );
+    expect(api.actionItemQueue.move).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
       expect.objectContaining({ q: 'Changed', offset: 0 }),
     );
     expect(titles()).toEqual(['Task 9']);

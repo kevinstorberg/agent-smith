@@ -56,3 +56,157 @@
   white-space: nowrap;
   font-size: inherit;
 }
+
+.action-items-index-page .action-item-grouped-container {
+  overflow: visible;
+  min-width: 0;
+}
+.action-items-index-page .action-item-grouped-table,
+.action-items-index-page .epic-children .action-items-table {
+  min-width: 0;
+  width: 100%;
+  --action-priority-width: 9em;
+  --action-topics-width: 18%;
+  --action-updated-width: 13%;
+  --action-controls-width: 278px;
+}
+.action-items-index-page .action-item-grouped-table .action-item-actions-icons {
+  width: auto;
+  flex-wrap: wrap;
+}
+.action-items-index-page .action-item-epic-row > td {
+  padding: 0;
+}
+.action-items-index-page .action-item-epic-heading,
+.action-items-index-page .action-item-epic-identity,
+.action-items-index-page .action-item-epic-actions,
+.action-items-index-page .epic-name-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.action-items-index-page .action-item-epic-heading {
+  justify-content: space-between;
+  padding: 14px 10px;
+  background: var(--surface-hover);
+}
+.action-items-index-page .epic-toggle {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.action-items-index-page .epic-matching-count,
+.action-items-index-page .epic-queue-summary,
+.action-items-index-page .epic-empty {
+  color: var(--text-muted);
+}
+.action-items-index-page .epic-children {
+  border-left: 3px solid var(--border);
+  margin-left: 12px;
+}
+.action-items-index-page .epic-membership-control {
+  position: relative;
+}
+.action-items-index-page .epic-picker {
+  position: absolute;
+  z-index: 10;
+  right: 0;
+  top: 100%;
+  display: grid;
+  gap: 8px;
+  width: min(300px, calc(100vw - 48px));
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.action-items-index-page .epic-picker label,
+.action-items-index-page .epic-name-form label {
+  min-width: 0;
+  flex: 1 1 150px;
+}
+.action-items-index-page .epic-name-form {
+  align-items: end;
+  max-width: 100%;
+  padding: 8px 0;
+}
+.action-items-index-page .new-epic-control {
+  max-width: 100%;
+}
+.action-items-index-page .epic-menu summary {
+  cursor: pointer;
+}
+.action-items-index-page .epic-menu > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+@media (max-width: 1100px) {
+  .action-items-index-page .action-item-grouped-table,
+  .action-items-index-page .epic-children .action-items-table,
+  .action-items-index-page .action-item-grouped-table > tbody,
+  .action-items-index-page .epic-children tbody {
+    display: block;
+  }
+  .action-items-index-page .action-item-grouped-table > thead {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+  }
+  .action-items-index-page .action-item-row {
+    display: grid;
+    grid-template-columns: 5em minmax(0, 1fr);
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .action-items-index-page .action-item-row > td {
+    width: auto;
+    border: 0;
+    min-width: 0;
+    padding: 5px 10px;
+  }
+  .action-items-index-page .action-item-row > td:nth-child(n + 3) {
+    grid-column: 2;
+  }
+  .action-items-index-page .action-item-epic-row,
+  .action-items-index-page .action-item-epic-row > td {
+    display: block;
+  }
+  .action-items-index-page .action-item-epic-heading {
+    align-items: start;
+  }
+}
+@media (max-width: 600px) {
+  .action-items-index-page .action-item-grouped-table > thead tr {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .action-items-index-page .action-item-grouped-table > thead th {
+    padding: 5px;
+    width: auto;
+  }
+  .action-items-index-page .action-item-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .action-items-index-page .action-item-row > td:nth-child(n + 3) {
+    grid-column: 1;
+  }
+  .action-items-index-page .epic-picker {
+    left: 0;
+    right: auto;
+    position: fixed;
+    top: auto;
+    bottom: 16px;
+    margin: 0 16px;
+  }
+}
+
+.action-items-index-page .action-item-grouped-table .action-project-tag-sorts {
+  flex-wrap: wrap;
+}
+.action-items-index-page .action-item-grouped-table .sortable-header-label {
+  overflow-wrap: normal;
+  min-width: min-content;
+}
