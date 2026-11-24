@@ -202,3 +202,28 @@ def test_action_item_filtering_migration_validates_rejected_receipts_keys_and_la
                 "INSERT INTO action_item_proposal_receipts(decision_key,proposal_id) VALUES(%s,700) ON CONFLICT DO NOTHING",
                 ("9" * 64,),
             )
+
+
+def test_action_item_filtering_migration_import_transaction_started_before_cutover_uses_observation_time(
+    legacy_database,
+):
+    migration, url, _, _, _ = setup_previous(legacy_database)
+    with psycopg2.connect(url) as older, older.cursor() as cursor:
+        cursor.execute("SELECT transaction_timestamp()")
+        started = cursor.fetchone()[0]
+        command.upgrade(migration, REVISION)
+        cursor.execute(
+            "SELECT action_items_activated_at FROM meeting_sync_state WHERE account_key='new'"
+        )
+        activation = cursor.fetchone()[0]
+        cursor.execute(
+            "INSERT INTO meeting_summaries(id,provider,account_key,external_id,source_name,summary_text,source_url,provider_created_at,provider_updated_at,content_hash) VALUES(%s,'test','new','late-arrival','New','Synthetic explicit work','https://example.test/late',now(),now(),%s) RETURNING first_seen_at,last_seen_at,updated_at",
+            (str(uuid4()), "f" * 64),
+        )
+        first, last, updated = cursor.fetchone()
+        assert started < activation <= first <= last <= updated
+        cursor.execute(
+            "SELECT first_seen_at,last_seen_at,updated_at FROM meeting_summaries WHERE external_id='one'"
+        )
+        original = cursor.fetchone()
+        assert original[0] == original[1] == original[2]

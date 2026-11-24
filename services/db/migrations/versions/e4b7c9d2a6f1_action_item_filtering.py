@@ -33,7 +33,7 @@ def _quiescent() -> None:
 def _lock() -> None:
     op.execute("SET LOCAL lock_timeout='5s'")
     op.execute(
-        "LOCK TABLE meeting_sync_state,meeting_action_item_runs,"
+        "LOCK TABLE meeting_sync_state,meeting_summaries,meeting_action_item_runs,"
         "action_item_proposals,action_item_proposal_payloads,"
         "action_item_proposal_receipts IN ACCESS EXCLUSIVE MODE"
     )
@@ -42,6 +42,10 @@ def _lock() -> None:
 
 def upgrade() -> None:
     _lock()
+    for column in ("first_seen_at", "last_seen_at", "updated_at"):
+        op.alter_column(
+            "meeting_summaries", column, server_default=sa.text("clock_timestamp()")
+        )
     op.add_column(
         "meeting_sync_state",
         sa.Column(
@@ -159,3 +163,5 @@ def downgrade() -> None:
         "status IN ('pending','approved','rejected')",
     )
     op.drop_column("meeting_sync_state", "action_items_activated_at")
+    for column in ("first_seen_at", "last_seen_at", "updated_at"):
+        op.alter_column("meeting_summaries", column, server_default=sa.func.now())
