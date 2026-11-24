@@ -5,7 +5,6 @@ import type { ActionItemProposal } from '../api';
 import { ActionItemProposalContent } from '../components/ActionItemProposalContent';
 import { FilterBar } from '../components/FilterBar';
 import { Pagination } from '../components/Pagination';
-import { StatusBadge } from '../components/StatusBadge';
 import { DateCell } from '../components/table';
 import { PROPOSAL_STATUSES } from '../constants';
 import { useNotification } from '../context/useNotification';
@@ -16,6 +15,8 @@ import { usePagination } from '../hooks/usePagination';
 import { usePolling } from '../hooks/usePolling';
 import { usePageLifetime } from '../hooks/usePageLifetime';
 import { useViewPreferences } from '../hooks/useViewPreferences';
+import { parseViewField } from '../utils/viewPreferences';
+import './actionItemProposals.css';
 
 export function ActionItemProposalsIndexPage() {
   const preferences = useViewPreferences('actionItemProposals');
@@ -69,9 +70,8 @@ export function ActionItemProposalsIndexPage() {
         'success',
       );
     },
-    onError: (error) => {
-      if (isCurrent()) notify(error.message, 'error');
-    },
+    // The persistent inline alert is the sole review-failure channel.
+    onError: () => undefined,
   });
 
   async function decide(
@@ -98,34 +98,38 @@ export function ActionItemProposalsIndexPage() {
           Saved action items
         </Link>
       </div>
-      <p>
-        Review new Action Items and suggested updates before they change your
-        list.
-      </p>
       <FilterBar
         nameValue={q}
         onNameChange={(value) => preferences.setField('q', value)}
         namePlaceholder="Search proposed action items..."
       >
-        <div
-          className="filter-status-group"
-          role="group"
-          aria-label="Action Item proposal status"
-        >
-          {(['', ...PROPOSAL_STATUSES] as const).map((value) => (
-            <button
-              key={value}
-              className={`btn${status === value ? ' btn-primary' : ''}`}
-              aria-pressed={status === value}
-              onClick={() => preferences.setField('status', value)}
-            >
-              {value || 'All statuses'}
-              {value && counts.data && !counts.error && !q
-                ? ` (${counts.data[value]})`
-                : ''}
-            </button>
-          ))}
-        </div>
+        <label>
+          <span className="form-label">Status</span>
+          <select
+            className="input"
+            value={status}
+            onChange={(event) =>
+              preferences.setField(
+                'status',
+                parseViewField(
+                  'actionItemProposals',
+                  'status',
+                  event.target.value,
+                ),
+              )
+            }
+          >
+            <option value="">All statuses</option>
+            {PROPOSAL_STATUSES.map((value) => (
+              <option key={value} value={value}>
+                {value[0].toUpperCase() + value.slice(1)}
+                {counts.data && !counts.error && !q
+                  ? ` (${counts.data[value]})`
+                  : ''}
+              </option>
+            ))}
+          </select>
+        </label>
       </FilterBar>
       {review.error && (
         <p role="alert">
@@ -157,9 +161,9 @@ export function ActionItemProposalsIndexPage() {
         </section>
       )}
       <ol
+        className="action-item-proposal-list"
         aria-label="Proposed Action Items"
         aria-busy={updating}
-        style={{ listStyle: 'none', padding: 0 }}
       >
         {!proposals.error &&
           proposals.items.map((proposal) => {
@@ -167,68 +171,72 @@ export function ActionItemProposalsIndexPage() {
               proposal.source_stale ||
               proposal.source_available === false ||
               proposal.target_stale;
+            const isCreate = proposal.action === 'create';
             return (
               <li
                 key={proposal.id}
-                className="card"
-                style={{ overflowWrap: 'anywhere' }}
+                className="action-item-proposal-row"
+                aria-labelledby={`proposal-title-${proposal.id}`}
               >
-                <div className="flex-wrap" style={{ gap: 8 }}>
-                  <span className="tag">
-                    {proposal.action === 'create'
-                      ? 'New Action Item'
-                      : 'Suggested update'}
-                  </span>
-                  <StatusBadge status={proposal.status} kind="proposal" />
-                  {proposal.project && (
-                    <span className="tag tag-project">{proposal.project}</span>
-                  )}
-                </div>
-                <h3>
-                  <Link
-                    className="text-link"
-                    to={`/action-items/proposals/${proposal.id}`}
-                  >
-                    {proposal.target_name}
-                  </Link>
-                </h3>
-                <p>{proposal.rationale}</p>
-                <div className="flex-wrap" style={{ gap: 12 }}>
-                  {proposal.status === 'pending' && (
-                    <>
-                      <button
-                        className="btn btn-primary"
-                        disabled={
-                          busy ||
-                          updating ||
-                          Boolean(stale) ||
-                          !proposal.proposed_item
-                        }
-                        onClick={() => decide(proposal, 'approve')}
+                <div className="action-item-proposal-heading">
+                  <div className="action-item-proposal-identity">
+                    <h3 id={`proposal-title-${proposal.id}`}>
+                      <Link
+                        className="text-link"
+                        to={`/action-items/proposals/${proposal.id}`}
                       >
-                        {pendingId === proposal.id ? 'Saving…' : 'Accept'}
-                      </button>
-                      <button
-                        className="btn"
-                        disabled={busy || updating}
-                        onClick={() => decide(proposal, 'reject')}
-                      >
-                        Reject
-                      </button>
-                    </>
-                  )}
-                  <Link
-                    className="btn"
-                    to={`/action-items/proposals/${proposal.id}`}
-                  >
-                    Review{' '}
-                    {proposal.action === 'create'
-                      ? 'new Action Item'
-                      : 'changes'}
-                  </Link>
-                  <span className="text-muted-sm">
-                    <DateCell date={proposal.created_at} format="long" />
-                  </span>
+                        {proposal.target_name}
+                      </Link>
+                    </h3>
+                    <div className="action-item-proposal-metadata">
+                      <span>{isCreate ? 'New' : 'Update'}</span>
+                      {proposal.project && <span>{proposal.project}</span>}
+                      {(!status || proposal.status !== 'pending') && (
+                        <span>{proposal.status}</span>
+                      )}
+                      {isCreate && proposal.proposed_item?.due_at && (
+                        <div className="action-item-proposal-deadline">
+                          Due{' '}
+                          <DateCell
+                            date={proposal.proposed_item.due_at}
+                            format="long"
+                          />
+                        </div>
+                      )}
+                      {isCreate &&
+                        proposal.proposed_item?.status &&
+                        proposal.proposed_item.status !== 'open' && (
+                          <span>
+                            Creates {proposal.proposed_item.status} item
+                          </span>
+                        )}
+                    </div>
+                  </div>
+                  <div className="action-item-proposal-actions">
+                    {proposal.status === 'pending' && (
+                      <>
+                        <button
+                          className="btn btn-primary"
+                          disabled={
+                            busy ||
+                            updating ||
+                            Boolean(stale) ||
+                            !proposal.proposed_item
+                          }
+                          onClick={() => decide(proposal, 'approve')}
+                        >
+                          {pendingId === proposal.id ? 'Saving…' : 'Accept'}
+                        </button>
+                        <button
+                          className="btn"
+                          disabled={busy || updating}
+                          onClick={() => decide(proposal, 'reject')}
+                        >
+                          Reject
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
                 {proposal.status === 'pending' && stale && (
                   <p role="alert">
@@ -236,18 +244,36 @@ export function ActionItemProposalsIndexPage() {
                     unavailable; generate a fresh proposal before accepting.
                   </p>
                 )}
-                {proposal.proposed_item && (
+                {!isCreate && proposal.proposed_item && (
                   <ActionItemProposalContent
                     proposal={proposal}
                     targetStale={false}
                     compact
                   />
                 )}
-                {proposal.evidence.map((entry, index) => (
-                  <blockquote key={`${entry.id}:${index}`}>
-                    {entry.quote}
-                  </blockquote>
-                ))}
+                <details className="action-item-proposal-details">
+                  <summary>Details &amp; evidence</summary>
+                  <div className="action-item-proposal-context">
+                    {isCreate && proposal.proposed_item && (
+                      <ActionItemProposalContent
+                        proposal={proposal}
+                        targetStale={false}
+                        compact
+                        omitCreateTitle
+                      />
+                    )}
+                    <p>{proposal.rationale}</p>
+                    {proposal.evidence.map((entry, index) => (
+                      <blockquote key={`${entry.id}:${index}`}>
+                        {entry.quote}
+                      </blockquote>
+                    ))}
+                    <div className="action-item-proposal-created">
+                      Proposed{' '}
+                      <DateCell date={proposal.created_at} format="long" />
+                    </div>
+                  </div>
+                </details>
               </li>
             );
           })}

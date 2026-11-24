@@ -44,6 +44,136 @@ function render() {
 }
 
 describe('Proposed Action Items', () => {
+  it('keeps proposed deadlines and nondefault create status visible beside one title', async () => {
+    const proposal = actionItemProposal({
+      action: 'create',
+      target_id: null,
+      base_version: null,
+      before_snapshot: null,
+      current_target: null,
+      proposed_item: {
+        title: 'Send the release report',
+        description: 'Complete supporting context',
+        due_at: '2026-11-25T17:00:00Z',
+        status: 'completed',
+        project: 'Work',
+      },
+    });
+    vi.mocked(api.actionItemProposals.list).mockResolvedValue({
+      items: [proposal],
+      total: 1,
+    });
+    const { container } = render();
+    expect(await screen.findByText('Creates completed item')).toBeVisible();
+    expect(screen.getByText(/^Due/)).toHaveTextContent('November 25, 2026');
+    expect(screen.getByText('Complete supporting context')).not.toBeVisible();
+    expect(container.querySelector('details')).not.toHaveAttribute('open');
+    expect(
+      screen.getAllByRole('link', { name: proposal.target_name }),
+    ).toHaveLength(1);
+    expect(
+      screen.queryByRole('link', { name: 'Review new Action Item' }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Details & evidence'));
+    expect(screen.getByText('Complete supporting context')).toBeVisible();
+    expect(
+      screen.queryByRole('rowheader', { name: 'Title' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('omits an empty create table without changing the detail navigation', async () => {
+    vi.mocked(api.actionItemProposals.list).mockResolvedValue({
+      items: [
+        actionItemProposal({
+          action: 'create',
+          target_id: null,
+          base_version: null,
+          before_snapshot: null,
+          current_target: null,
+          proposed_item: { title: 'Send the release report', status: 'open' },
+        }),
+      ],
+      total: 1,
+    });
+    render();
+    expect(
+      await screen.findByRole('link', { name: 'Send the release report' }),
+    ).toHaveAttribute('href', '/action-items/proposals/1');
+    fireEvent.click(screen.getByText('Details & evidence'));
+    expect(
+      screen.queryByRole('region', {
+        name: 'Proposed action item',
+      }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Accept' })).toBeEnabled();
+  });
+
+  it('keeps a proposed title change visible before expanding supporting context', async () => {
+    const proposal = actionItemProposal();
+    vi.mocked(api.actionItemProposals.list).mockResolvedValue({
+      items: [
+        {
+          ...proposal,
+          proposed_item: {
+            ...proposal.proposed_item,
+            title: 'Send the revised release report',
+          },
+        },
+      ],
+      total: 1,
+    });
+    render();
+    const changes = await screen.findByRole('region', {
+      name: 'Proposed action item changes',
+    });
+    expect(changes).toHaveTextContent('Send the release report');
+    expect(changes).toHaveTextContent('Send the revised release report');
+    expect(screen.getByRole('rowheader', { name: 'Title' })).toBeVisible();
+  });
+
+  it('preserves query preferences when the status select changes', async () => {
+    renderWithProviders(<ActionItemProposalsIndexPage />, {
+      initialEntries: ['/action-items/proposals?status=approved&q=release'],
+    });
+    await waitFor(() =>
+      expect(api.actionItemProposals.list).toHaveBeenCalledWith(
+        'approved',
+        expect.objectContaining({ q: 'release' }),
+      ),
+    );
+    expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue(
+      'approved',
+    );
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), {
+      target: { value: '' },
+    });
+    await waitFor(() =>
+      expect(api.actionItemProposals.list).toHaveBeenLastCalledWith(
+        undefined,
+        expect.objectContaining({ q: 'release' }),
+      ),
+    );
+    expect(
+      screen.getByPlaceholderText('Search proposed action items...'),
+    ).toHaveValue('release');
+  });
+
+  it('does not refresh another view after a pending decision unmounts', async () => {
+    let resolve!: (value: ActionItemProposal) => void;
+    vi.mocked(api.actionItemProposals.approve).mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const view = render();
+    fireEvent.click(await screen.findByRole('button', { name: 'Accept' }));
+    view.unmount();
+    await act(async () => resolve(actionItemProposal({ status: 'approved' })));
+    expect(api.actionItemProposals.approve).toHaveBeenCalledExactlyOnceWith(1);
+    expect(api.actionItemProposals.list).toHaveBeenCalledTimes(1);
+    expect(api.actionItemProposals.counts).toHaveBeenCalledTimes(1);
+  });
+
   it('shows the actual proposed changes and their evidence in the list', async () => {
     render();
     expect(
@@ -53,11 +183,12 @@ describe('Proposed Action Items', () => {
     ).toHaveTextContent('Deadline');
     expect(screen.getByText(/November 18, 2026/)).toBeInTheDocument();
     expect(screen.getByText(/November 20, 2026/)).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'Move the release report deadline to Friday at 5 PM UTC.',
-      ),
-    ).toBeInTheDocument();
+    const evidence = screen.getByText(
+      'Move the release report deadline to Friday at 5 PM UTC.',
+    );
+    expect(evidence).not.toBeVisible();
+    fireEvent.click(screen.getByText('Details & evidence'));
+    expect(evidence).toBeVisible();
   });
 
   it.each(['approve', 'reject'] as const)(
@@ -155,7 +286,9 @@ describe('Proposed Action Items', () => {
     );
     render();
     fireEvent.click(await screen.findByRole('button', { name: 'Accept' }));
-    fireEvent.click(screen.getByRole('button', { name: 'approved (0)' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), {
+      target: { value: 'approved' },
+    });
     await waitFor(() =>
       expect(api.actionItemProposals.list).toHaveBeenLastCalledWith(
         'approved',
@@ -164,9 +297,9 @@ describe('Proposed Action Items', () => {
     );
     await act(async () => resolve(actionItemProposal({ status: 'approved' })));
     await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'approved (0)' }),
-      ).toHaveAttribute('aria-pressed', 'true'),
+      expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue(
+        'approved',
+      ),
     );
     expect(api.actionItemProposals.list).toHaveBeenLastCalledWith(
       'approved',
@@ -264,7 +397,7 @@ describe('Proposed Action Items', () => {
     expect(
       screen.getByRole('heading', { name: 'Proposed Action Items' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('Suggested update')).toBeInTheDocument();
+    expect(screen.getByText('Update')).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Generate now' }),
     ).not.toBeInTheDocument();
@@ -286,7 +419,7 @@ describe('Proposed Action Items', () => {
       total: 1,
     });
     render();
-    expect(await screen.findByText('New Action Item')).toBeInTheDocument();
+    expect(await screen.findByText('New')).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: 'Saved action items' }),
     ).toHaveAttribute('href', '/action-items');
@@ -294,9 +427,9 @@ describe('Proposed Action Items', () => {
 
   it('uses independent status preferences and counts', async () => {
     render();
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'approved (0)' }),
-    );
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Status' }), {
+      target: { value: 'approved' },
+    });
     await waitFor(() =>
       expect(api.actionItemProposals.list).toHaveBeenLastCalledWith(
         'approved',
