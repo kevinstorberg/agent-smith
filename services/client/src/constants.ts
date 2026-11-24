@@ -36,6 +36,10 @@ export function harnessSortOptions(type: string) {
 }
 export const AUDIT_STATUSES = ['pending', 'success', 'error'] as const;
 export const PROPOSAL_STATUSES = ['pending', 'approved', 'rejected'] as const;
+export const ACTION_ITEM_PROPOSAL_STATUSES = [
+  ...PROPOSAL_STATUSES,
+  'superseded',
+] as const;
 export const AUDIT_SORT_COLUMNS = {
   tool: { ascending: 'tool_asc', descending: 'tool_desc' },
   status: { ascending: 'status_asc', descending: 'status_desc' },

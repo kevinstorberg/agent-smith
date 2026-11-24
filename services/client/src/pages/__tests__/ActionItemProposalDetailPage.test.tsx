@@ -68,6 +68,41 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('ActionItemProposalDetailPage', () => {
+  it.each([7, null])(
+    'preserves replaced history with replacement reference %s',
+    async (replacement) => {
+      mockGet.mockResolvedValue(
+        actionItemProposal({
+          status: 'superseded',
+          superseded_by_id: replacement,
+        }),
+      );
+      renderWithProviders(<ActionItemProposalDetailPage />);
+      expect(
+        await screen.findByText(/Replaced by another Action Item proposal/),
+      ).toBeVisible();
+      if (replacement === null) {
+        expect(screen.getByText(/Replacement unavailable/)).toBeVisible();
+        expect(
+          screen.queryByRole('link', { name: 'View replacement' }),
+        ).not.toBeInTheDocument();
+      } else {
+        expect(
+          screen.getByRole('link', { name: 'View replacement' }),
+        ).toHaveAttribute('href', '/action-items/proposals/7');
+      }
+      expect(
+        screen.queryByRole('button', { name: 'Approve' }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Reject' }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('region', { name: 'Proposed action item changes' }),
+      ).toHaveTextContent('Deadline');
+    },
+  );
+
   it('shows a meeting-backed action item update as reviewed field changes', async () => {
     mockGet.mockResolvedValue(actionItemProposal());
     renderWithProviders(<ActionItemProposalDetailPage />);

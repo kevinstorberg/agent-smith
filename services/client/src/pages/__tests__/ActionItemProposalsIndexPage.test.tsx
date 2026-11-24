@@ -28,6 +28,7 @@ beforeEach(() => {
     pending: 1,
     approved: 0,
     rejected: 0,
+    superseded: 0,
   });
   vi.mocked(api.actionItemProposals.approve).mockResolvedValue(
     actionItemProposal({ status: 'approved' }),
@@ -44,6 +45,43 @@ function render() {
 }
 
 describe('Proposed Action Items', () => {
+  it('shows read-only replaced history with its own status preference and replacement link', async () => {
+    vi.mocked(api.actionItemProposals.list).mockResolvedValue({
+      items: [
+        actionItemProposal({ status: 'superseded', superseded_by_id: 7 }),
+      ],
+      total: 1,
+    });
+    vi.mocked(api.actionItemProposals.counts).mockResolvedValue({
+      pending: 0,
+      approved: 0,
+      rejected: 0,
+      superseded: 1,
+    });
+    renderWithProviders(<ActionItemProposalsIndexPage />, {
+      initialEntries: ['/action-items/proposals?status=superseded'],
+    });
+    expect(
+      await screen.findByRole('link', { name: 'View replacement' }),
+    ).toHaveAttribute('href', '/action-items/proposals/7');
+    expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue(
+      'superseded',
+    );
+    expect(
+      screen.getByRole('option', { name: 'Superseded (1)' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Accept' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Reject' }),
+    ).not.toBeInTheDocument();
+    expect(api.actionItemProposals.list).toHaveBeenCalledWith(
+      'superseded',
+      expect.anything(),
+    );
+  });
+
   it('keeps proposed deadlines and nondefault create status visible beside one title', async () => {
     const proposal = actionItemProposal({
       action: 'create',

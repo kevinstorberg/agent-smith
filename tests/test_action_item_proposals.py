@@ -16,7 +16,7 @@ from services.meetings import db as meetings
 from services.meetings.config import SourceConfig
 from services.meetings.types import MeetingSummary
 from services.action_items import proposals as action_items
-from tests.conftest import clean_meeting_rows
+from tests.conftest import action_item_owner, clean_meeting_rows
 from tests.test_proposal_decision_concurrency import (
     decide,
     race_with_held_master,
@@ -89,6 +89,41 @@ def candidate(*, title="Send the design document", changes=None, target=None):
         "rationale": "An explicit synthetic meeting commitment supports this change.",
         "evidence": [{"segment_id": "summary-0", "quote": _QUOTE}],
     }
+
+
+def test_superseded_history_is_filterable_and_cannot_be_decided(source, client):
+    from services.api.models.shared.proposal_reviews import PROPOSAL_STATUSES
+    from services.api.routers.proposals import router as harness_router
+
+    client.app.include_router(harness_router, prefix="/proposals")
+    previous = action_items.stage_and_persist(source, candidate())
+    replacement = action_items.stage_and_persist(
+        source, candidate(title="Complete the integration review")
+    )
+    with get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            "UPDATE action_item_proposals SET status='superseded',superseded_by_id=%s WHERE id=%s",
+            (replacement["id"], previous["id"]),
+        )
+    counts = client.get("/action-item-proposals/counts").json()
+    assert counts == {"pending": 1, "approved": 0, "rejected": 0, "superseded": 1}
+    history = client.get("/action-item-proposals?status=superseded").json()
+    assert history["total"] == 1
+    assert history["items"][0]["id"] == previous["id"]
+    detail = client.get(f"/action-item-proposals/{previous['id']}").json()
+    assert detail["superseded_by_id"] == replacement["id"]
+    assert detail["proposed_item"]["title"] == "Send the design document"
+    assert detail["evidence"] == previous["evidence"]
+    for action in ("approve", "reject"):
+        assert (
+            client.post(f"/action-item-proposals/{previous['id']}/{action}").status_code
+            == 409
+        )
+    assert client.get(f"/action-item-proposals/{previous['id']}").json() == detail
+    assert tasks.list_items({"status": "all"})["total"] == 0
+    assert PROPOSAL_STATUSES == ("pending", "approved", "rejected")
+    assert client.get("/proposals?status=superseded").status_code == 422
+    assert set(client.get("/proposals/counts").json()) == set(PROPOSAL_STATUSES)
 
 
 def test_generation_persists_detached_review_without_creating_a_task(source, client):
@@ -828,26 +863,25 @@ def test_publication_rechecks_expired_or_replaced_lease_inside_its_transaction(
     from services.meetings import action_item_db
 
     identities = [(source["provider"], source["account_key"])]
-    assert action_item_db.claim(identities, "original-worker")
+    assert action_item_db.claim(identities, action_item_owner("original-worker"))
     with get_connection() as conn, conn.cursor() as cursor:
         cursor.execute(
             "UPDATE meeting_action_item_runs SET claim_until=clock_timestamp()-interval '1 second' WHERE meeting_id=%s",
             (source["id"],),
         )
     if takeover:
-        assert action_item_db.claim(identities, "replacement-worker")
+        assert action_item_db.claim(identities, action_item_owner("replacement-worker"))
     with pytest.raises(meetings.ClaimLostError):
         action_items.stage_and_persist(
-            source, candidate(), lease_owner="original-worker"
+            source, candidate(), lease_owner=action_item_owner("original-worker")
         )
     assert action_items.decision_context()["total"] == 0
     assert tasks.list_items({"status": "all"})["total"] == 0
     if takeover:
-        assert (
-            action_item_db.get_record(source["id"])["claim_owner"]
-            == "replacement-worker"
-        )
+        assert action_item_db.get_record(source["id"])[
+            "claim_owner"
+        ] == action_item_owner("replacement-worker")
         proposal = action_items.stage_and_persist(
-            source, candidate(), lease_owner="replacement-worker"
+            source, candidate(), lease_owner=action_item_owner("replacement-worker")
         )
         assert proposal["status"] == "pending"

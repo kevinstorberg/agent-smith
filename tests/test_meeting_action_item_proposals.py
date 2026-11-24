@@ -20,11 +20,37 @@ from services.meetings import db, enrichment, factory
 from services.meetings.analysis import AnalysisBudgetExpired
 from services.meetings.service import MeetingSyncError
 from services.action_items import proposals as proposals
-from tests.conftest import jobs_cleanup
+from tests.conftest import action_item_owner, jobs_cleanup
 from tests.test_meeting_sync import STAMP, note, page, source as source
 
 SUMMARY = "Morgan will send the design document. Morgan will prepare the checklist."
 _clean_jobs = jobs_cleanup("AIFLOW %")
+
+
+@pytest.fixture(autouse=True)
+def scripted_action_item_filter(monkeypatch):
+    from services.meetings import action_item_run
+    from tests.test_action_item_matching import Encoder, BUDGET
+
+    monkeypatch.setattr(action_item_run, "get_embeddings", lambda: Encoder())
+    monkeypatch.setattr(action_item_run, "get_memory_token_budget", lambda: BUDGET)
+    monkeypatch.setattr(action_item_run, "MEMORY_EMBEDDING_DIMENSION", 2)
+
+    async def compare(snapshot, data, **kwargs):
+        return {
+            "items": [
+                {
+                    "candidate_id": index,
+                    "actionable": True,
+                    "matches": [],
+                    "rationale": "Synthetic distinct unfinished work",
+                    "evidence": data["candidates"][index]["evidence"],
+                }
+                for index in data["candidate_ids"]
+            ]
+        }
+
+    monkeypatch.setattr(action_item_run.action_item_filter, "analyze_window", compare)
 
 
 @pytest.fixture
@@ -230,14 +256,16 @@ def test_historical_source_updates_do_not_enroll_without_an_explicit_request(
 
 def test_changed_enrolled_summary_resets_only_its_own_analysis(source, saved, runs):
     meeting = saved()
-    claim = runs.claim([(source.provider, source.account_key)], "first-owner")
+    claim = runs.claim(
+        [(source.provider, source.account_key)], action_item_owner("first-owner")
+    )
     runs.save_progress(
         meeting["id"],
-        "first-owner",
+        action_item_owner("first-owner"),
         {"items": [], "reason": "None", "offset": 1, "total_units": 1},
         complete=True,
     )
-    runs.release_owner("first-owner")
+    runs.release_owner(action_item_owner("first-owner"))
     assert claim["source_revision"] == 1 and not runs.has_work(
         [(source.provider, source.account_key)]
     )
@@ -260,19 +288,27 @@ def test_claim_expiry_and_owner_cleanup_cannot_steal_another_worker(
 ):
     meeting = saved()
     identities = [(source.provider, source.account_key)]
-    assert runs.claim(identities, "first-owner")["meeting_id"] == meeting["id"]
-    assert runs.claim(identities, "second-owner") is None
+    assert (
+        runs.claim(identities, action_item_owner("first-owner"))["meeting_id"]
+        == meeting["id"]
+    )
+    assert runs.claim(identities, action_item_owner("second-owner")) is None
     with get_connection() as conn, conn.cursor() as cursor:
         cursor.execute(
             "UPDATE meeting_action_item_runs SET claim_until=clock_timestamp()-interval '1 second' WHERE meeting_id=%s",
             (meeting["id"],),
         )
-    assert runs.claim(identities, "second-owner")["meeting_id"] == meeting["id"]
-    runs.release_owner("first-owner")
-    assert runs.get_record(meeting["id"])["claim_owner"] == "second-owner"
+    assert (
+        runs.claim(identities, action_item_owner("second-owner"))["meeting_id"]
+        == meeting["id"]
+    )
+    runs.release_owner(action_item_owner("first-owner"))
+    assert runs.get_record(meeting["id"])["claim_owner"] == action_item_owner(
+        "second-owner"
+    )
     with pytest.raises(db.ClaimLostError):
-        runs.save_progress(meeting["id"], "first-owner", {})
-    runs.release_owner("second-owner")
+        runs.save_progress(meeting["id"], action_item_owner("first-owner"), {})
+    runs.release_owner(action_item_owner("second-owner"))
     assert runs.get_record(meeting["id"])["claim_owner"] is None
 
 
@@ -282,7 +318,7 @@ def test_retry_bounds_are_visible_and_manual_retry_resets_terminal_failure(
     meeting = saved()
     identities = [(source.provider, source.account_key)]
     for attempt in range(1, 4):
-        owner = f"failing-owner-{attempt}"
+        owner = action_item_owner(f"failing-owner-{attempt}")
         make_due(meeting["id"])
         assert runs.claim(identities, owner)
         runs.record_failure(meeting["id"], owner, "SyntheticFailure")
@@ -378,24 +414,20 @@ async def test_budget_resume_reuses_frozen_model_result_and_does_not_duplicate_p
     meeting = saved()
     second = candidate("AIFLOW checklist", "Morgan will prepare the checklist.")
     calls = install_analysis(monkeypatch, items=[candidate(), second])
-    persist = proposals.stage_and_persist
     attempts = []
 
-    def timed_out(snapshot, item, **kwargs):
+    def timed_out(snapshot, items, result, **kwargs):
         assert kwargs.get("lease_owner")
-        attempts.append(item)
-        if len(attempts) == 2:
-            raise AnalysisBudgetExpired(
-                "Synthetic budget exhausted after one saved proposal"
-            )
-        return persist(snapshot, item, **kwargs)
-
-    from services.meetings import action_item_run
+        attempts.append(items)
+        raise AnalysisBudgetExpired(
+            "Synthetic budget exhausted after durable filtering"
+        )
 
     with monkeypatch.context() as patch:
-        patch.setattr(action_item_run, "stage_and_persist", timed_out)
+        patch.setattr(proposals, "publish_filtered_batch", timed_out)
         first = await generate(source)
-    assert first["outcome"] == "continued" and len(proposal_rows(source)) == 1
+    assert first["outcome"] == "continued" and proposal_rows(source) == []
+    assert len(attempts) == 1
     assert runs.get_record(meeting["id"])["action_items_attempts"] == 0
     final = await generate(source)
     assert final["outcome"] == "done" and len(proposal_rows(source)) == 2
@@ -438,23 +470,21 @@ async def test_committed_proposal_before_lost_checkpoint_replays_without_model_o
 ):
     meeting = saved()
     calls = install_analysis(monkeypatch)
-    persist = proposals.stage_and_persist
+    persist = proposals.publish_filtered_batch
 
-    def committed_then_cancelled(snapshot, item, **kwargs):
+    def committed_then_cancelled(snapshot, items, result, **kwargs):
         assert kwargs.get("lease_owner")
-        persist(snapshot, item, **kwargs)
+        persist(snapshot, items, result, **kwargs)
         raise asyncio.CancelledError()
 
-    from services.meetings import action_item_run
-
     with monkeypatch.context() as patch:
-        patch.setattr(action_item_run, "stage_and_persist", committed_then_cancelled)
+        patch.setattr(proposals, "publish_filtered_batch", committed_then_cancelled)
         with pytest.raises(asyncio.CancelledError):
             await generate(source)
     assert len(proposal_rows(source)) == 1
     assert runs.get_record(meeting["id"])["claim_owner"] is None
     result = await generate(source)
-    assert result["outcome"] == "done" and len(calls) == 1
+    assert result["outcome"] == "idle" and len(calls) == 1
     assert len(proposal_rows(source)) == 1
 
 
@@ -506,17 +536,11 @@ async def test_source_change_during_model_await_cannot_publish_stale_proposals(
 
 
 @pytest.mark.asyncio
-async def test_actual_inventory_overflow_blocks_model_and_records_visible_failure(
+async def test_actual_inventory_above_old_row_limit_reaches_model_completely(
     source, saved, runs, monkeypatch
 ):
-    from services.meetings import action_item_analysis
-
     meeting = saved()
-
-    def forbidden(*args, **kwargs):
-        pytest.fail("Incomplete task inventory must never reach model matching")
-
-    monkeypatch.setattr(action_item_analysis, "analyze_action_items", forbidden)
+    calls = install_analysis(monkeypatch, items=[])
     with get_connection() as conn, conn.cursor() as cursor:
         cursor.execute(
             """INSERT INTO action_items(title,status,completed_at)
@@ -525,13 +549,23 @@ async def test_actual_inventory_overflow_blocks_model_and_records_visible_failur
         )
     try:
         result = await generate(source)
-        assert result["outcome"] == "failed"
-        record = runs.get_record(meeting["id"])
-        assert record["action_items_attempts"] == 1
-        assert record["action_items_error"] == "ActionItemContextTooLarge"
-        status = runs.status(meeting["id"], worker_available=True)
-        assert status["error_type"] == "ActionItemContextTooLarge"
-        assert status["proposal_count"] == 0 and proposal_rows(source) == []
+        assert result["outcome"] == "done"
+        assert len(calls) == 1
+        assert (
+            len(
+                [
+                    row
+                    for row in calls[0]["inventory"]
+                    if row["title"].startswith("AIFLOW inventory ")
+                ]
+            )
+            == 201
+        )
+        assert any(
+            row["title"] == "AIFLOW inventory 201" for row in calls[0]["inventory"]
+        )
+        assert runs.get_record(meeting["id"])["action_items_attempts"] == 0
+        assert proposal_rows(source) == []
     finally:
         with get_connection() as conn, conn.cursor() as cursor:
             cursor.execute(
@@ -578,16 +612,20 @@ def test_http_stale_revision_and_running_request_preserve_existing_generation(
     stale = http.post(endpoint, json={"expected_revision": meeting["revision"] + 1})
     assert stale.status_code == 409 and "changed" in stale.json()["detail"].lower()
     assert runs.get_record(meeting["id"])["source_revision"] == meeting["revision"]
-    runs.claim([(source.provider, source.account_key)], "in-flight-owner")
+    runs.claim(
+        [(source.provider, source.account_key)], action_item_owner("in-flight-owner")
+    )
     try:
         running = http.post(endpoint, json={"expected_revision": meeting["revision"]})
         assert (
             running.status_code == 409 and "already" in running.json()["detail"].lower()
         )
-        assert runs.get_record(meeting["id"])["claim_owner"] == "in-flight-owner"
+        assert runs.get_record(meeting["id"])["claim_owner"] == action_item_owner(
+            "in-flight-owner"
+        )
         assert proposal_rows(source) == []
     finally:
-        runs.release_owner("in-flight-owner")
+        runs.release_owner(action_item_owner("in-flight-owner"))
 
 
 @pytest.mark.parametrize(
@@ -657,7 +695,7 @@ def test_processing_http_status_exposes_progress_without_raw_summary_or_proposal
 
 
 @pytest.mark.asyncio
-async def test_task_drift_reanalyzes_current_inventory_and_retains_already_saved_proposals(
+async def test_task_drift_reanalyzes_before_atomic_batch_publication(
     source, saved, runs, monkeypatch
 ):
     from services.meetings import action_item_analysis
@@ -701,15 +739,14 @@ async def test_task_drift_reanalyzes_current_inventory_and_retains_already_saved
             and first["error_type"] == "ProposalConflictError"
         )
         first_rows = proposal_rows(source)
-        assert len(first_rows) == 1 and first_rows[0]["action"] == "create"
-        retained_id = first_rows[0]["id"]
+        assert first_rows == []
         failed = runs.get_record(meeting["id"])
         assert (
             failed["action_items_attempts"] == 1
             and failed["action_items_status"] == "pending"
         )
         assert "items" not in failed["action_items_artifact"]
-        assert failed["action_items_artifact"]["published_ids"] == [retained_id]
+        assert failed["action_items_artifact"]["published_ids"] == []
         assert tasks.get(target["id"])["status"] == "open"
         make_due(meeting["id"])
         second = await generate(source)
@@ -721,9 +758,9 @@ async def test_task_drift_reanalyzes_current_inventory_and_retains_already_saved
             reviewed["revision"] == 2
             and reviewed["description"] == "Later manual notes"
         )
-        assert any(row["id"] == retained_id for row in calls[1]["previous"])
+        assert calls[1]["previous"] == []
         rows = proposal_rows(source)
-        assert len(rows) == 2 and rows[0]["id"] == retained_id
+        assert len(rows) == 2
         update = next(row for row in rows if row["action"] == "update")
         assert update["target_id"] == target["id"] and update["base_version"] == 2
         assert set(
@@ -744,17 +781,15 @@ async def test_task_drift_reanalyzes_current_inventory_and_retains_already_saved
 async def test_invalid_checkpoint_fails_before_publication_and_manual_generation_recovers(
     source, saved, runs, worker, monkeypatch, corruption
 ):
-    from services.meetings import action_item_run
-
     meeting = saved()
     calls = install_analysis(monkeypatch)
 
-    def stop_before_publication(snapshot, item, **kwargs):
+    def stop_before_publication(snapshot, items, result, **kwargs):
         assert kwargs.get("lease_owner")
         raise asyncio.CancelledError()
 
     with monkeypatch.context() as patch:
-        patch.setattr(action_item_run, "stage_and_persist", stop_before_publication)
+        patch.setattr(proposals, "publish_filtered_batch", stop_before_publication)
         with pytest.raises(asyncio.CancelledError):
             await generate(source)
     record = runs.get_record(meeting["id"])
