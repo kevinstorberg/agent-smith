@@ -8,6 +8,7 @@ from alembic.script import ScriptDirectory
 from scripts.shared.local_postgres import temporary_postgres
 from services import config
 from services.db.create import create_database
+from tests.action_item_queue_helpers import legacy_task_snapshots
 
 
 def test_project_metadata_migration_preserves_catalog_assignments_and_roundtrips(
@@ -44,8 +45,7 @@ def test_project_metadata_migration_preserves_catalog_assignments_and_roundtrips
                 "SELECT to_jsonb(action_item_projects)-'description'-'revision'-'updated_at',description,revision,updated_at=created_at FROM action_item_projects"
             )
             assert cursor.fetchone() == (before, "", 1, True)
-            cursor.execute("SELECT to_jsonb(action_items) FROM action_items")
-            assert cursor.fetchone()[0] == item
+            assert legacy_task_snapshots(cursor) == [item]
             cursor.execute(
                 "UPDATE action_item_projects SET description='New context',revision=2"
             )

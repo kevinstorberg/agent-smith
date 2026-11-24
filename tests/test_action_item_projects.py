@@ -16,17 +16,11 @@ from services.action_items.contracts import ItemQuery, Query
 from services.action_items.server import create_server
 from services.api.app import app
 from services.db import get_connection
+from tests.action_item_queue_helpers import clear_action_items
 
 
 def clear_projects() -> None:
-    with get_connection() as connection, connection.cursor() as cursor:
-        cursor.execute("SELECT to_regclass('public.action_item_projects')")
-        tables = (
-            "action_items, action_item_projects"
-            if cursor.fetchone()[0]
-            else "action_items"
-        )
-        cursor.execute(f"TRUNCATE {tables}")
+    clear_action_items(include_projects=True)
 
 
 @pytest.fixture(autouse=True)

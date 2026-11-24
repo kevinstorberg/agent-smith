@@ -38,3 +38,9 @@ def assert_action_item_queue():
         cursor.execute("SELECT priority FROM action_item_global_positions ORDER BY priority")
         priorities = [row[0] for row in cursor.fetchall()]
         assert priorities == list(range(1, len(priorities)+1))
+
+
+def legacy_task_snapshots(cursor, *, exclude_fields=()):
+    cursor.execute("""SELECT (to_jsonb(a)-%s::text[]-'sort_key') || jsonb_build_object('sort_key',coalesce(a.sort_key,p.priority))
+      FROM action_items a LEFT JOIN action_item_global_positions p ON p.action_item_id=a.id ORDER BY a.id""", (list(exclude_fields),))
+    return [row[0] for row in cursor.fetchall()]

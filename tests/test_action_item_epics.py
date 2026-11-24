@@ -149,3 +149,49 @@ def test_database_rejects_missing_entries_and_nested_epics():
     with pytest.raises(psycopg2.IntegrityError):
         with get_connection() as conn, conn.cursor() as cursor:
             cursor.execute("UPDATE action_item_queue_entries SET parent_epic_id=%s WHERE epic_id=%s", (first["id"], second["id"]))
+
+
+@pytest.mark.parametrize("other_operation", ["remove", "complete", "delete"])
+def test_group_move_and_structural_member_write_have_one_winner(other_operation):
+    from threading import Barrier
+
+    anchor = db.create({"title": "Root"})
+    child = db.create({"title": "Child", "description": "Preserve this"})
+    group = epic(item=child)
+    child = db.get(child["id"])
+    ready = Barrier(2)
+
+    def write(operation):
+        ready.wait(timeout=5)
+        try:
+            operation()
+            return "saved"
+        except (db.Conflict, db.NotFound):
+            return "conflict"
+
+    def other():
+        if other_operation == "remove":
+            queue_db.remove_epic(group["id"], {"expected_revision": group["revision"], "cohort": group["cohort"]})
+        elif other_operation == "complete":
+            db.update(child["id"], {"expected_revision": child["revision"], "status": "completed"})
+        else:
+            db.delete(child["id"], {"expected_revision": child["revision"]})
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(write, lambda: queue_db.move({"source": root_ref(group, "epic"), "before": root_ref(anchor)})), executor.submit(write, other)]
+        assert sorted(future.result(timeout=10) for future in futures) == ["conflict", "saved"]
+    assert_action_item_queue()
+
+
+def test_completed_members_unwrap_and_reopen_as_standalone_without_lost_content():
+    group = epic()
+    task = membership(db.create({"title": "Keep", "status": "completed", "description": "Original"}), destination=group)
+    group = current(group["id"])
+    queue_db.remove_epic(group["id"], {"expected_revision": group["revision"], "cohort": group["cohort"]})
+    task = db.get(task["id"])
+    assert task["status"] == "completed" and task["description"] == "Original"
+    reopened = db.update(task["id"], {"expected_revision": task["revision"], "status": "open"})
+    assert reopened["priority"] == 1
+    with get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT parent_epic_id FROM action_item_queue_entries WHERE action_item_id=%s", (task["id"],))
+        assert cursor.fetchone() == (None,)

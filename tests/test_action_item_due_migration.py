@@ -13,6 +13,7 @@ from psycopg2.extras import Json
 from scripts.shared.local_postgres import temporary_postgres
 from services import config
 from services.db.create import create_database
+from tests.action_item_queue_helpers import legacy_task_snapshots
 
 PARENT = "e7c4b9d2a6f1"
 
@@ -75,13 +76,9 @@ def test_due_migration_preserves_every_old_field_and_roundtrips_global_profile_a
             before = [row[0] for row in cursor.fetchall()]
         command.upgrade(migration, head)
         with psycopg2.connect(url) as connection, connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT to_jsonb(action_items)-'due_at',due_at FROM action_items ORDER BY id"
-            )
-            rows = cursor.fetchall()
-            assert [row[0] for row in rows] == before and all(
-                row[1] is None for row in rows
-            )
+            assert legacy_task_snapshots(cursor, exclude_fields=("due_at",)) == before
+            cursor.execute("SELECT due_at FROM action_items")
+            assert all(row[0] is None for row in cursor.fetchall())
             cursor.execute(
                 "SELECT data_type FROM information_schema.columns WHERE table_name='action_items' AND column_name='due_at'"
             )
@@ -103,10 +100,6 @@ def test_due_migration_preserves_every_old_field_and_roundtrips_global_profile_a
             assert [row[0] for row in cursor.fetchall()] == before
         command.upgrade(migration, head)
         with psycopg2.connect(url) as connection, connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT to_jsonb(action_items)-'due_at',due_at FROM action_items ORDER BY id"
-            )
-            rows = cursor.fetchall()
-            assert [row[0] for row in rows] == before and all(
-                row[1] is None for row in rows
-            )
+            assert legacy_task_snapshots(cursor, exclude_fields=("due_at",)) == before
+            cursor.execute("SELECT due_at FROM action_items")
+            assert all(row[0] is None for row in cursor.fetchall())
