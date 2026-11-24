@@ -1,0 +1,91 @@
+.action-item-proposals-page .action-item-proposal-list {
+  list-style: none;
+  padding: 0;
+}
+
+.action-item-proposals-page .action-item-proposal-row {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.action-item-proposals-page .action-item-proposal-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+
+.action-item-proposals-page .action-item-proposal-identity {
+  min-width: 0;
+}
+
+.action-item-proposals-page .action-item-proposal-identity h3 {
+  margin: 0 0 6px;
+  font-size: var(--font-lg);
+}
+
+.action-item-proposals-page .action-item-proposal-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: var(--text-muted);
+}
+
+.action-item-proposals-page .action-item-proposal-deadline,
+.action-item-proposals-page .action-item-proposal-created {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.action-item-proposals-page .action-item-proposal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.action-item-proposals-page .action-item-proposal-details {
+  min-width: 0;
+}
+
+.action-item-proposals-page .action-item-proposal-details > summary {
+  width: fit-content;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.action-item-proposals-page
+  .action-item-proposal-details
+  > summary:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 3px;
+}
+
+.action-item-proposals-page .action-item-proposal-context {
+  display: grid;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.action-item-proposals-page .action-item-proposal-context blockquote {
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+  white-space: pre-wrap;
+}
+
+.action-item-proposals-page .action-item-proposal-created {
+  color: var(--text-muted);
+}
+
+@media (max-width: 600px) {
+  .action-item-proposals-page .action-item-proposal-heading {
+    flex-direction: column;
+  }
+}

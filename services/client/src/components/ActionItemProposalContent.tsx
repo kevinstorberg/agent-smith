@@ -45,10 +45,12 @@ export function ActionItemProposalContent({
   proposal,
   targetStale,
   compact = false,
+  omitCreateTitle = false,
 }: {
   proposal: ActionItemProposal;
   targetStale: boolean;
   compact?: boolean;
+  omitCreateTitle?: boolean;
 }) {
   const isUpdate = proposal.action === 'update';
   const before = proposal.before_snapshot ?? proposal.current_target;
@@ -57,6 +59,7 @@ export function ActionItemProposalContent({
     const value = valueOf(after, field);
     if (isUpdate)
       return JSON.stringify(valueOf(before, field)) !== JSON.stringify(value);
+    if (omitCreateTitle && field === 'title') return false;
     if (!compact || field === 'title') return true;
     if (field === 'status' && value === 'open') return false;
     return Array.isArray(value) ? value.length > 0 : value !== '';
@@ -64,37 +67,39 @@ export function ActionItemProposalContent({
 
   return (
     <>
-      <ScrollableTable
-        className="action-item-proposal-table"
-        label={
-          isUpdate ? 'Proposed action item changes' : 'Proposed action item'
-        }
-      >
-        <thead>
-          <tr>
-            <th>Field</th>
-            {isUpdate && <th>Before</th>}
-            <th>Proposed</th>
-          </tr>
-        </thead>
-        <tbody role="rowgroup">
-          {fields.map(([field, label]) => (
-            <tr key={field} role="row">
-              <th scope="row" role="rowheader">
-                {label}
-              </th>
-              {isUpdate && (
-                <td role="cell" data-label="Before">
-                  <TaskValue item={before} field={field} />
-                </td>
-              )}
-              <td role="cell" data-label="Proposed">
-                <TaskValue item={after} field={field} />
-              </td>
+      {fields.length > 0 && (
+        <ScrollableTable
+          className="action-item-proposal-table"
+          label={
+            isUpdate ? 'Proposed action item changes' : 'Proposed action item'
+          }
+        >
+          <thead>
+            <tr>
+              <th>Field</th>
+              {isUpdate && <th>Before</th>}
+              <th>Proposed</th>
             </tr>
-          ))}
-        </tbody>
-      </ScrollableTable>
+          </thead>
+          <tbody role="rowgroup">
+            {fields.map(([field, label]) => (
+              <tr key={field} role="row">
+                <th scope="row" role="rowheader">
+                  {label}
+                </th>
+                {isUpdate && (
+                  <td role="cell" data-label="Before">
+                    <TaskValue item={before} field={field} />
+                  </td>
+                )}
+                <td role="cell" data-label="Proposed">
+                  <TaskValue item={after} field={field} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </ScrollableTable>
+      )}
       {isUpdate && targetStale && (
         <details style={{ marginTop: 16 }}>
           <summary>Current saved action item</summary>
