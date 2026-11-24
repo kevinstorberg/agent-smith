@@ -163,3 +163,9 @@ def pytest_runtest_call(item):
     ):
         from tests.action_item_queue_helpers import assert_action_item_queue
         assert_action_item_queue()
+
+
+def action_item_owner(label: str) -> str:
+    from uuid import NAMESPACE_URL, uuid5
+
+    return f"v2:{uuid5(NAMESPACE_URL, 'action-item-test:' + label)}"

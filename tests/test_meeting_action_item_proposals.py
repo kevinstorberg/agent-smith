@@ -20,7 +20,7 @@ from services.meetings import db, enrichment, factory
 from services.meetings.analysis import AnalysisBudgetExpired
 from services.meetings.service import MeetingSyncError
 from services.action_items import proposals as proposals
-from tests.conftest import jobs_cleanup
+from tests.conftest import action_item_owner, jobs_cleanup
 from tests.test_meeting_sync import STAMP, note, page, source as source
 
 SUMMARY = "Morgan will send the design document. Morgan will prepare the checklist."
@@ -230,14 +230,16 @@ def test_historical_source_updates_do_not_enroll_without_an_explicit_request(
 
 def test_changed_enrolled_summary_resets_only_its_own_analysis(source, saved, runs):
     meeting = saved()
-    claim = runs.claim([(source.provider, source.account_key)], "first-owner")
+    claim = runs.claim(
+        [(source.provider, source.account_key)], action_item_owner("first-owner")
+    )
     runs.save_progress(
         meeting["id"],
-        "first-owner",
+        action_item_owner("first-owner"),
         {"items": [], "reason": "None", "offset": 1, "total_units": 1},
         complete=True,
     )
-    runs.release_owner("first-owner")
+    runs.release_owner(action_item_owner("first-owner"))
     assert claim["source_revision"] == 1 and not runs.has_work(
         [(source.provider, source.account_key)]
     )
@@ -260,19 +262,27 @@ def test_claim_expiry_and_owner_cleanup_cannot_steal_another_worker(
 ):
     meeting = saved()
     identities = [(source.provider, source.account_key)]
-    assert runs.claim(identities, "first-owner")["meeting_id"] == meeting["id"]
-    assert runs.claim(identities, "second-owner") is None
+    assert (
+        runs.claim(identities, action_item_owner("first-owner"))["meeting_id"]
+        == meeting["id"]
+    )
+    assert runs.claim(identities, action_item_owner("second-owner")) is None
     with get_connection() as conn, conn.cursor() as cursor:
         cursor.execute(
             "UPDATE meeting_action_item_runs SET claim_until=clock_timestamp()-interval '1 second' WHERE meeting_id=%s",
             (meeting["id"],),
         )
-    assert runs.claim(identities, "second-owner")["meeting_id"] == meeting["id"]
-    runs.release_owner("first-owner")
-    assert runs.get_record(meeting["id"])["claim_owner"] == "second-owner"
+    assert (
+        runs.claim(identities, action_item_owner("second-owner"))["meeting_id"]
+        == meeting["id"]
+    )
+    runs.release_owner(action_item_owner("first-owner"))
+    assert runs.get_record(meeting["id"])["claim_owner"] == action_item_owner(
+        "second-owner"
+    )
     with pytest.raises(db.ClaimLostError):
-        runs.save_progress(meeting["id"], "first-owner", {})
-    runs.release_owner("second-owner")
+        runs.save_progress(meeting["id"], action_item_owner("first-owner"), {})
+    runs.release_owner(action_item_owner("second-owner"))
     assert runs.get_record(meeting["id"])["claim_owner"] is None
 
 
@@ -282,7 +292,7 @@ def test_retry_bounds_are_visible_and_manual_retry_resets_terminal_failure(
     meeting = saved()
     identities = [(source.provider, source.account_key)]
     for attempt in range(1, 4):
-        owner = f"failing-owner-{attempt}"
+        owner = action_item_owner(f"failing-owner-{attempt}")
         make_due(meeting["id"])
         assert runs.claim(identities, owner)
         runs.record_failure(meeting["id"], owner, "SyntheticFailure")
@@ -580,16 +590,20 @@ def test_http_stale_revision_and_running_request_preserve_existing_generation(
     stale = http.post(endpoint, json={"expected_revision": meeting["revision"] + 1})
     assert stale.status_code == 409 and "changed" in stale.json()["detail"].lower()
     assert runs.get_record(meeting["id"])["source_revision"] == meeting["revision"]
-    runs.claim([(source.provider, source.account_key)], "in-flight-owner")
+    runs.claim(
+        [(source.provider, source.account_key)], action_item_owner("in-flight-owner")
+    )
     try:
         running = http.post(endpoint, json={"expected_revision": meeting["revision"]})
         assert (
             running.status_code == 409 and "already" in running.json()["detail"].lower()
         )
-        assert runs.get_record(meeting["id"])["claim_owner"] == "in-flight-owner"
+        assert runs.get_record(meeting["id"])["claim_owner"] == action_item_owner(
+            "in-flight-owner"
+        )
         assert proposal_rows(source) == []
     finally:
-        runs.release_owner("in-flight-owner")
+        runs.release_owner(action_item_owner("in-flight-owner"))
 
 
 @pytest.mark.parametrize(
