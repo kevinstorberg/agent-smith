@@ -148,8 +148,7 @@ def stage_and_persist(
     *,
     lease_owner: str | None = None,
 ) -> dict:
-    source = _snapshot(snapshot)
-    item = ActionItemCandidate.model_validate(candidate)
+    source, item, changes = _prepare_candidate(snapshot, candidate)
     if lease_owner is not None and (
         not isinstance(lease_owner, str)
         or not lease_owner.strip()
@@ -157,20 +156,6 @@ def stage_and_persist(
     ):
         raise ValueError(
             "Action Item publication requires a nonblank lease owner of at most 100 characters"
-        )
-    for evidence in item.evidence:
-        if (
-            evidence.segment_id != "summary-0"
-            or not evidence.quote.strip()
-            or evidence.quote not in source["summary_text"]
-        ):
-            raise ValueError(
-                "Action Item proposal evidence must quote the exact saved summary-0 text"
-            )
-    changes = dict(item.changes)
-    if item.action == "create":
-        changes = Create.model_validate(changes).model_dump(
-            mode="json", exclude={"request_id"}
         )
     try:
         with (
@@ -186,99 +171,145 @@ def stage_and_persist(
                 from services.meetings.action_item_db import _owned
 
                 _owned(cursor, source["id"], lease_owner)
-            if "project" in changes:
-                changes["project"] = _known_project(cursor, changes["project"])
-            before = None
-            if item.action == "update":
-                try:
-                    before = tasks._read(cursor, item.target_id, tasks._Scope(None))
-                except tasks.NotFound:
-                    raise ProposalConflictError(
-                        "The proposed Action Item target is missing or deleted."
-                    ) from None
-                if before["revision"] != item.expected_revision:
-                    raise ProposalConflictError(
-                        "The proposed Action Item changed. Generate a new proposal using its current revision."
-                    )
-                reviewed_values = _task_values(before)
-                changes = {
-                    field: value
-                    for field, value in changes.items()
-                    if reviewed_values[field] != value
-                }
-                if not changes:
-                    raise DuplicateProposalError(
-                        "The proposed Action Item update changes nothing"
-                    )
-            elif _duplicate_task(cursor, changes["title"], changes["project"]):
-                raise DuplicateProposalError(
-                    "This Action Item already exists, including completed tasks"
-                )
-            decision_key = _decision_key(item, changes)
-            if _was_dismissed(cursor, decision_key) or _has_live_pending(
-                cursor, decision_key
-            ):
-                raise DuplicateProposalError(
-                    "An equivalent Action Item change is already pending or was decided by the User"
-                )
-            fingerprint = _hash(
-                [
-                    decision_key,
-                    source["id"],
-                    source["revision"],
-                    source["content_hash"],
-                    item.expected_revision,
-                ]
-            )
-            name = changes.get("title") or before["title"]
-            proposal_id = ActionItemProposalModel.create(
-                conn=conn,
-                action=item.action,
-                target_name=name,
-                project=changes.get(
-                    "project", before.get("project") if before else None
-                ),
-                target_id=item.target_id,
-                base_version=item.expected_revision,
-                title=f"{'New' if item.action == 'create' else 'Update'}: {name}"[:200],
-                rationale=item.rationale.strip(),
-                fingerprint=fingerprint,
-                evidence=[
-                    {
-                        "source": "meeting",
-                        "id": source["id"],
-                        "note": source.get("title") or "Meeting",
-                        "quote": entry.quote,
-                        "segment_id": entry.segment_id,
-                        "revision": source["revision"],
-                    }
-                    for entry in item.evidence
-                ],
-            )
-            cursor.execute(
-                """INSERT INTO action_item_proposal_payloads
-                (proposal_id,meeting_id,source_revision,source_hash,source_snapshot,before_snapshot,changes,decision_key,create_request_id)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (
-                    proposal_id,
-                    source["id"],
-                    source["revision"],
-                    source["content_hash"],
-                    Json(source),
-                    Json(before) if before is not None else None,
-                    Json(changes),
-                    decision_key,
-                    str(uuid5(_REQUEST_NAMESPACE, fingerprint)),
-                ),
-            )
-            cursor.execute(
-                "SELECT * FROM action_item_proposals WHERE id=%s", (proposal_id,)
-            )
-            return ActionItemProposalModel.serialize_timestamps(dict(cursor.fetchone()))
+            return _persist_candidate(cursor, conn, source, item, changes)
     except UniqueViolation:
         raise DuplicateProposalError(
             "An equivalent Action Item proposal was already filed"
         ) from None
+
+
+def _prepare_candidate(snapshot: dict, candidate: dict | ActionItemCandidate):
+    source = _snapshot(snapshot)
+    item = ActionItemCandidate.model_validate(candidate)
+    for evidence in item.evidence:
+        if (
+            evidence.segment_id != "summary-0"
+            or not evidence.quote.strip()
+            or evidence.quote not in source["summary_text"]
+        ):
+            raise ValueError(
+                "Action Item proposal evidence must quote the exact saved summary-0 text"
+            )
+    changes = dict(item.changes)
+    if item.action == "create":
+        changes = Create.model_validate(changes).model_dump(
+            mode="json", exclude={"request_id"}
+        )
+    return source, item, changes
+
+
+def _changed_values(changes: dict, before: dict) -> dict:
+    reviewed = _task_values(before)
+    return {
+        field: value for field, value in changes.items() if reviewed[field] != value
+    }
+
+
+def dismissed_candidate_indices(
+    snapshot: dict, candidates: list[dict], corpus: dict
+) -> set[int]:
+    tasks_by_id = {
+        record["data"]["id"]: record["data"]
+        for record in corpus["records"]
+        if record["kind"] == "task"
+    }
+    receipts = set(corpus["receipts"])
+    dismissed = set()
+    for index, raw in enumerate(candidates):
+        _, item, changes = _prepare_candidate(snapshot, raw)
+        if item.action == "update":
+            before = tasks_by_id.get(item.target_id)
+            if before is None or before["revision"] != item.expected_revision:
+                raise ProposalConflictError(
+                    "Dismissal matching requires current target grounding"
+                )
+            changes = _changed_values(changes, before)
+        if _decision_key(item, changes) in receipts:
+            dismissed.add(index)
+    return dismissed
+
+
+def _persist_candidate(
+    cursor, conn, source: dict, item: ActionItemCandidate, changes: dict
+) -> dict:
+    if "project" in changes:
+        changes["project"] = _known_project(cursor, changes["project"])
+    before = None
+    if item.action == "update":
+        try:
+            before = tasks._read(cursor, item.target_id, tasks._Scope(None))
+        except tasks.NotFound:
+            raise ProposalConflictError(
+                "The proposed Action Item target is missing or deleted."
+            ) from None
+        if before["revision"] != item.expected_revision:
+            raise ProposalConflictError(
+                "The proposed Action Item changed. Generate a new proposal using its current revision."
+            )
+        changes = _changed_values(changes, before)
+        if not changes:
+            raise DuplicateProposalError(
+                "The proposed Action Item update changes nothing"
+            )
+    elif _duplicate_task(cursor, changes["title"], changes["project"]):
+        raise DuplicateProposalError(
+            "This Action Item already exists, including completed tasks"
+        )
+    decision_key = _decision_key(item, changes)
+    if _was_dismissed(cursor, decision_key) or _has_live_pending(cursor, decision_key):
+        raise DuplicateProposalError(
+            "An equivalent Action Item change is already pending or was decided by the User"
+        )
+    fingerprint = _hash(
+        [
+            decision_key,
+            source["id"],
+            source["revision"],
+            source["content_hash"],
+            item.expected_revision,
+        ]
+    )
+    name = changes.get("title") or before["title"]
+    proposal_id = ActionItemProposalModel.create(
+        conn=conn,
+        action=item.action,
+        target_name=name,
+        project=changes.get("project", before.get("project") if before else None),
+        target_id=item.target_id,
+        base_version=item.expected_revision,
+        title=f"{'New' if item.action == 'create' else 'Update'}: {name}"[:200],
+        rationale=item.rationale.strip(),
+        fingerprint=fingerprint,
+        evidence=[
+            {
+                "source": "meeting",
+                "id": source["id"],
+                "note": source.get("title") or "Meeting",
+                "quote": entry.quote,
+                "segment_id": entry.segment_id,
+                "revision": source["revision"],
+            }
+            for entry in item.evidence
+        ],
+    )
+    cursor.execute(
+        """INSERT INTO action_item_proposal_payloads
+        (proposal_id,meeting_id,source_revision,source_hash,source_snapshot,before_snapshot,changes,decision_key,create_request_id)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (
+            proposal_id,
+            source["id"],
+            source["revision"],
+            source["content_hash"],
+            Json(source),
+            Json(before) if before is not None else None,
+            Json(changes),
+            decision_key,
+            str(uuid5(_REQUEST_NAMESPACE, fingerprint)),
+        ),
+    )
+    cursor.execute("SELECT * FROM action_item_proposals WHERE id=%s", (proposal_id,))
+    return ActionItemProposalModel.serialize_timestamps(dict(cursor.fetchone()))
 
 
 def _payload(cursor, proposal_id: int) -> dict:
@@ -473,10 +504,176 @@ def delete_proposal(proposal_id: int) -> None:
         cursor,
         proposal,
     ):
-        if proposal["status"] != "approved":
+        if proposal["status"] in {"pending", "rejected"}:
             reserve_dismissal(cursor, proposal)
         cursor.execute("DELETE FROM action_item_proposals WHERE id=%s", (proposal_id,))
         if cursor.rowcount != 1:
             raise RuntimeError(
                 "Locked Action Item proposal disappeared during deletion"
             )
+
+
+def _validate_replacements(result: dict, corpus: dict, candidate_count: int) -> None:
+    kept = result["keep"]
+    if (
+        not isinstance(kept, list)
+        or len(kept) != len(set(kept))
+        or any(
+            type(index) is not int or not 0 <= index < candidate_count for index in kept
+        )
+    ):
+        raise ValueError(
+            "Filtered publication requires unique supplied candidate indexes"
+        )
+    records = {record["key"]: record for record in corpus["records"]}
+    losers = [entry["proposal_id"] for entry in result["supersede"]]
+    if len(losers) != len(set(losers)):
+        raise ValueError("A pending proposal cannot have competing replacements")
+    for entry in result["supersede"]:
+        loser = records.get(f"proposal:{entry['proposal_id']}")
+        winner = records.get(entry["replacement"])
+        if (
+            loser is None
+            or loser["kind"] != "proposal"
+            or loser["data"]["status"] != "pending"
+        ):
+            raise ProposalConflictError("A superseded proposal must still be pending")
+        if entry["replacement"].startswith("candidate:"):
+            try:
+                index = int(entry["replacement"].split(":")[1])
+            except (ValueError, IndexError):
+                raise ValueError(
+                    "Replacement candidate identity is malformed"
+                ) from None
+            if index not in kept:
+                raise ValueError("Replacement candidate must be kept by this filter")
+        elif (
+            winner is None
+            or winner["kind"] != "proposal"
+            or winner["data"]["status"] != "pending"
+            or winner["data"]["id"] in losers
+        ):
+            raise ValueError(
+                "Replacement must be a surviving pending proposal; cycles are forbidden"
+            )
+
+
+def publish_filtered_batch(
+    snapshot: dict,
+    candidates: list[dict],
+    result: dict,
+    *,
+    expected_digest: str,
+    artifact: dict,
+    lease_owner: str,
+) -> dict:
+    from services.action_items import proposal_corpus
+    from services.meetings import action_item_db, stage_db
+
+    if not isinstance(lease_owner, str) or not lease_owner.startswith("v2:"):
+        raise ValueError(
+            "Filtered publication requires an owned version-two worker lease"
+        )
+    source = _snapshot(snapshot)
+    prepared = []
+    for index in result["keep"]:
+        _, item, changes = _prepare_candidate(source, candidates[index])
+        if item.action == "create" and changes.get("status") == "completed":
+            raise ValueError("Meeting generation cannot create already-completed work")
+        prepared.append((index, item, changes))
+    try:
+        with (
+            get_connection() as conn,
+            conn.cursor(cursor_factory=RealDictCursor) as cursor,
+        ):
+            cursor.execute("SET LOCAL TIME ZONE 'UTC'")
+            cursor.execute("SET LOCAL lock_timeout='3s'")
+            cursor.execute("SET LOCAL statement_timeout='5s'")
+            tasks.acquire_write_lock(cursor)
+            current = proposal_corpus.read(cursor)
+            source_ids = sorted(set(current["source_ids"]) | {source["id"]})
+            cursor.execute(
+                "SELECT id FROM meeting_summaries WHERE id IN %s ORDER BY id FOR SHARE",
+                (tuple(source_ids),),
+            )
+            _assert_source(cursor, source)
+            action_item_db._owned(cursor, source["id"], lease_owner)
+            current = proposal_corpus.read(cursor)
+            if current["digest"] != expected_digest:
+                return {"stale": True, "corpus": current}
+            _validate_replacements(result, current, len(candidates))
+            losers = sorted(entry["proposal_id"] for entry in result["supersede"])
+            if losers:
+                cursor.execute(
+                    "SELECT id FROM action_item_proposals WHERE id IN %s ORDER BY id FOR UPDATE",
+                    (tuple(losers),),
+                )
+                cursor.execute(
+                    "UPDATE action_item_proposals SET status='superseded',updated_at=clock_timestamp() WHERE id IN %s AND status='pending'",
+                    (tuple(losers),),
+                )
+                if cursor.rowcount != len(losers):
+                    raise ProposalConflictError(
+                        "A pending replacement changed during publication"
+                    )
+            published, skipped = {}, 0
+            for index, item, changes in prepared:
+                try:
+                    row = _persist_candidate(cursor, conn, source, item, changes)
+                except DuplicateProposalError:
+                    if any(
+                        entry["replacement"] == f"candidate:{index}"
+                        for entry in result["supersede"]
+                    ):
+                        raise ProposalConflictError(
+                            "A certified replacement was dismissed or already exists"
+                        ) from None
+                    skipped += 1
+                else:
+                    published[index] = row["id"]
+            for entry in result["supersede"]:
+                replacement = entry["replacement"]
+                replacement_id = (
+                    published[int(replacement.split(":")[1])]
+                    if replacement.startswith("candidate:")
+                    else int(replacement.split(":")[1])
+                )
+                cursor.execute(
+                    "UPDATE action_item_proposals SET superseded_by_id=%s WHERE id=%s AND status='superseded'",
+                    (replacement_id, entry["proposal_id"]),
+                )
+                if cursor.rowcount != 1:
+                    raise RuntimeError(
+                        "Locked superseded Action Item audit disappeared"
+                    )
+            final = {
+                **artifact,
+                "phase": "done",
+                "offset": len(candidates),
+                "work_units": artifact.get("work_units", 1) + 1,
+                "published_ids": sorted(
+                    set(artifact.get("published_ids", [])) | set(published.values())
+                ),
+                "skipped_count": len(candidates) - len(published),
+                "superseded_count": len(losers),
+            }
+            stage_db.validate_artifact(final)
+            cursor.execute(
+                "UPDATE meeting_action_item_runs SET action_items_artifact=%s,action_items_status='done',action_items_error=NULL,updated_at=clock_timestamp() WHERE meeting_id=%s AND claim_owner=%s",
+                (Json(final), source["id"], lease_owner),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError(
+                    "Owned Action Item publication checkpoint disappeared"
+                )
+            return {
+                "stale": False,
+                "artifact": final,
+                "proposals": len(final["published_ids"]),
+                "skipped": final["skipped_count"],
+                "superseded": len(losers),
+            }
+    except UniqueViolation:
+        raise ProposalConflictError(
+            "Action Item publication raced with an existing proposal; refilter current inputs"
+        ) from None

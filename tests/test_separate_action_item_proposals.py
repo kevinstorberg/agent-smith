@@ -305,6 +305,7 @@ def test_separate_action_item_and_harness_decisions_with_the_same_numeric_id(
                 "pending": 0,
                 "approved": 1,
                 "rejected": 0,
+                "superseded": 0,
             }
     finally:
         harness_service.delete_proposal(harness_id)

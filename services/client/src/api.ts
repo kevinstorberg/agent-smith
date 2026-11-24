@@ -1,6 +1,9 @@
 import type { EvidenceSort } from './utils/evidenceSorting';
 import type { CostResponse } from './types/costs';
-import type { ACTION_ITEM_SORT_OPTIONS } from './constants';
+import type {
+  ACTION_ITEM_SORT_OPTIONS,
+  ACTION_ITEM_PROPOSAL_STATUSES,
+} from './constants';
 
 const BASE = '/api';
 
@@ -1043,7 +1046,10 @@ export interface JobRunResult {
 
 export type ProposalStatus = 'pending' | 'approved' | 'rejected';
 
-interface ReviewMetadata {
+export type ActionItemProposalStatus =
+  (typeof ACTION_ITEM_PROPOSAL_STATUSES)[number];
+
+interface ReviewMetadata<Status extends string = ProposalStatus> {
   id: number;
   action: 'create' | 'update';
   target_name: string;
@@ -1052,7 +1058,7 @@ interface ReviewMetadata {
   base_version: number | null;
   title: string;
   rationale: string;
-  status: ProposalStatus;
+  status: Status;
   created_at: string;
   updated_at: string;
 }
@@ -1072,7 +1078,8 @@ export interface Proposal extends ReviewMetadata {
   current_target?: (Partial<HarnessItem> & Partial<Job>) | null;
 }
 
-export interface ActionItemProposal extends ReviewMetadata {
+export interface ActionItemProposal extends ReviewMetadata<ActionItemProposalStatus> {
+  superseded_by_id: number | null;
   evidence: {
     source: 'meeting';
     id: string;
@@ -1094,6 +1101,10 @@ export interface ProposalCounts {
   pending: number;
   approved: number;
   rejected: number;
+}
+
+export interface ActionItemProposalCounts extends ProposalCounts {
+  superseded: number;
 }
 
 export interface AuditEvent {
@@ -1929,7 +1940,7 @@ export const api = {
       );
     },
     counts: () =>
-      get<ProposalCounts>(
+      get<ActionItemProposalCounts>(
         '/action-item-proposals/counts',
         undefined,
         ACTION_ITEM_TIMEOUT_MS,

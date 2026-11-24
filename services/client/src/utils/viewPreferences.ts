@@ -1,6 +1,7 @@
 import {
   ACTION_ITEM_SORT_OPTIONS,
   ACTION_ITEM_STATUSES,
+  ACTION_ITEM_PROPOSAL_STATUSES,
   CHAT_SORT_OPTIONS,
   CHAT_STATUSES,
   PROFILE_SORT_OPTIONS,
@@ -159,7 +160,7 @@ export interface ViewSettings extends Record<
   };
   actionItemProposals: {
     q: string;
-    status: '' | (typeof PROPOSAL_STATUSES)[number];
+    status: '' | (typeof ACTION_ITEM_PROPOSAL_STATUSES)[number];
     limit: PageLimit;
     offset: number;
   };
@@ -454,7 +455,7 @@ const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
     defaults: { q: '', status: 'pending', limit: 10, offset: 0 },
     fields: {
       q: text,
-      status: choice(['', ...PROPOSAL_STATUSES]),
+      status: choice(['', ...ACTION_ITEM_PROPOSAL_STATUSES]),
       limit: pageLimit,
       offset: pageOffset,
     },

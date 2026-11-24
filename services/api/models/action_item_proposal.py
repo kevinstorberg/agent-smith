@@ -5,10 +5,12 @@ from functools import partial
 from services.api.models.base import BaseModel
 from services.api.models.shared.listing import bidirectional_sorts
 from services.api.models.shared.proposal_reviews import (
-    PROPOSAL_STATUSES as PROPOSAL_STATUSES,
+    PROPOSAL_STATUSES,
     count_reviews,
     list_reviews,
 )
+
+ACTION_ITEM_PROPOSAL_STATUSES = (*PROPOSAL_STATUSES, "superseded")
 
 PROPOSAL_SORTS = bidirectional_sorts(
     {
@@ -26,5 +28,12 @@ class ActionItemProposalModel(BaseModel):
 
 
 get_proposal = ActionItemProposalModel.read
-list_proposals = partial(list_reviews, ActionItemProposalModel, PROPOSAL_SORTS)
-count_by_status = partial(count_reviews, ActionItemProposalModel)
+list_proposals = partial(
+    list_reviews,
+    ActionItemProposalModel,
+    PROPOSAL_SORTS,
+    statuses=ACTION_ITEM_PROPOSAL_STATUSES,
+)
+count_by_status = partial(
+    count_reviews, ActionItemProposalModel, statuses=ACTION_ITEM_PROPOSAL_STATUSES
+)

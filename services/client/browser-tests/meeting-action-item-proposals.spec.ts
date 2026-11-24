@@ -7,7 +7,237 @@ import {
 import { enlargeComputedText } from './typography';
 import { actionItemProposal } from '../src/pages/__tests__/actionItemProposalFixture';
 import { meetingFixture } from '../src/pages/__tests__/meetingFixture';
-import type { MeetingActionItemProposals } from '../src/api';
+import { POLL_INTERVAL_MS } from '../src/constants';
+import type {
+  ActionItemProposal,
+  MeetingActionItemProposals,
+} from '../src/api';
+
+function compactCreateProposals(): ActionItemProposal[] {
+  return [
+    {
+      title: 'Send the release report',
+      description: `Send the report to the delivery team with the approved checklist.\n\n${'SupportingContext'.repeat(30)}`,
+      due_at: '2026-11-25T17:00:00Z',
+      status: 'open' as const,
+    },
+    {
+      title: 'Schedule the launch review',
+      description:
+        'Find a time with the release team and circulate the agenda.',
+      due_at: null,
+      status: 'open' as const,
+    },
+    {
+      title: 'Archive the approved checklist',
+      description: 'Retain the final checklist in the release archive.',
+      due_at: null,
+      status: 'completed' as const,
+    },
+  ].map((item, index) =>
+    actionItemProposal({
+      id: index + 11,
+      action: 'create',
+      target_id: null,
+      base_version: null,
+      before_snapshot: null,
+      current_target: null,
+      target_name: item.title,
+      rationale:
+        'The planning summary explicitly supports this concrete next step.',
+      proposed_item: { ...item, project: 'Work', tags: ['release'] },
+      evidence: [
+        {
+          source: 'meeting',
+          id: 'synthetic-planning',
+          note: 'Release planning',
+          quote: `The team agreed to: ${item.title}.`,
+          revision: 1,
+        },
+      ],
+    }),
+  );
+}
+
+test('compact create rows expose decisions and keep complete context recoverable', async ({
+  page,
+  fixtureAPI,
+}, testInfo) => {
+  const proposals = compactCreateProposals();
+  fixtureAPI.get('/api/action-item-proposals', {
+    items: proposals,
+    total: proposals.length,
+  });
+  fixtureAPI.get('/api/action-item-proposals/counts', {
+    pending: proposals.length,
+    approved: 0,
+    rejected: 0,
+    superseded: 0,
+  });
+  await page.goto('/action-items/proposals');
+  const rows = page
+    .getByRole('list', { name: 'Proposed Action Items', exact: true })
+    .getByRole('listitem');
+  await expect(rows).toHaveCount(3);
+  const thirdRowBounds = await rows.nth(2).boundingBox();
+  await page.screenshot({
+    path: testInfo.outputPath('compact-create-list.png'),
+    fullPage: true,
+  });
+  await enlargeComputedText(page);
+  await page.screenshot({
+    path: testInfo.outputPath('compact-create-list-enlarged.png'),
+    fullPage: true,
+  });
+
+  if (page.viewportSize()?.width === 1440) {
+    expect(thirdRowBounds).not.toBeNull();
+    expect(
+      thirdRowBounds!.y + thirdRowBounds!.height,
+      'Three representative create rows fit in the initial desktop viewport',
+    ).toBeLessThanOrEqual(900);
+  }
+  for (let index = 0; index < proposals.length; index++) {
+    const row = rows.nth(index);
+    await expect(
+      row.getByRole('link', {
+        name: proposals[index].target_name,
+        exact: true,
+      }),
+    ).toHaveCount(1);
+    await expect(row.locator('details')).not.toHaveAttribute('open');
+    await expect(
+      row.getByText(proposals[index].proposed_item!.description!, {
+        exact: true,
+      }),
+    ).not.toBeVisible();
+    for (const name of ['Accept', 'Reject'])
+      await expectControlContained(
+        row.getByRole('button', { name, exact: true }),
+        row,
+      );
+  }
+  await expect(rows.first().getByText(/^Due /)).toContainText(
+    'November 25, 2026',
+  );
+  await expect(rows.nth(2).getByText('Creates completed item')).toBeVisible();
+  await expectDocumentContained(page);
+  await expectMainContained(page);
+  const summary = rows.first().locator('summary');
+  await summary.focus();
+  await page.keyboard.press('Enter');
+  await expect(rows.first().locator('details')).toHaveAttribute('open');
+  await expect(
+    rows
+      .first()
+      .getByText(proposals[0].proposed_item!.description!, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    rows.first().getByRole('rowheader', { name: 'Title', exact: true }),
+  ).toHaveCount(0);
+  await expectDocumentContained(page);
+  await expectMainContained(page);
+  await page.screenshot({
+    path: testInfo.outputPath('compact-create-details-enlarged.png'),
+    fullPage: true,
+  });
+  await summary.focus();
+  await page.keyboard.press('Space');
+  await expect(rows.first().locator('details')).not.toHaveAttribute('open');
+  expect(fixtureAPI.requests.filter((entry) => entry.method !== 'GET')).toEqual(
+    [],
+  );
+});
+
+test('review failures have one persistent visible error and retain the pending row', async ({
+  page,
+  fixtureAPI,
+}, testInfo) => {
+  await page.clock.install();
+  const proposal = compactCreateProposals()[0];
+  fixtureAPI.get('/api/action-item-proposals', { items: [proposal], total: 1 });
+  fixtureAPI.get('/api/action-item-proposals/counts', {
+    pending: 1,
+    approved: 0,
+    rejected: 0,
+    superseded: 0,
+  });
+  fixtureAPI.mock(
+    'POST',
+    `/api/action-item-proposals/${proposal.id}/reject`,
+    { detail: 'Synthetic review conflict' },
+    409,
+  );
+  await page.goto('/action-items/proposals');
+  await page.getByRole('button', { name: 'Reject', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveCount(1);
+  await expect(page.getByRole('alert')).toContainText(
+    'Synthetic review conflict',
+  );
+  await expect(page.getByText(/Synthetic review conflict/)).toHaveCount(1);
+  await expect(
+    page.getByRole('link', { name: proposal.target_name, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Reject', exact: true }),
+  ).toBeEnabled();
+  await page.clock.fastForward(POLL_INTERVAL_MS);
+  await expect(page.getByText(/Synthetic review conflict/)).toHaveCount(1);
+  expect(fixtureAPI.requests.filter((entry) => entry.method !== 'GET')).toEqual(
+    [
+      expect.objectContaining({
+        method: 'POST',
+        url: expect.stringContaining(
+          `/action-item-proposals/${proposal.id}/reject`,
+        ),
+      }),
+    ],
+  );
+  await expectDocumentContained(page);
+  await page.screenshot({
+    path: testInfo.outputPath('compact-review-error.png'),
+    fullPage: true,
+  });
+});
+
+test('supporting context stays open through a normal poll without submitting a decision', async ({
+  page,
+  fixtureAPI,
+}, testInfo) => {
+  await page.clock.install();
+  let reads = 0;
+  const proposal = actionItemProposal();
+  fixtureAPI.get('/api/action-item-proposals', () => ({
+    items: [{ ...proposal, rationale: `Planning context read ${++reads}` }],
+    total: 1,
+  }));
+  fixtureAPI.get('/api/action-item-proposals/counts', {
+    pending: 1,
+    approved: 0,
+    rejected: 0,
+    superseded: 0,
+  });
+  await page.goto('/action-items/proposals');
+  const details = page
+    .getByRole('list', { name: 'Proposed Action Items', exact: true })
+    .locator('details');
+  await details.locator('summary').click();
+  await expect(page.getByText('Planning context read 1')).toBeVisible();
+  await page.clock.fastForward(POLL_INTERVAL_MS);
+  await expect.poll(() => reads).toBeGreaterThan(1);
+  await expect(page.getByText(`Planning context read ${reads}`)).toBeVisible();
+  await expect(details).toHaveAttribute('open');
+  await expect(
+    page.getByRole('rowheader', { name: 'Deadline', exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath('compact-update-details.png'),
+    fullPage: true,
+  });
+  expect(fixtureAPI.requests.filter((entry) => entry.method !== 'GET')).toEqual(
+    [],
+  );
+});
 
 test('accepts and rejects from the list without navigation or confirmation', async ({
   page,
@@ -32,6 +262,7 @@ test('accepts and rejects from the list without navigation or confirmation', asy
     pending: proposals.filter((item) => item.status === 'pending').length,
     approved: proposals.filter((item) => item.status === 'approved').length,
     rejected: proposals.filter((item) => item.status === 'rejected').length,
+    superseded: 0,
   }));
   for (const [id, action, status] of [
     [1, 'approve', 'approved'],
@@ -63,7 +294,11 @@ test('accepts and rejects from the list without navigation or confirmation', asy
     cards
       .first()
       .getByText('Move the release report deadline to Friday at 5 PM UTC.'),
-  ).toBeVisible();
+  ).not.toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath('compact-update-list.png'),
+    fullPage: true,
+  });
   await enlargeComputedText(page);
   for (const card of await cards.all()) {
     for (const name of ['Accept', 'Reject']) {
@@ -78,14 +313,18 @@ test('accepts and rejects from the list without navigation or confirmation', asy
     body: await page.screenshot({ fullPage: true }),
     contentType: 'image/png',
   });
+  await page.screenshot({
+    path: testInfo.outputPath('compact-update-list-enlarged.png'),
+    fullPage: true,
+  });
   await cards
     .first()
     .getByRole('button', { name: 'Accept', exact: true })
     .click();
   await expect(cards).toHaveCount(1);
-  await expect(
-    page.getByRole('button', { name: 'approved (1)' }),
-  ).toBeVisible();
+  await expect(page.getByRole('option', { name: 'Approved (1)' })).toHaveCount(
+    1,
+  );
   await cards
     .first()
     .getByRole('button', { name: 'Reject', exact: true })
@@ -93,9 +332,9 @@ test('accepts and rejects from the list without navigation or confirmation', asy
   await expect(
     page.getByRole('heading', { name: 'No pending proposed Action Items' }),
   ).toBeVisible();
-  await expect(
-    page.getByRole('button', { name: 'rejected (1)' }),
-  ).toBeVisible();
+  await expect(page.getByRole('option', { name: 'Rejected (1)' })).toHaveCount(
+    1,
+  );
   expect(new URL(page.url()).pathname).toBe('/action-items/proposals');
   expect(
     fixtureAPI.requests
@@ -117,6 +356,7 @@ test('proposed Action Items have a separate workspace list and review endpoint',
     pending: 1,
     approved: 0,
     rejected: 0,
+    superseded: 0,
   });
   fixtureAPI.get('/api/action-item-proposals/1', proposal);
   await page.goto('/action-items/proposals');
@@ -161,7 +401,9 @@ test('proposed Action Items have a separate workspace list and review endpoint',
     body: await page.screenshot({ fullPage: true }),
     contentType: 'image/png',
   });
-  await page.getByRole('link', { name: 'Review changes', exact: true }).click();
+  await page
+    .getByRole('link', { name: proposal.target_name, exact: true })
+    .click();
   await expect(
     page.getByRole('region', { name: 'Proposed action item changes' }),
   ).toBeVisible();
@@ -181,6 +423,7 @@ test('an empty Action Item review queue explains task generation without harness
     pending: 0,
     approved: 0,
     rejected: 0,
+    superseded: 0,
   });
   await page.goto('/action-items/proposals');
   await expect(
