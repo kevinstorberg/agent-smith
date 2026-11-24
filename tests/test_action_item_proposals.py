@@ -198,6 +198,108 @@ def test_rejection_is_durable_across_meetings_and_explicit_creation_defaults(
     assert tasks.list_items({"status": "all"})["total"] == 0
 
 
+def equivalent_pending_updates(source):
+    task = tasks.create({"title": "Complete the integration review"})
+    first = action_items.stage_and_persist(
+        source, candidate(target=task, changes={"status": "completed"})
+    )
+    current = tasks.update(
+        task["id"],
+        {"expected_revision": task["revision"], "description": "Manual notes"},
+    )
+    second = action_items.stage_and_persist(
+        source, candidate(target=current, changes={"status": "completed"})
+    )
+    with get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            "SELECT decision_key FROM action_item_proposal_payloads WHERE proposal_id IN (%s,%s)",
+            (first["id"], second["id"]),
+        )
+        keys = [row[0] for row in cursor.fetchall()]
+    assert len(keys) == 2 and keys[0] == keys[1]
+    return first, second, current, keys[0]
+
+
+@pytest.mark.parametrize("delete_original", [False, True])
+def test_equivalent_pending_updates_can_each_be_rejected(
+    source, client, delete_original
+):
+    first, second, task, key = equivalent_pending_updates(source)
+    rejected = client.post(f"/action-item-proposals/{first['id']}/reject")
+    assert rejected.status_code == 200
+    if delete_original:
+        assert client.delete(f"/action-item-proposals/{first['id']}").status_code == 200
+    blocked = client.post(f"/action-item-proposals/{second['id']}/approve")
+    assert blocked.status_code == 409 and "dismissed" in blocked.json()["detail"]
+    response = client.post(f"/action-item-proposals/{second['id']}/reject")
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "rejected"
+    assert (
+        client.post(f"/action-item-proposals/{second['id']}/reject").json()
+        == response.json()
+    )
+    if not delete_original:
+        assert (
+            client.post(f"/action-item-proposals/{first['id']}/reject").json()
+            == rejected.json()
+        )
+    with get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            "SELECT decision_key,proposal_id FROM action_item_proposal_receipts"
+        )
+        assert cursor.fetchall() == [(key, None if delete_original else first["id"])]
+    assert tasks.get(task["id"]) == task
+
+
+def test_concurrent_equivalent_rejections_keep_one_receipt_and_both_decisions(
+    source, monkeypatch
+):
+    first, second, task, key = equivalent_pending_updates(source)
+    connections = watch_decision_connections(monkeypatch, service=action_items)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        with get_connection() as blocker, blocker.cursor() as cursor:
+            tasks.acquire_write_lock(cursor)
+            left = executor.submit(action_items.reject_proposal, first["id"])
+            wait_for_block(cursor, connections.get(timeout=2), left)
+            right = executor.submit(action_items.reject_proposal, second["id"])
+            wait_for_block(cursor, connections.get(timeout=2), right)
+        results = [left.result(timeout=8), right.result(timeout=8)]
+    assert all(result["status"] == "rejected" for result in results)
+    assert all(
+        get_proposal(item["id"])["status"] == "rejected" for item in (first, second)
+    )
+    with get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            "SELECT decision_key,proposal_id FROM action_item_proposal_receipts"
+        )
+        receipts = cursor.fetchall()
+    assert len(receipts) == 1 and receipts[0][0] == key
+    assert receipts[0][1] in {first["id"], second["id"]}
+    assert tasks.get(task["id"]) == task
+
+
+def test_failed_sibling_rejection_preserves_preexisting_receipt_and_pending_row(
+    source, monkeypatch
+):
+    first, second, task, key = equivalent_pending_updates(source)
+    action_items.reject_proposal(first["id"])
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("Synthetic decision failure")
+
+    monkeypatch.setattr(action_items, "_record_decision", fail)
+    with pytest.raises(RuntimeError, match="Synthetic decision failure"):
+        action_items.reject_proposal(second["id"])
+    assert get_proposal(second["id"])["status"] == "pending"
+    assert get_proposal(first["id"])["status"] == "rejected"
+    with get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            "SELECT decision_key,proposal_id FROM action_item_proposal_receipts"
+        )
+        assert cursor.fetchall() == [(key, first["id"])]
+    assert tasks.get(task["id"]) == task
+
+
 @pytest.mark.parametrize("decision", ["pending", "rejected"])
 def test_deleting_proposal_preserves_a_text_free_dismissal_receipt_and_live_task(
     source, decision
