@@ -35,9 +35,6 @@ class ActionItemRun(processing.ProcessingRun):
 
     async def prepare(self) -> None:
         identities = list(configured_sources(self.source))
-        self.report["reconciliation"] = await run_db(
-            action_item_db.reconcile, identities
-        )
         self.record = await run_db(action_item_db.claim, identities, self.owner)
 
     async def generate_candidates(self) -> None:
@@ -265,7 +262,7 @@ class ActionItemRun(processing.ProcessingRun):
                         previous["results"].append(item.model_dump())
                         previous["covered_keys"] = sorted(
                             set(previous["covered_keys"])
-                            | set(data["comparison_pairs"][identity])
+                            | set(action_item_filter.comparison_keys(item))
                         )
                         required = {hit["key"] for hit in search["hits"][identity]}
                         previous["complete"] = set(previous["covered_keys"]) == required
@@ -354,20 +351,27 @@ def _validate_coverage(
         )
     ):
         raise ValueError("Saved Action Item semantic coverage is invalid")
+    covered = set()
     for raw in prior["results"]:
         item = action_item_filter.FilterDecision.model_validate(raw)
+        explicit = set(action_item_filter.comparison_keys(item))
+        if explicit - set(keys) or explicit & covered:
+            raise ValueError("Saved filter decisions have invalid comparison coverage")
+        covered.update(explicit)
         data = {
             "candidates": [candidate],
             "meeting_snapshot": snapshot,
             "candidate_ids": [0],
-            "comparison_records": [records[key] for key in keys],
-            "comparison_pairs": {"0": keys},
+            "comparison_records": [records[key] for key in explicit],
+            "comparison_pairs": {"0": sorted(explicit)},
         }
         if item.candidate_id != index:
             raise ValueError("Saved filter decision belongs to another candidate")
         item = item.model_copy(update={"candidate_id": 0})
         if error := action_item_filter.validate_decisions([item], data):
             raise ValueError(error)
+    if covered != set(prior["covered_keys"]):
+        raise ValueError("Saved filter coverage requires explicit comparison decisions")
 
 
 def _validate_checkpoint(artifact: dict, record: dict) -> None:

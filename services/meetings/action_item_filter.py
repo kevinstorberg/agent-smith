@@ -16,11 +16,14 @@ from services.meetings.action_item_analysis import (
 from services.meetings.analysis import AnalysisContext, run_analysis
 from services.meetings.outputs import Evidence
 
+MAX_COMPARISON_PAIRS = 512
+MAX_CANDIDATES_PER_WINDOW = 8
+
 
 class Relation(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     key: str = Field(min_length=1)
-    relation: Literal["same", "replace", "indeterminate"]
+    relation: Literal["same", "overlap", "replace", "indeterminate"]
 
 
 class FilterDecision(BaseModel):
@@ -28,6 +31,7 @@ class FilterDecision(BaseModel):
     candidate_id: int = Field(ge=0)
     actionable: bool
     matches: list[Relation]
+    different_keys: list[str]
     rationale: str = Field(min_length=1, max_length=2000)
     evidence: list[Evidence] = Field(min_length=1, max_length=10)
 
@@ -38,6 +42,10 @@ class FilterSubmission(BaseModel):
     reason: str = Field(default="", max_length=2000)
 
 
+def comparison_keys(item: FilterDecision) -> list[str]:
+    return [*(match.key for match in item.matches), *item.different_keys]
+
+
 def windows(
     snapshot: dict,
     candidates: list[dict],
@@ -46,56 +54,64 @@ def windows(
     candidate_ids: list[int] | None = None,
 ) -> list[dict]:
     active = list(range(len(candidates))) if candidate_ids is None else candidate_ids
-    selected = {hit["key"] for values in hits.values() for hit in values}
     context = AnalysisContext(
         {**snapshot, "memory_source": "summary"},
         [{"id": "summary-0", "text": snapshot["summary_text"]}],
         [],
         require_memory_search=False,
     )
-    base = {**context.quoted_data(), "candidates": candidates, "candidate_ids": active}
-    result, current = [], []
+    base = {**context.quoted_data(), "candidates": candidates}
+    result = []
+    for offset in range(0, len(active), MAX_CANDIDATES_PER_WINDOW):
+        requested = active[offset : offset + MAX_CANDIDATES_PER_WINDOW]
+        selected = {hit["key"] for index in requested for hit in hits[str(index)]}
 
-    def build(group):
-        keys = {record["key"] for record in group}
-        return {
-            **base,
-            "comparison_records": group,
-            "comparison_pairs": {
-                key: [hit["key"] for hit in values if hit["key"] in keys]
-                for key, values in hits.items()
-                if int(key) in active
-            },
-        }
+        def build(group):
+            keys = {record["key"] for record in group}
+            return {
+                **base,
+                "candidate_ids": requested,
+                "comparison_records": group,
+                "comparison_pairs": {
+                    str(index): [
+                        hit["key"] for hit in hits[str(index)] if hit["key"] in keys
+                    ]
+                    for index in requested
+                },
+            }
 
-    if len(json.dumps(build([]), ensure_ascii=False, default=str)) > MAX_CONTEXT_CHARS:
-        raise ActionItemContextTooLarge(
-            "Generated Action Item batch exceeds full filter request capacity"
-        )
-    for record in records:
-        if record["key"] not in selected:
-            continue
-        trial = [*current, record]
-        if (
-            len(json.dumps(build(trial), ensure_ascii=False, default=str))
-            > MAX_CONTEXT_CHARS
-        ):
-            if not current:
-                raise ActionItemContextTooLarge(
-                    "One full Action Item comparison record exceeds filter request capacity"
-                )
-            result.append(build(current))
-            current = [record]
-            if (
-                len(json.dumps(build(current), ensure_ascii=False, default=str))
-                > MAX_CONTEXT_CHARS
-            ):
-                raise ActionItemContextTooLarge(
-                    "One full Action Item comparison record exceeds filter request capacity"
-                )
-        else:
-            current = trial
-    result.append(build(current))
+        def fits(group):
+            data = build(group)
+            return (
+                len(json.dumps(data, ensure_ascii=False, default=str))
+                <= MAX_CONTEXT_CHARS
+                and sum(len(keys) for keys in data["comparison_pairs"].values())
+                <= MAX_COMPARISON_PAIRS
+            )
+
+        if not fits([]):
+            raise ActionItemContextTooLarge(
+                "Generated Action Item batch exceeds full filter request capacity"
+            )
+        current = []
+        for record in records:
+            if record["key"] not in selected:
+                continue
+            trial = [*current, record]
+            if not fits(trial):
+                if not current:
+                    raise ActionItemContextTooLarge(
+                        "One full Action Item comparison record exceeds filter request capacity"
+                    )
+                result.append(build(current))
+                current = [record]
+                if not fits(current):
+                    raise ActionItemContextTooLarge(
+                        "One full Action Item comparison record exceeds filter request capacity"
+                    )
+            else:
+                current = trial
+        result.append(build(current))
     return result
 
 
@@ -112,15 +128,27 @@ def validate_decisions(items: list[FilterDecision], data: dict) -> str | None:
             for entry in candidates[item.candidate_id]["evidence"]
         ]:
             return "Copy each candidate's original exact evidence without additions or edits"
-        keys = [match.key for match in item.matches]
-        if len(keys) != len(set(keys)):
+        accounted = comparison_keys(item)
+        if len(accounted) != len(set(accounted)):
             return "A candidate cannot refer to the same comparison record twice"
+        if set(accounted) != set(data["comparison_pairs"][str(item.candidate_id)]):
+            return "Explicitly classify every supplied comparison pair exactly once in matches or different_keys"
         for match in item.matches:
             if (
                 match.key not in data["comparison_pairs"][str(item.candidate_id)]
                 or match.key not in records
             ):
                 return "Every match must reference a supplied comparison pair for that candidate"
+            if match.relation == "overlap":
+                record = records[match.key]
+                candidate = candidates[item.candidate_id]
+                if record["kind"] != "task":
+                    return "Overlap must identify existing saved work"
+                if (
+                    candidate["action"] == "update"
+                    and candidate.get("target_id") != record["data"]["id"]
+                ):
+                    return "An overlapping update must target that existing Action Item"
             if match.relation == "replace" and (
                 records[match.key]["kind"] != "proposal"
                 or records[match.key]["data"]["status"] != "pending"
@@ -170,7 +198,7 @@ async def analyze_window(
         tools=[
             context.configure_stage(
                 filter_action_items,
-                validation_feedback="Return exactly one typed decision per supplied candidate, original evidence, and only valid comparison references.",
+                validation_feedback="Return exactly one typed decision per supplied candidate, original evidence, and an explicit verdict for every comparison pair in matches or different_keys.",
             )
         ],
         data=data,
@@ -185,9 +213,22 @@ async def analyze_window(
             "waiting, already-completed new work and unsupported inferred follow-ups/rescheduling are not actionable. "
             "An explicit instruction to schedule, reschedule or follow up IS actionable when supported by the quote. "
             "Never create completed work; use a supported update to mark an existing task complete. "
-            "Copy original evidence exactly. Include matches only for material relations; omitted pairs are certified "
-            "different after comparison. 'same' means the same underlying work AND requested desired state. For saved "
+            "Copy original evidence exactly. Classify EVERY supplied pair exactly once: material relations go in "
+            "matches; explicitly distinct records go in different_keys. Omitting a pair is invalid. "
+            "'same' means the same underlying work AND requested desired state. For saved "
             "tasks use same only if their CURRENT state already covers the request; a new supported change is distinct. "
+            "'overlap' identifies a saved task tracking the same real-world outcome, including its prerequisites, "
+            "substeps, follow-ups, contract logistics, or details missing from a brief title. Do not fragment an "
+            "existing task into new tasks just because the meeting names a different step, adds detail, or attributes "
+            "part of the same outcome to another person. For example, re-engaging a contractor with a draft contract "
+            "overlaps an existing task to onboard that contractor and get the contract signed. Confirming the approach "
+            "at a kickoff overlaps the existing kickoff task, including when it is completed. A completed saved task "
+            "covers its underlying work; old meeting instructions do not establish a new commitment or reopen it. "
+            "For a create candidate, either same or overlap with saved work suppresses the duplicate. "
+            "A meaningful new change to tracked work must be an update targeting that task, not a new create. "
+            "For an update, use overlap with its target when it supplies an explicit meaningful change; use same "
+            "when the target already contains the requested change. Different work must have a separate outcome, "
+            "deliverable or clearly different engagement; shared keywords alone do not establish overlap. "
             "For proposal records same means an equivalent desired action/state, regardless wording or stale flags. "
             "Rejected equivalents suppress; approved/superseded history is context, not permanent suppression: a prior "
             "approved update can recur after current task changes. A stale equivalent pending proposal needs fresh "
@@ -256,6 +297,16 @@ def reduce_decisions(
                         "Action Item semantic comparison was indeterminate"
                     )
                 record = by_key[match.key]
+                if match.relation == "overlap":
+                    if record["kind"] != "task":
+                        raise ValueError("Overlap must identify existing saved work")
+                    candidate = candidates[item.candidate_id]
+                    if candidate["action"] == "update":
+                        if candidate.get("target_id") != record["data"]["id"]:
+                            raise ValueError(
+                                "Overlapping update targets a different task"
+                            )
+                        continue
                 if record["kind"] == "candidate":
                     if match.relation != "same":
                         raise ValueError("Same-batch candidates cannot be replaced")

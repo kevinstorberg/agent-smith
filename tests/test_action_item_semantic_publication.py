@@ -247,6 +247,7 @@ def test_action_item_semantic_publication_deleted_rejection_suppresses_replaceme
             "matches": [{"key": f"proposal:{sibling['id']}", "relation": "same"}]
             if index == 0
             else [],
+            "different_keys": [],
             "rationale": "Supported work",
             "evidence": item["evidence"],
         }

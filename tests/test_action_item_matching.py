@@ -81,3 +81,28 @@ def test_action_item_matching_mandatory_lanes_do_not_infer_assignees():
     assert matching.mandatory(candidate, record)
     record["data"]["status"] = "rejected"
     assert not matching.mandatory(candidate, record)
+
+
+@pytest.mark.parametrize("status", ["open", "completed"])
+def test_saved_tasks_are_compared_even_below_both_retrieval_thresholds(status):
+    class UnrelatedEncoder(Encoder):
+        def embed_documents(self, texts):
+            return [[1.0, 0.0], [-1.0, 0.0]]
+
+    candidate = {"changes": {"title": "a" * 200, "project": "New project"}}
+    record = {
+        "key": "task:7",
+        "kind": "task",
+        "data": {"id": 7, "title": "z" * 200, "status": status},
+    }
+    result = matching.search(
+        [candidate],
+        [record],
+        embeddings=UnrelatedEncoder(),
+        budget=BUDGET,
+        dimensions=2,
+    )
+    hit = result["hits"]["0"][0]
+    assert hit["key"] == "task:7" and hit["mandatory"]
+    assert hit["cosine"] < matching.COSINE_FLOOR
+    assert hit["lexical"] < matching.LEXICAL_FLOOR

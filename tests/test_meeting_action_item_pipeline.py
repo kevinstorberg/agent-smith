@@ -5,6 +5,7 @@ from copy import deepcopy
 
 import pytest
 
+from tests.action_item_filter_helpers import filter_decision
 from services.graphs.library import meeting_ingest
 from services.meetings.action_item_run import ActionItemRun
 from tests.test_meeting_action_item_proposals import (
@@ -138,17 +139,7 @@ async def test_meeting_action_item_pipeline_legacy_approved_prefix_is_never_rean
     async def judge(snapshot, data, **kwargs):
         assert data["candidates"] == [candidate()]
         observed.append(data)
-        return {
-            "items": [
-                {
-                    "candidate_id": 0,
-                    "actionable": True,
-                    "matches": [],
-                    "rationale": "New unfinished work",
-                    "evidence": candidate()["evidence"],
-                }
-            ]
-        }
+        return {"items": [filter_decision(data)]}
 
     monkeypatch.setattr(action_item_run.action_item_filter, "analyze_window", judge)
     try:
@@ -244,19 +235,7 @@ async def test_meeting_action_item_pipeline_repairs_only_affected_semantic_cover
             if record["kind"] == "proposal" and record["data"]["status"] == "pending"
         ]
         matches = [{"key": pending[0]["key"], "relation": "same"}] if pending else []
-        return {
-            "items": [
-                {
-                    "candidate_id": 0,
-                    "actionable": True,
-                    "matches": matches,
-                    "rationale": "Synthetic same requested work"
-                    if matches
-                    else "Distinct unfinished work",
-                    "evidence": candidate()["evidence"],
-                }
-            ]
-        }
+        return {"items": [filter_decision(data, matches=matches)]}
 
     monkeypatch.setattr(action_item_run.action_item_filter, "analyze_window", judge)
     original = proposals.publish_filtered_batch
@@ -300,3 +279,85 @@ async def test_meeting_action_item_pipeline_repairs_only_affected_semantic_cover
         if unrelated:
             current = tasks.get(unrelated["id"])
             tasks.delete(current["id"], {"expected_revision": current["revision"]})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["open", "completed"])
+async def test_pipeline_does_not_publish_reworded_substeps_of_saved_tasks(
+    source, saved, monkeypatch, status
+):
+    from services.action_items import db as tasks
+    from services.meetings import action_item_db, action_item_run
+    from tests.test_meeting_action_item_proposals import generate, proposal_rows
+
+    meeting = saved()
+    existing = tasks.create(
+        {
+            "title": "AIFLOW onboard the DevOps contractor and sign the contract",
+            "status": status,
+            "description": "Megan onboards the contractor and Aaron signs his contract.",
+        }
+    )
+    install_analysis(
+        monkeypatch,
+        items=[candidate("AIFLOW re-engage the DevOps engineer with a draft contract")],
+    )
+    observed = []
+
+    async def judge(snapshot, data, **kwargs):
+        key = f"task:{existing['id']}"
+        supplied = key in data["comparison_pairs"]["0"]
+        observed.append(supplied)
+        return {
+            "items": [
+                filter_decision(
+                    data,
+                    matches=[{"key": key, "relation": "overlap"}] if supplied else [],
+                )
+            ]
+        }
+
+    monkeypatch.setattr(action_item_run.action_item_filter, "analyze_window", judge)
+    try:
+        result = await generate(source)
+        assert result["outcome"] == "done" and result["proposals"] == 0
+        assert any(observed) and proposal_rows(source) == []
+        assert action_item_db.get_record(meeting["id"])["action_items_status"] == "done"
+        assert tasks.get(existing["id"])["status"] == status
+    finally:
+        current = tasks.get(existing["id"])
+        tasks.delete(current["id"], {"expected_revision": current["revision"]})
+
+
+def test_filter_checkpoint_requires_explicit_coverage_across_windows():
+    from services.meetings.action_item_run import _validate_coverage
+    from tests.test_meeting_action_item_analysis import SNAPSHOT
+
+    records = {
+        f"task:{key}": {
+            "key": f"task:{key}",
+            "kind": "task",
+            "data": {"id": key, "title": f"Independent work {key}"},
+        }
+        for key in (7, 8)
+    }
+    keys = list(records)
+    prior = {
+        "covered_keys": keys,
+        "complete": True,
+        "results": [
+            {
+                "candidate_id": 0,
+                "actionable": True,
+                "matches": [],
+                "different_keys": [key],
+                "rationale": "An explicit distinct-work verdict",
+                "evidence": candidate()["evidence"],
+            }
+            for key in keys
+        ],
+    }
+    _validate_coverage(prior, candidate(), 0, keys, records, SNAPSHOT)
+    prior["results"][0]["different_keys"] = []
+    with pytest.raises(ValueError, match="requires explicit"):
+        _validate_coverage(prior, candidate(), 0, keys, records, SNAPSHOT)
