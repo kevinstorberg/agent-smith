@@ -30,18 +30,21 @@ from services.api.models.shared.listing import (
     search_pattern,
     sort_clause,
 )
+from services.action_items import queue_db
+from services.action_items.ordering import Siblings
 from services.db import get_connection
 from services.meetings import profile_db
 from services.meetings.db import MeetingStorageError
 
 _WRITE_LOCK = "agent-smith:action-items-write"
-_PROJECT_ROWS = "action_items a LEFT JOIN action_item_projects p ON p.id=a.project_id"
-_PUBLIC = "a.id, a.title, a.description, p.name AS project, a.tags, a.status, a.completed_at, a.revision, a.created_at, a.updated_at, a.sort_key AS priority"
+_TASK_ROWS = "action_items a LEFT JOIN action_item_projects p ON p.id=a.project_id"
+_PROJECT_ROWS = "action_item_ordered_items a LEFT JOIN action_item_projects p ON p.id=a.project_id"
+_PUBLIC = "a.id, a.title, a.description, p.name AS project, a.tags, a.status, a.completed_at, a.revision, a.created_at, a.updated_at, a.queue_priority AS priority"
 _LIST = _PUBLIC.replace("a.description, ", "")
 _SORTS = {
     **bidirectional_sorts(
         {
-            ("manual", "manual_desc"): ("a.sort_key",),
+            ("manual", "manual_desc"): ("a.queue_priority",),
             ("title", "title_desc"): ("lower(a.title)",),
             ("updated_asc", "updated"): ("a.updated_at",),
             ("tags_asc", "tags_desc"): ("NULLIF(a.tags, '{}'::text[])",),
@@ -328,7 +331,7 @@ def delete_project(project_id: int) -> dict:
 
 def _live(cursor, item_id: int, scope: _Scope, expected_revision: int) -> dict:
     cursor.execute(
-        f"SELECT a.*,p.name AS project FROM {_PROJECT_ROWS} WHERE a.id=%s AND a.scope_key=%s AND a.deleted_at IS NULL FOR UPDATE OF a",
+        f"SELECT a.*,p.name AS project FROM {_TASK_ROWS} WHERE a.id=%s AND a.scope_key=%s AND a.deleted_at IS NULL FOR UPDATE OF a",
         (item_id, scope.key),
     )
     row = cursor.fetchone()
@@ -352,19 +355,16 @@ def _read(cursor, item_id: int, scope: _Scope) -> dict:
     return _record(row)
 
 
+def _profile_siblings(scope: _Scope) -> Siblings:
+    return Siblings("action_items", "scope_key=%s", (scope.key,))
+
+
 def _append_position(cursor, scope: _Scope) -> int:
-    cursor.execute(
-        "SELECT COALESCE(MAX(sort_key),0)+1 AS position FROM action_items WHERE scope_key=%s",
-        (scope.key,),
-    )
-    return cursor.fetchone()["position"]
+    return _profile_siblings(scope).append_position(cursor)
 
 
 def _compact(cursor, position: int, scope: _Scope) -> None:
-    cursor.execute(
-        "UPDATE action_items SET sort_key=sort_key-1 WHERE scope_key=%s AND sort_key>%s",
-        (scope.key, position),
-    )
+    _profile_siblings(scope).compact(cursor, position)
 
 
 def merge_profile_queue(cursor, source_id: str, target_id: str) -> None:
@@ -456,7 +456,7 @@ class Queue:
                     request.status,
                     request.status,
                     _append_position(cursor, scope)
-                    if request.status == "open"
+                    if request.status == "open" and scope.profile_id is not None
                     else None,
                     request.request_id,
                     Json(original) if request.request_id else None,
@@ -464,7 +464,10 @@ class Queue:
                     request.due_at,
                 ),
             )
-            return _read(cursor, cursor.fetchone()["id"], scope)
+            item_id = cursor.fetchone()["id"]
+            if scope.profile_id is None:
+                queue_db.create_task_entry(cursor, item_id, request.status)
+            return _read(cursor, item_id, scope)
 
     def get(self, item_id: int) -> dict:
         item_id = _id(item_id)
@@ -549,13 +552,15 @@ class Queue:
                     changes["completed_at"] = cursor.fetchone()["completed_at"]
                 else:
                     changes.update(
-                        sort_key=_append_position(cursor, scope), completed_at=None
+                        sort_key=_append_position(cursor, scope) if scope.profile_id else None, completed_at=None
                     )
             columns = ", ".join(f"{key}=%s" for key in changes)
             cursor.execute(
                 f"UPDATE action_items SET {columns},revision=revision+1,updated_at=clock_timestamp() WHERE id=%s AND scope_key=%s",
                 (*changes.values(), item_id, scope.key),
             )
+            if scope.profile_id is None and "status" in changes:
+                queue_db.task_activity(cursor, item_id, active=changes["status"] == "open")
             if before["sort_key"] is not None and changes.get("status") == "completed":
                 _compact(cursor, before["sort_key"], scope)
             return _read(cursor, item_id, scope)
@@ -568,6 +573,8 @@ class Queue:
                 "UPDATE action_items SET deleted_at=clock_timestamp(),sort_key=NULL,revision=revision+1,updated_at=clock_timestamp() WHERE id=%s AND scope_key=%s",
                 (item_id, scope.key),
             )
+            if scope.profile_id is None:
+                queue_db.task_activity(cursor, item_id, active=False)
             if before["sort_key"] is not None:
                 _compact(cursor, before["sort_key"], scope)
             return {"deleted": True, "id": item_id}
@@ -581,6 +588,9 @@ class Queue:
             raise ValueError("The move anchor must be a different action item")
         with _cursor(self.profile_id, write=True) as (cursor, scope):
             source = _live(cursor, item_id, scope, request.expected_revision)
+            if scope.profile_id is None:
+                queue_db.legacy_move(cursor, source, anchor_id, after=request.after_id is not None)
+                return _read(cursor, item_id, scope)
             cursor.execute(
                 "SELECT sort_key FROM action_items WHERE id=%s AND scope_key=%s AND deleted_at IS NULL AND status='open' FOR UPDATE",
                 (anchor_id, scope.key),
@@ -596,19 +606,10 @@ class Queue:
             )
             if target == old:
                 return _read(cursor, item_id, scope)
-            if target < old:
-                cursor.execute(
-                    "UPDATE action_items SET sort_key=sort_key+1 WHERE scope_key=%s AND sort_key>=%s AND sort_key<%s",
-                    (scope.key, target, old),
-                )
-            else:
-                cursor.execute(
-                    "UPDATE action_items SET sort_key=sort_key-1 WHERE scope_key=%s AND sort_key>%s AND sort_key<=%s",
-                    (scope.key, old, target),
-                )
+            _profile_siblings(scope).move(cursor, item_id, old, target)
             cursor.execute(
-                "UPDATE action_items SET sort_key=%s,revision=revision+1,updated_at=clock_timestamp() WHERE id=%s AND scope_key=%s",
-                (target, item_id, scope.key),
+                "UPDATE action_items SET revision=revision+1,updated_at=clock_timestamp() WHERE id=%s AND scope_key=%s",
+                (item_id, scope.key),
             )
             return _read(cursor, item_id, scope)
 

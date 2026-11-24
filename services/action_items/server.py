@@ -162,6 +162,8 @@ def action_item_move(
     Use the source task's current revision. The anchor's live position is resolved atomically, so
     after the page's last visible neighbor means after that neighbor, not the end of the entire queue.
     A stale source or unavailable anchor conflicts; reread before retrying.
+    Source and anchor must share the same Epic scope. Cross-scope moves return a conflict;
+    use the Action Items UI to explicitly change Epic membership.
     """
     return db.move(
         item_id,

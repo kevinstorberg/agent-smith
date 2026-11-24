@@ -8,16 +8,14 @@ from pydantic import ValidationError
 
 from services.action_items import db
 from services.api.app import app
-from services.db import get_connection
+from tests.action_item_queue_helpers import clear_action_items
 
 
 @pytest.fixture(autouse=True)
 def action_items_empty():
-    with get_connection() as connection, connection.cursor() as cursor:
-        cursor.execute("TRUNCATE action_items")
+    clear_action_items()
     yield
-    with get_connection() as connection, connection.cursor() as cursor:
-        cursor.execute("TRUNCATE action_items")
+    clear_action_items()
 
 
 @pytest.fixture

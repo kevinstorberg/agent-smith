@@ -12,6 +12,7 @@ from services.action_items import db as tasks
 from services.api.models.action_item_proposal import get_proposal
 from services.api.routers.action_item_proposals import router
 from services.db import get_connection
+from tests.action_item_queue_helpers import clear_action_items
 from services.meetings import db as meetings
 from services.meetings.config import SourceConfig
 from services.meetings.types import MeetingSummary
@@ -33,7 +34,7 @@ def empty_task_proposals():
         with get_connection() as conn, conn.cursor() as cursor:
             cursor.execute("DELETE FROM action_item_proposals")
             cursor.execute("DELETE FROM action_item_proposal_receipts")
-            cursor.execute("TRUNCATE action_items")
+            clear_action_items(cursor)
 
     clean()
     yield

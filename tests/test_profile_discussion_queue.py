@@ -227,7 +227,7 @@ def test_profile_discussion_queue_keeps_pre_scope_creation_payload_replays_compa
     with get_connection() as connection, connection.cursor() as cursor:
         cursor.execute(
             """INSERT INTO action_items(title,description,project_id,tags,status,sort_key,request_id,create_payload)
-            VALUES(%s,%s,%s,%s,%s,1,%s,%s) RETURNING id""",
+            VALUES(%s,%s,%s,%s,%s,NULL,%s,%s) RETURNING id""",
             (
                 payload["title"],
                 payload["description"],
@@ -239,6 +239,7 @@ def test_profile_discussion_queue_keeps_pre_scope_creation_payload_replays_compa
             ),
         )
         item_id = cursor.fetchone()[0]
+        cursor.execute("INSERT INTO action_item_queue_entries(action_item_id,sort_key) VALUES(%s,1)", (item_id,))
     current = db.get(item_id)
     assert db.create({**payload, "request_id": request_id}) == current
     assert "profile_id" not in current

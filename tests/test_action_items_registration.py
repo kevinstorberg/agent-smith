@@ -66,4 +66,5 @@ def test_action_items_seed_is_idempotent_and_tasks_never_become_harness_items():
             assert cursor.fetchone()[0] == 1
     finally:
         with get_connection() as connection, connection.cursor() as cursor:
+            cursor.execute("DELETE FROM action_item_queue_entries WHERE action_item_id=%s", (task["id"],))
             cursor.execute("DELETE FROM action_items WHERE id=%s", (task["id"],))

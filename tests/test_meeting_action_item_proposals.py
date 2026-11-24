@@ -519,9 +519,10 @@ async def test_actual_inventory_overflow_blocks_model_and_records_visible_failur
     monkeypatch.setattr(action_item_analysis, "analyze_action_items", forbidden)
     with get_connection() as conn, conn.cursor() as cursor:
         cursor.execute(
-            """INSERT INTO action_items(title,status,completed_at)
+            """WITH inserted AS (INSERT INTO action_items(title,status,completed_at)
                SELECT 'AIFLOW inventory '||number,'completed',clock_timestamp()
-               FROM generate_series(1,201) number"""
+               FROM generate_series(1,201) number RETURNING id)
+               INSERT INTO action_item_queue_entries(action_item_id) SELECT id FROM inserted"""
         )
     try:
         result = await generate(source)
@@ -534,6 +535,7 @@ async def test_actual_inventory_overflow_blocks_model_and_records_visible_failur
         assert status["proposal_count"] == 0 and proposal_rows(source) == []
     finally:
         with get_connection() as conn, conn.cursor() as cursor:
+            cursor.execute("DELETE FROM action_item_queue_entries WHERE action_item_id IN (SELECT id FROM action_items WHERE title LIKE 'AIFLOW inventory %')")
             cursor.execute(
                 "DELETE FROM action_items WHERE title LIKE 'AIFLOW inventory %'"
             )

@@ -9,7 +9,8 @@ from fastapi import (
     Request,
 )
 
-from services.action_items import db
+from services.action_items import db, queue_db
+from services.action_items.queue_contracts import EpicCreate, EpicPatch, EpicRemove, Membership, QueueMove
 from services.action_items.contracts import (
     Create,
     Delete,
@@ -76,6 +77,41 @@ def list_all(query: Query = Depends(_query)):
 @router.post("", status_code=201)
 def create(body: Create):
     return _call(db.create, body)
+
+
+@router.get("/queue")
+def grouped_queue(query: Query = Depends(_query)):
+    return _call(queue_db.list_queue, query)
+
+
+@router.post("/queue/move")
+def move_queue(body: QueueMove):
+    return _call(queue_db.move, body)
+
+
+@router.get("/epics")
+def list_epics():
+    return _call(queue_db.list_epics)
+
+
+@router.post("/epics", status_code=201)
+def create_epic(body: EpicCreate):
+    return _call(queue_db.create_epic, body)
+
+
+@router.patch("/epics/{epic_id}")
+def rename_epic(body: EpicPatch, epic_id: int = Path(gt=0)):
+    return _call(queue_db.rename_epic, epic_id, body)
+
+
+@router.delete("/epics/{epic_id}")
+def remove_epic(body: EpicRemove, epic_id: int = Path(gt=0)):
+    return _call(queue_db.remove_epic, epic_id, body)
+
+
+@router.post("/{item_id}/epic")
+def set_epic(body: Membership, item_id: int = Path(gt=0)):
+    return _call(queue_db.set_membership, item_id, body)
 
 
 @router.get("/projects")

@@ -9,13 +9,14 @@ from fastapi.testclient import TestClient
 from services.action_items import db
 from services.api.app import app
 from services.db import get_connection
+from tests.action_item_queue_helpers import clear_action_items
 
 
 @pytest.fixture(autouse=True)
 def catalog():
     def clear():
         with get_connection() as connection, connection.cursor() as cursor:
-            cursor.execute("TRUNCATE action_items, action_item_projects")
+            clear_action_items(cursor, include_projects=True)
 
     clear()
     yield
@@ -289,7 +290,7 @@ def test_rename_protects_large_assigned_queue_without_changing_item_dates(client
     project = create(client)
     with get_connection() as connection, connection.cursor() as cursor:
         cursor.execute(
-            "INSERT INTO action_items(title,project_id,sort_key) SELECT 'Task ' || value,%s,value FROM generate_series(1,1000) value",
+            "WITH inserted AS (INSERT INTO action_items(title,project_id) SELECT 'Task ' || value,%s FROM generate_series(1,1000) value RETURNING id) INSERT INTO action_item_queue_entries(action_item_id,sort_key) SELECT id,row_number() OVER(ORDER BY id) FROM inserted",
             (project["id"],),
         )
         cursor.execute(

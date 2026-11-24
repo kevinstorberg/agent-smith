@@ -14,7 +14,7 @@ from tests.test_action_items import action_items_empty as action_items_empty
 
 def state():
     with get_connection() as connection, connection.cursor() as cursor:
-        cursor.execute("SELECT id,sort_key,revision,updated_at FROM action_items WHERE deleted_at IS NULL AND status='open' ORDER BY sort_key,id")
+        cursor.execute("SELECT a.id,q.sort_key,a.revision,a.updated_at FROM action_items a JOIN action_item_queue_entries q ON q.action_item_id=a.id WHERE a.deleted_at IS NULL AND a.status='open' ORDER BY q.sort_key,a.id")
         rows = cursor.fetchall()
     assert [row[1] for row in rows] == list(range(1, len(rows) + 1))
     return rows
@@ -159,7 +159,7 @@ def test_action_items_database_constraints(assignment, value):
     task = db.create({"title": "Valid"})
     with pytest.raises(psycopg2.IntegrityError):
         with get_connection() as connection, connection.cursor() as cursor:
-            cursor.execute(f"UPDATE action_items SET {assignment}=%s WHERE id=%s", (value, task["id"]))
+            cursor.execute(f"UPDATE {'action_item_queue_entries' if assignment == 'sort_key' else 'action_items'} SET {assignment}=%s WHERE {'action_item_id' if assignment == 'sort_key' else 'id'}=%s", (value, task["id"]))
     assert db.get(task["id"]) == task
 
 
@@ -168,7 +168,7 @@ def test_action_items_rank_uniqueness_is_checked_at_commit():
     executed = False
     with pytest.raises(psycopg2.IntegrityError):
         with get_connection() as connection, connection.cursor() as cursor:
-            cursor.execute("UPDATE action_items SET sort_key=1 WHERE id=%s", (second["id"],))
+            cursor.execute("UPDATE action_item_queue_entries SET sort_key=1 WHERE action_item_id=%s", (second["id"],))
             executed = True
     assert executed
     assert [row[0] for row in state()] == [first["id"], second["id"]]
