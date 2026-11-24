@@ -152,3 +152,9 @@ def audit_cleanup(*patterns: str):
         clean_audit_rows(*patterns)
 
     return _clean
+
+
+def action_item_owner(label: str) -> str:
+    from uuid import NAMESPACE_URL, uuid5
+
+    return f"v2:{uuid5(NAMESPACE_URL, 'action-item-test:' + label)}"

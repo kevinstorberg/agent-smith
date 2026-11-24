@@ -16,7 +16,7 @@ from services.meetings import db as meetings
 from services.meetings.config import SourceConfig
 from services.meetings.types import MeetingSummary
 from services.action_items import proposals as action_items
-from tests.conftest import clean_meeting_rows
+from tests.conftest import action_item_owner, clean_meeting_rows
 from tests.test_proposal_decision_concurrency import (
     decide,
     race_with_held_master,
@@ -828,26 +828,25 @@ def test_publication_rechecks_expired_or_replaced_lease_inside_its_transaction(
     from services.meetings import action_item_db
 
     identities = [(source["provider"], source["account_key"])]
-    assert action_item_db.claim(identities, "original-worker")
+    assert action_item_db.claim(identities, action_item_owner("original-worker"))
     with get_connection() as conn, conn.cursor() as cursor:
         cursor.execute(
             "UPDATE meeting_action_item_runs SET claim_until=clock_timestamp()-interval '1 second' WHERE meeting_id=%s",
             (source["id"],),
         )
     if takeover:
-        assert action_item_db.claim(identities, "replacement-worker")
+        assert action_item_db.claim(identities, action_item_owner("replacement-worker"))
     with pytest.raises(meetings.ClaimLostError):
         action_items.stage_and_persist(
-            source, candidate(), lease_owner="original-worker"
+            source, candidate(), lease_owner=action_item_owner("original-worker")
         )
     assert action_items.decision_context()["total"] == 0
     assert tasks.list_items({"status": "all"})["total"] == 0
     if takeover:
-        assert (
-            action_item_db.get_record(source["id"])["claim_owner"]
-            == "replacement-worker"
-        )
+        assert action_item_db.get_record(source["id"])[
+            "claim_owner"
+        ] == action_item_owner("replacement-worker")
         proposal = action_items.stage_and_persist(
-            source, candidate(), lease_owner="replacement-worker"
+            source, candidate(), lease_owner=action_item_owner("replacement-worker")
         )
         assert proposal["status"] == "pending"
