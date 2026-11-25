@@ -84,15 +84,15 @@
   text-transform: none;
 }
 .action-items-index-page .action-item-grouped-table > thead th:first-child {
-  padding-inline: 4px;
+  padding-inline: 0;
 }
 .action-items-index-page
   .action-item-grouped-table
   > thead
   th:first-child
   .sortable-header-button {
-  flex-wrap: wrap;
-  gap: 0 4px;
+  flex-wrap: nowrap;
+  gap: 4px;
 }
 .action-items-index-page .action-item-row > td {
   padding: 12px 8px;
