@@ -207,7 +207,7 @@ for (const scope of ['action-items', 'discussion-topics'] as const) {
       });
       const labels =
         scope === 'action-items'
-          ? pairs.map(([name]) => name)
+          ? [...pairs.map(([name]) => name), 'Updated']
           : ['Priority', 'Title', 'Tags', 'Updated'];
       await expectSortableHeaderLayout(page, testInfo, {
         table: region.getByRole('table'),

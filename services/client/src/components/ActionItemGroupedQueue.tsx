@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { DragDropContext, Draggable, Droppable } from '@hello-pangea/dnd';
 import type {
   ActionItemEpicGroup,
@@ -26,6 +26,7 @@ function Columns() {
       <col className="action-priority-column" />
       <col />
       <col className="action-topics-column" />
+      <col className="action-due-column" />
       <col className="action-updated-column" />
       <col className="action-controls-column" />
     </colgroup>
@@ -70,13 +71,14 @@ function TaskEntry({
               queue={queue}
               onEdit={onEdit}
               showDueDate
+              showUpdated
               showMoveActions
               membership={<EpicMembershipControl queue={queue} item={item} />}
             />
           </tr>
           {queue.expandedId === item.id && (
             <tr className="evidence-row-expanded">
-              <td colSpan={5}>
+              <td colSpan={6}>
                 <ActionItemDescription
                   key={`${item.id}:${item.revision}`}
                   item={item}
@@ -96,11 +98,13 @@ function EpicEntry({
   index,
   queue,
   onEdit,
+  heading,
 }: {
   group: ActionItemEpicGroup;
   index: number;
   queue: GroupedQueue;
   onEdit: (item: ActionItemRow) => void;
+  heading: ReactNode;
 }) {
   const { epic } = group;
   const open = queue.isOpen(epic.id);
@@ -121,7 +125,7 @@ function EpicEntry({
             background: state.isDragging ? 'var(--surface-hover)' : undefined,
           }}
         >
-          <td colSpan={5}>
+          <td colSpan={6}>
             <section aria-label={`Epic ${epic.title}`}>
               <div className="action-item-epic-heading">
                 <div className="action-item-epic-identity">
@@ -184,21 +188,7 @@ function EpicEntry({
                     aria-label={`Action items in Epic ${epic.title}`}
                   >
                     <Columns />
-                    <thead className="visually-hidden">
-                      <tr>
-                        {[
-                          'Priority',
-                          'Title',
-                          'Project / Tags',
-                          'Due date',
-                          'Actions',
-                        ].map((label) => (
-                          <th key={label} scope="col">
-                            {label}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
+                    {heading}
                     <Droppable
                       droppableId={`epic:${epic.id}`}
                       type={`EPIC:${epic.id}`}
@@ -221,7 +211,7 @@ function EpicEntry({
                           {provided.placeholder}
                           {group.children.length === 0 && (
                             <tr>
-                              <td colSpan={5} className="epic-empty">
+                              <td colSpan={6} className="epic-empty">
                                 No matching action items in this Epic.
                               </td>
                             </tr>
@@ -254,6 +244,17 @@ export function ActionItemGroupedQueue({
   onEdit: (item: ActionItemRow) => void;
 }) {
   const current = queue.dataCurrent && !queue.criteriaPending && !queue.error;
+  const heading = (
+    <ActionItemQueueHead
+      sort={sort}
+      onSort={onSort}
+      current={current}
+      disabled={queue.freezeControls}
+      status={status}
+      showDueDate
+      showUpdated
+    />
+  );
   return (
     <>
       <span role="status" aria-live="polite" className="visually-hidden">
@@ -294,14 +295,7 @@ export function ActionItemGroupedQueue({
             aria-busy={!current && (queue.loading || !queue.error)}
           >
             <Columns />
-            <ActionItemQueueHead
-              sort={sort}
-              onSort={onSort}
-              current={current}
-              disabled={queue.freezeControls}
-              status={status}
-              showDueDate
-            />
+            {heading}
             <Droppable
               droppableId="action-items"
               type="ROOT"
@@ -325,6 +319,7 @@ export function ActionItemGroupedQueue({
                         index={index}
                         queue={queue}
                         onEdit={onEdit}
+                        heading={heading}
                       />
                     ),
                   )}

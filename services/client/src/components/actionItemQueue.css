@@ -68,6 +68,7 @@
   --action-priority-width: 9em;
   --action-topics-width: 18%;
   --action-updated-width: 13%;
+  --action-due-width: 13%;
   --action-controls-width: 278px;
 }
 .action-items-index-page .action-item-grouped-table .action-item-actions-icons {
@@ -150,7 +151,8 @@
   .action-items-index-page .epic-children tbody {
     display: block;
   }
-  .action-items-index-page .action-item-grouped-table > thead {
+  .action-items-index-page .action-item-grouped-table > thead,
+  .action-items-index-page .epic-children thead {
     display: table;
     width: 100%;
     table-layout: fixed;
@@ -179,11 +181,13 @@
   }
 }
 @media (max-width: 600px) {
-  .action-items-index-page .action-item-grouped-table > thead tr {
+  .action-items-index-page .action-item-grouped-table > thead tr,
+  .action-items-index-page .epic-children thead tr {
     display: flex;
     flex-wrap: wrap;
   }
-  .action-items-index-page .action-item-grouped-table > thead th {
+  .action-items-index-page .action-item-grouped-table > thead th,
+  .action-items-index-page .epic-children thead th {
     padding: 5px;
     width: auto;
   }

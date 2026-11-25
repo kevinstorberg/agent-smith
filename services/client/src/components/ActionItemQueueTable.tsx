@@ -117,7 +117,13 @@ export function ActionItemQueueTable({
                       <col className="action-priority-column" />
                       <col />
                       <col className="action-topics-column" />
-                      <col className="action-updated-column" />
+                      <col
+                        className={
+                          showDueDate
+                            ? 'action-due-column'
+                            : 'action-updated-column'
+                        }
+                      />
                       <col className="action-controls-column" />
                     </colgroup>
                     <ActionItemQueueHead

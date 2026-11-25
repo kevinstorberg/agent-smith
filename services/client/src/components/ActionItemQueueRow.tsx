@@ -93,6 +93,7 @@ export function ActionItemQueueCells({
   noun = 'action item',
   showProject = true,
   showDueDate = false,
+  showUpdated = !showDueDate,
   showMoveActions = false,
   membership,
 }: {
@@ -104,6 +105,7 @@ export function ActionItemQueueCells({
   noun?: string;
   showProject?: boolean;
   showDueDate?: boolean;
+  showUpdated?: boolean;
   showMoveActions?: boolean;
   membership?: ReactNode;
 }) {
@@ -130,7 +132,6 @@ export function ActionItemQueueCells({
   } = queue;
   return (
     <>
-      {' '}
       <td>
         {state.isDragging && snapshot?.project && (
           <span
@@ -208,18 +209,21 @@ export function ActionItemQueueCells({
           </span>
         ))}
       </td>
-      <td>
-        {showDueDate ? (
-          item.due_at ? (
+      {showDueDate && (
+        <td className="action-due-cell">
+          {item.due_at ? (
             <DateCell date={item.due_at} format="long" />
           ) : (
             'No due date'
-          )
-        ) : (
+          )}
+        </td>
+      )}
+      {showUpdated && (
+        <td className="action-updated-cell">
           <DateCell date={item.updated_at} />
-        )}
-      </td>
-      <td>
+        </td>
+      )}
+      <td className="action-controls-cell">
         <div
           className={`flex-row action-item-actions${showMoveActions ? ' action-item-actions-icons' : ''}`}
         >

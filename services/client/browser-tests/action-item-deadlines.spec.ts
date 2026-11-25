@@ -60,7 +60,8 @@ for (const sample of deadlineSamples) {
       ).toBeVisible();
       await expect(
         page.getByRole('columnheader', { name: 'Updated', exact: true }),
-      ).toHaveCount(0);
+      ).toBeVisible();
+      await expect(cells.nth(4)).toContainText('Feb 3');
       await expect(date).toHaveText(sample.local);
       await expect(cells.nth(1)).not.toContainText('Due');
       expect(

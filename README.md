@@ -279,7 +279,18 @@ same-Epic children. Mutations require current revisions and relevant membership 
 The existing task REST/MCP list/get responses remain flat and retain their exact fields;
 manual task priority flattens the group order. Existing task moves work within one sibling
 scope. A cross-Epic/root move conflicts instead of silently changing membership or moving
-other items; manage that change through the explicit Epic UI. Models do not assign Epics.
+other items; change membership explicitly through the Epic UI or MCP tools. Meeting analysis
+does not assign Epics.
+
+Agents can manage the same groups through `/mcp/action-items/`: `action_item_epic_list`,
+`action_item_epic_create`, `action_item_epic_rename`, and `action_item_epic_delete` manage
+Epic lifecycle; `action_item_set_epic` assigns, moves, or ungroups existing tasks without
+creating replacement tasks. `action_item_queue_list(filters={"status":"all"})` returns
+grouped tasks and the current revisions/cohorts needed for mutations. Refresh these snapshots
+after each change. `action_item_queue_move` reorders root groups or sibling tasks within
+an Epic; `action_item_move` also supports same-Epic task ordering. Epic creation requires
+a UUID `request_id`; replay the original input after an uncertain response. Removing an
+Epic preserves its tasks. These explicit agent operations do not run meeting analysis.
 
 The Epic migration moves global ordering into one queue-entry table while preserving task
 IDs, fields, creation receipts, timestamps, revisions, and profile discussion order. Stop

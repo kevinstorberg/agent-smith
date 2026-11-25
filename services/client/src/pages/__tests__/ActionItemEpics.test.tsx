@@ -60,6 +60,101 @@ beforeEach(() => {
 });
 
 describe('saved Action Item Epics', () => {
+  it('shows due and updated timestamps and sorts children without changing Epic membership', async () => {
+    const members = [
+      actionItem(2, {
+        title: 'Zulu work',
+        due_at: '2026-12-01T14:00:00Z',
+        updated_at: '2026-11-24T12:00:00Z',
+      }),
+      actionItem(3, {
+        title: 'Alpha work',
+        updated_at: '2026-11-25T12:00:00Z',
+      }),
+    ];
+    vi.mocked(api.actionItemQueue.list).mockImplementation(async (filters) => {
+      const children = [...members].sort((left, right) =>
+        filters?.sort === 'title'
+          ? left.title.localeCompare(right.title)
+          : filters?.sort === 'updated'
+            ? right.updated_at.localeCompare(left.updated_at)
+            : left.updated_at.localeCompare(right.updated_at),
+      );
+      return {
+        items: [
+          epicGroup(10, children),
+          ...queuePage({ items: [actionItem(4)], total: 1 }).items,
+        ],
+        total: 2,
+        matching_count: 3,
+      };
+    });
+    renderWithProviders(<ActionItemsIndexPage />, {
+      initialEntries: ['/action-items'],
+    });
+    const region = await screen.findByRole('region', { name: 'Epic Release' });
+    const table = within(region).getByRole('table', {
+      name: 'Action items in Epic Release',
+    });
+    const currentTable = () =>
+      screen.getByRole('table', { name: 'Action items in Epic Release' });
+    const titles = () =>
+      within(currentTable())
+        .getAllByRole('button', { name: /^(Zulu|Alpha) work$/ })
+        .map((button) => button.textContent?.replace(/^[⌄›]/, ''));
+    expect(
+      within(table).getByRole('columnheader', { name: 'Due date' }),
+    ).toBeVisible();
+    expect(
+      within(table).getByRole('columnheader', { name: 'Updated' }),
+    ).toBeVisible();
+    const zulu = within(table)
+      .getByRole('button', { name: 'Zulu work' })
+      .closest('tr')!;
+    expect(zulu.querySelector('.action-due-cell')).toHaveTextContent(
+      'December',
+    );
+    expect(zulu.querySelector('.action-updated-cell')).toHaveTextContent(
+      'Nov 24',
+    );
+
+    await waitFor(() =>
+      expect(
+        within(currentTable()).getByRole('button', { name: 'Title' }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(
+      within(currentTable()).getByRole('button', { name: 'Title' }),
+    );
+    await waitFor(() =>
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sort: 'title' }),
+      ),
+    );
+    await waitFor(() => expect(titles()).toEqual(['Alpha work', 'Zulu work']));
+    fireEvent.click(
+      within(currentTable()).getByRole('button', { name: 'Updated' }),
+    );
+    await waitFor(() =>
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sort: 'updated' }),
+      ),
+    );
+    fireEvent.click(
+      within(currentTable()).getByRole('button', { name: 'Updated' }),
+    );
+    await waitFor(() => expect(titles()).toEqual(['Zulu work', 'Alpha work']));
+    expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort: 'updated_asc' }),
+    );
+    expect(
+      screen.getByRole('button', { name: 'Task 4' }).closest('section'),
+    ).toBeNull();
+    expect(api.actionItemQueue.move).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.setEpic).not.toHaveBeenCalled();
+    expect(api.actionItems.update).not.toHaveBeenCalled();
+  });
+
   it('counts root groups separately and displays complete matching children with their sibling ranks', async () => {
     const group = epicGroup(10, [
       actionItem(2, { priority: 77 }),

@@ -240,12 +240,16 @@ for (const collapsed of [false, true]) {
       ...queuePage({ items: [actionItem(4)], total: 1 }).items,
     ];
     const writes: ActionItemQueueMove[] = [];
+    const keyboardRefresh = deferred<void>();
+    let keyboardRefreshPending = false;
     fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
-    fixtureAPI.get('/api/action-items/queue', () => ({
-      items: roots,
-      total: 3,
-      matching_count: 4,
-    }));
+    fixtureAPI.get('/api/action-items/queue', async () => {
+      if (writes.length === 1) {
+        keyboardRefreshPending = true;
+        await keyboardRefresh.promise;
+      }
+      return { items: roots, total: 3, matching_count: 4 };
+    });
     fixtureAPI.mock(
       'POST',
       '/api/action-items/queue/move',
@@ -278,14 +282,32 @@ for (const collapsed of [false, true]) {
       name: 'Reorder Epic Release',
       exact: true,
     });
-    await handle.focus();
-    await page.keyboard.press('Space');
-    await page.keyboard.press('ArrowUp');
-    await page.keyboard.press('Space');
-    await expect.poll(() => writes.length).toBe(1);
-    expect(writes[0]).toMatchObject({
-      before: { kind: 'item', id: 1, expected_revision: 1 },
-    });
+    try {
+      await handle.focus();
+      await page.keyboard.press('Space');
+      await page.keyboard.press('ArrowUp');
+      await page.keyboard.press('Space');
+      await expect.poll(() => writes.length).toBe(1);
+      expect(writes[0]).toMatchObject({
+        before: { kind: 'item', id: 1, expected_revision: 1 },
+      });
+      await expect.poll(() => keyboardRefreshPending).toBe(true);
+      await expect(handle).toBeDisabled();
+    } finally {
+      keyboardRefresh.resolve();
+    }
+    await expect
+      .poll(() =>
+        page
+          .locator(
+            '.action-item-grouped-table > tbody > tr[data-rfd-draggable-id]',
+          )
+          .evaluateAll((rows) =>
+            rows.map((row) => row.getAttribute('data-rfd-draggable-id')),
+          ),
+      )
+      .toEqual(['epic:10', 'item:1', 'item:4']);
+    await expect(handle).toBeEnabled();
     const target = page.getByRole('button', {
       name: 'Reorder Task 4',
       exact: true,
@@ -303,16 +325,23 @@ for (const collapsed of [false, true]) {
       from!.y + from!.height / 2 + 8,
       { steps: 4 },
     );
+    await expect(region.locator('xpath=ancestor::tr[1]')).toHaveCSS(
+      'position',
+      'fixed',
+    );
     const targetRow = target.locator('xpath=ancestor::tr[1]');
     await targetRow.scrollIntoViewIfNeeded();
     const to = await targetRow.boundingBox();
     expect(to).not.toBeNull();
-    await page.mouse.move(
-      to!.x + 30,
-      Math.min(page.viewportSize()!.height - 10, to!.y + to!.height - 8),
-      { steps: 20 },
+    // Auto-scroll can move the list away from a pointer held near its bottom edge.
+    await page.mouse.move(to!.x + 30, to!.y + to!.height * 0.75, { steps: 20 });
+    await expect(page.locator('[id^="rfd-announcement-"]')).toHaveText(
+      /You have moved the item from position 1\s+to position 3/,
     );
     await page.mouse.up();
+    await expect(page.locator('[id^="rfd-announcement-"]')).toHaveText(
+      /You have dropped the item\.\s+You have moved the item from position 1\s+to position 3/,
+    );
     await expect.poll(() => writes.length).toBe(2);
     expect(writes[1]).toMatchObject({
       after: { kind: 'item', id: 4, expected_revision: 1 },
@@ -323,6 +352,68 @@ for (const collapsed of [false, true]) {
     await expectDocumentContained(page);
   });
 }
+
+test('Epic headers sort child rows and show updated timestamps while preserving membership', async ({
+  page,
+  fixtureAPI,
+}) => {
+  const members = [
+    actionItem(2, { title: 'Zulu work', updated_at: '2026-11-24T12:00:00Z' }),
+    actionItem(3, { title: 'Alpha work', updated_at: '2026-11-25T12:00:00Z' }),
+  ];
+  fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
+  fixtureAPI.get('/api/action-items/queue', ({ url }: APIRequest) => {
+    const sort = url.searchParams.get('sort');
+    const children = [...members].sort((left, right) =>
+      sort === 'title'
+        ? left.title.localeCompare(right.title)
+        : sort === 'updated'
+          ? right.updated_at.localeCompare(left.updated_at)
+          : left.updated_at.localeCompare(right.updated_at),
+    );
+    return {
+      items: [
+        epicGroup(10, children),
+        ...queuePage({ items: [actionItem(4)], total: 1 }).items,
+      ],
+      total: 2,
+      matching_count: 3,
+    };
+  });
+  await page.goto('/action-items');
+  const region = page.getByRole('region', {
+    name: 'Epic Release',
+    exact: true,
+  });
+  const table = region.getByRole('table', {
+    name: 'Action items in Epic Release',
+    exact: true,
+  });
+  const titles = table.locator('.action-item-title');
+  await expect(
+    table.getByRole('columnheader', { name: 'Updated', exact: true }),
+  ).toBeVisible();
+  await expect(table.locator('.action-updated-cell').first()).toContainText(
+    'Nov 24',
+  );
+  await table.getByRole('button', { name: 'Title', exact: true }).click();
+  await expect(titles).toHaveText(['›Alpha work', '›Zulu work']);
+  await table.getByRole('button', { name: 'Updated', exact: true }).click();
+  await expect(
+    table.getByRole('columnheader', { name: 'Updated', exact: true }),
+  ).toHaveAttribute('aria-sort', 'descending');
+  await table.getByRole('button', { name: 'Updated', exact: true }).click();
+  await expect(titles).toHaveText(['›Zulu work', '›Alpha work']);
+  await expect(
+    region.getByRole('button', { name: 'Task 4', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Task 4', exact: true }),
+  ).toBeVisible();
+  expect(fixtureAPI.requests.filter((entry) => entry.method !== 'GET')).toEqual(
+    [],
+  );
+});
 
 test('child keyboard ordering uses only its complete parent cohort and Escape makes no write', async ({
   page,

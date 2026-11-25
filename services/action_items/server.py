@@ -11,7 +11,7 @@ bootstrap()
 
 from mcp.types import ToolAnnotations
 
-from services.action_items import db
+from services.action_items import db, queue_db
 from services.action_items.contracts import (
     Contract,
     Create,
@@ -21,6 +21,15 @@ from services.action_items.contracts import (
     PositiveInt,
     ProjectCreate,
     Query,
+)
+from services.action_items.queue_contracts import (
+    EntryReference,
+    EpicCreate,
+    EpicPatch,
+    EpicReference,
+    EpicRemove,
+    Membership,
+    QueueMove,
 )
 from services.mcp_contracts import ContractMCP
 
@@ -45,6 +54,22 @@ class ProjectInput(Contract):
     project_id: PositiveInt
 
 
+class QueueInput(Contract):
+    filters: Query | None = None
+
+
+class EpicRenameInput(EpicPatch):
+    epic_id: PositiveInt
+
+
+class EpicDeleteInput(EpicRemove):
+    epic_id: PositiveInt
+
+
+class MembershipInput(ItemInput, Membership):
+    pass
+
+
 class ActionItemsMCP(ContractMCP):
     def __init__(self, name: str) -> None:
         super().__init__(name, _INPUTS)
@@ -62,6 +87,13 @@ _INPUTS = {
     "action_item_project_list": Contract,
     "action_item_project_create": ProjectCreate,
     "action_item_project_delete": ProjectInput,
+    "action_item_queue_list": QueueInput,
+    "action_item_queue_move": QueueMove,
+    "action_item_epic_list": Contract,
+    "action_item_epic_create": EpicCreate,
+    "action_item_epic_rename": EpicRenameInput,
+    "action_item_epic_delete": EpicDeleteInput,
+    "action_item_set_epic": MembershipInput,
 }
 
 
@@ -163,7 +195,7 @@ def action_item_move(
     after the page's last visible neighbor means after that neighbor, not the end of the entire queue.
     A stale source or unavailable anchor conflicts; reread before retrying.
     Source and anchor must share the same Epic scope. Cross-scope moves return a conflict;
-    use the Action Items UI to explicitly change Epic membership.
+    use action_item_set_epic to explicitly change Epic membership.
     """
     return db.move(
         item_id,
@@ -191,6 +223,109 @@ def action_item_project_delete(project_id: PositiveInt) -> dict[str, Any]:
     return db.delete_project(project_id)
 
 
+def action_item_queue_list(filters: Query | None = None) -> dict[str, Any]:
+    """Read grouped Action Items, Epic membership and current structural revisions before changing groups or order.
+
+    filters accepts the same fields as action_item_list; status defaults to open.
+    Use status=all to inspect completed members too. Pagination counts root groups,
+    and each returned Epic includes all matching children without splitting the Epic.
+    Epic revision/cohort and child revisions are live snapshots; reread after each mutation.
+    Sort applies within each Epic as well as to root groups; manual preserves saved sibling order.
+    """
+    return queue_db.list_queue(filters)
+
+
+def action_item_queue_move(
+    source: EntryReference,
+    parent: EpicReference | None = None,
+    before: EntryReference | None = None,
+    after: EntryReference | None = None,
+) -> dict[str, Any]:
+    """Reorder a root Epic/standalone task or reorder tasks WITHIN one Epic, using fresh queue snapshots.
+
+    Supply exactly one before or after anchor, including its current expected_revision.
+    Epic references also require cohort. For Epic children, parent must identify their shared Epic.
+    Source and anchor must share the same parent; use action_item_set_epic for membership changes.
+    Stale source, anchor or parent snapshots conflict; reread action_item_queue_list before retrying.
+    """
+    return queue_db.move(
+        QueueMove(source=source, parent=parent, before=before, after=after)
+    )
+
+
+def action_item_epic_list() -> dict[str, Any]:
+    """List all live Epics, including empty groups, with their current revisions, cohorts and member counts.
+
+    Use action_item_queue_list with filters.status=all to inspect member tasks and their ordering.
+    """
+    return queue_db.list_epics()
+
+
+def action_item_epic_create(
+    title: str,
+    request_id: str,
+    item_id: PositiveInt | None = None,
+    membership: Membership | None = None,
+) -> dict[str, Any]:
+    """Create an Epic, optionally grouping one existing Action Item in the same transaction.
+
+    request_id must be a UUID; replay the original input after uncertain failures to avoid duplicates.
+    For inline grouping supply both item_id and membership, with the task's current expected_revision
+    and expected_parent snapshot when already grouped; membership.destination must be omitted.
+    Empty Epics are supported. Use action_item_set_epic to group additional existing tasks.
+    """
+    return queue_db.create_epic(
+        EpicCreate(
+            title=title, request_id=request_id, item_id=item_id, membership=membership
+        )
+    )
+
+
+def action_item_epic_rename(
+    epic_id: PositiveInt, title: str, expected_revision: PositiveInt
+) -> dict[str, Any]:
+    """Rename an Epic using its current revision from action_item_epic_list or action_item_queue_list."""
+    return queue_db.rename_epic(
+        epic_id, EpicPatch(title=title, expected_revision=expected_revision)
+    )
+
+
+def action_item_epic_delete(
+    epic_id: PositiveInt, expected_revision: PositiveInt, cohort: str
+) -> dict[str, Any]:
+    """Remove an Epic and unwrap its members into the root queue, preserving every Action Item.
+
+    Supply the current Epic expected_revision and cohort from a fresh Epic/queue list.
+    Changed membership or ordering conflicts rather than unwrapping an outdated selection.
+    """
+    return queue_db.remove_epic(
+        epic_id, EpicRemove(expected_revision=expected_revision, cohort=cohort)
+    )
+
+
+def action_item_set_epic(
+    item_id: PositiveInt,
+    expected_revision: PositiveInt,
+    expected_parent: EpicReference | None = None,
+    destination: EpicReference | None = None,
+) -> dict[str, Any]:
+    """Assign or move an existing Action Item to an Epic, or ungroup it with destination=null.
+
+    Read action_item_queue_list first. Supply the task's expected_revision and its expected_parent
+    snapshot when grouped. Destination and parent references require id, expected_revision and cohort.
+    Ungrouped source tasks use expected_parent=null. Membership changes return the updated task;
+    reread Epic snapshots before the next mutation because membership changes their revisions.
+    """
+    return queue_db.set_membership(
+        item_id,
+        Membership(
+            expected_revision=expected_revision,
+            expected_parent=expected_parent,
+            destination=destination,
+        ),
+    )
+
+
 def create_server() -> ActionItemsMCP:
     server = ActionItemsMCP("action-items - create and manage a shared to-do list")
     for function in (
@@ -203,13 +338,31 @@ def create_server() -> ActionItemsMCP:
         action_item_project_list,
         action_item_project_create,
         action_item_project_delete,
+        action_item_queue_list,
+        action_item_queue_move,
+        action_item_epic_list,
+        action_item_epic_create,
+        action_item_epic_rename,
+        action_item_epic_delete,
+        action_item_set_epic,
     ):
         annotation = (
             _READ
-            if function in (action_item_list, action_item_get, action_item_project_list)
+            if function
+            in (
+                action_item_list,
+                action_item_get,
+                action_item_project_list,
+                action_item_queue_list,
+                action_item_epic_list,
+            )
             else _WRITE
         )
-        if function in (action_item_delete, action_item_project_delete):
+        if function in (
+            action_item_delete,
+            action_item_project_delete,
+            action_item_epic_delete,
+        ):
             annotation = ToolAnnotations(readOnlyHint=False, destructiveHint=True)
         server.add_tool(function, annotations=annotation)
     return server

@@ -80,8 +80,26 @@ _TOOL_ACTIONS = {
         }.items()
     },
     "action-items": {
-        f"action_item_{action}": ("action-items", action)
-        for action in ("list", "get", "create", "update", "delete", "move")
+        **{
+            f"action_item_{action}": ("action-items", action)
+            for action in ("list", "get", "create", "update", "delete", "move")
+        },
+        **{
+            f"action_item_project_{action}": ("action-items", action)
+            for action in ("list", "create", "delete")
+        },
+        **{
+            f"action_item_epic_{name}": ("action-items", action)
+            for name, action in {
+                "list": "list",
+                "create": "create",
+                "rename": "update",
+                "delete": "delete",
+            }.items()
+        },
+        "action_item_queue_list": ("action-items", "list"),
+        "action_item_queue_move": ("action-items", "move"),
+        "action_item_set_epic": ("action-items", "update"),
     },
     "plans": {action: ("plans", action) for action in ("save", "get", "search")},
     "graphs": {"run_graph": ("graphs", "run")},
