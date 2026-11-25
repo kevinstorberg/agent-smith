@@ -159,7 +159,9 @@ test('Epics support create, singleton membership, collapse, rename, and removal 
   await page.getByRole('button', { name: 'Save Epic', exact: true }).click();
   const group = page.getByRole('region', { name: 'Epic Launch', exact: true });
   await expect(group).toBeVisible();
-  await expect(group.getByText('0 items', { exact: true })).toBeVisible();
+  await expect(
+    group.getByText('Showing 0 of 0 action items', { exact: true }),
+  ).toBeVisible();
   await openItemActions(page, 'Task 1');
   await page
     .getByRole('button', { name: 'Move Task 1 to Epic', exact: true })
@@ -179,7 +181,9 @@ test('Epics support create, singleton membership, collapse, rename, and removal 
   await expect(
     group.getByRole('button', { name: 'Task 1', exact: true }),
   ).toBeVisible();
-  await expect(group.getByText('1 item', { exact: true })).toBeVisible();
+  await expect(
+    group.getByText('Showing 1 of 1 action items', { exact: true }),
+  ).toBeVisible();
   await group.getByRole('button', { name: 'Launch', exact: true }).click();
   await expect(
     group.getByRole('button', { name: 'Task 1', exact: true }),
@@ -615,7 +619,7 @@ test('filtered whole-root edge movement preserves hidden membership and reports 
     name: 'Epic Release',
     exact: true,
   });
-  await expect(region.getByText('1 of 8 matching')).toBeVisible();
+  await expect(region.getByText('Showing 1 of 8 action items')).toBeVisible();
   await openItemActions(page, 'Task 2');
   await expect(
     region.getByRole('button', {

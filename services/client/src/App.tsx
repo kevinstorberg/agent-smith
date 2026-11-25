@@ -13,6 +13,7 @@ import { EvalDetailPage } from './pages/EvalDetailPage';
 import { PlansIndexPage } from './pages/PlansIndexPage';
 import { PlanDetailPage } from './pages/PlanDetailPage';
 import { ActionItemsIndexPage } from './pages/ActionItemsIndexPage';
+import { EpicsIndexPage } from './pages/EpicsIndexPage';
 import { ActionItemDetailPage } from './pages/ActionItemDetailPage';
 import { ProjectsIndexPage } from './pages/ProjectsIndexPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
@@ -108,6 +109,7 @@ export default function App() {
             />
             <Route path="/memory" element={<MemoryPage />} />
             <Route path="/action-items" element={<ActionItemsIndexPage />} />
+            <Route path="/action-items/epics" element={<EpicsIndexPage />} />
             <Route
               path="/action-items/proposals"
               element={<ActionItemProposalsIndexPage />}

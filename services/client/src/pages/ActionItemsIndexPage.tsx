@@ -150,6 +150,7 @@ export function ActionItemsIndexPage() {
           >
             Proposed action items
           </ButtonLink>
+          <ButtonLink to="/action-items/epics">Manage Epics</ButtonLink>
           <NewEpicControl queue={queue} />
           <Link
             className="btn btn-primary"
