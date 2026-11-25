@@ -1,18 +1,27 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, fireEvent, waitFor, within } from '@testing-library/react';
+import {
+  act,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { ActionItemProposalDetailPage } from '../ActionItemProposalDetailPage';
 import { actionItemProposal } from './actionItemProposalFixture';
+import { epicGroup } from './actionItemEpicFixture';
+import { epicReference } from '../../utils/actionItemEpics';
 
 const mockNavigate = vi.fn();
 const mockNotify = vi.fn();
+let routeId = '1';
 
 vi.mock('react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router')>();
   return {
     ...actual,
     useNavigate: () => mockNavigate,
-    useParams: () => ({ id: '1' }),
+    useParams: () => ({ id: routeId }),
   };
 });
 
@@ -32,6 +41,7 @@ vi.mock('../../context/useNotification', async () => {
 
 vi.mock('../../api', () => ({
   api: {
+    actionItemEpics: { list: vi.fn() },
     actionItemProposals: {
       get: vi.fn(),
       approve: vi.fn(),
@@ -49,6 +59,8 @@ const mockReject = api.actionItemProposals.reject as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  routeId = '1';
+  vi.mocked(api.actionItemEpics.list).mockResolvedValue({ items: [] });
   mockGet.mockResolvedValue(actionItemProposal());
   mockApprove.mockImplementation(async () => {
     const result = {
@@ -68,6 +80,159 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('ActionItemProposalDetailPage', () => {
+  it('restores focus to the heading when a canonical conflict disables approval', async () => {
+    const proposal = actionItemProposal();
+    mockGet.mockResolvedValueOnce(proposal).mockResolvedValue({
+      ...proposal,
+      target_stale: true,
+      current_target: { ...proposal.current_target, revision: 4 },
+    });
+    mockApprove.mockRejectedValueOnce(new Error('Changed during review'));
+    renderWithProviders(<ActionItemProposalDetailPage />);
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    approve.focus();
+    fireEvent.click(approve);
+    await screen.findByText(/Changed during review/);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled(),
+    );
+    expect(approve).toBeDisabled();
+    expect(screen.getByRole('heading', { name: proposal.title })).toHaveFocus();
+  });
+
+  it('resets the destination on proposal navigation and ignores an earlier in-flight completion', async () => {
+    const first = actionItemProposal({
+      action: 'create',
+      current_parent: null,
+      current_target: null,
+      base_version: null,
+      target_id: null,
+    });
+    let second = actionItemProposal({
+      id: 2,
+      title: 'Create: Another task',
+      target_name: 'Another task',
+      action: 'create',
+      current_parent: null,
+      current_target: null,
+      base_version: null,
+      target_id: null,
+    });
+    const destination = epicGroup(10, []).epic;
+    const resolve: ((value: typeof first) => void)[] = [];
+    mockGet.mockImplementation(async (id: number) =>
+      id === 1 ? first : second,
+    );
+    mockApprove.mockImplementation(
+      () => new Promise((done) => resolve.push(done)),
+    );
+    vi.mocked(api.actionItemEpics.list).mockResolvedValue({
+      items: [destination],
+    });
+    const view = renderWithProviders(<ActionItemProposalDetailPage />);
+    await screen.findByRole('option', { name: destination.title });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    routeId = '2';
+    view.rerender(<ActionItemProposalDetailPage />);
+    await screen.findByRole('heading', { name: second.title });
+    expect(screen.getByRole('combobox')).toHaveDisplayValue('No Epic');
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(mockApprove.mock.calls).toEqual([
+      [
+        1,
+        {
+          placement: {
+            expected_parent: null,
+            destination: epicReference(destination),
+          },
+        },
+      ],
+      [2],
+    ]);
+    const readCount = mockGet.mock.calls.length;
+    await act(async () =>
+      resolve[0]({
+        ...first,
+        status: 'approved',
+        applied_ref: { action_item_id: 35 },
+      }),
+    );
+    expect(mockGet).toHaveBeenCalledTimes(readCount);
+    expect(mockNotify).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+    expect(screen.getByRole('combobox')).toHaveDisplayValue('No Epic');
+    second = {
+      ...second,
+      status: 'approved',
+      applied_ref: { action_item_id: 36 },
+    };
+    await act(async () => resolve[1](second));
+    expect(
+      await screen.findByRole('link', { name: 'Open saved action item' }),
+    ).toHaveAttribute('href', '/action-items/36');
+  });
+
+  it('places an accepted create into an Epic and locks decisions through canonical refresh', async () => {
+    const proposal = actionItemProposal({
+      action: 'create',
+      target_id: null,
+      base_version: null,
+      current_target: null,
+      current_parent: null,
+    });
+    const destination = epicGroup(10, []).epic;
+    const approved = {
+      ...proposal,
+      status: 'approved' as const,
+      applied_ref: { action_item_id: 35 },
+    };
+    let resolveApproval!: (value: typeof approved) => void;
+    let resolveRefresh!: (value: typeof approved) => void;
+    mockGet.mockResolvedValueOnce(proposal).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+    mockApprove.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveApproval = resolve;
+        }),
+    );
+    vi.mocked(api.actionItemEpics.list).mockResolvedValue({
+      items: [destination],
+    });
+    renderWithProviders(<ActionItemProposalDetailPage />);
+    await screen.findByRole('option', { name: destination.title });
+    fireEvent.change(screen.getByRole('combobox', { name: /Epic for/ }), {
+      target: { value: '10' },
+    });
+    const approve = screen.getByRole('button', { name: 'Approve' });
+    approve.focus();
+    fireEvent.click(approve);
+    fireEvent.click(approve);
+    expect(mockApprove).toHaveBeenCalledExactlyOnceWith(1, {
+      placement: {
+        expected_parent: null,
+        destination: epicReference(destination),
+      },
+    });
+    await act(async () => resolveApproval(approved));
+    await waitFor(() => expect(resolveRefresh).toBeDefined());
+    expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Delete proposal' }),
+    ).toBeDisabled();
+    expect(screen.getByRole('combobox')).toBeDisabled();
+    await act(async () => resolveRefresh(approved));
+    await screen.findByRole('link', { name: 'Open saved action item' });
+    expect(screen.getByRole('heading', { name: proposal.title })).toHaveFocus();
+    expect(mockApprove).toHaveBeenCalledTimes(1);
+  });
+
   it.each([7, null])(
     'preserves replaced history with replacement reference %s',
     async (replacement) => {

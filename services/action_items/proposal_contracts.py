@@ -4,7 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from services.action_items.contracts import Create, Patch, PositiveInt
+from services.action_items.contracts import Contract, Create, Patch, PositiveInt
+from services.action_items.queue_contracts import EpicReference
 from services.meetings.outputs import Evidence
 
 TASK_FIELDS = frozenset({"title", "description", "project", "tags", "status", "due_at"})
@@ -13,6 +14,15 @@ MAX_CONTEXT_ITEMS = 200
 
 class ActionItemContextTooLarge(ValueError):
     pass
+
+
+class ProposalPlacement(Contract):
+    expected_parent: EpicReference | None = None
+    destination: EpicReference
+
+
+class ProposalApprove(Contract):
+    placement: ProposalPlacement | None = None
 
 
 class ActionItemCandidate(BaseModel):

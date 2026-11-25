@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Path, Query
 
 from services.action_items import proposals
+from services.action_items.proposal_contracts import ProposalApprove
 from services.api.models.action_item_proposal import (
     PROPOSAL_SORTS,
     ACTION_ITEM_PROPOSAL_STATUSES,
@@ -58,8 +59,10 @@ def get_one(proposal_id: int = Path(gt=0)):
 
 
 @router.post("/{proposal_id}/approve")
-def approve(proposal_id: int = Path(gt=0)):
-    return resolve_proposal(proposals.promote_proposal, proposal_id)
+def approve(body: ProposalApprove | None = None, proposal_id: int = Path(gt=0)):
+    return resolve_proposal(
+        lambda key: proposals.promote_proposal(key, body), proposal_id
+    )
 
 
 @router.post("/{proposal_id}/reject")

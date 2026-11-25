@@ -20,6 +20,35 @@ beforeEach(() => {
 });
 
 describe('Action Item proposal review', () => {
+  it('sends the reviewed Epic receipts in the approval request without separate membership writes', async () => {
+    globalThis.fetch = mockFetch({});
+    const placement = {
+      expected_parent: {
+        id: 4,
+        expected_revision: 6,
+        cohort: `v1:${'a'.repeat(64)}`,
+      },
+      destination: {
+        id: 8,
+        expected_revision: 3,
+        cohort: `v1:${'b'.repeat(64)}`,
+      },
+    };
+    await api.actionItemProposals.approve(119, { placement });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    const [url, options] = vi.mocked(globalThis.fetch).mock.calls[0];
+    expect(url).toBe('/api/action-item-proposals/119/approve');
+    expect(options?.method).toBe('POST');
+    expect(JSON.parse(String(options?.body))).toEqual({ placement });
+  });
+
+  it('keeps ordinary approval compatible with its empty request body', async () => {
+    globalThis.fetch = mockFetch({});
+    await api.actionItemProposals.approve(119);
+    const [, options] = vi.mocked(globalThis.fetch).mock.calls[0];
+    expect(JSON.parse(String(options?.body))).toEqual({});
+  });
+
   it('bounds decisions and recovery reads using the existing Action Item timeout', async () => {
     globalThis.fetch = mockFetch({});
     const timeout = vi.spyOn(AbortSignal, 'timeout');

@@ -13,6 +13,10 @@ import type {
   MeetingActionItemProposals,
 } from '../src/api';
 
+test.beforeEach(({ fixtureAPI }) => {
+  fixtureAPI.get('/api/action-items/epics', { items: [] });
+});
+
 function compactCreateProposals(): ActionItemProposal[] {
   return [
     {

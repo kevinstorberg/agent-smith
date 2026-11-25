@@ -8,11 +8,16 @@ from uuid import UUID, uuid5
 from psycopg2.errors import UniqueViolation
 from psycopg2.extras import Json, RealDictCursor
 
-from services.action_items import db as tasks
+from services.action_items import db as tasks, queue_db
 from services.action_items.contracts import Create
 from services.api.models.action_item_proposal import ActionItemProposalModel
 from services.db import get_connection
-from services.action_items.proposal_contracts import ActionItemCandidate, TASK_FIELDS
+from services.action_items.proposal_contracts import (
+    ActionItemCandidate,
+    ProposalApprove,
+    ProposalPlacement,
+    TASK_FIELDS,
+)
 from services.proposals.decisions import decision, record_decision
 from services.proposals.errors import DuplicateProposalError, ProposalConflictError
 
@@ -334,7 +339,7 @@ def reserve_dismissal(cursor, proposal: dict) -> dict:
     return payload
 
 
-def promote(cursor, proposal: dict) -> dict:
+def promote(cursor, proposal: dict, placement: ProposalPlacement | None = None) -> dict:
     payload = _payload(cursor, proposal["id"])
     if _was_dismissed(cursor, payload["decision_key"]):
         raise ProposalConflictError(
@@ -350,6 +355,21 @@ def promote(cursor, proposal: dict) -> dict:
                 "The proposed project changed or was deleted. Generate a new proposal."
             ) from None
     try:
+        membership_change = None
+        if placement is not None:
+            if proposal["action"] == "update":
+                tasks._live(
+                    cursor,
+                    proposal["target_id"],
+                    tasks._Scope(None),
+                    proposal["base_version"],
+                )
+            membership_change = queue_db.validate_membership(
+                cursor,
+                proposal["target_id"],
+                placement.expected_parent,
+                placement.destination,
+            )
         if proposal["action"] == "create":
             if _duplicate_task(cursor, changes["title"], changes["project"]):
                 raise ProposalConflictError(
@@ -365,9 +385,18 @@ def promote(cursor, proposal: dict) -> dict:
                 {**changes, "expected_revision": proposal["base_version"]},
                 conn=cursor.connection,
             )
+        if membership_change is not None:
+            queue_db.apply_membership(cursor, task, membership_change)
     except (tasks.Conflict, tasks.NotFound) as error:
         raise ProposalConflictError(str(error)) from None
-    return {"action_item_id": task["id"]}
+    return {
+        "action_item_id": task["id"],
+        **(
+            {"placement": placement.model_dump(mode="json")}
+            if placement is not None
+            else {}
+        ),
+    }
 
 
 def review_details(proposals: list[dict]) -> list[dict]:
@@ -377,6 +406,7 @@ def review_details(proposals: list[dict]) -> list[dict]:
     if len(ids) > 100 or any(type(key) is not int or key <= 0 for key in ids):
         raise ValueError("Review details require at most 100 positive proposal IDs")
     with get_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cursor:
+        cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
         cursor.execute(
             """SELECT payload.proposal_id, payload.before_snapshot, payload.changes,
                       coalesce(meeting.available, false) AS source_available,
@@ -394,6 +424,14 @@ def review_details(proposals: list[dict]) -> list[dict]:
             (ids,),
         )
         details = {row["proposal_id"]: dict(row) for row in cursor.fetchall()}
+        parents = queue_db.parent_snapshots(
+            cursor,
+            [
+                proposal["target_id"]
+                for proposal in proposals
+                if proposal["action"] == "update"
+            ],
+        )
     if set(ids) != details.keys():
         raise ProposalConflictError(
             "An Action Item proposal payload is missing; refresh before reviewing"
@@ -405,6 +443,7 @@ def review_details(proposals: list[dict]) -> list[dict]:
         result.append(
             {
                 **proposal,
+                "current_parent": parents.get(proposal["target_id"]),
                 **{
                     key: payload[key]
                     for key in (
@@ -483,11 +522,19 @@ def _record_decision(
     )
 
 
-def promote_proposal(proposal_id: int) -> dict:
+def promote_proposal(
+    proposal_id: int, payload: ProposalApprove | dict | None = None
+) -> dict:
+    request = ProposalApprove.model_validate({} if payload is None else payload)
+    placement = request.placement.model_dump(mode="json") if request.placement else None
     with _decision(proposal_id, replay_status="approved") as (cursor, proposal):
         if proposal["status"] == "approved":
+            if (proposal["applied_ref"] or {}).get("placement") != placement:
+                raise ProposalConflictError(
+                    "This proposal was approved with a different Epic placement. Replay the original approval request."
+                )
             return ActionItemProposalModel.serialize_timestamps(proposal)
-        applied = promote(cursor, proposal)
+        applied = promote(cursor, proposal, request.placement)
         return _record_decision(cursor, proposal_id, "approved", applied)
 
 

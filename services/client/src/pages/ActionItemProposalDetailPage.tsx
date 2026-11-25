@@ -1,8 +1,13 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { api } from '../api';
 import { ActionItemProposalContent } from '../components/ActionItemProposalContent';
 import { ActionItemProposalSupersession } from '../components/ActionItemProposalSupersession';
+import {
+  ActionItemProposalDecision,
+  ActionItemProposalEpicCatalogStatus,
+} from '../components/ActionItemProposalDecision';
+import { useActionItemProposalDecision } from '../hooks/useActionItemProposalDecision';
 import { StatusBadge } from '../components/StatusBadge';
 import { useNotification } from '../context/useNotification';
 import { useApiMutation } from '../hooks/useApiMutation';
@@ -12,15 +17,43 @@ import { usePolling } from '../hooks/usePolling';
 
 export function ActionItemProposalDetailPage() {
   const { id } = useParams();
+  return <ActionItemProposalDetail key={id} id={Number(id)} />;
+}
+
+function ActionItemProposalDetail({ id }: { id: number }) {
   const navigate = useNavigate();
   const isCurrent = usePageLifetime();
   const { notify } = useNotification();
+  const titleRef = useRef<HTMLHeadingElement>(null);
   const read = useApiRead(
     useCallback(() => api.actionItemProposals.get(Number(id)), [id]),
   );
-  const review = useApiMutation({
-    mutationFn: (action: 'approve' | 'reject') =>
-      api.actionItemProposals[action](Number(id)),
+  const remove = useApiMutation({
+    mutationFn: () => api.actionItemProposals.remove(Number(id)),
+    onSuccess: () => {
+      if (isCurrent()) navigate('/action-items/proposals');
+    },
+  });
+  const catalog = useApiRead(api.actionItemEpics.list, {
+    enabled: read.data?.status === 'pending',
+  });
+  const review = useActionItemProposalDecision({
+    refresh: () => read.refresh({ showLoading: false }),
+    focusFallback: titleRef,
+    canStart: (proposal, action) =>
+      !remove.loading &&
+      !read.loading &&
+      !read.error &&
+      (action === 'reject' ||
+        Boolean(
+          proposal.proposed_item &&
+          !proposal.source_stale &&
+          proposal.source_available !== false &&
+          !proposal.target_stale &&
+          (proposal.action !== 'update' ||
+            (proposal.current_target &&
+              proposal.current_target.revision === proposal.base_version)),
+        )),
     onSuccess: (result) => {
       if (!isCurrent()) return;
       notify(
@@ -29,24 +62,12 @@ export function ActionItemProposalDetailPage() {
           : 'Action Item proposal rejected',
         'success',
       );
-      read.refresh({ showLoading: false });
-    },
-    onError: (error) => {
-      if (!isCurrent()) return;
-      notify(error.message, 'error');
-      read.refresh({ showLoading: false });
     },
   });
-  const remove = useApiMutation({
-    mutationFn: () => api.actionItemProposals.remove(Number(id)),
-    onSuccess: () => {
-      if (isCurrent()) navigate('/action-items/proposals');
-    },
-  });
-  const busy = review.loading || remove.loading;
+  const busy = review.pendingId !== null || remove.loading;
   usePolling(() => read.refresh({ showLoading: false }), { enabled: !busy });
 
-  if (read.error)
+  if (read.error && !read.data)
     return (
       <p role="alert">
         Could not load this Action Item proposal.{' '}
@@ -74,32 +95,34 @@ export function ActionItemProposalDetailPage() {
         Proposed Action Items
       </Link>
       <div className="page-header">
-        <h2 className="page-title">{proposal.title}</h2>
+        <h2 className="page-title" tabIndex={-1} ref={titleRef}>
+          {proposal.title}
+        </h2>
         <div className="flex-wrap" style={{ gap: 8 }}>
           {proposal.status === 'pending' && (
-            <>
-              <button
-                className="btn btn-primary"
-                disabled={
-                  busy || targetMissing || targetStale || Boolean(sourceStale)
-                }
-                onClick={() => review.mutate('approve')}
-              >
-                Approve
-              </button>
-              <button
-                className="btn"
-                disabled={busy}
-                onClick={() => review.mutate('reject')}
-              >
-                Reject
-              </button>
-            </>
+            <ActionItemProposalDecision
+              proposal={proposal}
+              catalog={catalog}
+              busy={busy || read.loading || Boolean(read.error)}
+              saving={review.pendingId === proposal.id}
+              approveLabel="Approve"
+              approveDisabled={
+                targetMissing ||
+                targetStale ||
+                Boolean(sourceStale) ||
+                Boolean(proposal.target_stale) ||
+                !proposal.proposed_item
+              }
+              onDecide={(action, placement) => {
+                void review.decide(proposal, action, placement);
+              }}
+            />
           )}
           <button
             className="btn sidebar-btn-danger"
             disabled={busy}
             onClick={() => {
+              if (busy || review.isWriting()) return;
               if (confirm('Delete this Action Item proposal?')) remove.mutate();
             }}
           >
@@ -107,6 +130,31 @@ export function ActionItemProposalDetailPage() {
           </button>
         </div>
       </div>
+      {proposal.status === 'pending' && (
+        <ActionItemProposalEpicCatalogStatus
+          catalog={catalog}
+          busy={busy}
+          onRefresh={() => {
+            void Promise.all([
+              catalog.refresh(),
+              read.refresh({ showLoading: false }),
+            ]);
+          }}
+        />
+      )}
+      {review.error && (
+        <p role="alert">
+          Could not decide this Action Item: {review.error.message}
+        </p>
+      )}
+      {read.error && (
+        <p role="alert">
+          Could not refresh this Action Item proposal.{' '}
+          <button className="btn" onClick={() => read.refresh()}>
+            Retry
+          </button>
+        </p>
+      )}
       <section className="card">
         <div className="flex-wrap" style={{ gap: 8 }}>
           <StatusBadge status={proposal.status} kind="proposal" />

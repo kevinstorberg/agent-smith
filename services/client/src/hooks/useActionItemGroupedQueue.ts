@@ -19,16 +19,12 @@ import {
   useActionItemProjectDrag,
   type ProjectDragSnapshot,
 } from './useActionItemProjectDrag';
+import { epicReference as buildEpicReference } from '../utils/actionItemEpics';
+export const epicReference: (epic: ActionItemEpic) => ActionItemEpicReference =
+  buildEpicReference;
 
 export const queueIdentity = (root: ActionItemQueueRoot) =>
   root.kind === 'item' ? `item:${root.item.id}` : `epic:${root.epic.id}`;
-export const epicReference = (
-  epic: ActionItemEpic,
-): ActionItemEpicReference => ({
-  id: epic.id,
-  expected_revision: epic.revision,
-  cohort: epic.cohort,
-});
 const reference = (root: ActionItemQueueRoot) =>
   root.kind === 'item'
     ? {

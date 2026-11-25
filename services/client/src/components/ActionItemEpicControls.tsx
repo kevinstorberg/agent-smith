@@ -16,6 +16,7 @@ import type { ActionItemGroupedQueue } from '../hooks/useActionItemGroupedQueue'
 import { useApiRead } from '../hooks/useApiRead';
 import { ActionItemIcon } from './ActionItemIcon';
 import { ActionDisclosure } from './ActionDisclosure';
+import { ActionItemEpicSelect } from './ActionItemEpicSelect';
 
 function useEpicEditor(
   queue: ActionItemGroupedQueue,
@@ -200,37 +201,23 @@ function EpicPicker({
           </button>
         </p>
       )}
-      <label>
-        <span className="form-label">Move to Epic</span>
-        <select
-          className="input"
-          autoFocus
-          value={selected}
-          disabled={queue.busy || read.loading || Boolean(read.error)}
-          onChange={async (event) => {
-            const value = event.target.value;
-            setCreating(value === 'new');
-            if (value === 'new') return;
-            const destination = value
-              ? read.data?.items.find((epic) => String(epic.id) === value)
-              : null;
-            if (value && !destination) return;
-            if (await queue.setEpic(item, destination ?? null)) onClose();
-          }}
-        >
-          <option value="">No Epic</option>
-          {read.data?.items.map((epic) => (
-            <option key={epic.id} value={epic.id}>
-              {epic.title}
-              {read.data!.items.filter((other) => other.title === epic.title)
-                .length > 1
-                ? ` #${epic.id}`
-                : ''}
-            </option>
-          ))}
-          <option value="new">New Epic…</option>
-        </select>
-      </label>
+      <ActionItemEpicSelect
+        label="Move to Epic"
+        autoFocus
+        allowCreate
+        value={selected}
+        epics={read.data?.items ?? []}
+        disabled={queue.busy || read.loading || Boolean(read.error)}
+        onChange={async (value) => {
+          setCreating(value === 'new');
+          if (value === 'new') return;
+          const destination = value
+            ? read.data?.items.find((epic) => String(epic.id) === value)
+            : null;
+          if (value && !destination) return;
+          if (await queue.setEpic(item, destination ?? null)) onClose();
+        }}
+      />
       {selected === 'new' ? (
         <EpicCreateForm queue={queue} item={item} onClose={onClose} />
       ) : (

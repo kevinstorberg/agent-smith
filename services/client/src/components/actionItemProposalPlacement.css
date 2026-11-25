@@ -1,0 +1,57 @@
+.action-item-proposal-decision-controls {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+}
+.action-item-proposal-epic-choice {
+  flex: 1 1 14em;
+  min-width: 0;
+  max-width: 20em;
+}
+.action-item-proposal-decision-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.action-item-proposal-epic-choice > label {
+  display: block;
+  min-width: 0;
+}
+.action-item-proposal-epic-choice select {
+  width: 100%;
+  max-width: 100%;
+}
+.action-item-proposal-epic-status {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--text-muted);
+}
+.action-item-proposal-epic-status button {
+  color: var(--info);
+}
+.action-item-proposals-page .action-item-proposal-actions {
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 45%;
+}
+.action-item-proposals-page .action-item-proposal-identity {
+  flex: 1 1 50%;
+}
+@media (max-width: 600px) {
+  .action-item-proposal-epic-choice {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .action-item-proposals-page .action-item-proposal-identity,
+  .action-item-proposals-page .action-item-proposal-actions {
+    flex-basis: auto;
+    width: 100%;
+  }
+}

@@ -5,9 +5,12 @@ import { ActionItemProposalsIndexPage } from '../ActionItemProposalsIndexPage';
 import { actionItemProposal } from './actionItemProposalFixture';
 import { api } from '../../api';
 import type { ActionItemProposal } from '../../api';
+import { epicGroup } from './actionItemEpicFixture';
+import { epicReference } from '../../utils/actionItemEpics';
 
 vi.mock('../../api', () => ({
   api: {
+    actionItemEpics: { list: vi.fn() },
     actionItemProposals: {
       list: vi.fn(),
       counts: vi.fn(),
@@ -20,6 +23,7 @@ vi.mock('../../api', () => ({
 beforeEach(() => {
   document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.resetAllMocks();
+  vi.mocked(api.actionItemEpics.list).mockResolvedValue({ items: [] });
   vi.mocked(api.actionItemProposals.list).mockResolvedValue({
     items: [actionItemProposal()],
     total: 1,
@@ -45,6 +49,151 @@ function render() {
 }
 
 describe('Proposed Action Items', () => {
+  it('keeps the frozen receipt when an uncertain decision is followed by a failed canonical refresh', async () => {
+    const destination = epicGroup(10, []).epic;
+    const parent = epicReference(epicGroup(20, []).epic);
+    const proposal = actionItemProposal({ current_parent: parent });
+    vi.mocked(api.actionItemProposals.list)
+      .mockResolvedValueOnce({ items: [proposal], total: 1 })
+      .mockRejectedValueOnce(new Error('Refresh unavailable'))
+      .mockResolvedValue({ items: [proposal], total: 1 });
+    vi.mocked(api.actionItemEpics.list).mockResolvedValue({
+      items: [destination],
+    });
+    vi.mocked(api.actionItemProposals.approve).mockRejectedValue(
+      new Error('Uncertain response'),
+    );
+    render();
+    await screen.findByRole('option', { name: destination.title });
+    const select = screen.getByRole('combobox', { name: /Epic for/ });
+    fireEvent.change(select, { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    await screen.findByText(/Could not load proposed Action Items/);
+    expect(select).toHaveValue('10');
+    expect(select).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Accept' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(select).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    await waitFor(() =>
+      expect(api.actionItemProposals.approve).toHaveBeenCalledTimes(2),
+    );
+    for (const call of vi.mocked(api.actionItemProposals.approve).mock.calls)
+      expect(call).toEqual([
+        1,
+        {
+          placement: {
+            expected_parent: parent,
+            destination: epicReference(destination),
+          },
+        },
+      ]);
+  });
+
+  it('loads one Epic catalog for multiple pending reviews and none for resolved history', async () => {
+    const proposals = [1, 2, 3].map((id) => actionItemProposal({ id }));
+    vi.mocked(api.actionItemProposals.list).mockResolvedValue({
+      items: proposals,
+      total: 3,
+    });
+    const view = render();
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole('combobox', { name: /Epic for/ }),
+      ).toHaveLength(3),
+    );
+    await waitFor(() =>
+      expect(api.actionItemEpics.list).toHaveBeenCalledTimes(1),
+    );
+    view.unmount();
+    vi.mocked(api.actionItemEpics.list).mockClear();
+    vi.mocked(api.actionItemProposals.list).mockResolvedValue({
+      items: [actionItemProposal({ status: 'approved' })],
+      total: 1,
+    });
+    render();
+    await screen.findByText('approved', { exact: true });
+    expect(api.actionItemEpics.list).not.toHaveBeenCalled();
+  });
+
+  it('retries the full frozen placement after a catalog and parent refresh without duplicate submissions', async () => {
+    const destination = epicGroup(10, []).epic;
+    const parent = epicReference(epicGroup(20, []).epic);
+    let proposal = actionItemProposal({ current_parent: parent });
+    let epics = [destination];
+    let approved = false;
+    vi.mocked(api.actionItemProposals.list).mockImplementation(async () => ({
+      items: approved ? [] : [proposal],
+      total: approved ? 0 : 1,
+    }));
+    vi.mocked(api.actionItemEpics.list).mockImplementation(async () => ({
+      items: epics,
+    }));
+    vi.mocked(api.actionItemProposals.approve)
+      .mockRejectedValueOnce(new Error('Uncertain response'))
+      .mockImplementationOnce(async () => {
+        approved = true;
+        return actionItemProposal({ status: 'approved' });
+      });
+    render();
+    await screen.findByRole('option', { name: destination.title });
+    fireEvent.change(screen.getByRole('combobox', { name: /Epic for/ }), {
+      target: { value: '10' },
+    });
+    const accept = screen.getByRole('button', { name: 'Accept' });
+    accept.focus();
+    fireEvent.click(accept);
+    await screen.findByText(/Uncertain response/);
+    await waitFor(() => expect(accept).toBeEnabled());
+    expect(accept).toHaveFocus();
+    proposal = {
+      ...proposal,
+      current_parent: { ...parent, cohort: 'fresh-parent' },
+    };
+    epics = [
+      {
+        ...destination,
+        revision: 9,
+        cohort: 'fresh-destination',
+        title: 'Renamed Epic',
+      },
+    ];
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Epics' }));
+    await screen.findByRole('option', {
+      name: `${destination.title} — earlier choice`,
+    });
+    fireEvent.click(accept);
+    fireEvent.click(accept);
+    await screen.findByRole('heading', {
+      name: 'No pending proposed Action Items',
+    });
+    expect(api.actionItemProposals.approve).toHaveBeenCalledTimes(2);
+    for (const call of vi.mocked(api.actionItemProposals.approve).mock.calls)
+      expect(call).toEqual([
+        1,
+        {
+          placement: {
+            expected_parent: parent,
+            destination: epicReference(destination),
+          },
+        },
+      ]);
+  });
+
+  it('accepts with the default despite catalog errors and preserves ordinary approval arguments', async () => {
+    vi.mocked(api.actionItemEpics.list).mockRejectedValue(
+      new Error('Catalog unavailable'),
+    );
+    render();
+    await screen.findByText(/Could not load Epics/);
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    await waitFor(() =>
+      expect(api.actionItemProposals.approve).toHaveBeenCalledExactlyOnceWith(
+        1,
+      ),
+    );
+  });
+
   it('shows read-only replaced history with its own status preference and replacement link', async () => {
     vi.mocked(api.actionItemProposals.list).mockResolvedValue({
       items: [
