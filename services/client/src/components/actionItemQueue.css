@@ -60,39 +60,159 @@
 .action-items-index-page .action-item-grouped-container {
   overflow: visible;
   min-width: 0;
+  container-type: normal;
 }
 .action-items-index-page .action-item-grouped-table,
 .action-items-index-page .epic-children .action-items-table {
   min-width: 0;
   width: 100%;
-  --action-priority-width: 9em;
-  --action-topics-width: 18%;
-  --action-updated-width: 13%;
-  --action-due-width: 13%;
-  --action-controls-width: 278px;
+  overflow: visible;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  /* A mixed-unit clamp makes Chromium's fixed table layout split title space with this column. */
+  --action-priority-width: 96px;
+  --action-topics-width: 14%;
+  --action-updated-width: 14%;
+  --action-due-width: 14%;
+  --action-controls-width: 88px;
 }
-.action-items-index-page .action-item-grouped-table .action-item-actions-icons {
-  width: auto;
+.action-items-index-page .action-item-grouped-table > thead th {
+  padding: 10px 8px;
+  background: transparent;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.action-items-index-page .action-item-grouped-table > thead th:first-child {
+  padding-inline: 4px;
+}
+.action-items-index-page
+  .action-item-grouped-table
+  > thead
+  th:first-child
+  .sortable-header-button {
   flex-wrap: wrap;
+  gap: 0 4px;
+}
+.action-items-index-page .action-item-row > td {
+  padding: 12px 8px;
+  vertical-align: top;
+}
+.action-items-index-page .action-item-grouped-table .action-item-row > td {
+  background: transparent;
+}
+.action-items-index-page .action-item-grouped-table .action-item-row:hover {
+  background: var(--surface-hover);
+}
+.action-items-index-page .action-item-row > .action-controls-cell {
+  padding-inline: 4px;
+}
+.action-items-index-page .action-item-actions-icons {
+  width: max-content;
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+.action-items-index-page .action-item-actions > .btn-success {
+  border-color: var(--control-border);
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 50%;
+}
+.action-items-index-page
+  .action-item-actions
+  > .btn-success:hover:not(:disabled) {
+  border-color: var(--success);
+  background: transparent;
+  color: var(--success);
+}
+.action-items-index-page .action-item-drag {
+  flex: 0 0 28px;
+  width: 28px;
+  min-width: 28px;
+  min-height: 32px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-muted);
+}
+.action-items-index-page .action-item-drag:hover:not(:disabled) {
+  border-color: var(--control-border);
+}
+.action-items-index-page .action-priority-cell > .flex-row {
+  gap: 4px;
+}
+.action-items-index-page .action-item-priority {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+.action-items-index-page .action-item-title {
+  width: 100%;
+  gap: 6px;
+  align-items: baseline;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.action-items-index-page .action-topics-cell {
+  color: var(--text-muted);
+  font-size: 0.9em;
+  line-height: 1.6;
+}
+.action-items-index-page .action-topics-cell .tag {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.action-items-index-page .action-topics-cell .tag + .tag::before {
+  content: ' · ';
+  white-space: pre-wrap;
+}
+.action-items-index-page .action-due-cell,
+.action-items-index-page .action-updated-cell {
+  font-size: 0.9em;
+  line-height: 1.55;
 }
 .action-items-index-page .action-item-epic-row > td {
   padding: 0;
+  border: 0;
 }
-.action-items-index-page .action-item-epic-heading,
+.action-items-index-page .action-item-epic-row:hover > td {
+  background: transparent;
+}
 .action-items-index-page .action-item-epic-identity,
-.action-items-index-page .action-item-epic-actions,
 .action-items-index-page .epic-name-form {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
 }
+.action-items-index-page .action-item-epic-actions {
+  display: contents;
+}
 .action-items-index-page .action-item-epic-heading {
-  justify-content: space-between;
-  padding: 14px 10px;
-  background: var(--surface-hover);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 8px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+}
+.action-items-index-page .action-item-epic-identity {
+  min-width: 0;
 }
 .action-items-index-page .epic-toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -102,8 +222,10 @@
   color: var(--text-muted);
 }
 .action-items-index-page .epic-children {
-  border-left: 3px solid var(--border);
-  margin-left: 12px;
+  box-shadow: inset 2px 0 0 var(--border);
+}
+.action-items-index-page .epic-children .action-title-cell {
+  padding-inline-start: 22px;
 }
 .action-items-index-page .epic-membership-control {
   position: relative;
@@ -131,19 +253,13 @@
   max-width: 100%;
   padding: 8px 0;
 }
+.action-items-index-page .action-item-epic-heading .epic-name-form {
+  grid-column: 1 / -1;
+  width: 100%;
+}
 .action-items-index-page .new-epic-control {
   max-width: 100%;
 }
-.action-items-index-page .epic-menu summary {
-  cursor: pointer;
-}
-.action-items-index-page .epic-menu > div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px 0;
-}
-
 @media (max-width: 1100px) {
   .action-items-index-page .action-item-grouped-table,
   .action-items-index-page .epic-children .action-items-table,
@@ -151,15 +267,36 @@
   .action-items-index-page .epic-children tbody {
     display: block;
   }
-  .action-items-index-page .action-item-grouped-table > thead,
-  .action-items-index-page .epic-children thead {
-    display: table;
+  .action-items-index-page .action-item-grouped-table > colgroup,
+  .action-items-index-page .epic-children colgroup {
+    display: none;
+  }
+  .action-items-index-page .action-item-grouped-table > thead {
+    display: block;
     width: 100%;
-    table-layout: fixed;
+    border-bottom: 1px solid var(--border);
+  }
+  .action-items-index-page .action-item-grouped-table > thead tr {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    padding-block: 8px;
+  }
+  .action-items-index-page .action-item-grouped-table > thead th {
+    width: auto;
+    padding: 4px 0;
+    border: 0;
+  }
+  .action-items-index-page .action-item-grouped-table > thead th:last-child {
+    display: none;
   }
   .action-items-index-page .action-item-row {
     display: grid;
-    grid-template-columns: 5em minmax(0, 1fr);
+    grid-template-columns:
+      var(--action-priority-width) minmax(0, 1fr) minmax(0, 1fr)
+      var(--action-controls-width);
+    align-items: start;
+    gap: 2px 0;
     padding: 10px 0;
     border-bottom: 1px solid var(--border);
   }
@@ -167,10 +304,46 @@
     width: auto;
     border: 0;
     min-width: 0;
-    padding: 5px 10px;
+    padding: 2px 8px;
   }
-  .action-items-index-page .action-item-row > td:nth-child(n + 3) {
+  .action-items-index-page .action-priority-cell {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+  .action-items-index-page .action-title-cell {
+    grid-column: 2 / span 2;
+    grid-row: 1;
+  }
+  .action-items-index-page .action-controls-cell {
+    grid-column: 4;
+    grid-row: 1;
+  }
+  .action-items-index-page .action-topics-cell {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+  .action-items-index-page .action-due-cell {
     grid-column: 2;
+    grid-row: 3;
+  }
+  .action-items-index-page .action-updated-cell {
+    grid-column: 3 / -1;
+    grid-row: 3;
+  }
+  .action-items-index-page .action-due-cell::before {
+    content: 'Due ';
+    color: var(--text-muted);
+  }
+  .action-items-index-page .action-updated-cell::before {
+    content: 'Updated ';
+    color: var(--text-muted);
+  }
+  .action-items-index-page .action-due-cell > div,
+  .action-items-index-page .action-updated-cell > div {
+    display: inline;
+  }
+  .action-items-index-page .epic-children .action-title-cell {
+    padding-inline-start: 16px;
   }
   .action-items-index-page .action-item-epic-row,
   .action-items-index-page .action-item-epic-row > td {
@@ -181,21 +354,63 @@
   }
 }
 @media (max-width: 600px) {
-  .action-items-index-page .action-item-grouped-table > thead tr,
-  .action-items-index-page .epic-children thead tr {
-    display: flex;
-    flex-wrap: wrap;
+  .action-items-index-page .action-item-grouped-table,
+  .action-items-index-page .epic-children .action-items-table {
+    --action-priority-width: 48px;
   }
-  .action-items-index-page .action-item-grouped-table > thead th,
-  .action-items-index-page .epic-children thead th {
-    padding: 5px;
-    width: auto;
+  .action-items-index-page .action-item-grouped-table > thead tr {
+    gap: 4px 10px;
   }
-  .action-items-index-page .action-item-row {
-    grid-template-columns: minmax(0, 1fr);
+  .action-items-index-page .action-item-epic-identity {
+    display: grid;
+    grid-template-columns: 32px max-content minmax(0, 1fr);
+    gap: 2px 6px;
   }
-  .action-items-index-page .action-item-row > td:nth-child(n + 3) {
+  .action-items-index-page .action-item-epic-identity > .action-item-drag {
     grid-column: 1;
+    grid-row: 1;
+  }
+  .action-items-index-page .action-item-epic-identity > .action-item-priority {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .action-items-index-page .epic-toggle {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .action-items-index-page .epic-matching-count {
+    grid-column: 3;
+    grid-row: 2;
+    font-size: 0.85em;
+  }
+  .action-items-index-page .action-title-cell {
+    grid-column: 2 / -1;
+  }
+  .action-items-index-page .action-controls-cell {
+    grid-row: 2;
+  }
+  .action-items-index-page .action-topics-cell {
+    grid-column: 2 / span 2;
+  }
+  .action-items-index-page .action-due-cell,
+  .action-items-index-page .action-updated-cell {
+    grid-column: 2 / -1;
+  }
+  .action-items-index-page .action-updated-cell {
+    grid-row: 4;
+  }
+  .action-items-index-page .action-priority-cell {
+    padding-inline: 4px;
+  }
+  .action-items-index-page .action-priority-cell > .flex-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+  .action-items-index-page .action-item-drag {
+    min-height: 40px;
+    width: 32px;
+    min-width: 32px;
   }
   .action-items-index-page .epic-picker {
     left: 0;

@@ -16,7 +16,6 @@ import {
 } from './ActionItemQueueRow';
 import { ActionItemQueueHead } from './ActionItemQueueHead';
 import { EpicActions, EpicMembershipControl } from './ActionItemEpicControls';
-import { ActionItemIcon } from './ActionItemIcon';
 import { Pagination } from './Pagination';
 import './actionItemQueue.css';
 
@@ -73,7 +72,10 @@ function TaskEntry({
               showDueDate
               showUpdated
               showMoveActions
-              membership={<EpicMembershipControl queue={queue} item={item} />}
+              compactActions
+              membership={
+                <EpicMembershipControl queue={queue} item={item} text />
+              }
             />
           </tr>
           {queue.expandedId === item.id && (
@@ -165,20 +167,28 @@ function EpicEntry({
                   </span>
                 </div>
                 <div className="action-item-epic-actions">
-                  {queue.reorderableView &&
-                    (['top', 'bottom'] as const).map((edge) => (
-                      <button
-                        key={edge}
-                        className="btn btn-sm action-item-icon-button"
-                        aria-label={`Move Epic ${epic.title} to ${edge}`}
-                        title={`Move Epic to ${edge}`}
-                        disabled={!queue.canMoveRoot(group, edge)}
-                        onClick={() => void queue.moveRoot(group, edge)}
-                      >
-                        <ActionItemIcon name={edge} />
-                      </button>
-                    ))}
-                  <EpicActions queue={queue} epic={epic} />
+                  <EpicActions queue={queue} epic={epic}>
+                    {(close) => (
+                      <>
+                        {queue.reorderableView &&
+                          (['top', 'bottom'] as const).map((edge) => (
+                            <button
+                              key={edge}
+                              type="button"
+                              className="btn btn-sm"
+                              aria-label={`Move Epic ${epic.title} to ${edge}`}
+                              disabled={!queue.canMoveRoot(group, edge)}
+                              onClick={() => {
+                                close();
+                                void queue.moveRoot(group, edge);
+                              }}
+                            >
+                              Move Epic to {edge}
+                            </button>
+                          ))}
+                      </>
+                    )}
+                  </EpicActions>
                 </div>
               </div>
               {open && (
@@ -255,6 +265,18 @@ export function ActionItemGroupedQueue({
       showUpdated
     />
   );
+  const childHeading = (
+    <ActionItemQueueHead
+      sort={sort}
+      onSort={onSort}
+      current={current}
+      disabled={queue.freezeControls}
+      status={status}
+      showDueDate
+      showUpdated
+      staticLabels
+    />
+  );
   return (
     <>
       <span role="status" aria-live="polite" className="visually-hidden">
@@ -294,6 +316,10 @@ export function ActionItemGroupedQueue({
             className="table action-items-table action-item-grouped-table"
             aria-busy={!current && (queue.loading || !queue.error)}
           >
+            <caption className="visually-hidden">
+              Column sorting orders this list and the action items within each
+              Epic.
+            </caption>
             <Columns />
             {heading}
             <Droppable
@@ -319,7 +345,7 @@ export function ActionItemGroupedQueue({
                         index={index}
                         queue={queue}
                         onEdit={onEdit}
-                        heading={heading}
+                        heading={childHeading}
                       />
                     ),
                   )}

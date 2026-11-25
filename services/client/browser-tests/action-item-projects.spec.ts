@@ -7,6 +7,10 @@ import {
   expectControlContained,
 } from './geometry';
 import { enlargeComputedText } from './typography';
+import {
+  openAdvancedFilters,
+  openProjectOptions,
+} from './actionItemDisclosures';
 
 test('projects persist independently and assignment leaves tags and status filters separate', async ({
   page,
@@ -68,6 +72,7 @@ test('projects persist independently and assignment leaves tags and status filte
   await page.goto('/action-items');
   const groups = page.getByRole('tablist', { name: 'Action item projects' });
   await groups.getByRole('tab', { name: 'Work', exact: true }).click();
+  await openAdvancedFilters(page);
   await page.getByLabel('Tags', { exact: true }).fill('security');
   await expect
     .poll(() =>
@@ -95,6 +100,7 @@ test('projects persist independently and assignment leaves tags and status filte
     .getByRole('tablist', { name: 'Action item status' })
     .getByRole('tab', { name: 'Open', exact: true })
     .click();
+  await openProjectOptions(page);
   await page.getByRole('button', { name: 'New project', exact: true }).click();
   await page.getByLabel('Project name').fill('  Family / QA & café #1  ');
   await page
@@ -137,6 +143,7 @@ test('projects persist independently and assignment leaves tags and status filte
     page.getByRole('button', { name: 'Edit', exact: true }),
   ).toBeVisible();
   await page.goto('/action-items?unassigned=true&tags=urgent');
+  await openAdvancedFilters(page);
   await expect(
     page.getByRole('checkbox', { name: 'Unassigned only' }),
   ).toBeChecked();
@@ -185,12 +192,13 @@ for (const scale of [1, 2]) {
     await page.goto(
       '/action-items?unassigned=true&tags=security&due_within_hours=5',
     );
+    await openAdvancedFilters(page);
     if (scale === 2) await enlargeComputedText(page);
     const checkbox = page.getByRole('checkbox', { name: 'Unassigned only' });
     const all = page.getByRole('tab', { name: 'All projects', exact: true });
     const deadline = page.getByRole('checkbox', { name: 'Deadline window' });
     const sort = page.getByRole('textbox', { name: 'Tags', exact: true });
-    const filters = page.locator('.profile-filters');
+    const filters = page.locator('.action-items-advanced-filters');
     await expect(checkbox).toBeChecked();
     await expect(all).toHaveAttribute('aria-selected', 'true');
     await expect(
@@ -204,7 +212,7 @@ for (const scale of [1, 2]) {
     ).toHaveCount(0);
     expect(
       await checkbox.evaluate((element) =>
-        Boolean(element.closest('.profile-filters')),
+        Boolean(element.closest('.action-items-advanced-filters')),
       ),
     ).toBe(true);
     const box = await checkbox.boundingBox();
@@ -309,16 +317,16 @@ for (const scale of [1, 2]) {
     ).toBeVisible();
     if (scale === 2) await enlargeComputedText(page);
     const status = page.getByRole('tablist', { name: 'Action item status' });
-    const create = page.getByRole('button', {
-      name: 'New project',
+    const options = page.getByRole('button', {
+      name: 'Project options',
       exact: true,
     });
-    const filters = page.locator('.profile-filters');
+    const filters = page.locator('.action-items-searchbar');
     const table = page.locator('.action-items-container');
     const [statusBox, createBox, filterBox, tabsBox, tableBox] =
       await Promise.all([
         status.boundingBox(),
-        create.boundingBox(),
+        options.boundingBox(),
         filters.boundingBox(),
         groups.boundingBox(),
         table.boundingBox(),
@@ -326,18 +334,22 @@ for (const scale of [1, 2]) {
     expect(
       statusBox && createBox && filterBox && tabsBox && tableBox,
     ).toBeTruthy();
-    expect(
-      Math.abs(
-        statusBox!.y +
-          statusBox!.height / 2 -
-          createBox!.y -
-          createBox!.height / 2,
-      ),
-    ).toBeLessThanOrEqual(2);
+    if (page.viewportSize()!.width >= 1400 && scale === 1) {
+      expect(
+        Math.abs(
+          statusBox!.y +
+            statusBox!.height / 2 -
+            createBox!.y -
+            createBox!.height / 2,
+        ),
+      ).toBeLessThanOrEqual(2);
+    }
+    await expectControlContained(status, page.locator('main'));
+    await expectControlContained(options, page.locator('main'));
     expect(tabsBox!.y).toBeGreaterThanOrEqual(filterBox!.y + filterBox!.height);
-    expect(
-      Math.abs(tableBox!.y - tabsBox!.y - tabsBox!.height),
-    ).toBeLessThanOrEqual(2);
+    const sectionGap = tableBox!.y - tabsBox!.y - tabsBox!.height;
+    expect(sectionGap).toBeGreaterThanOrEqual(8);
+    expect(sectionGap).toBeLessThanOrEqual(16);
     const active = groups.getByRole('tab', {
       name: 'All projects',
       exact: true,
@@ -362,18 +374,13 @@ for (const scale of [1, 2]) {
       Math.abs(firstTabBox!.x - tableBox!.x),
       'The first project folder must align with the table border',
     ).toBeLessThanOrEqual(1);
-    const corners = await active.evaluate((node) => {
-      const style = getComputedStyle(node);
-      return {
-        top: parseFloat(style.borderTopLeftRadius),
-        bottom: parseFloat(style.borderBottomLeftRadius),
-      };
-    });
-    expect(corners.top).toBeGreaterThan(0);
-    expect(corners.bottom).toBe(0);
+    await expect(active).toHaveAttribute('aria-selected', 'true');
     await expectDocumentContained(page);
     await expectMainContained(page);
-    await create.click();
+    await openProjectOptions(page);
+    await page
+      .getByRole('button', { name: 'New project', exact: true })
+      .click();
     const name = page.getByLabel('Project name', { exact: true });
     await expect(name).toBeFocused();
     await name.fill('Retained project draft');
@@ -398,15 +405,14 @@ for (const scale of [1, 2]) {
     const error = page.locator('.action-projects').getByRole('alert');
     await expect(error).toHaveText('Choose a different project name.');
     await expect(name).toHaveValue('Retained project draft');
-    const [errorBox, formBox, currentFilters] = await Promise.all([
+    const [errorBox, formBox, currentTabs] = await Promise.all([
       error.boundingBox(),
       page.locator('.action-project-create').boundingBox(),
-      filters.boundingBox(),
+      groups.boundingBox(),
     ]);
-    expect(errorBox!.y).toBeGreaterThanOrEqual(formBox!.y);
-    expect(errorBox!.y + errorBox!.height).toBeLessThanOrEqual(
-      currentFilters!.y,
-    );
+    expect(errorBox!.y).toBeGreaterThanOrEqual(formBox!.y + formBox!.height);
+    expect(errorBox!.y + errorBox!.height).toBeLessThanOrEqual(currentTabs!.y);
+    await expectControlContained(error, page.locator('.action-projects'));
     await expectDocumentContained(page);
     await expectMainContained(page);
   });

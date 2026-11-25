@@ -1,3 +1,8 @@
+import {
+  actionButton,
+  filterCheckbox,
+  findFilterCheckbox,
+} from './actionItemControls';
 import { queuePage } from './actionItemEpicFixture';
 import {
   act,
@@ -122,9 +127,12 @@ describe('first-class project navigation', () => {
     renderPage('/action-items?project=Work');
     await screen.findByRole('tab', { name: 'Other' });
     await screen.findByText(rows[0].title);
+    const options = screen.getByRole('button', { name: 'Project options' });
+    fireEvent.click(options);
     expect(
       screen.getByRole('link', { name: 'Manage projects' }),
     ).toHaveAttribute('href', '/projects');
+    fireEvent.click(options);
     catalog = catalog.map((item) =>
       item.id === 1 ? { ...item, name: 'Renamed work' } : item,
     );
@@ -195,7 +203,7 @@ describe('first-class project navigation', () => {
     expect(
       within(tabs).queryByRole('tab', { name: 'Unassigned' }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Unassigned only' }));
+    fireEvent.click(filterCheckbox('Unassigned only'));
     await waitFor(() =>
       expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ unassigned: true, project: undefined }),
@@ -228,7 +236,7 @@ describe('first-class project navigation', () => {
     const all = await screen.findByRole('tab', {
       name: 'All projects',
     });
-    const checkbox = screen.getByRole('checkbox', { name: 'Unassigned only' });
+    const checkbox = filterCheckbox('Unassigned only');
     expect(all).toHaveAttribute('aria-selected', 'true');
     expect(checkbox).toBeChecked();
     await userEvent.click(all);
@@ -255,6 +263,9 @@ describe('first-class project navigation', () => {
   });
 
   it('restores saved Unassigned filters and only resets pagination when toggled', async () => {
+    vi.mocked(api.actionItemQueue.list).mockResolvedValue(
+      queuePage({ items: rows, total: 100 }),
+    );
     document.cookie = mergeViewCookie('', 'actionItems', {
       ...defaultView('actionItems'),
       unassigned: true,
@@ -266,9 +277,7 @@ describe('first-class project navigation', () => {
       limit: 25,
     });
     renderPage();
-    const checkbox = await screen.findByRole('checkbox', {
-      name: 'Unassigned only',
-    });
+    const checkbox = await findFilterCheckbox('Unassigned only');
     expect(checkbox).toBeChecked();
     expect(screen.getByRole('tab', { name: 'All projects' })).toHaveAttribute(
       'aria-selected',
@@ -315,7 +324,7 @@ describe('first-class project navigation', () => {
       'aria-selected',
       'true',
     );
-    const checkbox = screen.getByRole('checkbox', { name: 'Unassigned only' });
+    const checkbox = filterCheckbox('Unassigned only');
     expect(checkbox).not.toBeChecked();
     expect(checkbox).toBeDisabled();
     expect(checkbox).toHaveAttribute(
@@ -330,7 +339,7 @@ describe('first-class project navigation', () => {
   it('creates an empty project, selects it and retains it after reload', async () => {
     const rendered = renderPage();
     await screen.findByRole('tab', { name: 'Work' });
-    fireEvent.click(screen.getByRole('button', { name: 'New project' }));
+    fireEvent.click(actionButton('New project'));
     fireEvent.change(screen.getByLabelText('Project name'), {
       target: { value: '  New group  ' },
     });
@@ -357,7 +366,7 @@ describe('first-class project navigation', () => {
     async (name) => {
       renderPage();
       await screen.findByRole('tab', { name: 'Work' });
-      fireEvent.click(screen.getByRole('button', { name: 'New project' }));
+      fireEvent.click(actionButton('New project'));
       fireEvent.change(screen.getByLabelText('Project name'), {
         target: { value: name },
       });
@@ -394,7 +403,7 @@ describe('first-class project navigation', () => {
     );
     renderPage('/action-items?project=Work');
     await screen.findByRole('tab', { name: 'Work' });
-    fireEvent.click(screen.getByRole('button', { name: 'Delete project' }));
+    fireEvent.click(actionButton('Delete project'));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Project has task history',
     );
@@ -402,7 +411,7 @@ describe('first-class project navigation', () => {
       'aria-selected',
       'true',
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Delete project' }));
+    fireEvent.click(actionButton('Delete project'));
     await waitFor(() =>
       expect(screen.getByRole('tab', { name: 'All projects' })).toHaveAttribute(
         'aria-selected',
@@ -472,7 +481,7 @@ describe('first-class project navigation', () => {
       await vi.advanceTimersByTimeAsync(1);
     });
     expect(api.actionItemProjects.list).toHaveBeenCalledTimes(2);
-    fireEvent.click(screen.getByRole('button', { name: 'New project' }));
+    fireEvent.click(actionButton('New project'));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
     });
@@ -507,7 +516,7 @@ describe('first-class project navigation', () => {
       { initialEntries: ['/action-items?project=Work'] },
     );
     await screen.findByRole('tab', { name: 'Work' });
-    fireEvent.click(screen.getByRole('button', { name: 'New project' }));
+    fireEvent.click(actionButton('New project'));
     fireEvent.change(screen.getByLabelText('Project name'), {
       target: { value: 'Created later' },
     });

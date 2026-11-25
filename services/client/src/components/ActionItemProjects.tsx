@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode, Ref } from 'react';
 import { ButtonLink } from './ButtonLink';
+import { ActionDisclosure } from './ActionDisclosure';
 import { api } from '../api';
 import { useActionItemProjects } from '../hooks/useActionItemProjects';
 import { useApiMutation } from '../hooks/useApiMutation';
@@ -26,6 +27,7 @@ export function ActionItemProjectTabs({
   dropTargetsRef,
   dropProject,
   dragging = false,
+  compactManagement = false,
 }: {
   scope: ProjectScope;
   onChange: (scope: ProjectScope) => void;
@@ -36,6 +38,7 @@ export function ActionItemProjectTabs({
   dropTargetsRef?: Ref<HTMLDivElement>;
   dropProject?: string | null;
   dragging?: boolean;
+  compactManagement?: boolean;
 }) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -127,6 +130,54 @@ export function ActionItemProjectTabs({
     scope.kind === 'named'
       ? projects.find((project) => project.name === scope.name)
       : undefined;
+  const management = (close?: () => void) => (
+    <>
+      <ButtonLink
+        className="btn-sm"
+        to="/projects"
+        aria-disabled={busy}
+        onClick={(event) => {
+          if (busy) event.preventDefault();
+          else close?.();
+        }}
+      >
+        Manage projects
+      </ButtonLink>
+      <button
+        className="btn btn-sm"
+        disabled={busy}
+        onClick={() => {
+          close?.();
+          setCreating(true);
+          setNotice(null);
+        }}
+      >
+        New project
+      </button>
+      {selected && (
+        <button
+          className="btn btn-sm"
+          disabled={busy}
+          onClick={() => {
+            if (
+              window.confirm(
+                `Delete project “${projectLabel(selected.name)}”? Only projects without task history can be deleted.`,
+              )
+            ) {
+              close?.();
+              void mutation.mutate({
+                kind: 'delete',
+                id: selected.id,
+                scope: projectScopeKey(scope),
+              });
+            }
+          }}
+        >
+          Delete project
+        </button>
+      )}
+    </>
+  );
 
   function selectScope(next: ProjectScope) {
     onChange(next.kind === 'all' && scope.kind === 'unassigned' ? scope : next);
@@ -167,45 +218,24 @@ export function ActionItemProjectTabs({
           aria-label="Project management"
         >
           {!toolbarAccessory && <strong>Projects</strong>}
-          <ButtonLink
-            className="btn-sm"
-            to="/projects"
-            aria-disabled={busy}
-            onClick={(event) => {
-              if (busy) event.preventDefault();
-            }}
-          >
-            Manage projects
-          </ButtonLink>
-          <button
-            className="btn btn-sm"
-            disabled={busy}
-            onClick={() => {
-              setCreating(true);
-              setNotice(null);
-            }}
-          >
-            New project
-          </button>
-          {selected && (
-            <button
-              className="btn btn-sm"
+          {compactManagement ? (
+            <ActionDisclosure
+              label="Project options"
+              triggerContent={
+                <>
+                  <span className="project-options-label">Project options</span>
+                  <span className="project-options-symbol" aria-hidden="true">
+                    ⋯
+                  </span>
+                </>
+              }
               disabled={busy}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `Delete project “${projectLabel(selected.name)}”? Only projects without task history can be deleted.`,
-                  )
-                )
-                  void mutation.mutate({
-                    kind: 'delete',
-                    id: selected.id,
-                    scope: projectScopeKey(scope),
-                  });
-              }}
+              resetKey={`${projectScopeKey(scope)}:${creating}`}
             >
-              Delete project
-            </button>
+              {management}
+            </ActionDisclosure>
+          ) : (
+            management()
           )}
         </div>
       </div>

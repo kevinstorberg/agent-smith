@@ -3,6 +3,7 @@ import { test, expect, type APIRequest } from './fixtures';
 import { actionItem } from '../src/pages/__tests__/actionItemFixture';
 import type { Page } from '@playwright/test';
 import { enlargeComputedText } from './typography';
+import { openAdvancedFilters } from './actionItemDisclosures';
 
 function projectFixture(
   fixtureAPI: {
@@ -444,6 +445,7 @@ test('unassigned-only items move to a project without changing the current filte
 }) => {
   const writes = projectFixture(fixtureAPI, null);
   await page.goto('/action-items?unassigned=true');
+  await openAdvancedFilters(page);
   const handle = page.getByRole('button', {
     name: 'Reorder Task 1',
     exact: true,

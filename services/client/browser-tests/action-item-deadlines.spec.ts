@@ -7,6 +7,7 @@ import {
   expectControlReachable,
 } from './geometry';
 import { enlargeComputedText } from './typography';
+import { openAdvancedFilters } from './actionItemDisclosures';
 
 test.use({ timezoneId: 'America/New_York', locale: 'en-US' });
 test.beforeEach(async ({ fixtureAPI }) => {
@@ -134,7 +135,8 @@ test('list date column gives null and omitted deadlines an explicit placeholder'
   for (const row of await page.locator('.action-item-row').all()) {
     const date = row.getByRole('cell').nth(3);
     await date.scrollIntoViewIfNeeded();
-    await expect(date).toHaveText('No due date');
+    await expect(date).toHaveAccessibleName(/No due date$/);
+    await expect(date.locator('[aria-hidden="true"]')).toHaveText('—');
     await expect(row.getByRole('cell').nth(1)).not.toContainText('Due');
   }
   expect(
@@ -263,6 +265,7 @@ test('hours window stays independent and filtered keyboard drag retains visible 
   await page.goto(
     '/action-items?project=Work&tags=security&due_within_hours=24',
   );
+  await openAdvancedFilters(page);
   const slider = page.getByRole('slider', { name: 'Upcoming hours' });
   await expect(slider).toHaveValue('24');
   for (const hours of [5, 48]) {
@@ -281,6 +284,7 @@ test('hours window stays independent and filtered keyboard drag retains visible 
       .toBe(true);
   }
   await page.reload();
+  await openAdvancedFilters(page);
   await expect(slider).toHaveValue('48');
   await page
     .getByRole('button', { name: 'Reorder Task 1', exact: true })
@@ -314,6 +318,7 @@ for (const scale of [1, 2]) {
   }, testInfo) => {
     flatQueueFixture(fixtureAPI, { items: [], total: 0 });
     await page.goto('/action-items?due_within_hours=24');
+    await openAdvancedFilters(page);
     if (scale === 2) await enlargeComputedText(page);
     const checkbox = page.getByRole('checkbox', { name: 'Deadline window' });
     const label = checkbox.locator('..');
@@ -321,7 +326,7 @@ for (const scale of [1, 2]) {
     expect
       .soft(
         await checkbox.evaluate((element) =>
-          Boolean(element.closest('.profile-filters')),
+          Boolean(element.closest('.action-items-advanced-filters')),
         ),
       )
       .toBe(true);
@@ -345,7 +350,7 @@ for (const scale of [1, 2]) {
     expect(
       await checkbox.evaluate((element) => {
         const sort = element
-          .closest('.profile-filters')
+          .closest('.action-items-advanced-filters')
           ?.querySelector('label:nth-child(2) input');
         return Boolean(
           sort &&
