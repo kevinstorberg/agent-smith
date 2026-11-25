@@ -160,6 +160,31 @@ for (const scale of [1, 2] as const) {
         interiors.some((box) => point.y >= box.top && point.y < box.bottom),
       ).toBe(false);
       await page.mouse.move(point.x, point.y, { steps: 20 });
+      // Crossing the viewport can auto-scroll; reacquire the narrow ordering zone.
+      const liveBounds = (await target.boundingBox())!;
+      const finalPoint = {
+        x: liveBounds.x + liveBounds.width / 2,
+        y: liveBounds.y + liveBounds.height / 2,
+      };
+      await page.mouse.move(finalPoint.x, finalPoint.y);
+      const finalBounds = (await target.boundingBox())!;
+      expect(finalPoint.x).toBeGreaterThanOrEqual(finalBounds.x);
+      expect(finalPoint.x).toBeLessThan(finalBounds.x + finalBounds.width);
+      expect(finalPoint.y).toBeGreaterThanOrEqual(finalBounds.y);
+      expect(finalPoint.y).toBeLessThan(finalBounds.y + finalBounds.height);
+      const finalInteriors = await page
+        .locator('.action-item-epic-group')
+        .evaluateAll((elements) =>
+          elements.map((element) => {
+            const box = element.getBoundingClientRect();
+            return { top: box.top, bottom: box.bottom };
+          }),
+        );
+      expect(
+        finalInteriors.some(
+          (box) => finalPoint.y >= box.top && finalPoint.y < box.bottom,
+        ),
+      ).toBe(false);
       await expect(target).toHaveAttribute('data-selected', 'true');
       await expect(
         page.locator('.action-item-epic-group[data-drop-selected="true"]'),
