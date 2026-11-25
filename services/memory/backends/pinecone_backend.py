@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import Mapping
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor, as_completed
@@ -15,17 +14,9 @@ from typing import Any
 from langchain_core.documents import Document
 from langchain_core.vectorstores import VectorStore
 from langchain_pinecone import PineconeVectorStore
-from pinecone import Pinecone, ServerlessSpec
-from pinecone.config.openapi_configuration import Configuration
-from pinecone.db_data.index import Index
 
 from scripts.shared.validation import validate_memory_id
-from services.config import (
-    MEMORY_EMBEDDING_DIMENSION,
-    PINECONE_CLOUD as CLOUD,
-    PINECONE_INDEX as INDEX_NAME,
-    PINECONE_REGION as REGION,
-)
+from services.config import PINECONE_INDEX as INDEX_NAME
 from services.memory.backends import (
     access_datetime,
     build_row,
@@ -35,14 +26,12 @@ from services.memory.backends import (
 )
 from services.observability import BillableEvent, error_outcome, submit_with_context
 
-DIMENSION = MEMORY_EMBEDDING_DIMENSION
 LIST_PAGE_SIZE = 100
 ENUMERATION_SECONDS = 120
 ACCESS_BATCH_SECONDS = 30
 REQUEST_SECONDS = 10
 ACCESS_WORKERS = 4
 
-_pc = None
 _index = None
 _write_lock = Lock()
 _CONTROL_OPERATIONS = frozenset(
@@ -155,7 +144,9 @@ class _ObservedPinecone:
 
     def _metadata(self, name, args, kwargs):
         if self._index is None:
-            index = kwargs.get("name", args[0] if args else None)
+            index = kwargs.get(
+                "name", kwargs.get("index_name", args[0] if args else None)
+            )
             return {"index": index} if isinstance(index, str) else {}
         namespace_position = {
             "fetch": 1,
@@ -193,42 +184,20 @@ class _ObservedPinecone:
         return metadata
 
 
-def _get_pc():
-    global _pc
-    if _pc is None:
-        api_key = os.environ.get("PINECONE_API_KEY")
-        assert api_key, "PINECONE_API_KEY must be set when using pinecone backend."
-        _pc = _ObservedPinecone(Pinecone(api_key=api_key))
-    return _pc
-
-
 def _get_index():
     global _index
     if _index is None:
-        pc = _get_pc()
-        if not pc.has_index(INDEX_NAME):
-            pc.create_index(
-                name=INDEX_NAME,
-                dimension=DIMENSION,
-                metric="cosine",
-                spec=ServerlessSpec(cloud=CLOUD, region=REGION),
-            )
-            while not pc.describe_index(INDEX_NAME).status["ready"]:
-                time.sleep(1)
-        description = pc.describe_index(INDEX_NAME)
-        host = (
-            description["host"] if isinstance(description, dict) else description.host
+        from services.memory.maintenance import (
+            MaintenanceBudget,
+            connect_existing_index,
         )
-        configuration = Configuration()
-        # SDK retries multiply request timeouts and can outlive the access batch deadline.
-        configuration.retries = 0
-        _index = _ObservedPinecone(
-            Index(
-                api_key=os.environ.get("PINECONE_API_KEY"),
-                host=host,
-                openapi_config=configuration,
+        from services.memory.catalog import Source
+
+        _index = connect_existing_index(
+            Source(INDEX_NAME),
+            MaintenanceBudget(
+                max_records=1, max_requests=1, deadline_seconds=REQUEST_SECONDS
             ),
-            index=INDEX_NAME,
         )
     return _index
 
@@ -277,74 +246,9 @@ def get_vectorstore(embeddings) -> VectorStore:
 
 
 def load_all() -> list[dict]:
-    index = _get_index()
-    deadline = time.monotonic() + ENUMERATION_SECONDS
-    rows: list[dict] = []
-    seen_ids: set[str] = set()
-    seen_tokens: set[str] = set()
-    token: str | None = None
-    pages = 0
-    stage = "list"
+    from services.memory.maintenance import legacy_rows
 
-    try:
-        while True:
-            stage = "list"
-            page = index.list_paginated(
-                limit=LIST_PAGE_SIZE,
-                pagination_token=token,
-                _request_timeout=min(REQUEST_SECONDS, _remaining(deadline)),
-            )
-            pages += 1
-            _remaining(deadline)
-            stage = "decode"
-            prefix = f"Pinecone memory enumeration page {pages}"
-            vectors = _response_field(page, "vectors")
-            if not isinstance(vectors, list) or len(vectors) > LIST_PAGE_SIZE:
-                raise RuntimeError(
-                    f"{prefix} must contain at most {LIST_PAGE_SIZE} vector IDs"
-                )
-            ids = []
-            for vector in vectors:
-                id = _response_field(vector, "id")
-                if not isinstance(id, str) or not id.strip():
-                    raise RuntimeError(f"{prefix} contains an invalid vector ID")
-                if id not in seen_ids:
-                    seen_ids.add(id)
-                    ids.append(id)
-
-            pagination = _response_field(page, "pagination")
-            if (
-                pagination is not None
-                and not isinstance(pagination, Mapping)
-                and not hasattr(pagination, "get")
-            ):
-                raise RuntimeError(f"{prefix} contains invalid pagination metadata")
-            next_token = _response_field(pagination, "next")
-            if next_token is not None:
-                if not isinstance(next_token, str) or not next_token.strip():
-                    raise RuntimeError(
-                        f"{prefix} contains an invalid continuation token"
-                    )
-                if next_token in seen_tokens:
-                    raise RuntimeError(f"{prefix} repeated a continuation token")
-                seen_tokens.add(next_token)
-
-            stage = "fetch"
-            rows.extend(_fetch_rows(ids, index, deadline))
-            _remaining(deadline)
-            if next_token is None:
-                return rows
-            token = next_token
-    except TimeoutError as error:
-        raise TimeoutError(
-            f"Pinecone memory enumeration timed out during {stage} after {pages} pages "
-            f"and {len(rows)} rows ({ENUMERATION_SECONDS}-second overall deadline)"
-        ) from error
-    except Exception as error:
-        error.add_note(
-            f"Pinecone memory enumeration failed during {stage} after {pages} pages and {len(rows)} rows"
-        )
-        raise
+    return legacy_rows(_get_index())
 
 
 def list_rows(repo: str | None = None, limit: int = 20) -> list[dict]:

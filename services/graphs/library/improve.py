@@ -1,4 +1,5 @@
 """Improve: a pragmatic engineer that mines plans/memories and proposes small harness improvements."""
+
 from __future__ import annotations
 
 import asyncio
@@ -108,20 +109,33 @@ def build_graph():
 
     async def _curate_plans(state: State) -> dict:
         days = _clamp(state["lookback_days"], *LOOKBACK_RANGE)
-        entries = await asyncio.to_thread(_recent_draft_entries, state["project"] or None, days)
+        entries = await asyncio.to_thread(
+            _recent_draft_entries, state["project"] or None, days
+        )
         model = build_chat_model("curator_reader", fallback_role="curator")
-        return {"plan_findings": await _digest(model, "plan", entries, guidance=_DRAFT_DIGEST_GUIDANCE)}
+        return {
+            "plan_findings": await _digest(
+                model, "plan", entries, guidance=_DRAFT_DIGEST_GUIDANCE
+            )
+        }
 
     async def _curate_memories(state: State) -> dict:
         days = _clamp(state["lookback_days"], *LOOKBACK_RANGE)
-        entries = await asyncio.to_thread(_recent_memory_entries, state["project"] or None, days)
+        entries = await asyncio.to_thread(
+            _recent_memory_entries, state["project"] or None, days
+        )
         model = build_chat_model("curator_reader", fallback_role="curator")
         return {"memory_findings": await _digest(model, "memory", entries)}
 
     async def _propose(state: State) -> dict:
-        from services.graphs.tools.improve_tools import RESEARCH_TOOLS, build_file_proposal_tool
+        from services.graphs.tools.improve_tools import (
+            RESEARCH_TOOLS,
+            build_file_proposal_tool,
+        )
 
-        inventory = await asyncio.to_thread(_inventory_summary, state["project"] or None)
+        inventory = await asyncio.to_thread(
+            _inventory_summary, state["project"] or None
+        )
         recent_titles = await asyncio.to_thread(_recent_titles_block)
 
         agent = create_rubric_agent(
@@ -130,7 +144,10 @@ def build_graph():
             max_iterations=max_iterations,
             model_role="curator",
             on_evaluation=lambda evaluation: evaluations.append(dict(evaluation)),
-            tools=[*RESEARCH_TOOLS, build_file_proposal_tool(collector, MAX_PROPOSALS_PER_RUN)],
+            tools=[
+                *RESEARCH_TOOLS,
+                build_file_proposal_tool(collector, MAX_PROPOSALS_PER_RUN),
+            ],
         )
 
         message = (
@@ -239,7 +256,10 @@ def _recent_draft_entries(project: str | None, days: int) -> list[tuple[str, str
             continue
         plan = get_plan(summary["id"])
         if plan is None:
-            _raise_contract_error("source_changed", f"Draft plan {summary['id']} disappeared while gathering context; retry before generation.")
+            _raise_contract_error(
+                "source_changed",
+                f"Draft plan {summary['id']} disappeared while gathering context; retry before generation.",
+            )
         text = f"# {plan['title']}\n{plan['body']}"
         for fb in list_feedback_for_plan(plan["id"]):
             text += f"\n\n## Second-opinion review ({fb['source']})\n{fb['body']}"
@@ -248,10 +268,13 @@ def _recent_draft_entries(project: str | None, days: int) -> list[tuple[str, str
 
 
 def _recent_memory_entries(project: str | None, days: int) -> list[tuple[str, str]]:
-    from services.memory.db import list_memories
+    from services.memory.db import iter_recent_memories
 
-    rows = list_memories(repo=project, sort="created_at_desc", limit=None)
-    return [(str(r["id"]), r["content"]) for r in rows if _within_lookback(r, days)]
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    return [
+        (str(row["id"]), row["content"])
+        for row in iter_recent_memories(repo=project, changed_after=cutoff)
+    ]
 
 
 _DRAFT_DIGEST_GUIDANCE = (
@@ -262,7 +285,9 @@ _DRAFT_DIGEST_GUIDANCE = (
 )
 
 
-async def _digest(model, source: str, entries: list[tuple[str, str]], guidance: str = "") -> str:
+async def _digest(
+    model, source: str, entries: list[tuple[str, str]], guidance: str = ""
+) -> str:
     """Map-reduce a full, untruncated corpus into a findings digest."""
     if not entries:
         return f"No {source} entries in the lookback window."
@@ -339,5 +364,7 @@ def _raise_contract_error(status: str, explanation: str) -> None:
     from services.graphs.runtime import GraphContractError
 
     if status in TERMINAL_FAILURES:
-        raise GraphContractError(f"Improve rubric did not pass: {status}. {explanation}")
+        raise GraphContractError(
+            f"Improve rubric did not pass: {status}. {explanation}"
+        )
     raise GraphContractError(f"Improve graph contract failed: {status}. {explanation}")

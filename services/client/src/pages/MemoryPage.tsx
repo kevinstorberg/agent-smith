@@ -6,7 +6,6 @@ import type { MemoryItem } from '../api';
 import { Pagination } from '../components/Pagination';
 import { CopyButton } from '../components/CopyButton';
 import { useNotification } from '../context/useNotification';
-import { usePolling } from '../hooks/usePolling';
 import { usePagination } from '../hooks/usePagination';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { parseTags } from '../utils/tags';
@@ -108,10 +107,6 @@ export function MemoryPage() {
     },
   );
 
-  usePolling(() => refresh({ showLoading: false }), {
-    enabled: !editingId && !saving && !confirmDeleteId,
-  });
-
   const onSortChange = (value: string) => {
     if (mode === 'search')
       preferences.setField(
@@ -173,9 +168,16 @@ export function MemoryPage() {
 
   return (
     <div className="memory-page">
-      <h2 className="page-title" style={{ marginBottom: 16 }}>
-        Memory
-      </h2>
+      <div className="page-header">
+        <h2 className="page-title">Memory</h2>
+        <button
+          className="btn"
+          disabled={loading || saving || !!editingId || !!confirmDeleteId}
+          onClick={() => refresh()}
+        >
+          Refresh
+        </button>
+      </div>
 
       <div className="search-bar memory-controls">
         <label>

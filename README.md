@@ -383,6 +383,83 @@ profile-owned rows exist, preventing accidental loss of topic ownership.
 
 Vector memory with time-weighted retrieval, served as MCP tools on the dashboard endpoint.
 Meeting-generated memories join this same reusable store and remain available to other agents.
+
+Pinecone listing uses a PostgreSQL metadata catalog for global sorting, filtering and exact
+totals, then fetches only the requested page's IDs from Pinecone. Opening, paging or refreshing
+Memory never initializes the catalog or enumerates the index. An uninitialized, incomplete or
+dirty catalog returns an explicit unavailable response. Memory refreshes after user changes
+and through **Refresh**, without automatic polling. Semantic retrieval remains independent;
+ordinary agent searches and lists return at most 50 memories.
+The configured Pinecone index must already exist and be ready: reads and backend initialization
+only perform bounded discovery, never create an index or poll for readiness. Provision missing
+indexes explicitly before using the application.
+
+Catalog initialization is a separate, explicitly authorized maintenance operation. Stop old
+application workers, initializer processes and external Pinecone writers before confirming
+quiescence; new application metadata writes are blocked while initialization is building.
+The migration creates empty catalog tables and does not read Pinecone. The explicit command
+requires the configured index and namespace, an exact approved count, positive record/request
+budgets and a deadline. For the application's default namespace, use `__default__`.
+
+```sh
+python -m scripts.memory_catalog initialize \
+  --confirm-index agent-smith-memories --confirm-namespace __default__ \
+  --confirm-quiescent-writers --expected-count 10001 \
+  --max-records 10001 --max-requests 203 --deadline-seconds 300 --dry-run
+```
+
+The numbers above describe a synthetic 10,001-record example, not the current production
+index. Choose and review the actual source, count and budgets before running maintenance.
+`--dry-run` validates configuration without database or provider I/O; removing it performs
+the import. Discovery, each ID page and every fetch count against the request budget, with
+no automatic provider retries. Each fetch contains at most 100 IDs. The deadline is checked
+between stages and bounds provider timeouts; SQL statements have a separate five-second
+timeout and one-second lock timeout, so finalization or cleanup can finish after the provider
+deadline. Progress reports contain only source, stage, counts and safe error categories.
+No embeddings, language models, memory content writes or historical meeting processing run.
+
+An acknowledged app metadata write updates the catalog before it completes. An uncertain
+write leaves a durable pending operation and makes all listings for that source unavailable;
+pending operations never expire automatically. After stopping the original writer and all
+other possibly in-flight writers and allowing provider writes to become visible, explicitly
+repair only the known IDs:
+
+If a failed add never returned its generated ID, discover pending IDs from PostgreSQL only,
+using the configured source key and bounded pages; increase `OFFSET` by 50 for the next page:
+
+```sql
+SELECT id, phase, started_at, count(*) OVER () AS total
+FROM memory_catalog_pending
+WHERE source_key = '["pinecone","agent-smith-memories",""]'
+ORDER BY started_at, id
+LIMIT 50 OFFSET 0;
+```
+
+```sh
+python -m scripts.memory_catalog repair \
+  --confirm-index agent-smith-memories --confirm-namespace __default__ \
+  --confirm-quiescent-writers --id 00000000-0000-0000-0000-000000000001 \
+  --max-records 1 --max-requests 2 --deadline-seconds 30
+```
+
+Repair fetches only those IDs and reconciles their current presence or absence; it never
+lists or searches the index. An already acknowledged pending operation finalizes using SQL
+only. A failed repair remains pending. Successful repair of selected IDs does not clear
+other pending operations. A process killed during initialization leaves `BUILDING` unavailable;
+after verifying the initializer and writers have stopped, release that gate explicitly:
+
+```sh
+python -m scripts.memory_catalog abort-build \
+  --confirm-index agent-smith-memories --confirm-namespace __default__ \
+  --confirm-quiescent-writers --confirm-initializer-stopped
+```
+
+Abort performs SQL only, marks the incomplete build failed and does not publish staged rows.
+Initialization can then be retried explicitly with reviewed budgets. Direct external metadata
+writes are unsupported while the catalog is in use; application writers must use the catalog
+mutation boundary. Known external changes can use explicit known-ID repair even without an
+existing pending operation; unknown changes require a reviewed explicit reinitialization.
+
 New memory writes keep at most 250 Unicode whitespace-separated words, preserving the original
 text through the last retained word. Shorter text stays unchanged. The shared policy in
 `services/memory/content.py` runs before embedding and storage for additions, publications,

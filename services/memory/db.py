@@ -4,9 +4,11 @@ import json
 import logging
 import os
 import uuid
+from collections.abc import Callable, Iterator
 from copy import deepcopy
 from datetime import datetime, timezone
 from threading import Lock, RLock
+from typing import TYPE_CHECKING, TypeVar
 
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
@@ -17,8 +19,10 @@ from langchain_huggingface import HuggingFaceEmbeddings
 
 from services.memory.backends import (
     TIMESTAMP_FIELDS,
+    MemoryBackend,
     canonical_metadata,
     get_backend,
+    memory_ids,
     metadata_datetime,
 )
 from services.memory.content import MemoryTokenBudget, require_memory_text
@@ -26,10 +30,15 @@ from services.memory.embedding_budget import EmbeddingTokenCounter
 from services.config import MEMORY_EMBEDDING_DEVICE, MEMORY_EMBEDDING_MODEL
 from services.observability import action_operation
 
+if TYPE_CHECKING:
+    from services.memory.catalog import Page, Source
+
 MODEL_NAME = MEMORY_EMBEDDING_MODEL
 DECAY_RATE = float(os.environ.get("MEMORY_DECAY_RATE", "0.01"))
 DEFAULT_LIMIT = int(os.environ.get("MEMORY_DEFAULT_LIMIT", "20"))
 SEARCH_FETCH_CEILING = 50
+LIST_PAGE_CEILING = 100
+_T = TypeVar("_T")
 _LOGGER = logging.getLogger("agent_smith.memory.embedding")
 
 _embeddings: Embeddings | None = None
@@ -158,6 +167,10 @@ def _get_retriever() -> TimeWeightedVectorStoreRetriever:
             return _retriever
 
         backend = get_backend()
+        if _pinecone_source(backend) is not None:
+            raise RuntimeError(
+                "Full Pinecone hydration is disabled; use paginated listing or explicit maintenance"
+            )
         retriever = _new_retriever()
 
         rows = backend.load_all()
@@ -296,6 +309,57 @@ def _raw_to_row(record: dict) -> dict:
     )
 
 
+def catalog_metadata(id: str, meta: dict) -> dict:
+    row = _to_row(content="", id=id, meta=meta)
+    row.pop("content")
+    return row
+
+
+def _pinecone_source(backend: MemoryBackend) -> Source | None:
+    from services.memory.backends import pinecone_backend
+    from services.memory.catalog import Source
+
+    return Source(pinecone_backend.INDEX_NAME) if backend is pinecone_backend else None
+
+
+def _require_source(backend: MemoryBackend, source: Source) -> None:
+    from services.memory.catalog import Unavailable
+
+    if _pinecone_source(backend) != source:
+        raise Unavailable("Memory provider configuration changed during the operation")
+
+
+def _mutate_backend(
+    backend: MemoryBackend,
+    id: str,
+    *,
+    kind: str,
+    metadata: Callable[[], dict] | None,
+    operation: Callable[[], _T],
+) -> _T:
+    from services.memory import catalog
+
+    source = _pinecone_source(backend)
+    if source is None:
+        return operation()
+
+    def apply() -> _T:
+        _require_source(backend, source)
+        if kind == "delete" and backend.get_row(id) is None:
+            raise catalog.NoWritePerformed(f"Memory not found: {id}")
+        result = operation()
+        _require_source(backend, source)
+        return result
+
+    return catalog.write_through(
+        source,
+        id,
+        kind=kind,
+        metadata=metadata() if metadata is not None else None,
+        operation=apply,
+    )
+
+
 def _with_context_tags(rows: list[dict]) -> list[dict]:
     from services.meetings import labels_db
     from services.meetings.db import MeetingStorageError
@@ -406,13 +470,24 @@ def _persist_document(
 
     # Persist a separate copy first. Vector-store adapters may sanitize metadata,
     # and a failed write must not corrupt or remove the live memory-stream entry.
-    vectorstore = (
-        retriever.vectorstore
-        if retriever is not None
-        else get_backend().get_vectorstore(_get_embeddings())
-    )
-    vectorstore.add_documents(
-        [deepcopy(memory_document)], ids=[id], current_time=current_time
+    backend = get_backend()
+
+    def persist() -> list[str]:
+        vectorstore = (
+            retriever.vectorstore
+            if retriever is not None
+            else backend.get_vectorstore(_get_embeddings())
+        )
+        return vectorstore.add_documents(
+            [deepcopy(memory_document)], ids=[id], current_time=current_time
+        )
+
+    _mutate_backend(
+        backend,
+        id,
+        kind="upsert",
+        metadata=lambda: catalog_metadata(id, memory_document.metadata),
+        operation=persist,
     )
     # A listing may publish its complete snapshot while the storage write runs.
     # FIXME: Same-ID mutation ordering needs a lock spanning provider writes and
@@ -472,6 +547,16 @@ def _validate_scope(repo: str | None, tags: list[str] | None) -> None:
         or any(not isinstance(tag, str) or not tag.strip() for tag in tags)
     ):
         raise ValueError("Memory tags must be a list of nonblank strings")
+
+
+def _lookback_cutoff(value: datetime) -> datetime:
+    if (
+        not isinstance(value, datetime)
+        or value.tzinfo is None
+        or value.utcoffset() is None
+    ):
+        raise ValueError("Memory changed_after must be a timezone-aware datetime")
+    return value.astimezone(timezone.utc)
 
 
 def _publication_time(value: str) -> datetime:
@@ -677,7 +762,45 @@ def list_page(
     limit: int | None = None,
     offset: int = 0,
     meeting_only: bool = False,
+    *,
+    changed_after: datetime | None = None,
 ) -> tuple[list[dict], int]:
+    _validate_scope(repo, tags)
+    if tags is not None and len(tags) > 20:
+        raise ValueError("Memory listing tags must contain at most 20 values")
+    sort = "created_at_desc" if sort in (None, "") else sort
+    if not isinstance(sort, str) or sort not in _SORT_KEYS:
+        raise ValueError(f"Unknown sort: {sort!r}, expected one of {list(_SORT_KEYS)}")
+    if type(meeting_only) is not bool:
+        raise ValueError("meeting_only must be a boolean")
+    _page([], limit, offset)
+    if limit is not None and limit > LIST_PAGE_CEILING:
+        raise ValueError(f"Memory listing limit must not exceed {LIST_PAGE_CEILING}")
+    if changed_after is not None:
+        changed_after = _lookback_cutoff(changed_after)
+
+    backend = get_backend()
+    source = _pinecone_source(backend)
+    if source is not None:
+        bounded_limit = DEFAULT_LIMIT if limit is None else limit
+        _page([], bounded_limit, offset)
+        if bounded_limit > LIST_PAGE_CEILING:
+            raise ValueError(
+                f"Memory listing limit must not exceed {LIST_PAGE_CEILING}"
+            )
+        rows, page = _catalog_listing_page(
+            backend,
+            source,
+            repo=repo,
+            tags=tags,
+            sort=sort,
+            limit=bounded_limit,
+            offset=offset,
+            meeting_only=meeting_only,
+            changed_after=changed_after,
+        )
+        return rows, page.total
+
     retriever = _get_retriever()
     with _retriever_lock:
         rows = [_doc_to_row(doc) for doc in retriever.memory_stream]
@@ -685,9 +808,111 @@ def list_page(
     result = _filter_and_sort(
         rows, repo=repo, tags=tags, sort=sort, meeting_only=meeting_only
     )
+    if changed_after is not None:
+        result = [
+            row
+            for row in result
+            if (stamp := row.get("updated_at") or row.get("created_at")) is not None
+            and metadata_datetime(stamp, "changed_at") >= changed_after
+        ]
     selected, total = _page(result, limit, offset)
     # Polling the feed observes stored access without itself counting as memory use.
     return _refresh_rows(selected), total
+
+
+def _catalog_listing_page(
+    backend: MemoryBackend,
+    source: Source,
+    *,
+    repo: str | None,
+    tags: list[str] | None,
+    sort: str,
+    limit: int,
+    offset: int,
+    meeting_only: bool,
+    changed_after: datetime | None,
+    expected_generation: int | None = None,
+) -> tuple[list[dict], Page]:
+    from services.memory import catalog
+
+    page = catalog.select_page(
+        source,
+        repo=repo,
+        tags=tags,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+        meeting_only=meeting_only,
+        changed_after=changed_after,
+    )
+    if expected_generation is not None and page.generation != expected_generation:
+        raise catalog.Unavailable(
+            "Memory listing changed during lookback; restart the operation"
+        )
+    _require_source(backend, source)
+    fetched = backend.get_rows(page.ids) if page.ids else []
+    _require_source(backend, source)
+    catalog.check_page(source, page.generation)
+    records = {}
+    for record in fetched:
+        id = record.get("id")
+        if not isinstance(id, str) or id in records:
+            raise catalog.Unavailable(
+                "Memory listing records changed; repair the listing index"
+            )
+        records[id] = record
+    if set(records) != set(page.ids):
+        raise catalog.Unavailable(
+            "Memory listing records changed; repair the listing index"
+        )
+    return [
+        {**_raw_to_row(records[id]), "context_tags": page.context_tags.get(id, [])}
+        for id in page.ids
+    ], page
+
+
+def iter_recent_memories(
+    *,
+    repo: str | None = None,
+    changed_after: datetime,
+    batch_size: int = SEARCH_FETCH_CEILING,
+) -> Iterator[dict]:
+    _validate_scope(repo, None)
+    cutoff = _lookback_cutoff(changed_after)
+    if type(batch_size) is not int or not 1 <= batch_size <= SEARCH_FETCH_CEILING:
+        raise ValueError(
+            f"Memory lookback batch size must be between 1 and {SEARCH_FETCH_CEILING}"
+        )
+    backend = get_backend()
+    source = _pinecone_source(backend)
+    offset, generation = 0, None
+    while True:
+        if source is None:
+            rows, total = list_page(
+                repo=repo,
+                sort="created_at_desc",
+                limit=batch_size,
+                offset=offset,
+                changed_after=cutoff,
+            )
+        else:
+            rows, page = _catalog_listing_page(
+                backend,
+                source,
+                repo=repo,
+                tags=None,
+                sort="created_at_desc",
+                limit=batch_size,
+                offset=offset,
+                meeting_only=False,
+                changed_after=cutoff,
+                expected_generation=generation,
+            )
+            generation, total = page.generation, page.total
+        yield from rows
+        offset += len(rows)
+        if not rows or offset >= total:
+            return
 
 
 def list_memories(
@@ -715,7 +940,15 @@ def get(id: str, *, record_access: bool = True) -> dict | None:
 
 def delete(id: str) -> None:
     assert id and id.strip(), "ID must not be empty."
-    get_backend().delete_row(id)
+    id = memory_ids([id])[0]
+    backend = get_backend()
+    _mutate_backend(
+        backend,
+        id,
+        kind="delete",
+        metadata=None,
+        operation=lambda: backend.delete_row(id),
+    )
 
     global _retriever
     with _retriever_lock:

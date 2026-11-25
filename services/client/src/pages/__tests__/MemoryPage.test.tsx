@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
-import { POLL_INTERVAL_MS } from '../../constants';
 import { MemoryPage } from '../MemoryPage';
 
 vi.mock('../../api', () => ({
@@ -231,39 +230,36 @@ describe('MemoryPage', () => {
     });
   });
 
-  it('polls the current memory list at 15 seconds and stops after unmount', async () => {
+  it('keeps idle pages quiet and refreshes only the current requested page', async () => {
     vi.useFakeTimers();
-    let view!: ReturnType<typeof renderWithProviders>;
+    mockList.mockResolvedValue({ items: fakeMemories, total: 40 });
     await act(async () => {
-      view = renderWithProviders(<MemoryPage />, {
+      renderWithProviders(<MemoryPage />, {
         initialEntries: ['/memory'],
       });
     });
     expect(screen.getByText('First memory content')).toBeInTheDocument();
-    mockList.mockClear();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(14_999);
+      fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     });
-    expect(mockList).not.toHaveBeenCalled();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1);
-    });
-
-    expect(mockList).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 10, offset: 0 }),
+    expect(mockList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ limit: 10, offset: 10 }),
     );
-
-    view.unmount();
     mockList.mockClear();
     await act(async () => {
-      vi.advanceTimersByTime(POLL_INTERVAL_MS);
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(60_000);
     });
-
     expect(mockList).not.toHaveBeenCalled();
+    expect(mockSearch).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    });
+    expect(mockList).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ limit: 10, offset: 10 }),
+    );
   });
 
-  it('does not poll while inline editing a memory', async () => {
+  it('disables manual refresh while inline editing a memory', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
@@ -271,10 +267,11 @@ describe('MemoryPage', () => {
       expect(screen.getByText('First memory content')).toBeInTheDocument(),
     );
     fireEvent.click(screen.getAllByText('Edit')[0]);
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeDisabled();
     mockList.mockClear();
 
     await act(async () => {
-      vi.advanceTimersByTime(POLL_INTERVAL_MS);
+      vi.advanceTimersByTime(60_000);
       await Promise.resolve();
     });
 
