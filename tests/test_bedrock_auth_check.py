@@ -11,9 +11,9 @@ from services.graphs.bedrock_auth import BedrockAuthenticationError
 
 ARGS = [
     "--profile",
-    "paralign-source",
+    "test-profile",
     "--expected-account",
-    "180425283135",
+    "111122223333",
     "--region",
     "us-east-1",
 ]
@@ -63,8 +63,8 @@ def test_check_uses_the_runtime_provider_and_only_lists_models(check, capsys):
     assert check_bedrock_auth.main(ARGS) == 0
     output = capsys.readouterr()
     assert json.loads(output.out) == {
-        "profile": "paralign-source",
-        "account": "180425283135",
+        "profile": "test-profile",
+        "account": "111122223333",
         "region": "us-east-1",
         "status": "verified",
         "models_count": 1,

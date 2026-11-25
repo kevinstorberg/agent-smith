@@ -26,8 +26,8 @@ from services.graphs.bedrock_auth import (
 )
 from services.graphs.model_config import BedrockProfileAuth
 
-ACCOUNT = "180425283135"
-AUTH = BedrockProfileAuth("paralign-source", ACCOUNT)
+ACCOUNT = "111122223333"
+AUTH = BedrockProfileAuth("test-profile", ACCOUNT)
 RUNTIME = "https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1"
 MANTLE = "https://bedrock-mantle.us-west-2.api.aws/v1"
 FIRST = ReadOnlyCredentials("ASIAFAKEFIRST", "fake-secret-one", "fake-session-one")
@@ -134,7 +134,7 @@ def test_provider_is_lazy_and_uses_explicit_profile_and_bounded_aws_endpoints(
     provider = BedrockProfileTokenProvider(AUTH, RUNTIME)
     assert not sdk.sessions
     provider()
-    assert sdk.sessions == ["paralign-source"]
+    assert sdk.sessions == ["test-profile"]
     assert set(sdk.removed) == {
         "env",
         "container-role",
@@ -189,7 +189,7 @@ def test_wrong_account_never_generates_a_bearer_token(sdk, initial):
         provider()
         sdk.snapshot = SECOND
     before = len(sdk.signed)
-    sdk.account = "716067668072"
+    sdk.account = "444455556666"
     with pytest.raises(
         BedrockAuthenticationError, match="does not match GRAPH_MODEL_AWS_ACCOUNT_ID"
     ):
@@ -410,7 +410,7 @@ def test_real_botocore_ignores_custom_identity_endpoint(monkeypatch, tmp_path):
 
     config = tmp_path / "config"
     config.write_text(
-        "[profile paralign-source]\nregion=us-east-1\nendpoint_url=https://global.invalid\n"
+        "[profile test-profile]\nregion=us-east-1\nendpoint_url=https://global.invalid\n"
     )
     credentials = tmp_path / "credentials"
     credentials.write_text("")
@@ -418,7 +418,7 @@ def test_real_botocore_ignores_custom_identity_endpoint(monkeypatch, tmp_path):
     monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(credentials))
     monkeypatch.setenv("AWS_ENDPOINT_URL_STS", "https://sts-override.invalid")
     monkeypatch.setenv("AWS_ENDPOINT_URL", "https://ambient.invalid")
-    session = Session(profile="paralign-source")
+    session = Session(profile="test-profile")
     monkeypatch.setattr(
         session,
         "get_credentials",
@@ -447,7 +447,7 @@ def test_real_empty_profile_cannot_use_ambient_credentials(monkeypatch, tmp_path
     from botocore.session import Session
 
     config = tmp_path / "config"
-    config.write_text("[profile paralign-source]\nregion=us-east-1\n")
+    config.write_text("[profile test-profile]\nregion=us-east-1\n")
     credentials = tmp_path / "credentials"
     credentials.write_text("")
     monkeypatch.setenv("AWS_CONFIG_FILE", str(config))
@@ -457,7 +457,7 @@ def test_real_empty_profile_cannot_use_ambient_credentials(monkeypatch, tmp_path
     monkeypatch.setenv(
         "AWS_CONTAINER_CREDENTIALS_FULL_URI", "https://container.invalid"
     )
-    session = Session(profile="paralign-source")
+    session = Session(profile="test-profile")
     resolver = session.get_component("credential_provider")
     for provider in resolver.providers:
         if provider.METHOD not in bedrock_auth._PROFILE_CREDENTIAL_PROVIDERS:
@@ -478,8 +478,8 @@ def test_automated_environment_removes_model_profile_identifiers():
     settings = {
         "AGENT_SMITH_AUTOMATED_TESTS": "1",
         "GRAPH_MODEL_AUTH_MODE": "aws_profile",
-        "GRAPH_MODEL_AWS_PROFILE": "paralign-source",
-        "GRAPH_MODEL_AWS_ACCOUNT_ID": "180425283135",
+        "GRAPH_MODEL_AWS_PROFILE": "test-profile",
+        "GRAPH_MODEL_AWS_ACCOUNT_ID": "111122223333",
     }
     sanitize_automated_environment(settings)
     assert "GRAPH_MODEL_AUTH_MODE" not in settings
@@ -496,7 +496,7 @@ def test_activated_environment_sanitizes_authentication_before_normal_test_fakes
         **FACTORY_ENV,
         "AGENT_SMITH_AUTOMATED_TESTS": "1",
         "GRAPH_MODEL_AUTH_MODE": "aws_profile",
-        "GRAPH_MODEL_AWS_PROFILE": "paralign-source",
+        "GRAPH_MODEL_AWS_PROFILE": "test-profile",
         "GRAPH_MODEL_AWS_ACCOUNT_ID": ACCOUNT,
     }
     sanitize_automated_environment(inherited)

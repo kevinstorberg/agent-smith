@@ -504,17 +504,15 @@ def test_speaker_role_uses_its_small_preset_and_parent_credentials_without_large
 
 PROFILE_ENV = {
     "GRAPH_MODEL_AUTH_MODE": "aws_profile",
-    "GRAPH_MODEL_AWS_PROFILE": "paralign-source",
-    "GRAPH_MODEL_AWS_ACCOUNT_ID": "180425283135",
+    "GRAPH_MODEL_AWS_PROFILE": "test-profile",
+    "GRAPH_MODEL_AWS_ACCOUNT_ID": "111122223333",
 }
 
 
 def test_profile_authentication_does_not_read_static_credentials():
     settings = env(**PROFILE_ENV, OPINION_MODEL_SERVER_API_KEY="invalid-and-unused")
     config = load_model_config("opinion", env=settings)
-    assert config.authentication == BedrockProfileAuth(
-        "paralign-source", "180425283135"
-    )
+    assert config.authentication == BedrockProfileAuth("test-profile", "111122223333")
     assert config.region == "us-east-1"
     del settings["OPINION_MODEL_SERVER_API_KEY"]
     assert load_model_config("opinion", env=settings) == config
@@ -528,10 +526,10 @@ def test_profile_authentication_does_not_read_static_credentials():
         ({"GRAPH_MODEL_AWS_PROFILE": "  "}, "GRAPH_MODEL_AWS_PROFILE"),
         ({"GRAPH_MODEL_AWS_ACCOUNT_ID": ""}, "GRAPH_MODEL_AWS_ACCOUNT_ID"),
         ({"GRAPH_MODEL_AWS_ACCOUNT_ID": "18042528313"}, "GRAPH_MODEL_AWS_ACCOUNT_ID"),
-        ({"GRAPH_MODEL_AWS_ACCOUNT_ID": "١٨٠٤٢٥٢٨٣١٣٥"}, "GRAPH_MODEL_AWS_ACCOUNT_ID"),
+        ({"GRAPH_MODEL_AWS_ACCOUNT_ID": "١١١١٢٢٢٢٣٣٣٣"}, "GRAPH_MODEL_AWS_ACCOUNT_ID"),
         ({"OPINION_MODEL_AUTH_MODE": "api_key"}, "application-wide"),
         ({"BIG_MODEL_AWS_PROFILE": "another"}, "application-wide"),
-        ({"UNUSED_MODEL_AWS_ACCOUNT_ID": "716067668072"}, "application-wide"),
+        ({"UNUSED_MODEL_AWS_ACCOUNT_ID": "444455556666"}, "application-wide"),
     ],
 )
 def test_invalid_application_authentication_is_rejected(overrides, match):
@@ -581,7 +579,7 @@ def test_all_shipped_roles_share_profile_authentication_and_preserve_models(
     before = load_model_config(role, parent, env=settings)
     settings.update(PROFILE_ENV)
     after = load_model_config(role, parent, env=settings)
-    assert after.authentication == BedrockProfileAuth("paralign-source", "180425283135")
+    assert after.authentication == BedrockProfileAuth("test-profile", "111122223333")
     assert (after.model_id, after.server_url, after.max_tokens, after.streaming) == (
         before.model_id,
         before.server_url,
@@ -605,9 +603,7 @@ def test_profile_auth_accepts_exact_documented_chat_completion_paths(url):
     )
     assert config.server_url == url
     assert config.region == "us-east-1"
-    assert config.authentication == BedrockProfileAuth(
-        "paralign-source", "180425283135"
-    )
+    assert config.authentication == BedrockProfileAuth("test-profile", "111122223333")
 
 
 @pytest.mark.parametrize(
