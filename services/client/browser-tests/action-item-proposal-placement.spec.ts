@@ -1,3 +1,4 @@
+import { chooseEpic, openEpicPicker, expectEpicSelection } from './epicPicker';
 import { test, expect, type APIRequest } from './fixtures';
 import { actionItemProposal } from '../src/pages/__tests__/actionItemProposalFixture';
 import { epicGroup } from '../src/pages/__tests__/actionItemEpicFixture';
@@ -12,7 +13,9 @@ import type { Page } from '@playwright/test';
 
 async function expectDecisionRows(page: Page) {
   const controls = page.locator('.action-item-proposal-decision-controls');
-  const buttons = controls.getByRole('button');
+  const buttons = controls
+    .locator('.action-item-proposal-decision-buttons')
+    .getByRole('button');
   const [approve, reject] = await Promise.all([
     buttons.nth(0).boundingBox(),
     buttons.nth(1).boundingBox(),
@@ -20,7 +23,7 @@ async function expectDecisionRows(page: Page) {
   expect(Math.abs(approve!.y - reject!.y)).toBeLessThanOrEqual(1);
   if (page.viewportSize()!.width <= 600) {
     const [select, container] = await Promise.all([
-      controls.getByRole('combobox').boundingBox(),
+      controls.getByRole('button', { name: /Epic for/ }).boundingBox(),
       controls.boundingBox(),
     ]);
     expect(select!.width).toBeGreaterThanOrEqual(container!.width - 2);
@@ -65,11 +68,12 @@ test('list acceptance retains the chosen Epic receipt through refresh and an exp
   );
   await page.goto('/action-items/proposals');
   const row = page.getByRole('listitem');
-  const select = row.getByRole('combobox', { name: /Epic for/ });
+  const select = row.getByRole('button', { name: /Epic for/ });
+  const options = await openEpicPicker(select);
   await expect(
-    row.getByRole('option', { name: 'Release #10', exact: true }),
+    options.getByRole('button', { name: 'Release #10', exact: true }),
   ).toHaveCount(1);
-  await select.selectOption('10');
+  await chooseEpic(select, '10');
   await expectDecisionRows(page);
   expect(fixtureAPI.requests.filter((entry) => entry.method !== 'GET')).toEqual(
     [],
@@ -95,10 +99,7 @@ test('list acceptance retains the chosen Epic receipt through refresh and an exp
     duplicate,
   ];
   await page.getByRole('button', { name: 'Refresh Epics' }).click();
-  await expect(select).toHaveValue('earlier');
-  await expect(select.locator('option:checked')).toHaveText(
-    'Release #10 — earlier choice',
-  );
+  await expectEpicSelection(select, 'Release #10 — earlier choice');
   await restore?.();
   restore = await enlargeComputedText(page, 2, { restorable: true });
   await expectDecisionRows(page);
@@ -193,21 +194,18 @@ test('detail acceptance uses fresh parent and destination only after explicit re
     },
   );
   await page.goto('/action-items/proposals/1');
-  const select = page.getByRole('combobox', { name: /Epic for/ });
+  const select = page.getByRole('button', { name: /Epic for/ });
+  const options = await openEpicPicker(select);
   await expect(
-    page.getByRole('option', { name: destination.title, exact: true }),
+    options.getByRole('button', { name: destination.title, exact: true }),
   ).toHaveCount(1);
-  await select.selectOption('10');
+  await chooseEpic(select, '10');
   proposal = { ...proposal, current_parent: refreshedParent };
   epics = [refreshedDestination];
   await page.getByRole('button', { name: 'Refresh Epics' }).click();
-  await expect(select.locator('option:checked')).toHaveText(
-    'Release — earlier choice',
-  );
-  await select.selectOption('10');
-  await expect(select.locator('option:checked')).toHaveText(
-    refreshedDestination.title,
-  );
+  await expectEpicSelection(select, 'Release — earlier choice');
+  await chooseEpic(select, '10');
+  await expectEpicSelection(select, refreshedDestination.title);
   await page.screenshot({
     path: testInfo.outputPath('proposal-selected-epic-1x.png'),
     fullPage: true,
@@ -274,7 +272,10 @@ test('an unavailable catalog leaves ordinary update acceptance and rejection ind
   await page.goto('/action-items/proposals/1');
   await expect(page.getByRole('alert')).toContainText('Could not load Epics');
   await expect(
-    page.getByRole('combobox', { name: /Epic for/ }).locator('option:checked'),
+    page
+      .getByRole('button', { name: /Epic for/ })
+      .locator(':scope > span')
+      .first(),
   ).toHaveText('Release');
   await expect(
     page.getByRole('button', { name: 'Reject', exact: true }),

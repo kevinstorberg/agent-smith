@@ -1,3 +1,4 @@
+import { chooseEpic, expectEpicSelection } from './epicPicker';
 import {
   expectActionItemSort,
   selectActionItemSort,
@@ -164,16 +165,17 @@ test('Epics support create, singleton membership, collapse, rename, and removal 
     .getByRole('button', { name: 'Move Task 1 to Epic', exact: true })
     .click();
   await page
-    .getByRole('combobox', { name: 'Move to Epic', exact: true })
+    .getByRole('button', { name: 'Move to Epic', exact: true })
     .waitFor({ state: 'visible' });
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: testInfo.outputPath('epic-membership-picker.png'),
     fullPage: true,
   });
-  await page
-    .getByRole('combobox', { name: 'Move to Epic', exact: true })
-    .selectOption('20');
+  await chooseEpic(
+    page.getByRole('button', { name: 'Move to Epic', exact: true }),
+    '20',
+  );
   await expect(
     group.getByRole('button', { name: 'Task 1', exact: true }),
   ).toBeVisible();
@@ -215,12 +217,27 @@ test('Epics support create, singleton membership, collapse, rename, and removal 
     path: testInfo.outputPath('epic-menu-enlarged.png'),
     fullPage: true,
   });
+  const beforeDelete = writes.length;
   page.once('dialog', (dialog) => {
-    expect(dialog.message()).toContain('kept and ungrouped');
+    expect(dialog.message()).toBe(
+      'Delete Epic “Launch checklist”? Its action items will be kept and moved out of the Epic.',
+    );
+    void dialog.dismiss();
+  });
+  await renamed
+    .getByRole('button', { name: 'Delete Epic', exact: true })
+    .click();
+  expect(writes).toHaveLength(beforeDelete);
+  await expect(renamed).toBeVisible();
+  await openEpicActions(page, 'Launch checklist');
+  page.once('dialog', (dialog) => {
+    expect(dialog.message()).toBe(
+      'Delete Epic “Launch checklist”? Its action items will be kept and moved out of the Epic.',
+    );
     void dialog.accept();
   });
   await renamed
-    .getByRole('button', { name: 'Remove Epic', exact: true })
+    .getByRole('button', { name: 'Delete Epic', exact: true })
     .click();
   await expect(renamed).toHaveCount(0);
   await expect(
@@ -527,9 +544,10 @@ test('ambiguous inline creation keeps its UUID and reviewed membership for an ex
   await page
     .getByRole('button', { name: 'Move Task 1 to Epic', exact: true })
     .click();
-  await page
-    .getByRole('combobox', { name: 'Move to Epic', exact: true })
-    .selectOption('new');
+  await chooseEpic(
+    page.getByRole('button', { name: 'Move to Epic', exact: true }),
+    'new',
+  );
   await page
     .getByRole('textbox', { name: 'Epic name', exact: true })
     .fill('Retry group');
@@ -665,20 +683,20 @@ test('a failed membership selection stays canonical and permits the same explici
   await page
     .getByRole('button', { name: 'Move Task 2 to Epic', exact: true })
     .click();
-  const picker = page.getByRole('combobox', {
+  const picker = page.getByRole('button', {
     name: 'Move to Epic',
     exact: true,
   });
-  await picker.selectOption('20');
+  await chooseEpic(picker, '20');
   await expect(page.getByRole('alert')).toContainText(
     'Synthetic membership conflict',
   );
-  await expect(picker).toHaveValue('10');
+  await expectEpicSelection(picker, 'Release');
   await expect(picker).toBeEnabled();
   expect(attempts).toBe(1);
-  await picker.selectOption('20');
+  await chooseEpic(picker, '20');
   await expect.poll(() => attempts).toBe(2);
-  await expect(picker).toHaveValue('10');
+  await expectEpicSelection(picker, 'Release');
 });
 
 test('an in-flight child content refresh preserves a structural whole-Epic drag', async ({

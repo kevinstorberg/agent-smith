@@ -1,3 +1,8 @@
+import {
+  chooseEpic,
+  openEpicPicker,
+  expectEpicSelection,
+} from '../../test-utils/epicPicker';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { ActionItemProposalDecision } from '../ActionItemProposalDecision';
@@ -20,7 +25,10 @@ describe('proposal Epic choice', () => {
           onDecide={onDecide}
         />,
       );
-      expect(screen.getByRole('combobox')).toHaveDisplayValue('No Epic');
+      expectEpicSelection(
+        screen.getByRole('button', { name: /Epic for/ }),
+        'No Epic',
+      );
       fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
       expect(onDecide).toHaveBeenLastCalledWith('approve', undefined);
       fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
@@ -48,16 +56,18 @@ describe('proposal Epic choice', () => {
       onDecide,
     };
     const view = render(<ActionItemProposalDecision {...props} />);
-    expect(screen.getByRole('combobox')).toHaveDisplayValue(
+    expectEpicSelection(
+      screen.getByRole('button', { name: /Epic for/ }),
       `${epic.title} #10`,
     );
+    openEpicPicker(screen.getByRole('button', { name: /Epic for/ }));
     expect(
-      screen.getByRole('option', { name: `${epic.title} #10` }),
+      screen.getByRole('button', { name: `${epic.title} #10` }),
     ).toHaveValue('');
     expect(
-      screen.getByRole('option', { name: `${epic.title} #20` }),
+      screen.getByRole('button', { name: `${epic.title} #20` }),
     ).toHaveValue('20');
-    expect(screen.getAllByRole('option')).toHaveLength(2);
+    expect(document.querySelectorAll('.epic-choice')).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
     expect(onDecide).toHaveBeenLastCalledWith('approve', undefined);
     view.rerender(
@@ -66,7 +76,10 @@ describe('proposal Epic choice', () => {
         catalog={{ data: null, loading: false, error: 'Offline' }}
       />,
     );
-    expect(screen.getByRole('combobox')).toHaveDisplayValue(epic.title);
+    expectEpicSelection(
+      screen.getByRole('button', { name: /Epic for/ }),
+      epic.title,
+    );
     view.rerender(
       <ActionItemProposalDecision
         {...props}
@@ -78,8 +91,11 @@ describe('proposal Epic choice', () => {
         }}
       />,
     );
-    expect(screen.getByRole('combobox')).toHaveDisplayValue(epic.title);
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: '' } });
+    expectEpicSelection(
+      screen.getByRole('button', { name: /Epic for/ }),
+      epic.title,
+    );
+    chooseEpic(screen.getByRole('button', { name: /Epic for/ }), '');
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
     expect(onDecide).toHaveBeenLastCalledWith('approve', undefined);
   });
@@ -96,14 +112,20 @@ describe('proposal Epic choice', () => {
       onDecide,
     };
     const view = render(<ActionItemProposalDecision {...props} />);
-    expect(screen.getByRole('combobox')).toHaveDisplayValue('No Epic');
+    expectEpicSelection(
+      screen.getByRole('button', { name: /Epic for/ }),
+      'No Epic',
+    );
     view.rerender(
       <ActionItemProposalDecision
         {...props}
         proposal={actionItemProposal({ current_parent: epicReference(epic) })}
       />,
     );
-    expect(screen.getByRole('combobox')).toHaveDisplayValue(epic.title);
+    expectEpicSelection(
+      screen.getByRole('button', { name: /Epic for/ }),
+      epic.title,
+    );
     expect(screen.queryByText(/^Current:/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
     expect(onDecide).toHaveBeenCalledExactlyOnceWith('approve', undefined);
@@ -114,7 +136,8 @@ describe('proposal Epic choice', () => {
         catalog={{ data: null, loading: false, error: 'Unavailable' }}
       />,
     );
-    expect(screen.getByRole('combobox')).toHaveDisplayValue(
+    expectEpicSelection(
+      screen.getByRole('button', { name: /Epic for/ }),
       `Epic #${epic.id} (name unavailable)`,
     );
     view.rerender(
@@ -124,7 +147,7 @@ describe('proposal Epic choice', () => {
       />,
     );
     expect(screen.queryByText(/^Current:/)).toBeNull();
-    expect(screen.getByRole('combobox')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Epic for/ })).toBeDisabled();
   });
 
   it('freezes both references through catalog and parent changes until explicit reselection', () => {
@@ -141,7 +164,7 @@ describe('proposal Epic choice', () => {
       onDecide,
     };
     const view = render(<ActionItemProposalDecision {...props} />);
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: '10' } });
+    chooseEpic(screen.getByRole('button', { name: /Epic for/ }), '10');
     expect(onDecide).not.toHaveBeenCalled();
     const nextEpic = {
       ...epic,
@@ -161,7 +184,8 @@ describe('proposal Epic choice', () => {
         catalog={{ ...props.catalog, data: { items: [nextEpic] } }}
       />,
     );
-    expect(screen.getByRole('combobox')).toHaveDisplayValue(
+    expectEpicSelection(
+      screen.getByRole('button', { name: /Epic for/ }),
       `${epic.title} — earlier choice`,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
@@ -169,7 +193,7 @@ describe('proposal Epic choice', () => {
       expected_parent: parent,
       destination: epicReference(epic),
     });
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: '10' } });
+    chooseEpic(screen.getByRole('button', { name: /Epic for/ }), '10');
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
     expect(onDecide).toHaveBeenLastCalledWith('approve', {
       expected_parent: nextParent,
@@ -189,7 +213,7 @@ describe('proposal Epic choice', () => {
       onDecide,
     };
     const view = render(<ActionItemProposalDecision {...props} />);
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: '10' } });
+    chooseEpic(screen.getByRole('button', { name: /Epic for/ }), '10');
     view.rerender(
       <ActionItemProposalDecision
         {...props}
@@ -198,10 +222,11 @@ describe('proposal Epic choice', () => {
         catalog={{ ...props.catalog, data: { items: [] } }}
       />,
     );
-    expect(screen.getByRole('combobox')).toHaveDisplayValue(
+    expectEpicSelection(
+      screen.getByRole('button', { name: /Epic for/ }),
       `${epic.title} — earlier choice`,
     );
-    expect(screen.getByRole('combobox')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Epic for/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled();
     expect(onDecide).not.toHaveBeenCalled();

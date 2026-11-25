@@ -17,11 +17,11 @@
   gap: 8px;
   flex-wrap: wrap;
 }
-.action-item-proposal-epic-choice > label {
+.action-item-proposal-epic-choice > .action-item-epic-select {
   display: block;
   min-width: 0;
 }
-.action-item-proposal-epic-choice select {
+.action-item-proposal-epic-choice .action-disclosure {
   width: 100%;
   max-width: 100%;
 }
@@ -51,7 +51,9 @@
   padding-block: 8px;
 }
 @media (min-width: 601px) {
-  .action-item-proposals-page .action-item-proposal-epic-choice > label {
+  .action-item-proposals-page
+    .action-item-proposal-epic-choice
+    > .action-item-epic-select {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -60,7 +62,9 @@
     flex: 0 0 auto;
     white-space: nowrap;
   }
-  .action-item-proposals-page .action-item-proposal-epic-choice select {
+  .action-item-proposals-page
+    .action-item-proposal-epic-choice
+    .action-disclosure {
     min-width: 0;
   }
 }

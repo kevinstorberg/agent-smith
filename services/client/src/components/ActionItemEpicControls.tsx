@@ -381,13 +381,13 @@ export function EpicActions({
                 closeActions();
                 if (
                   confirm(
-                    `Remove Epic “${epic.title}”? Its action items are kept and ungrouped.`,
+                    `Delete Epic “${epic.title}”? Its action items will be kept and moved out of the Epic.`,
                   )
                 )
                   void queue.removeEpic(epic);
               }}
             >
-              Remove Epic
+              Delete Epic
             </button>
           </>
         )}

@@ -1,3 +1,8 @@
+import {
+  chooseEpic,
+  findEpicChoice,
+  expectEpicSelection,
+} from '../../test-utils/epicPicker';
 import { findActionButton } from './actionItemControls';
 import {
   act,
@@ -611,11 +616,11 @@ describe('saved Action Item Epics', () => {
       initialEntries: ['/action-items?status=all'],
     });
     fireEvent.click(await findActionButton('Move Task 2 to Epic'));
-    const picker = await screen.findByRole('combobox', {
+    const picker = await screen.findByRole('button', {
       name: 'Move to Epic',
     });
     await waitFor(() => expect(picker).toBeEnabled());
-    fireEvent.change(picker, { target: { value: '' } });
+    chooseEpic(picker, '');
     await waitFor(() =>
       expect(api.actionItemQueue.setEpic).toHaveBeenCalledExactlyOnceWith(2, {
         expected_revision: 7,
@@ -634,11 +639,18 @@ describe('saved Action Item Epics', () => {
     renderWithProviders(<ActionItemsIndexPage />);
     const button = await findActionButton('Move Task 2 to Epic');
     fireEvent.click(button);
-    await screen.findByRole('option', { name: 'Release #11' });
+    await findEpicChoice(
+      await screen.findByRole('button', { name: 'Move to Epic' }),
+      'Release #11',
+    );
     expect(
-      screen.getByRole('option', { name: 'Release #10' }),
+      screen.getByRole('button', { name: 'Release #10' }),
     ).toBeInTheDocument();
-    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Move to Epic' }), {
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Move to Epic' }), {
+      key: 'Escape',
+    });
+    expect(screen.getByRole('button', { name: 'Move to Epic' })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Move to Epic' }), {
       key: 'Escape',
     });
     expect(button).toHaveFocus();
@@ -705,7 +717,7 @@ describe('saved Action Item Epics', () => {
     fireEvent.click(
       await screen.findByRole('button', { name: 'Actions for Epic Release' }),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Epic' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Epic' }));
     await waitFor(() =>
       expect(api.actionItemQueue.list).toHaveBeenCalledTimes(2),
     );
@@ -722,7 +734,7 @@ describe('saved Action Item Epics', () => {
     fireEvent.click(
       screen.getByRole('button', { name: 'Actions for Epic Release' }),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Epic' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Epic' }));
     await waitFor(() =>
       expect(api.actionItemEpics.remove).toHaveBeenCalledTimes(2),
     );
@@ -731,6 +743,9 @@ describe('saved Action Item Epics', () => {
       { expected_revision: 4, cohort: 'changed-membership' },
     ]);
     expect(confirm).toHaveBeenCalledTimes(2);
+    expect(confirm).toHaveBeenLastCalledWith(
+      'Delete Epic “Release”? Its action items will be kept and moved out of the Epic.',
+    );
     confirm.mockRestore();
   });
 
@@ -826,11 +841,11 @@ describe('saved Action Item Epics', () => {
     );
     renderWithProviders(<ActionItemsIndexPage />);
     fireEvent.click(await findActionButton('Move Task 2 to Epic'));
-    const picker = await screen.findByRole('combobox', {
+    const picker = await screen.findByRole('button', {
       name: 'Move to Epic',
     });
     await waitFor(() => expect(picker).toBeEnabled());
-    fireEvent.change(picker, { target: { value: '' } });
+    chooseEpic(picker, '');
     expect(await screen.findByRole('button', { name: 'Task 9' })).toBeVisible();
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'New Epic' })).toBeEnabled(),
@@ -855,18 +870,18 @@ describe('saved Action Item Epics', () => {
       .mockResolvedValue(actionItem(2));
     renderWithProviders(<ActionItemsIndexPage />);
     fireEvent.click(await findActionButton('Move Task 2 to Epic'));
-    const picker = await screen.findByRole('combobox', {
+    const picker = await screen.findByRole('button', {
       name: 'Move to Epic',
     });
     await waitFor(() => expect(picker).toBeEnabled());
-    fireEvent.change(picker, { target: { value: '20' } });
+    chooseEpic(picker, '20');
     await waitFor(() =>
       expect(api.actionItemQueue.list).toHaveBeenCalledTimes(2),
     );
-    expect(picker).toHaveValue('10');
+    expectEpicSelection(picker, 'Release');
     expect(screen.getByRole('alert')).toHaveTextContent('Changed source');
     expect(api.actionItemQueue.setEpic).toHaveBeenCalledTimes(1);
-    fireEvent.change(picker, { target: { value: '20' } });
+    chooseEpic(picker, '20');
     await waitFor(() =>
       expect(api.actionItemQueue.setEpic).toHaveBeenCalledTimes(2),
     );

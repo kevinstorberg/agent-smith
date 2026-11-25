@@ -1,3 +1,8 @@
+import {
+  chooseEpic,
+  findEpicChoice,
+  expectEpicSelection,
+} from '../../test-utils/epicPicker';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   act,
@@ -130,13 +135,19 @@ describe('ActionItemProposalDetailPage', () => {
       items: [destination],
     });
     const view = renderWithProviders(<ActionItemProposalDetailPage />);
-    await screen.findByRole('option', { name: destination.title });
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: '10' } });
+    await findEpicChoice(
+      await screen.findByRole('button', { name: /Epic for/ }),
+      destination.title,
+    );
+    chooseEpic(screen.getByRole('button', { name: /Epic for/ }), '10');
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
     routeId = '2';
     view.rerender(<ActionItemProposalDetailPage />);
     await screen.findByRole('heading', { name: second.title });
-    expect(screen.getByRole('combobox')).toHaveDisplayValue('No Epic');
+    expectEpicSelection(
+      screen.getByRole('button', { name: /Epic for/ }),
+      'No Epic',
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
     expect(mockApprove.mock.calls).toEqual([
       [
@@ -161,7 +172,10 @@ describe('ActionItemProposalDetailPage', () => {
     expect(mockGet).toHaveBeenCalledTimes(readCount);
     expect(mockNotify).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
-    expect(screen.getByRole('combobox')).toHaveDisplayValue('No Epic');
+    expectEpicSelection(
+      screen.getByRole('button', { name: /Epic for/ }),
+      'No Epic',
+    );
     second = {
       ...second,
       status: 'approved',
@@ -205,10 +219,11 @@ describe('ActionItemProposalDetailPage', () => {
       items: [destination],
     });
     renderWithProviders(<ActionItemProposalDetailPage />);
-    await screen.findByRole('option', { name: destination.title });
-    fireEvent.change(screen.getByRole('combobox', { name: /Epic for/ }), {
-      target: { value: '10' },
-    });
+    await findEpicChoice(
+      await screen.findByRole('button', { name: /Epic for/ }),
+      destination.title,
+    );
+    chooseEpic(screen.getByRole('button', { name: /Epic for/ }), '10');
     const approve = screen.getByRole('button', { name: 'Accept' });
     approve.focus();
     fireEvent.click(approve);
@@ -226,7 +241,7 @@ describe('ActionItemProposalDetailPage', () => {
     expect(
       screen.getByRole('button', { name: 'Delete proposal' }),
     ).toBeDisabled();
-    expect(screen.getByRole('combobox')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Epic for/ })).toBeDisabled();
     await act(async () => resolveRefresh(approved));
     await screen.findByRole('link', { name: 'Open saved action item' });
     expect(screen.getByRole('heading', { name: proposal.title })).toHaveFocus();

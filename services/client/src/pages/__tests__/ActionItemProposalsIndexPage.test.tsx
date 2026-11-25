@@ -1,3 +1,8 @@
+import {
+  chooseEpic,
+  findEpicChoice,
+  expectEpicSelection,
+} from '../../test-utils/epicPicker';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   act,
@@ -70,12 +75,15 @@ describe('Proposed Action Items', () => {
       new Error('Uncertain response'),
     );
     render();
-    await screen.findByRole('option', { name: destination.title });
-    const select = screen.getByRole('combobox', { name: /Epic for/ });
-    fireEvent.change(select, { target: { value: '10' } });
+    await findEpicChoice(
+      await screen.findByRole('button', { name: /Epic for/ }),
+      destination.title,
+    );
+    const select = screen.getByRole('button', { name: /Epic for/ });
+    chooseEpic(select, '10');
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
     await screen.findByText(/Could not load proposed Action Items/);
-    expect(select).toHaveValue('10');
+    expectEpicSelection(select, destination.title);
     expect(select).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Accept' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
@@ -104,9 +112,9 @@ describe('Proposed Action Items', () => {
     });
     const view = render();
     await waitFor(() =>
-      expect(
-        screen.getAllByRole('combobox', { name: /Epic for/ }),
-      ).toHaveLength(3),
+      expect(screen.getAllByRole('button', { name: /Epic for/ })).toHaveLength(
+        3,
+      ),
     );
     await waitFor(() =>
       expect(api.actionItemEpics.list).toHaveBeenCalledTimes(1),
@@ -142,10 +150,11 @@ describe('Proposed Action Items', () => {
         return actionItemProposal({ status: 'approved' });
       });
     render();
-    await screen.findByRole('option', { name: destination.title });
-    fireEvent.change(screen.getByRole('combobox', { name: /Epic for/ }), {
-      target: { value: '10' },
-    });
+    await findEpicChoice(
+      await screen.findByRole('button', { name: /Epic for/ }),
+      destination.title,
+    );
+    chooseEpic(screen.getByRole('button', { name: /Epic for/ }), '10');
     const accept = screen.getByRole('button', { name: 'Accept' });
     accept.focus();
     fireEvent.click(accept);
@@ -165,9 +174,10 @@ describe('Proposed Action Items', () => {
       },
     ];
     fireEvent.click(screen.getByRole('button', { name: 'Refresh Epics' }));
-    await screen.findByRole('option', {
-      name: `${destination.title} — earlier choice`,
-    });
+    await findEpicChoice(
+      screen.getByRole('button', { name: /Epic for/ }),
+      `${destination.title} — earlier choice`,
+    );
     fireEvent.click(accept);
     fireEvent.click(accept);
     await screen.findByRole('heading', {
