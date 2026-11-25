@@ -41,53 +41,77 @@ def proxy_with(method, result, caplog):
 def test_real_backend_initialization_wraps_control_and_data_and_keeps_config(
     monkeypatch, caplog
 ):
-    monkeypatch.setattr(pb, "_pc", None)
+    from services.memory import maintenance
+
     monkeypatch.setattr(pb, "_index", None)
     monkeypatch.setenv("PINECONE_API_KEY", "PRIVATE_KEY")
     config = SimpleNamespace(host="PRIVATE_HOST", api_key="PRIVATE_KEY")
+    calls = []
+    closed = []
 
-    def observed(result):
-        def call(*_, **__):
+    def observed(operation, result):
+        def call(*args, **kwargs):
             assert records(caplog)[-1]["phase"] == "START"
+            calls.append((operation, args, kwargs))
             return result
 
         return call
 
-    pc = SimpleNamespace(
-        has_index=observed(False),
-        create_index=observed(None),
+    api = SimpleNamespace(
+        api_client=SimpleNamespace(close=lambda: closed.append("control")),
         describe_index=observed(
-            SimpleNamespace(host="PRIVATE_HOST", status={"ready": True})
+            "describe_index",
+            SimpleNamespace(host="PRIVATE_HOST", status={"ready": True}),
         ),
     )
-    raw = SimpleNamespace(
-        config=config, fetch=observed({"vectors": {}, "usage": {"read_units": 2}})
+    pc = SimpleNamespace(
+        _openapi_config=SimpleNamespace(retries=None),
+        db=SimpleNamespace(index=SimpleNamespace(_index_api=api)),
     )
-    monkeypatch.setattr(pb, "Pinecone", lambda **_: pc)
+    raw = SimpleNamespace(
+        config=config,
+        fetch=observed("fetch", {"vectors": {}, "usage": {"read_units": 2}}),
+    )
+    controls = []
+
+    def control(**kwargs):
+        controls.append(kwargs)
+        return pc
+
+    monkeypatch.setattr(maintenance, "Pinecone", control)
     constructions = []
 
     def index(**kwargs):
         constructions.append(kwargs)
         return raw
 
-    monkeypatch.setattr(pb, "Index", index)
+    monkeypatch.setattr(maintenance, "Index", index)
     with trigger_context(trigger="mcp", tool="memory", request_id="synthetic"):
         assert pb.get_row(str(uuid4())) is None
 
     assert pb._index.config is config
+    assert controls == [
+        {"api_key": "PRIVATE_KEY", "host": "https://api.pinecone.io", "pool_threads": 1}
+    ]
+    assert pc._openapi_config.retries == 0 and closed == ["control"]
     assert constructions[0]["openapi_config"].retries == 0
+    assert constructions[0]["host"] == config.host
+    assert constructions[0]["api_key"] == config.api_key
+    assert [operation for operation, _, _ in calls] == ["describe_index", "fetch"]
+    assert calls[0][2]["index_name"] == pb.INDEX_NAME
+    assert all(0 < kwargs["_request_timeout"] <= 10 for _, _, kwargs in calls)
     events = records(caplog)
     assert [event["operation"] for event in events[::2]] == [
-        "has_index",
-        "create_index",
-        "describe_index",
         "describe_index",
         "fetch",
     ]
+    assert len(events) == 4
     assert events[-1]["read_units"] == 2
     for before, after in zip(events[::2], events[1::2]):
+        assert (before["phase"], after["phase"]) == ("START", "END")
         assert before["event_id"] == after["event_id"] and after["outcome"] == "success"
         assert before["trigger"] == "mcp" and before["index"] == pb.INDEX_NAME
+        assert after["trigger"] == "mcp" and after["index"] == pb.INDEX_NAME
     assert "PRIVATE_" not in caplog.text and current_trigger() == {}
 
 
