@@ -29,7 +29,7 @@ from services.observability import action_operation
 MODEL_NAME = MEMORY_EMBEDDING_MODEL
 DECAY_RATE = float(os.environ.get("MEMORY_DECAY_RATE", "0.01"))
 DEFAULT_LIMIT = int(os.environ.get("MEMORY_DEFAULT_LIMIT", "20"))
-SEARCH_FETCH_CEILING = int(os.environ.get("MEMORY_SEARCH_FETCH_CEILING", "200"))
+SEARCH_FETCH_CEILING = 50
 _LOGGER = logging.getLogger("agent_smith.memory.embedding")
 
 _embeddings: Embeddings | None = None
@@ -139,6 +139,15 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _new_retriever() -> TimeWeightedVectorStoreRetriever:
+    return TimeWeightedVectorStoreRetriever(
+        vectorstore=get_backend().get_vectorstore(_get_embeddings()),
+        decay_rate=DECAY_RATE,
+        k=10,
+        search_kwargs={"k": SEARCH_FETCH_CEILING},
+    )
+
+
 def _get_retriever() -> TimeWeightedVectorStoreRetriever:
     global _retriever
     if _retriever is not None:
@@ -149,13 +158,7 @@ def _get_retriever() -> TimeWeightedVectorStoreRetriever:
             return _retriever
 
         backend = get_backend()
-        vectorstore = backend.get_vectorstore(_get_embeddings())
-        retriever = TimeWeightedVectorStoreRetriever(
-            vectorstore=vectorstore,
-            decay_rate=DECAY_RATE,
-            k=10,
-            search_kwargs={"k": 50},
-        )
+        retriever = _new_retriever()
 
         rows = backend.load_all()
         for i, row in enumerate(rows):
@@ -326,8 +329,8 @@ def _record_access(rows: list[dict]) -> list[dict]:
     if not rows:
         return []
     accessed = get_backend().touch_accessed([row["id"] for row in rows], _utcnow())
-    with _retriever_lock:
-        if _retriever is not None:
+    if _retriever is not None:
+        with _retriever_lock:
             for document in _retriever.memory_stream:
                 stamp = accessed.get(document.metadata.get("id"))
                 if stamp is None:
@@ -395,6 +398,7 @@ def _persist_document(
     memory_document = deepcopy(document)
     memory_document.metadata.setdefault("last_accessed_at", current_time)
     memory_document.metadata.setdefault("created_at", current_time)
+    # Preserve the metadata schema without reserving a concurrent cache position.
     next_index = len(retriever.memory_stream) if retriever is not None else 0
     memory_document.metadata["buffer_idx"] = (
         next_index if replace_index is None else replace_index
@@ -410,10 +414,18 @@ def _persist_document(
     vectorstore.add_documents(
         [deepcopy(memory_document)], ids=[id], current_time=current_time
     )
-    if retriever is None:
-        return
+    # A listing may publish its complete snapshot while the storage write runs.
+    # FIXME: Same-ID mutation ordering needs a lock spanning provider writes and
+    # cache reconciliation; this lock only preserves catalog publication order.
     with _retriever_lock:
+        if retriever is None:
+            retriever = _retriever
+        if retriever is None:
+            return
         current_index = _cached_index(retriever, id)
+        memory_document.metadata["buffer_idx"] = (
+            len(retriever.memory_stream) if current_index is None else current_index
+        )
         if current_index is None:
             retriever.memory_stream.append(memory_document)
         else:
@@ -580,22 +592,16 @@ def add(
     content = prepare_memory_content(content, strict=strict)
     doc = _memory_document(id, content, repo, tags, now_str, now_str)
 
-    retriever = _get_retriever()
-    _persist_document(retriever, doc, id=id, current_time=now_dt)
+    _persist_document(_retriever, doc, id=id, current_time=now_dt)
     return id
 
 
 def _ranked_rows(retriever: TimeWeightedVectorStoreRetriever, query: str) -> list[dict]:
-    with _retriever_lock:
-        scores = {
-            document.metadata["id"]: retriever.default_salience
-            for document in retriever.memory_stream[-SEARCH_FETCH_CEILING:]
-            if document.metadata.get("id")
-        }
     hits = retriever.vectorstore.similarity_search_with_relevance_scores(
-        query, **retriever.search_kwargs
+        query, k=SEARCH_FETCH_CEILING
     )
-    for document, score in hits:
+    scores = {}
+    for document, score in hits[:SEARCH_FETCH_CEILING]:
         id = document.metadata.get("id") or document.id
         if id:
             scores[id] = score
@@ -640,7 +646,9 @@ def search_page(
     _validate_sort(sort)
     _page([], limit, offset)
 
-    retriever = _get_retriever()
+    retriever = _retriever
+    if retriever is None:
+        retriever = _new_retriever()
     rows = _with_context_tags(_ranked_rows(retriever, query))
     result = _filter_and_sort(
         rows, repo=repo, tags=tags, sort=sort, meeting_only=meeting_only
@@ -757,12 +765,8 @@ def update(
         source_id=existing.get("source_id"),
     )
 
-    retriever = _get_retriever()
-    replace_index = _cached_index(retriever, id)
-    if replace_index is None:
-        raise RuntimeError(
-            f"Memory {id} exists in the backend but is missing from the retriever stream"
-        )
+    retriever = _retriever
+    replace_index = _cached_index(retriever, id) if retriever is not None else None
     _persist_document(
         retriever,
         doc,

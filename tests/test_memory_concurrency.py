@@ -1,5 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
-from threading import Condition, Event, RLock
+from copy import deepcopy
+from datetime import datetime, timedelta
+from threading import Barrier, Condition, Event, RLock
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -30,11 +32,222 @@ class ObservedLock:
         with self._condition:
             assert self._condition.wait_for(lambda: self._attempts >= count, timeout=5)
 
+    @property
+    def attempts(self):
+        with self._condition:
+            return self._attempts
+
 
 @pytest.fixture(autouse=True)
 def isolated_memory(monkeypatch):
     monkeypatch.setattr(db, "_embeddings", None)
     monkeypatch.setattr(db, "_retriever", None)
+
+
+@pytest.fixture
+def synthetic_memory(monkeypatch, tmp_path):
+    monkeypatch.setenv("MEMORY_BACKEND", "lancedb")
+    monkeypatch.setattr(lancedb_backend, "STORE_PATH", tmp_path / "memories")
+    monkeypatch.setattr(db, "_embeddings", FakeEmbeddings())
+    store = lancedb_backend.get_vectorstore(db._embeddings)
+    monkeypatch.setattr(lancedb_backend, "get_vectorstore", lambda _: store)
+    return SimpleNamespace(backend=lancedb_backend, store=store)
+
+
+@pytest.fixture
+def paused_catalog(synthetic_memory, monkeypatch):
+    catalog = synthetic_memory
+    catalog.loading, catalog.release = Event(), Event()
+    catalog.lock, catalog.loads = ObservedLock(), []
+    catalog.failure = None
+    catalog.read_rows = catalog.backend.load_all
+
+    def load_all():
+        rows = catalog.read_rows()
+        catalog.loads.append(len(rows))
+        catalog.loading.set()
+        assert catalog.release.wait(5)
+        if catalog.failure is not None:
+            raise catalog.failure
+        return rows
+
+    monkeypatch.setattr(catalog.backend, "load_all", load_all)
+    monkeypatch.setattr(db, "_retriever_lock", catalog.lock)
+    yield catalog
+    catalog.release.set()
+
+
+@pytest.mark.parametrize("operation", ["add", "update", "delete"])
+def test_acknowledged_write_reconciles_after_listing_snapshot(
+    paused_catalog, monkeypatch, operation
+):
+    catalog = paused_catalog
+    existing_id = db.add("Original Python memory")
+    mutated = Event()
+    original_write = catalog.store.add_documents
+    original_delete = catalog.backend.delete_row
+
+    def write(*args, **kwargs):
+        result = original_write(*args, **kwargs)
+        mutated.set()
+        return result
+
+    def delete(id):
+        original_delete(id)
+        mutated.set()
+
+    def change():
+        if operation == "add":
+            return db.add("Another Python memory")
+        if operation == "update":
+            return db.update(existing_id, content="Corrected Python memory")
+        return db.delete(existing_id)
+
+    monkeypatch.setattr(catalog.store, "add_documents", write)
+    monkeypatch.setattr(catalog.backend, "delete_row", delete)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        try:
+            listing = pool.submit(db._get_retriever)
+            assert catalog.loading.wait(5)
+            next_attempt = catalog.lock.attempts + 1
+            writer = pool.submit(change)
+            assert mutated.wait(5)
+            catalog.lock.wait_for_attempts(next_attempt)
+            assert db._retriever is None and not writer.done()
+        finally:
+            catalog.release.set()
+        retriever = listing.result(timeout=5)
+        writer.result(timeout=5)
+
+    stored = {row["id"]: row["text"] for row in catalog.read_rows()}
+    cached = {doc.metadata["id"]: doc.page_content for doc in retriever.memory_stream}
+    assert cached == stored
+    assert [doc.metadata["buffer_idx"] for doc in retriever.memory_stream] == list(
+        range(len(stored))
+    )
+    assert {row["id"]: row["content"] for row in db.list_memories()} == stored
+    assert catalog.loads == [1]
+
+
+@pytest.mark.parametrize("operation", ["add", "update"])
+def test_failed_write_during_listing_leaves_snapshot_and_storage_unchanged(
+    paused_catalog, monkeypatch, operation
+):
+    catalog = paused_catalog
+    id = db.add("Keep this Python memory")
+    before = deepcopy(catalog.read_rows())
+
+    def failed_write(*args, **kwargs):
+        raise RuntimeError("Synthetic storage write failure")
+
+    monkeypatch.setattr(catalog.store, "add_documents", failed_write)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        try:
+            listing = pool.submit(db._get_retriever)
+            assert catalog.loading.wait(5)
+            writer = pool.submit(
+                db.add if operation == "add" else db.update,
+                *(["Uncommitted Python memory"] if operation == "add" else [id]),
+                **(
+                    {}
+                    if operation == "add"
+                    else {"content": "Uncommitted Python memory"}
+                ),
+            )
+            with pytest.raises(RuntimeError, match="Synthetic storage write failure"):
+                writer.result(timeout=5)
+            assert db._retriever is None
+        finally:
+            catalog.release.set()
+        retriever = listing.result(timeout=5)
+
+    assert catalog.read_rows() == before
+    assert [
+        (doc.metadata["id"], doc.page_content) for doc in retriever.memory_stream
+    ] == [(id, "Keep this Python memory")]
+
+
+def test_successful_write_survives_failed_listing_and_next_initialization(
+    paused_catalog, monkeypatch
+):
+    catalog = paused_catalog
+    existing_id = db.add("Existing Python memory")
+    catalog.failure = RuntimeError("Synthetic listing failure")
+    persisted = Event()
+    original_write = catalog.store.add_documents
+
+    def write(*args, **kwargs):
+        result = original_write(*args, **kwargs)
+        persisted.set()
+        return result
+
+    monkeypatch.setattr(catalog.store, "add_documents", write)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        try:
+            listing = pool.submit(db._get_retriever)
+            assert catalog.loading.wait(5)
+            next_attempt = catalog.lock.attempts + 1
+            writer = pool.submit(db.add, "Acknowledged Python memory")
+            assert persisted.wait(5)
+            catalog.lock.wait_for_attempts(next_attempt)
+            assert db._retriever is None and not writer.done()
+        finally:
+            catalog.release.set()
+        with pytest.raises(RuntimeError, match="Synthetic listing failure"):
+            listing.result(timeout=5)
+        written_id = writer.result(timeout=5)
+
+    assert db._retriever is None
+    catalog.failure = None
+    rows, total = db.list_page(limit=10)
+    assert total == 2 and {row["id"] for row in rows} == {existing_id, written_id}
+    assert catalog.loads == [1, 2]
+
+
+def test_search_completes_during_listing_and_page_refreshes_acknowledged_access(
+    paused_catalog, monkeypatch
+):
+    catalog = paused_catalog
+    id = db.add("Python memory")
+    initial = catalog.backend.get_row(id)["metadata"]["last_accessed_at"]
+    accessed = datetime.fromisoformat(initial) if isinstance(initial, str) else initial
+    accessed += timedelta(hours=1)
+    monkeypatch.setattr(db, "_utcnow", lambda: accessed)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        try:
+            listing = pool.submit(db._get_retriever)
+            assert catalog.loading.wait(5)
+            result = pool.submit(db.search, "Python memory", limit=1).result(timeout=5)
+            assert [row["id"] for row in result] == [id]
+            assert datetime.fromisoformat(result[0]["last_accessed_at"]) == accessed
+            assert db._retriever is None and not listing.done()
+        finally:
+            catalog.release.set()
+        listing.result(timeout=5)
+
+    assert datetime.fromisoformat(db.list_memories()[0]["last_accessed_at"]) == accessed
+    assert catalog.loads == [1]
+
+
+def test_concurrent_writes_resolve_distinct_in_memory_indexes(
+    synthetic_memory, monkeypatch
+):
+    retriever = db._get_retriever()
+    written = Barrier(2)
+    original_write = synthetic_memory.store.add_documents
+
+    def write(*args, **kwargs):
+        result = original_write(*args, **kwargs)
+        written.wait(timeout=5)
+        return result
+
+    monkeypatch.setattr(synthetic_memory.store, "add_documents", write)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        ids = list(pool.map(db.add, ["First Python memory", "Second Python memory"]))
+
+    assert {doc.metadata["id"] for doc in retriever.memory_stream} == set(ids)
+    assert [doc.metadata["buffer_idx"] for doc in retriever.memory_stream] == [0, 1]
 
 
 @pytest.mark.parametrize("device", ["cpu", "mps", "cuda:1"])

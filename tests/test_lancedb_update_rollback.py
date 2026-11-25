@@ -79,6 +79,7 @@ def test_successful_sole_row_replacement_preserves_identity_schema_and_embeds_ne
     backend, embeddings = content_store
     assert backend._get_table() is None
     original_id = db.add("Original", repo="rollback-tests", tags=["keep"])
+    db._get_retriever()
     before = native_snapshot()
     original = deepcopy(backend.get_row(original_id))
     embeddings.documents.clear()

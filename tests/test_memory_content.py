@@ -54,6 +54,18 @@ class SyntheticPineconeIndex:
             }
         }
 
+    def list_paginated(self, *, limit=100, pagination_token=None, **kwargs):
+        ids = [
+            id
+            for id in sorted(self.rows)
+            if pagination_token is None or id > pagination_token
+        ]
+        selected = ids[:limit]
+        result = {"vectors": [{"id": id} for id in selected]}
+        if len(ids) > len(selected):
+            result["pagination"] = {"next": selected[-1]}
+        return result
+
     def query(self, **kwargs):
         return {
             "matches": [

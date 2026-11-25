@@ -109,8 +109,9 @@ def test_search_with_date_sort_uses_retriever_not_load_all(monkeypatch):
     assert calls == [], "search() must filter via retriever, not bypass to load_all()"
 
 
-def test_list_memories_uses_retriever_not_load_all(monkeypatch):
+def test_warm_list_memories_uses_retriever_not_load_all(monkeypatch):
     db.add("alpha entry", repo="r")
+    db._get_retriever()
 
     calls: list[str] = []
     original = lancedb_backend.load_all
@@ -121,7 +122,9 @@ def test_list_memories_uses_retriever_not_load_all(monkeypatch):
     )
 
     assert [m["content"] for m in db.list_memories(repo="r")] == ["alpha entry"]
-    assert calls == [], "list_memories() must read the retriever stream; a full backend load per call exhausts Pinecone egress"
+    assert calls == [], (
+        "list_memories() must read the retriever stream; a full backend load per call exhausts Pinecone egress"
+    )
 
 
 def test_list_memories_reflects_update_and_delete():
@@ -132,7 +135,9 @@ def test_list_memories_reflects_update_and_delete():
     db.delete(removed)
 
     memories = db.list_memories(repo="r")
-    assert [(m["id"], m["content"], m["tags"]) for m in memories] == [(kept, "revised wording", ["b"])]
+    assert [(m["id"], m["content"], m["tags"]) for m in memories] == [
+        (kept, "revised wording", ["b"])
+    ]
 
 
 def test_get_by_id():
@@ -225,7 +230,9 @@ def test_time_weighting_prefers_recent():
             "last_accessed_at": old_time,
         },
     )
-    retriever.add_documents([old_doc], ids=["00000000-0000-0000-0000-000000000001"], current_time=old_time)
+    retriever.add_documents(
+        [old_doc], ids=["00000000-0000-0000-0000-000000000001"], current_time=old_time
+    )
 
     new_time = datetime.now(timezone.utc)
     new_doc = Document(
@@ -239,7 +246,9 @@ def test_time_weighting_prefers_recent():
             "last_accessed_at": new_time,
         },
     )
-    retriever.add_documents([new_doc], ids=["00000000-0000-0000-0000-000000000002"], current_time=new_time)
+    retriever.add_documents(
+        [new_doc], ids=["00000000-0000-0000-0000-000000000002"], current_time=new_time
+    )
 
     results = db.search("database optimization")
     assert len(results) >= 2

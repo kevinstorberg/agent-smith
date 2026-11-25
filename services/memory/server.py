@@ -54,7 +54,7 @@ def memory_add(
 def memory_search(
     query: str,
     repo: str = "",
-    limit: int = db.DEFAULT_LIMIT,
+    limit: Annotated[int, Field(ge=1, le=db.SEARCH_FETCH_CEILING)] = db.DEFAULT_LIMIT,
     tags: list[str] | None = None,
     meeting_only: bool = False,
 ) -> list[dict]:
@@ -64,14 +64,14 @@ def memory_search(
     Args:
         query:  Natural language search query.
         repo:   Restrict results to this project/repo (optional).
-        limit:  Maximum number of results to return.
+        limit:  Maximum number of results to return (1-50).
         tags:   Require topics from own tags or inherited meeting context_tags (e.g. ["product", "security"]).
         meeting_only: Return only memories originating from meetings, independent of tags.
 
     Returns:
         List of matching memories ordered by relevance, each with id, content,
         repo, editable tags, inherited context_tags, from_meeting, source_type/source_id and timestamps.
-        Filtering applies to the existing bounded semantic candidate set, not an exhaustive index scan.
+        Filtering applies to the top 50 semantic candidates, not an exhaustive index scan.
     """
     return db.search(
         query=query,
