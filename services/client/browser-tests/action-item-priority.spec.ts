@@ -101,6 +101,13 @@ for (const scale of [1, 2]) {
       page.getByRole('button', { name: 'Task 1', exact: true }),
     ).toBeVisible();
     await expect(quickFilter).toBeChecked();
+    await expect(
+      page.getByRole('button', { name: 'More filters', exact: true }),
+    ).toBeVisible();
+    await expect(page.locator('.action-items-active-filters')).toHaveCount(0);
+    await expect(page.getByText('Priority only', { exact: true })).toHaveCount(
+      1,
+    );
     await expect
       .poll(() =>
         fixtureAPI.requests.some(

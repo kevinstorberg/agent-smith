@@ -41,7 +41,6 @@ export function ActionItemsIndexPage() {
   const activeFilters = [
     ...(tagsInput.trim() ? [`Tags: ${tagsInput.trim()}`] : []),
     ...(unassigned ? ['No project'] : []),
-    ...(priorityOnly ? ['Priority only'] : []),
     ...(dueHoursInput !== null
       ? [`Due within ${dueHoursInput} hours, including overdue`]
       : []),
@@ -155,6 +154,7 @@ export function ActionItemsIndexPage() {
           >
             Proposed action items
           </ButtonLink>
+          <ButtonLink to="/action-items/epics">Manage Epics</ButtonLink>
           <NewEpicControl queue={queue} />
           <Link
             className="btn btn-primary"

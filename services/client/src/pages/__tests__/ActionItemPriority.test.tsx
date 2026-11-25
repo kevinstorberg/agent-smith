@@ -147,11 +147,49 @@ describe('persistent global Priority planning', () => {
         (entry) => entry.key === 'actionItems',
       )?.values.priority_only,
     ).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(screen.getByRole('button', { name: 'More filters' })).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: 'Clear filters' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Active filters')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Priority only' }));
     await waitFor(() =>
       expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.not.objectContaining({ priority_only: true }),
       ),
+    );
+    expect(
+      screen.getByRole('checkbox', { name: 'Priority only' }),
+    ).not.toBeChecked();
+  });
+
+  it('counts only advanced filters and clears Priority together with those filters', async () => {
+    document.cookie = mergeViewCookie('', 'actionItems', {
+      ...defaultView('actionItems'),
+      priority_only: true,
+      tags: 'security',
+    });
+    renderWithProviders(<ActionItemsIndexPage />, {
+      initialEntries: ['/action-items'],
+    });
+    await screen.findByRole('button', { name: 'Task 1' });
+    expect(
+      screen.getByRole('button', { name: 'More filters (1)' }),
+    ).toBeVisible();
+    expect(screen.getByLabelText('Active filters')).toHaveTextContent(
+      'Tags: security',
+    );
+    expect(screen.getByLabelText('Active filters')).not.toHaveTextContent(
+      'Priority only',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    await waitFor(() =>
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ tags: [], offset: 0 }),
+      ),
+    );
+    expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ priority_only: true }),
     );
     expect(
       screen.getByRole('checkbox', { name: 'Priority only' }),

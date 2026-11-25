@@ -75,6 +75,16 @@ beforeEach(() => {
   });
 });
 
+it('always links to the independent Epic manager while keeping existing creation available', async () => {
+  renderWithProviders(<ActionItemsIndexPage />, {
+    initialEntries: ['/action-items?status=completed&project=Other&q=hidden'],
+  });
+  expect(
+    await screen.findByRole('link', { name: 'Manage Epics' }),
+  ).toHaveAttribute('href', '/action-items/epics');
+  expect(screen.getByRole('button', { name: 'New Epic' })).toBeInTheDocument();
+});
+
 describe('creating an Epic directly from a saved task', () => {
   it.each([
     ['root', 'open'],
@@ -526,7 +536,9 @@ describe('saved Action Item Epics', () => {
     });
     renderWithProviders(<ActionItemsIndexPage />);
     const region = await screen.findByRole('region', { name: 'Epic Release' });
-    expect(within(region).getByText('2 of 5 matching')).toBeVisible();
+    expect(
+      within(region).getByText('Showing 2 of 5 action items'),
+    ).toBeVisible();
     expect(within(region).getByLabelText('Order 1')).toBeVisible();
     expect(within(region).getByLabelText('Order 2')).toBeVisible();
     expect(
