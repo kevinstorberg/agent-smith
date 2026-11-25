@@ -13,12 +13,12 @@ const SORT_LABELS: Record<ActionItemSort, string> = {
   project_desc: 'Project: Z–A',
   tags_asc: 'Tags: A–Z',
   tags_desc: 'Tags: Z–A',
-  due_asc: 'Due date: earliest first',
-  due_desc: 'Due date: latest first',
-  updated: 'Updated: newest first',
-  updated_asc: 'Updated: oldest first',
-  completed: 'Completed: newest first',
-  newest: 'Created: newest first',
+  due_asc: 'Due: earliest first',
+  due_desc: 'Due: latest first',
+  updated: 'Updated: newest',
+  updated_asc: 'Updated: oldest',
+  completed: 'Completed: newest',
+  newest: 'Created: newest',
 };
 
 export function ActionItemQueueSort({

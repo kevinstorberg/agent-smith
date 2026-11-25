@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { TYPE_PATHS } from '../src/constants';
+import { actionItemSortOptions, TYPE_PATHS } from '../src/constants';
 import { profileFixture } from '../src/pages/__tests__/profileFixture';
 import { test, expect } from './fixtures';
 import {
@@ -9,6 +9,7 @@ import {
   expectMainContained,
 } from './geometry';
 import { enlargeComputedText } from './typography';
+import { actionItemSortControl, compactActionItems } from './actionItemSorting';
 
 const views = [
   ...Object.values(TYPE_PATHS).map((plural) => ({
@@ -69,7 +70,7 @@ async function expectFilterRows(page: Page, checkPage = true) {
   const main = (await page.locator('#main-content').boundingBox())!;
   for (const row of await page
     .locator(
-      '.resource-controls:visible, .profile-filters:visible, .memory-controls:visible, .action-items-searchbar:visible, .action-items-advanced-filters:visible',
+      '.resource-controls:visible, .profile-filters:visible, .memory-controls:visible, .action-items-searchbar:visible, .action-items-advanced-filters:visible, .action-item-sort-control:visible',
     )
     .all()) {
     const controls = await row
@@ -130,7 +131,11 @@ async function expectFilterRows(page: Page, checkPage = true) {
         const context = document.createElement('canvas').getContext('2d')!;
         context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
         return {
-          name: select.labels?.[0]?.textContent?.trim(),
+          name: (
+            select.labels?.[0]?.querySelector('.form-label') ??
+            select.labels?.[0]
+          )?.textContent?.trim(),
+          selected: select.selectedOptions[0].text,
           text: context.measureText(select.selectedOptions[0].text).width,
           available:
             select.clientWidth -
@@ -142,7 +147,7 @@ async function expectFilterRows(page: Page, checkPage = true) {
     for (const value of values)
       expect(
         value.text,
-        `${value.name} must show its selected text`,
+        `${value.name} must show its selected text: ${value.selected}`,
       ).toBeLessThanOrEqual(value.available + 1);
   }
   await expectDocumentContained(page);
@@ -165,7 +170,6 @@ for (const enlarged of [false, true])
           includeHidden: true,
         }),
       ).toHaveCount(0);
-      // The independent status-selection change covers the enlarged Action item tab strip.
       await expectFilterRows(
         page,
         !(
@@ -185,18 +189,57 @@ for (const view of [
   { path: '/memory', select: 'Sort' },
   { path: '/memory?q=release', select: 'Sort' },
   { path: '/jobs', select: 'Scheduling' },
-  { path: '/action-items?status=completed', select: 'Sort' },
+  ...(['open', 'completed', 'all'] as const).map((status) => ({
+    path: `/action-items?status=${status}`,
+    select: 'Sort',
+    status,
+  })),
 ]) {
   test(`${view.path} shows every selected ${view.select} option at200% text`, async ({
     page,
+    fixtureAPI,
   }) => {
     await page.goto(view.path);
     if (view.path.startsWith('/action-items')) {
-      await expect(page.getByRole('table')).toBeVisible();
+      const status = 'status' in view ? view.status : 'completed';
+      await expect(
+        page.getByRole('status').filter({
+          hasText: `No ${status === 'all' ? '' : `${status} `}action items found.`,
+        }),
+      ).toBeVisible();
+      const control = actionItemSortControl(page, 'Title');
+      await expect(control).toBeVisible();
       await enlargeComputedText(page);
       await expect(
         page.getByRole('combobox', { name: 'Sort', exact: true }),
       ).toHaveCount(0);
+      if (compactActionItems(page)) {
+        const options = actionItemSortOptions(status);
+        await expect(control.locator('option')).toHaveCount(options.length);
+        for (const { value } of options) {
+          await control.selectOption(value);
+          await expect(control).toHaveValue(value);
+          expect(new URL(page.url()).searchParams.get('sort')).toBe(value);
+          await expect
+            .poll(() => {
+              const reads = fixtureAPI.requests.filter(
+                (entry) =>
+                  new URL(entry.url).pathname === '/api/action-items/queue',
+              );
+              return Object.fromEntries(
+                new URL(reads.at(-1)!.url).searchParams,
+              );
+            })
+            .toMatchObject({ status, sort: value, offset: '0' });
+          await expectControlReachable(control);
+          await expectFilterRows(page, page.viewportSize()!.width !== 320);
+        }
+        await expect(
+          page.getByRole('table').locator('thead button'),
+        ).toHaveCount(0);
+        return;
+      }
+      await expect(page.getByRole('table')).toBeVisible();
       for (const label of ['Title', 'Project', 'Tags', 'Due date']) {
         const button = page
           .getByRole('table')
