@@ -17,6 +17,67 @@ import {
 import type { ActionItemQueueRoot } from '../src/api';
 
 for (const scale of [1, 2]) {
+  test(`thirteen matching Epics scroll independently while search and special choices stay visible at ${scale}x text`, async ({
+    page,
+    fixtureAPI,
+  }, info) => {
+    const epics = Array.from({ length: 13 }, (_, index) => ({
+      ...epicGroup(index + 10, []).epic,
+      title: `Delivery planning ${String(index + 1).padStart(2, '0')}`,
+    }));
+    fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
+    fixtureAPI.get(
+      '/api/action-items/queue',
+      queuePage({ items: [actionItem(1)], total: 1 }),
+    );
+    fixtureAPI.get('/api/action-items/epics', { items: epics });
+    await page.goto('/action-items');
+    await openItemActions(page, 'Task 1');
+    await page
+      .getByRole('button', { name: 'Move Task 1 to Epic', exact: true })
+      .click();
+    const popup = await openEpicPicker(
+      page.getByRole('button', { name: 'Move to Epic', exact: true }),
+    );
+    if (scale === 2) await enlargeComputedText(page);
+    const search = popup.getByRole('searchbox', { name: 'Find Epic' });
+    const results = popup.locator('.epic-choice-results');
+    const geometry = await results.evaluate((element) => ({
+      height: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+    }));
+    expect(geometry.scrollHeight).toBeGreaterThan(geometry.height);
+    expect(geometry.height).toBeLessThanOrEqual(
+      page.viewportSize()!.height * 0.4,
+    );
+    const last = results.getByRole('button', {
+      name: 'Delivery planning 13',
+      exact: true,
+    });
+    await last.scrollIntoViewIfNeeded();
+    await expectControlReachable(last);
+    await expect(search).toBeInViewport();
+    await expect(
+      popup.getByRole('button', { name: 'No Epic', exact: true }),
+    ).toBeInViewport();
+    await expect(
+      popup.getByRole('button', { name: 'New Epic…', exact: true }),
+    ).toBeInViewport();
+    await expectDialogContained(popup);
+    await page.screenshot({
+      path: info.outputPath(`compact-epic-picker-${scale}x.png`),
+      fullPage: false,
+    });
+    await search.fill('PLANNING 13');
+    await expect(results.getByRole('button')).toHaveCount(1);
+    await search.press('ArrowDown');
+    await expect(last).toBeFocused();
+    await page.keyboard.press('Escape');
+    expect(
+      fixtureAPI.requests.filter((entry) => entry.method !== 'GET'),
+    ).toEqual([]);
+  });
+
   test(`Epic search chooses explicitly from a long catalog without writes while searching at ${scale}x text`, async ({
     page,
     fixtureAPI,
