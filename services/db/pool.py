@@ -5,16 +5,15 @@ It is deliberately separate from ``connection.py`` so that file stays a small,
 reviewable statement of the transaction contract while the pool lifecycle,
 retry/backoff, and libpq tuning live here.
 
-Why a fixed-size pool (``minconn == maxconn``): psycopg2's
-``AbstractConnectionPool._putconn`` only returns a connection to the free list
-when ``len(self._pool) < self.minconn``. With ``minconn == maxconn`` every
-returned connection is retained and stays warm; with ``minconn=0`` every
-returned connection would be closed, defeating pooling entirely.
+One idle connection stays warm for serial reuse; concurrent demand grows the
+pool up to ``DB_POOL_MAX``. Surplus connections close when returned, so a
+short-lived CLI does not reserve the server's peak concurrency. ``minconn=0``
+would close every returned connection and defeat pooling entirely.
 
-The pool is built lazily on first use (inside the retry helper), so the app can
-start and serve even while the database is briefly unreachable, and a blip
-during pool construction is retried rather than crashing the process.
+Construction happens at explicit initialization or first use. Transient
+connection failures are retried within the configured attempt limit.
 """
+
 from __future__ import annotations
 
 import logging
@@ -90,19 +89,27 @@ def _retrying(what: str, factory):
             last = exc
             if attempt < DB_CONNECT_MAX_ATTEMPTS:
                 delay = _backoff_delay(attempt)
-                log.warning("%s failed (attempt %d/%d), retrying in %.2fs: %s",
-                            what, attempt, DB_CONNECT_MAX_ATTEMPTS, delay, exc)
+                log.warning(
+                    "%s failed (attempt %d/%d), retrying in %.2fs: %s",
+                    what,
+                    attempt,
+                    DB_CONNECT_MAX_ATTEMPTS,
+                    delay,
+                    exc,
+                )
                 time.sleep(delay)
     assert last is not None
     raise last
 
 
 def _build_pool() -> pg_pool.ThreadedConnectionPool:
+    if type(DB_POOL_MAX) is not int or DB_POOL_MAX < 1:
+        raise ValueError("DB_POOL_MAX must be a positive integer")
     validate_postgres_url(DATABASE_URL)
     return _retrying(
         "db pool construction",
         lambda: pg_pool.ThreadedConnectionPool(
-            DB_POOL_MAX, DB_POOL_MAX, DATABASE_URL, **_connect_kwargs()
+            1, DB_POOL_MAX, DATABASE_URL, **_connect_kwargs()
         ),
     )
 
@@ -147,8 +154,11 @@ def acquire() -> "psycopg2.extensions.connection":
             connect_attempts += 1
             if connect_attempts >= DB_CONNECT_MAX_ATTEMPTS:
                 raise
-            log.warning("db connect failed (attempt %d/%d), backing off",
-                        connect_attempts, DB_CONNECT_MAX_ATTEMPTS)
+            log.warning(
+                "db connect failed (attempt %d/%d), backing off",
+                connect_attempts,
+                DB_CONNECT_MAX_ATTEMPTS,
+            )
             time.sleep(_backoff_delay(connect_attempts))
             continue
         if conn.closed or (DB_POOL_PRE_PING and not _ping_ok(conn)):
@@ -170,7 +180,7 @@ def drain_idle() -> None:
     silently severs every pooled connection at once. When one in-use connection
     fails with a connection-level error, the rest of the free list is almost
     certainly dead too; purging it here means the next checkout reconnects fresh
-    instead of handing out 25 more dead sockets one failed op at a time. In-use
+    instead of handing out dead sockets one failed op at a time. In-use
     connections (owned by other threads) are left untouched and recover on their
     own exit. Held under the pool's own lock so it cannot race getconn/putconn.
     """
@@ -196,7 +206,7 @@ def _ping_ok(conn) -> bool:
 
 
 def init_pool() -> None:
-    """Eagerly build the pool (called from the app lifespan after migrations)."""
+    """Initialize one warm connection after app migrations."""
     _get_pool()
 
 
