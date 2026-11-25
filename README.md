@@ -1110,14 +1110,33 @@ See `.env.default` for all available configuration options.
 ### Bedrock authentication
 
 `GRAPH_MODEL_AUTH_MODE=api_key` preserves per-role `MODEL_SERVER_API_KEY`
-authentication. To route every graph model role through the Paralign AWS profile,
-set the following in the development or production environment override:
+authentication. Configure profile routing separately on each device in its local,
+gitignored environment override: `.env.production` for `./run.sh`, or
+`.env.development` for `./run.sh dev`. Keep committed `.env.default` generic.
+
+These settings belong to each local Agent Smith server process. A remote MCP
+client uses the AWS account configured on the server it calls.
+
+On the work device, route every graph model role through Paralign:
 
 ```dotenv
 GRAPH_MODEL_AUTH_MODE=aws_profile
 GRAPH_MODEL_AWS_PROFILE=paralign-source
-GRAPH_MODEL_AWS_ACCOUNT_ID=180425283135
+GRAPH_MODEL_AWS_ACCOUNT_ID=YOUR_PARALIGN_12_DIGIT_ACCOUNT_ID
 ```
+
+On the personal device, replace these placeholders with its own AWS profile and
+12-digit account ID in that device's override file:
+
+```dotenv
+GRAPH_MODEL_AUTH_MODE=aws_profile
+GRAPH_MODEL_AWS_PROFILE=YOUR_PERSONAL_AWS_PROFILE
+GRAPH_MODEL_AWS_ACCOUNT_ID=YOUR_PERSONAL_12_DIGIT_ACCOUNT_ID
+```
+
+The named profile must exist in the local AWS configuration on that device.
+Changing a device's profile/account needs no repository changes; the model roles
+and their configured models remain the same.
 
 Profile authentication is application-wide; role/preset overrides are rejected.
 Configured static model keys are unused in this mode. Each HTTP attempt resolves
@@ -1130,10 +1149,11 @@ the configured profile. Bedrock Runtime uses `/openai/v1`; Mantle supports `/v1`
 and `/openai/v1` according to the model card.
 
 Before activating the settings and restarting, run this read-only check with the
-application's Python environment:
+application's Python environment, replacing the placeholders with that device's
+profile and expected account:
 
 ```sh
-python -m scripts.check_bedrock_auth --profile paralign-source --expected-account 180425283135 --region us-east-1
+python -m scripts.check_bedrock_auth --profile YOUR_DEVICE_AWS_PROFILE --expected-account YOUR_DEVICE_12_DIGIT_ACCOUNT_ID --region us-east-1
 ```
 
 It verifies the same credential snapshot through STS and lists Mantle models;
