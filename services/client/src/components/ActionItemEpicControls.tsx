@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type RefObject,
+  type ReactNode,
 } from 'react';
 import {
   api,
@@ -14,10 +15,12 @@ import {
 import type { ActionItemGroupedQueue } from '../hooks/useActionItemGroupedQueue';
 import { useApiRead } from '../hooks/useApiRead';
 import { ActionItemIcon } from './ActionItemIcon';
+import { ActionDisclosure } from './ActionDisclosure';
 
 function useEpicEditor(
   queue: ActionItemGroupedQueue,
   trigger: RefObject<HTMLElement | null>,
+  scope?: RefObject<HTMLElement | null>,
 ) {
   const [open, setOpen] = useState(false);
   const restore = useRef(false);
@@ -30,17 +33,15 @@ function useEpicEditor(
     if (open || queue.editing || queue.busy || !restore.current) return;
     restore.current = false;
     const element = trigger.current;
-    const target =
-      element instanceof HTMLDetailsElement
-        ? element.querySelector('summary')
-        : element;
     if (
-      target?.isConnected &&
+      element?.isConnected &&
       (document.activeElement === document.body ||
-        element?.parentElement?.contains(document.activeElement))
+        (scope?.current ?? element?.parentElement)?.contains(
+          document.activeElement,
+        ))
     )
-      target.focus({ preventScroll: true });
-  }, [open, queue.editing, queue.busy, trigger]);
+      element.focus({ preventScroll: true });
+  }, [open, queue.editing, queue.busy, trigger, scope]);
   return {
     open,
     start: () => {
@@ -51,7 +52,9 @@ function useEpicEditor(
       restore.current =
         document.activeElement === document.body ||
         Boolean(
-          trigger.current?.parentElement?.contains(document.activeElement),
+          (scope?.current ?? trigger.current?.parentElement)?.contains(
+            document.activeElement,
+          ),
         );
       setOpen(false);
       setEditing(false);
@@ -247,9 +250,11 @@ function EpicPicker({
 export function EpicMembershipControl({
   queue,
   item,
+  text = false,
 }: {
   queue: ActionItemGroupedQueue;
   item: ActionItemRow;
+  text?: boolean;
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const { open, start, close } = useEpicEditor(queue, trigger);
@@ -258,13 +263,13 @@ export function EpicMembershipControl({
       <button
         ref={trigger}
         type="button"
-        className="btn btn-sm action-item-icon-button"
+        className={`btn btn-sm${text ? '' : ' action-item-icon-button'}`}
         aria-label={`Move ${item.title} to Epic`}
         title="Move to Epic"
         disabled={queue.freezeControls || !queue.canAct()}
         onClick={start}
       >
-        <ActionItemIcon name="epic" />
+        {text ? 'Move to Epic' : <ActionItemIcon name="epic" />}
       </button>
       {open && <EpicPicker queue={queue} item={item} onClose={close} />}
     </div>
@@ -274,51 +279,57 @@ export function EpicMembershipControl({
 export function EpicActions({
   queue,
   epic,
+  children,
 }: {
   queue: ActionItemGroupedQueue;
   epic: ActionItemEpic;
+  children?: ReactNode | ((close: () => void) => ReactNode);
 }) {
-  const trigger = useRef<HTMLDetailsElement>(null);
-  const { open: renaming, start, close } = useEpicEditor(queue, trigger);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const scope = useRef<HTMLDivElement>(null);
+  const { open: renaming, start, close } = useEpicEditor(queue, trigger, scope);
   return (
-    <>
-      <details ref={trigger} className="epic-menu">
-        <summary
-          aria-label={`Actions for Epic ${epic.title}`}
-          aria-disabled={queue.freezeControls}
-          onClick={(event) => {
-            if (queue.freezeControls) event.preventDefault();
-          }}
-        >
-          Epic actions
-        </summary>
-        <div>
-          <button
-            className="btn btn-sm"
-            disabled={queue.freezeControls}
-            onClick={() => {
-              trigger.current!.open = false;
-              start();
-            }}
-          >
-            Rename Epic
-          </button>
-          <button
-            className="btn btn-sm"
-            disabled={queue.freezeControls}
-            onClick={() => {
-              if (
-                confirm(
-                  `Remove Epic “${epic.title}”? Its action items are kept and ungrouped.`,
+    <div ref={scope} className="epic-action-controls">
+      <ActionDisclosure
+        label={`Actions for Epic ${epic.title}`}
+        triggerRef={trigger}
+        disabled={queue.freezeControls || !queue.canAct()}
+        dismissible={!queue.busy && !queue.editing}
+        resetKey={`${queue.view}:${epic.id}:${epic.revision}:${Boolean(queue.snapshot)}`}
+      >
+        {(closeActions) => (
+          <>
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={queue.freezeControls}
+              onClick={() => {
+                closeActions();
+                start();
+              }}
+            >
+              Rename Epic
+            </button>
+            {typeof children === 'function' ? children(closeActions) : children}
+            <button
+              type="button"
+              className="btn btn-sm btn-danger"
+              disabled={queue.freezeControls}
+              onClick={() => {
+                closeActions();
+                if (
+                  confirm(
+                    `Remove Epic “${epic.title}”? Its action items are kept and ungrouped.`,
+                  )
                 )
-              )
-                void queue.removeEpic(epic);
-            }}
-          >
-            Remove Epic
-          </button>
-        </div>
-      </details>
+                  void queue.removeEpic(epic);
+              }}
+            >
+              Remove Epic
+            </button>
+          </>
+        )}
+      </ActionDisclosure>
       {renaming && (
         <EpicNameForm
           initial={epic.title}
@@ -327,6 +338,6 @@ export function EpicActions({
           onSave={(title) => queue.renameEpic(epic, title)}
         />
       )}
-    </>
+    </div>
   );
 }

@@ -69,7 +69,7 @@ async function expectFilterRows(page: Page, checkPage = true) {
   const main = (await page.locator('#main-content').boundingBox())!;
   for (const row of await page
     .locator(
-      '.resource-controls:visible, .profile-filters:visible, .memory-controls:visible',
+      '.resource-controls:visible, .profile-filters:visible, .memory-controls:visible, .action-items-searchbar:visible, .action-items-advanced-filters:visible',
     )
     .all()) {
     const controls = await row

@@ -1,3 +1,4 @@
+import { useId, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useActionItemGroupedQueue } from '../hooks/useActionItemGroupedQueue';
@@ -11,6 +12,7 @@ import { projectScope, projectScopeFields } from '../utils/actionItemProjects';
 import { ActionItemDeadlineWindow } from '../components/ActionItemDeadlines';
 import { FilterCheckbox } from '../components/FilterCheckbox';
 import { ButtonLink } from '../components/ButtonLink';
+import './actionItemsIndex.css';
 
 export function ActionItemsIndexPage() {
   const navigate = useNavigate();
@@ -24,6 +26,15 @@ export function ActionItemsIndexPage() {
     due_within_hours: dueHoursInput,
     tags: tagsInput,
   } = preferences.values;
+  const filterId = useId();
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const activeFilters = [
+    ...(tagsInput.trim() ? [`Tags: ${tagsInput.trim()}`] : []),
+    ...(unassigned ? ['Unassigned only'] : []),
+    ...(dueHoursInput !== null
+      ? [`Due within ${dueHoursInput} hours, including overdue`]
+      : []),
+  ];
   const query = useDebouncedValue(queryInput.trim());
   const tags = useDebouncedValue(tagsInput.trim());
   const dueHours = useDebouncedValue(dueHoursInput);
@@ -64,18 +75,48 @@ export function ActionItemsIndexPage() {
     pagination: { ...preferences.pagination, enabled: !criteriaPending },
   });
   const { freezeControls } = queue;
+  const searchControls = (
+    <div className="action-items-searchbar">
+      <label className="action-items-search">
+        <span className="visually-hidden">Search action items</span>
+        <input
+          className="input"
+          type="search"
+          maxLength={1000}
+          value={queryInput}
+          disabled={freezeControls}
+          onChange={(event) => preferences.setField('q', event.target.value)}
+          placeholder="Search title or description…"
+        />
+      </label>
+      <button
+        type="button"
+        className="btn action-items-filter-toggle"
+        aria-expanded={filtersOpen}
+        aria-controls={filterId}
+        disabled={freezeControls}
+        onClick={() => setFiltersOpen((open) => !open)}
+      >
+        Filters
+        {activeFilters.length ? ` (${activeFilters.length})` : ''}
+        <span aria-hidden="true">{filtersOpen ? '⌃' : '⌄'}</span>
+      </button>
+    </div>
+  );
   return (
     <div className="action-items-index-page">
       <div className="page-header">
         <h2 className="page-title">Action items</h2>
-        <div className="flex-wrap" style={{ gap: 8 }}>
-          <ButtonLink to="/action-items/proposals?status=pending">
+        <div className="action-items-page-actions">
+          <ButtonLink
+            className="action-proposals-link"
+            to="/action-items/proposals?status=pending"
+          >
             Proposed action items
           </ButtonLink>
           <NewEpicControl queue={queue} />
           <Link
             className="btn btn-primary"
-            style={{ textDecoration: 'none' }}
             to={
               project
                 ? `/action-items/new?${new URLSearchParams({ project })}`
@@ -87,6 +128,7 @@ export function ActionItemsIndexPage() {
         </div>
       </div>
       <ActionItemProjectTabs
+        compactManagement
         scope={projectScope(project, unassigned)}
         onChange={(scope) => preferences.setFields(projectScopeFields(scope))}
         disabled={freezeControls}
@@ -95,47 +137,67 @@ export function ActionItemsIndexPage() {
         dropProject={queue.snapshot?.project}
         dragging={Boolean(queue.snapshot) && !queue.busy}
         toolbarAccessory={
-          <div
-            className="sub-tabs"
-            role="tablist"
-            aria-label="Action item status"
-          >
-            {ACTION_ITEM_STATUSES.map(([value, label]) => (
-              <button
-                key={value}
-                role="tab"
-                aria-selected={status === value}
-                className={status === value ? 'active' : ''}
-                disabled={freezeControls}
-                onClick={() => {
-                  preferences.setFields({
-                    status: value,
-                    sort: defaultActionItemSort(value),
-                  });
-                }}
-              >
-                {label}
-              </button>
-            ))}
+          <div className="action-items-toolbar-controls">
+            {searchControls}
+            <div
+              className="sub-tabs"
+              role="tablist"
+              aria-label="Action item status"
+            >
+              {ACTION_ITEM_STATUSES.map(([value, label]) => (
+                <button
+                  key={value}
+                  role="tab"
+                  aria-selected={status === value}
+                  className={status === value ? 'active' : ''}
+                  disabled={freezeControls}
+                  onClick={() => {
+                    preferences.setFields({
+                      status: value,
+                      sort: defaultActionItemSort(value),
+                    });
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         }
         beforeTabs={
-          <>
-            <div className="profile-filters action-item-filters">
-              <label>
-                <span className="form-label">Search action items</span>
-                <input
-                  className="input"
-                  type="search"
-                  maxLength={1000}
-                  value={queryInput}
+          <div
+            className="action-items-search-and-filters"
+            hidden={!activeFilters.length && !filtersOpen}
+          >
+            {activeFilters.length > 0 && (
+              <div
+                className="action-items-active-filters"
+                aria-label="Active filters"
+              >
+                <p>{activeFilters.join(' · ')}</p>
+                <button
+                  type="button"
+                  className="inline-clear"
                   disabled={freezeControls}
-                  onChange={(event) =>
-                    preferences.setField('q', event.target.value)
+                  onClick={() =>
+                    preferences.setFields({
+                      tags: '',
+                      unassigned: false,
+                      due_within_hours: null,
+                    })
                   }
-                  placeholder="Search title or description…"
-                />
-              </label>
+                >
+                  Clear filters
+                </button>
+              </div>
+            )}
+            <div
+              id={filterId}
+              className="action-item-filters action-items-advanced-filters"
+              role="group"
+              aria-label="Filter action items"
+              hidden={!filtersOpen}
+            >
               <label>
                 <span className="form-label">Tags</span>
                 <input
@@ -173,7 +235,7 @@ export function ActionItemsIndexPage() {
                 disabled={freezeControls}
               />
             </div>
-          </>
+          </div>
         }
       />
       {queue.created &&

@@ -10,6 +10,7 @@ import { useApiRead } from '../hooks/useApiRead';
 import { DateCell } from './table';
 import { ActionItemStatusButton } from './ActionItemStatusButton';
 import { ActionItemIcon } from './ActionItemIcon';
+import { ActionDisclosure } from './ActionDisclosure';
 
 function containProjectCue(cue: HTMLSpanElement | null) {
   if (!cue) return;
@@ -82,7 +83,7 @@ export type ActionItemRowQueue = Pick<
   | 'deletionEnabled'
   | 'canRemove'
   | 'removeItem'
->;
+> & { editing?: boolean };
 
 export function ActionItemQueueCells({
   item,
@@ -95,6 +96,7 @@ export function ActionItemQueueCells({
   showDueDate = false,
   showUpdated = !showDueDate,
   showMoveActions = false,
+  compactActions = false,
   membership,
 }: {
   item: ActionItemRow;
@@ -107,6 +109,7 @@ export function ActionItemQueueCells({
   showDueDate?: boolean;
   showUpdated?: boolean;
   showMoveActions?: boolean;
+  compactActions?: boolean;
   membership?: ReactNode;
 }) {
   const {
@@ -130,9 +133,90 @@ export function ActionItemQueueCells({
     canRemove,
     removeItem,
   } = queue;
+  const iconActions = showMoveActions && !compactActions;
+  function secondaryActions(close: () => void = () => undefined) {
+    const moves =
+      showMoveActions &&
+      reorderableView &&
+      (['top', 'bottom'] as const).map((edge) => (
+        <button
+          key={edge}
+          type="button"
+          className={`btn btn-sm${iconActions ? ' action-item-icon-button' : ''}`}
+          aria-label={`Move ${item.title} to ${edge}`}
+          title={`Move to ${edge} of the matching action items`}
+          disabled={!canMoveToEdge(item, edge)}
+          onKeyDown={(event) => {
+            if (!compactActions || event.key !== 'Escape')
+              event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.stopPropagation();
+            close();
+            void moveToEdge(item, edge);
+          }}
+        >
+          {iconActions ? <ActionItemIcon name={edge} /> : `Move to ${edge}`}
+        </button>
+      ));
+    const edit = (
+      <button
+        type="button"
+        className={`btn btn-sm${iconActions ? ' action-item-icon-button' : ''}`}
+        aria-label={`Edit ${item.title}`}
+        title={iconActions ? 'Edit' : undefined}
+        disabled={busy || freezeControls || !canAct()}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (canAct()) {
+            close();
+            onEdit(item);
+          }
+        }}
+      >
+        {iconActions ? <ActionItemIcon name="edit" /> : 'Edit'}
+      </button>
+    );
+    const remove = deletionEnabled && (
+      <button
+        type="button"
+        className={`btn btn-sm btn-danger${iconActions ? ' action-item-icon-button' : ''}`}
+        aria-label={`Delete ${item.title}`}
+        title={iconActions ? 'Delete' : undefined}
+        disabled={!canRemove()}
+        onKeyDown={(event) => {
+          if (!compactActions || event.key !== 'Escape')
+            event.stopPropagation();
+        }}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (!canRemove()) return;
+          close();
+          if (confirm(`Delete ${noun} “${item.title}”?`)) void removeItem(item);
+        }}
+      >
+        {iconActions ? <ActionItemIcon name="delete" /> : 'Delete'}
+      </button>
+    );
+    return compactActions ? (
+      <>
+        {edit}
+        {membership}
+        {moves}
+        {remove}
+      </>
+    ) : (
+      <>
+        {moves}
+        {edit}
+        {remove}
+        {membership}
+      </>
+    );
+  }
   return (
     <>
-      <td>
+      <td className="action-priority-cell">
         {state.isDragging && snapshot?.project && (
           <span
             ref={(cue) => containProjectCue(cue)}
@@ -178,7 +262,7 @@ export function ActionItemQueueCells({
           </span>
         </div>
       </td>
-      <td>
+      <td className="action-title-cell">
         <button
           type="button"
           id={`action-title-${item.id}`}
@@ -199,7 +283,7 @@ export function ActionItemQueueCells({
           {item.title}
         </button>
       </td>
-      <td>
+      <td className="action-topics-cell">
         {showProject && item.project && (
           <span className="tag tag-project">{item.project}</span>
         )}
@@ -213,6 +297,11 @@ export function ActionItemQueueCells({
         <td className="action-due-cell">
           {item.due_at ? (
             <DateCell date={item.due_at} format="long" />
+          ) : compactActions ? (
+            <span className="action-empty-date">
+              <span aria-hidden="true">—</span>
+              <span className="visually-hidden">No due date</span>
+            </span>
           ) : (
             'No due date'
           )}
@@ -237,56 +326,18 @@ export function ActionItemQueueCells({
               void changeStatus(item);
             }}
           />
-          {showMoveActions &&
-            reorderableView &&
-            (['top', 'bottom'] as const).map((edge) => (
-              <button
-                key={edge}
-                type="button"
-                className="btn btn-sm action-item-icon-button"
-                aria-label={`Move ${item.title} to ${edge}`}
-                title={`Move to ${edge} of the matching action items`}
-                disabled={!canMoveToEdge(item, edge)}
-                onKeyDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  void moveToEdge(item, edge);
-                }}
-              >
-                <ActionItemIcon name={edge} />
-              </button>
-            ))}
-          <button
-            type="button"
-            className={`btn btn-sm${showMoveActions ? ' action-item-icon-button' : ''}`}
-            aria-label={`Edit ${item.title}`}
-            title={showMoveActions ? 'Edit' : undefined}
-            disabled={busy || freezeControls || !canAct()}
-            onClick={(event) => {
-              event.stopPropagation();
-              if (canAct()) onEdit(item);
-            }}
-          >
-            {showMoveActions ? <ActionItemIcon name="edit" /> : 'Edit'}
-          </button>
-          {deletionEnabled && (
-            <button
-              type="button"
-              className={`btn btn-sm btn-danger${showMoveActions ? ' action-item-icon-button' : ''}`}
-              aria-label={`Delete ${item.title}`}
-              title={showMoveActions ? 'Delete' : undefined}
-              disabled={!canRemove()}
-              onKeyDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                if (canRemove() && confirm(`Delete ${noun} “${item.title}”?`))
-                  void removeItem(item);
-              }}
+          {compactActions ? (
+            <ActionDisclosure
+              label={`More actions for ${item.title}`}
+              disabled={busy || freezeControls || !canAct()}
+              dismissible={!busy && !queue.editing}
+              resetKey={`${view}:${item.id}:${item.revision}:${Boolean(snapshot)}`}
             >
-              {showMoveActions ? <ActionItemIcon name="delete" /> : 'Delete'}
-            </button>
+              {secondaryActions}
+            </ActionDisclosure>
+          ) : (
+            secondaryActions()
           )}
-          {membership}
         </div>
       </td>
     </>

@@ -1,3 +1,4 @@
+import { filterCheckbox, findFilterCheckbox } from './actionItemControls';
 import { queuePage } from './actionItemEpicFixture';
 import {
   act,
@@ -255,9 +256,7 @@ describe('independent deadline window', () => {
     renderPage();
     expect(await screen.findByRole('button', { name: 'Task 2' })).toBeVisible();
     expect(await screen.findByText(/2026/)).toBeVisible();
-    expect(
-      screen.getByRole('checkbox', { name: 'Deadline window' }),
-    ).not.toBeChecked();
+    expect(filterCheckbox('Deadline window')).not.toBeChecked();
     expect(
       vi.mocked(api.actionItemQueue.list).mock.lastCall?.[0],
     ).not.toHaveProperty('due_within_hours');
@@ -265,9 +264,7 @@ describe('independent deadline window', () => {
 
   it('applies adjustable hours independently of project, status and tags, then restores undated results', async () => {
     renderPage('/action-items?project=Work&status=completed&tags=security');
-    const enabled = await screen.findByRole('checkbox', {
-      name: 'Deadline window',
-    });
+    const enabled = await findFilterCheckbox('Deadline window');
     fireEvent.click(enabled);
     await waitFor(() =>
       expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
@@ -309,6 +306,7 @@ describe('independent deadline window', () => {
 
   it('does not send invalid hours while the numeric control is being edited', async () => {
     renderPage('/action-items?due_within_hours=24');
+    await findFilterCheckbox('Deadline window');
     const hours = await screen.findByRole('spinbutton', { name: 'Hours' });
     await waitFor(() =>
       expect(api.actionItemQueue.list).toHaveBeenCalledTimes(1),
@@ -331,9 +329,7 @@ describe('independent deadline window', () => {
       tags: 'security',
     });
     const rendered = renderPage();
-    expect(
-      await screen.findByRole('checkbox', { name: 'Deadline window' }),
-    ).toBeChecked();
+    expect(await findFilterCheckbox('Deadline window')).toBeChecked();
     expect(api.actionItemQueue.list).toHaveBeenCalledWith(
       expect.objectContaining({
         due_within_hours: 48,
@@ -343,9 +339,7 @@ describe('independent deadline window', () => {
     );
     rendered.unmount();
     renderPage('/action-items?due_within_hours=');
-    expect(
-      await screen.findByRole('checkbox', { name: 'Deadline window' }),
-    ).not.toBeChecked();
+    expect(await findFilterCheckbox('Deadline window')).not.toBeChecked();
     await waitFor(() =>
       expect(
         vi.mocked(api.actionItemQueue.list).mock.lastCall?.[0],
@@ -355,6 +349,7 @@ describe('independent deadline window', () => {
 
   it('cannot commit a late response for an earlier hours window', async () => {
     renderPage('/action-items?due_within_hours=24');
+    await findFilterCheckbox('Deadline window');
     const slider = await screen.findByRole('slider', {
       name: 'Upcoming hours',
     });

@@ -5,10 +5,12 @@ import { actionItem } from '../src/pages/__tests__/actionItemFixture';
 import {
   expectControlContained,
   expectControlReachable,
+  expectDialogContained,
   expectDocumentContained,
   expectMainContained,
 } from './geometry';
 import { enlargeComputedText } from './typography';
+import { openItemActions } from './actionItemDisclosures';
 
 interface QueueFixtureAPI {
   get(path: string, response: unknown): void;
@@ -125,6 +127,7 @@ for (const edge of ['top', 'bottom'] as const) {
       offset: '10',
     });
     await page.goto(`/action-items?${criteria}`);
+    await openItemActions(page, 'Task 11');
     const move = page.getByRole('button', {
       name: `Move Task 11 to ${edge}`,
       exact: true,
@@ -203,6 +206,7 @@ for (const edge of ['top', 'bottom'] as const) {
     await expect(
       edge === 'top' ? displayed.first() : displayed.last(),
     ).toHaveAccessibleName('Task 11');
+    await openItemActions(page, 'Task 11');
     await expect(
       page.getByRole('button', {
         name: `Move Task 11 to ${edge}`,
@@ -238,6 +242,7 @@ test('offers edge movement only for open items in ascending Priority view', asyn
     await expect(
       page.getByRole('button', { name: 'Task 1', exact: true }),
     ).toBeVisible();
+    await openItemActions(page, 'Task 1');
     await expect(
       page.getByRole('button', { name: /^Move .* to (top|bottom)$/ }),
     ).toHaveCount(0);
@@ -248,7 +253,7 @@ test('offers edge movement only for open items in ascending Priority view', asyn
 });
 
 for (const scale of [1, 2]) {
-  test(`keeps all action icons square and on one row at ${scale}x text`, async ({
+  test(`keeps primary controls compact and disclosed actions reachable at ${scale}x text`, async ({
     page,
     fixtureAPI,
   }) => {
@@ -262,21 +267,18 @@ for (const scale of [1, 2]) {
       total: 3,
     });
     await page.goto('/action-items?status=open&sort=manual');
-    const top = page.getByRole('button', {
-      name: `Move ${row.title} to top`,
+    const more = page.getByRole('button', {
+      name: `More actions for ${row.title}`,
       exact: true,
     });
-    const bottom = page.getByRole('button', {
-      name: `Move ${row.title} to bottom`,
-      exact: true,
-    });
-    await expect(top).toBeEnabled();
-    await expect(bottom).toBeEnabled();
+    await expect(more).toBeEnabled();
     if (scale === 2) await enlargeComputedText(page);
-    const actions = top.locator('..');
-    const cell = actions.locator('..');
-    await expect(actions.getByRole('button')).toHaveCount(6);
-    const geometry = await actions.getByRole('button').evaluateAll((buttons) =>
+    const cell = page
+      .locator('.action-item-row')
+      .filter({ has: more })
+      .locator('.action-controls-cell');
+    await expect(cell.getByRole('button')).toHaveCount(2);
+    const geometry = await cell.getByRole('button').evaluateAll((buttons) =>
       buttons.map((button) => {
         const { x, y, width, height } = button.getBoundingClientRect();
         return { x, y, width, height };
@@ -289,14 +291,14 @@ for (const scale of [1, 2]) {
       expect(bounds.width).toBeGreaterThanOrEqual(36);
       if (index > 0) {
         expect(bounds.x).toBeGreaterThanOrEqual(
-          geometry[index - 1].x + geometry[index - 1].width + 5,
+          geometry[index - 1].x + geometry[index - 1].width + 3,
         );
       }
     }
-    for (const button of await actions.getByRole('button').all()) {
-      await expect(button).toHaveText('');
+    for (const button of await cell.getByRole('button').all()) {
+      await expect(button).not.toHaveText(/Edit|Delete|Move/);
       await expect(button).toHaveAttribute('title', /\S+/);
-      await expect(button.locator('svg[aria-hidden="true"]')).toHaveCount(1);
+      await expect(button.locator('[aria-hidden="true"]')).toHaveCount(1);
       await expectControlContained(button, cell);
       await expectControlReachable(button);
       const [bounds, parent] = await Promise.all([
@@ -308,10 +310,27 @@ for (const scale of [1, 2]) {
         parent!.y + parent!.height + 1,
       );
     }
+    await openItemActions(page, row.title);
+    const panel = page.getByRole('group', {
+      name: `More actions for ${row.title}`,
+      exact: true,
+    });
+    await expectDialogContained(panel);
+    for (const label of [
+      `Move ${row.title} to top`,
+      `Move ${row.title} to bottom`,
+      `Edit ${row.title}`,
+      `Delete ${row.title}`,
+      `Move ${row.title} to Epic`,
+    ]) {
+      const control = panel.getByRole('button', { name: label, exact: true });
+      await expect(control).toBeEnabled();
+      await expectControlReachable(control);
+    }
     await expectDocumentContained(page);
     await expectMainContained(page);
-    await actions.screenshot({
-      path: test.info().outputPath('action-icons.png'),
+    await panel.screenshot({
+      path: test.info().outputPath('action-menu.png'),
     });
   });
 }

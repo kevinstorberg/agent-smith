@@ -1,6 +1,7 @@
 import type { ActionItemSort } from '../api';
 import { ACTION_ITEM_SORT_COLUMNS } from '../constants';
 import { columnDirection } from '../utils/tableSorting';
+import type { SortColumn } from '../utils/tableSorting';
 import { SortableHeader, SortButton } from './table/SortableHeader';
 
 export function ActionItemQueueHead({
@@ -12,6 +13,7 @@ export function ActionItemQueueHead({
   showProject = true,
   showDueDate = false,
   showUpdated = !showDueDate,
+  staticLabels = false,
 }: {
   sort: ActionItemSort;
   onSort: (sort: ActionItemSort) => void;
@@ -21,61 +23,64 @@ export function ActionItemQueueHead({
   showProject?: boolean;
   showDueDate?: boolean;
   showUpdated?: boolean;
+  staticLabels?: boolean;
 }) {
   const sorting = { sort, onSort, current, disabled };
   const columns = ACTION_ITEM_SORT_COLUMNS;
+  const heading = (
+    label: string,
+    column: SortColumn<ActionItemSort>,
+    title?: string,
+  ) =>
+    staticLabels ? (
+      <th scope="col">{label}</th>
+    ) : (
+      <SortableHeader {...sorting} column={column} title={title}>
+        {label}
+      </SortableHeader>
+    );
   return (
-    <thead>
+    <thead className={staticLabels ? 'visually-hidden' : undefined}>
       <tr>
         {status === 'open' ? (
-          <SortableHeader
-            {...sorting}
-            column={columns.priority}
-            title="Ascending Priority enables drag ordering"
-          >
-            Priority
-          </SortableHeader>
+          heading(
+            'Priority',
+            columns.priority,
+            'Ascending Priority enables drag ordering',
+          )
         ) : (
           <th scope="col">Priority</th>
         )}
-        <SortableHeader {...sorting} column={columns.title}>
-          Title
-        </SortableHeader>
+        {heading('Title', columns.title)}
         {showProject ? (
-          <th
-            scope="col"
-            aria-sort={
-              current
-                ? (columnDirection(sort, columns.project) ??
-                  columnDirection(sort, columns.tags))
-                : undefined
-            }
-          >
-            <div className="action-project-tag-sorts">
-              <SortButton {...sorting} column={columns.project}>
-                Project
-              </SortButton>
-              <span aria-hidden="true">/</span>
-              <SortButton {...sorting} column={columns.tags}>
-                Tags
-              </SortButton>
-            </div>
-          </th>
+          staticLabels ? (
+            <th scope="col">Project / Tags</th>
+          ) : (
+            <th
+              scope="col"
+              aria-sort={
+                current
+                  ? (columnDirection(sort, columns.project) ??
+                    columnDirection(sort, columns.tags))
+                  : undefined
+              }
+            >
+              <div className="action-project-tag-sorts">
+                <SortButton {...sorting} column={columns.project}>
+                  Project
+                </SortButton>
+                <span aria-hidden="true">/</span>
+                <SortButton {...sorting} column={columns.tags}>
+                  Tags
+                </SortButton>
+              </div>
+            </th>
+          )
         ) : (
-          <SortableHeader {...sorting} column={columns.tags}>
-            Tags
-          </SortableHeader>
+          heading('Tags', columns.tags)
         )}
-        {showDueDate && (
-          <SortableHeader {...sorting} column={columns.due}>
-            Due date
-          </SortableHeader>
-        )}
-        {showUpdated && (
-          <SortableHeader {...sorting} column={columns.updated}>
-            Updated
-          </SortableHeader>
-        )}
+        {showDueDate && heading('Due date', columns.due)}
+        {showUpdated && heading('Updated', columns.updated)}
         <th scope="col">Actions</th>
       </tr>
     </thead>

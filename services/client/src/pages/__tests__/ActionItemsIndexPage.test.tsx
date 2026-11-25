@@ -1,3 +1,4 @@
+import { actionButton, findActionButton } from './actionItemControls';
 import { queuePage, queueMove } from './actionItemEpicFixture';
 import {
   defaultView,
@@ -116,7 +117,7 @@ const drop = (source = 0, destination = 2, id = 1): DropResult => ({
 const titles = () =>
   within(screen.getByRole('table'))
     .getAllByRole('button')
-    .filter((button) => button.hasAttribute('aria-expanded'))
+    .filter((button) => button.classList.contains('action-item-title'))
     .map((button) => button.getAttribute('aria-label'));
 
 beforeEach(() => {
@@ -171,6 +172,72 @@ function liftToProject(project = 'Paralign') {
 }
 
 describe('ActionItemsIndexPage', () => {
+  it('starts with two visible row actions and keeps secondary filters and project administration out of the list', async () => {
+    await renderReady();
+    const actions = screen
+      .getByRole('button', { name: 'Complete Task 1' })
+      .closest('td')!;
+    expect(
+      within(actions)
+        .getAllByRole('button')
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual(['Complete Task 1', 'More actions for Task 1']);
+    expect(screen.queryByRole('button', { name: 'Edit Task 1' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New project' })).toBeNull();
+    expect(
+      screen.queryByRole('checkbox', { name: 'Deadline window' }),
+    ).toBeNull();
+    expect(screen.getByRole('button', { name: 'Filters' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect(
+      screen.getByRole('checkbox', { name: 'Deadline window' }),
+    ).toBeVisible();
+    expect(api.actionItems.update).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.move).not.toHaveBeenCalled();
+    expect(api.actionItems.remove).not.toHaveBeenCalled();
+  });
+
+  it('restores active filters visibly and preserves the project, search and ordering when clearing advanced criteria', async () => {
+    renderWithProviders(<ActionItemsIndexPage />, {
+      initialEntries: [
+        '/action-items?project=Work&q=Task&tags=security&due_within_hours=48',
+      ],
+    });
+    await screen.findByRole('button', { name: 'Task 1' });
+    const filters = screen.getByRole('button', { name: 'Filters (2)' });
+    expect(filters).toHaveAttribute('aria-expanded', 'false');
+    expect(
+      screen.queryByRole('checkbox', { name: 'Deadline window' }),
+    ).toBeNull();
+    expect(
+      screen.getByText(
+        'Tags: security · Due within 48 hours, including overdue',
+      ),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    await waitFor(() =>
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          project: 'Work',
+          q: 'Task',
+          status: 'open',
+          sort: 'manual',
+          tags: [],
+        }),
+      ),
+    );
+    expect(screen.getByRole('button', { name: 'Filters' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(api.actionItems.update).not.toHaveBeenCalled();
+    expect(api.actionItems.remove).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.move).not.toHaveBeenCalled();
+  });
+
   it('keeps project observers idle without a drag and cleans up their exact identities under StrictMode', async () => {
     const added = vi.spyOn(window, 'addEventListener');
     const removed = vi.spyOn(window, 'removeEventListener');
@@ -1102,12 +1169,7 @@ describe('ActionItemsIndexPage', () => {
       within(actions)
         .getAllByRole('button')
         .map((button) => button.getAttribute('aria-label')),
-    ).toEqual([
-      'Reopen Task 24',
-      'Edit Task 24',
-      'Delete Task 24',
-      'Move Task 24 to Epic',
-    ]);
+    ).toEqual(['Reopen Task 24', 'More actions for Task 24']);
   });
 
   it('lazily discloses descriptions with native keyboard buttons and one open row', async () => {
@@ -1214,7 +1276,7 @@ describe('ActionItemsIndexPage', () => {
       { initialEntries: ['/action-items'] },
     );
     await screen.findByRole('button', { name: 'Task 1' });
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Task 1' }));
+    fireEvent.click(actionButton('Edit Task 1'));
     expect(await screen.findByText('Direct editor')).toBeVisible();
     expect(api.actionItems.get).not.toHaveBeenCalled();
   });
@@ -1378,7 +1440,7 @@ describe('Action Items list deletion', () => {
     vi.mocked(window.confirm).mockReturnValue(false);
     await ready();
     vi.mocked(api.actionItemQueue.list).mockClear();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Task 1' }));
+    fireEvent.click(actionButton('Delete Task 1'));
     expect(window.confirm).toHaveBeenCalledWith('Delete action item “Task 1”?');
     expect(api.actionItems.remove).not.toHaveBeenCalled();
     expect(api.actionItemQueue.list).not.toHaveBeenCalled();
@@ -1402,34 +1464,30 @@ describe('Action Items list deletion', () => {
       .mockReturnValueOnce(refresh.promise);
     vi.mocked(api.actionItems.remove).mockReturnValueOnce(saving.promise);
     await ready();
-    const button = screen.getByRole('button', { name: 'Delete Task 1' });
+    const button = actionButton('Delete Task 1');
     act(() => {
       fireEvent.click(button);
       fireEvent.click(button);
     });
     expect(api.actionItems.remove).toHaveBeenCalledTimes(1);
     expect(api.actionItems.remove).toHaveBeenCalledWith(1, 7);
-    expect(
-      screen.getByRole('button', { name: 'Delete Task 2' }),
-    ).toBeDisabled();
+    expect(actionButton('Delete Task 2')).toBeDisabled();
     expect(
       screen.getByRole('button', { name: 'Complete Task 2' }),
     ).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Edit Task 2' })).toBeDisabled();
+    expect(actionButton('Edit Task 2')).toBeDisabled();
     expect(
       screen.getByRole('button', { name: 'Reorder Task 2' }),
     ).toBeDisabled();
     await act(async () => saving.resolve({ deleted: true, id: 1 }));
-    expect(
-      screen.getByRole('button', { name: 'Delete Task 2' }),
-    ).toBeDisabled();
+    expect(actionButton('Delete Task 2')).toBeDisabled();
     await act(async () =>
       refresh.resolve(queuePage({ items: rows.slice(1), total: 2 })),
     );
     expect(
       screen.queryByRole('button', { name: 'Task 1' }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Delete Task 2' })).toBeEnabled();
+    expect(actionButton('Delete Task 2')).toBeEnabled();
   });
 
   it('retains the row and requires a new confirmation and displayed revision after a409', async () => {
@@ -1445,18 +1503,14 @@ describe('Action Items list deletion', () => {
         }),
       );
     await ready();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Task 1' }));
+    fireEvent.click(actionButton('Delete Task 1'));
     await screen.findByRole('alert');
-    await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'Delete Task 1' }),
-      ).toBeEnabled(),
-    );
+    await waitFor(() => expect(actionButton('Delete Task 1')).toBeEnabled());
     expect(screen.getByRole('alert')).toHaveTextContent('Action item changed');
     expect(api.actionItems.remove).toHaveBeenCalledTimes(1);
     expect(api.actionItems.remove).toHaveBeenLastCalledWith(1, 1);
     expect(api.actionItems.get).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Task 1' }));
+    fireEvent.click(actionButton('Delete Task 1'));
     await waitFor(() =>
       expect(api.actionItems.remove).toHaveBeenLastCalledWith(1, 9),
     );
@@ -1468,15 +1522,11 @@ describe('Action Items list deletion', () => {
       new Error('Could not delete synthetic item'),
     );
     await ready();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Task 1' }));
+    fireEvent.click(actionButton('Delete Task 1'));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Could not delete synthetic item',
     );
-    await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'Delete Task 1' }),
-      ).toBeEnabled(),
-    );
+    await waitFor(() => expect(actionButton('Delete Task 1')).toBeEnabled());
     expect(screen.getByRole('button', { name: 'Task 1' })).toBeVisible();
     expect(api.actionItems.remove).toHaveBeenCalledTimes(1);
   });
@@ -1489,9 +1539,7 @@ describe('Action Items list deletion', () => {
       .mockResolvedValue(queuePage({ items: rows, total: 10 }));
     await ready();
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'Delete Task 11' }),
-    );
+    fireEvent.click(await findActionButton('Delete Task 11'));
     await screen.findByRole('button', { name: 'Task 1' });
     expect(api.actionItems.remove).toHaveBeenCalledWith(11, 1);
     expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
@@ -1519,7 +1567,7 @@ describe('Action Items list deletion', () => {
         expect.objectContaining({ offset: 10 }),
       ),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Task 1' }));
+    fireEvent.click(actionButton('Delete Task 1'));
     fireEvent.change(screen.getByLabelText('Search action items'), {
       target: { value: 'Current filter' },
     });
@@ -1544,7 +1592,7 @@ describe('Action Items list deletion', () => {
       const saving = deferred<{ deleted: boolean; id: number }>();
       vi.mocked(api.actionItems.remove).mockReturnValueOnce(saving.promise);
       const rendered = await ready();
-      fireEvent.click(screen.getByRole('button', { name: 'Delete Task 1' }));
+      fireEvent.click(actionButton('Delete Task 1'));
       expect(api.actionItems.remove).toHaveBeenCalledWith(1, 1);
       rendered.rerender(<NotificationBar />);
       vi.mocked(api.actionItemQueue.list).mockClear();
@@ -1561,7 +1609,7 @@ describe('Action Items list deletion', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await ready();
     act(() => drag.start!());
-    const button = screen.getByRole('button', { name: 'Delete Task 1' });
+    const button = actionButton('Delete Task 1');
     expect(button).toBeDisabled();
     fireEvent.click(button);
     expect(api.actionItems.remove).not.toHaveBeenCalled();
@@ -1572,15 +1620,9 @@ describe('Action Items list deletion', () => {
     fireEvent.change(screen.getByLabelText('Search action items'), {
       target: { value: 'unapplied filter' },
     });
-    expect(
-      screen.getByRole('button', { name: 'Delete Task 1' }),
-    ).toBeDisabled();
+    expect(actionButton('Delete Task 1')).toBeDisabled();
     await act(async () => vi.advanceTimersByTime(300));
-    await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'Delete Task 1' }),
-      ).toBeEnabled(),
-    );
+    await waitFor(() => expect(actionButton('Delete Task 1')).toBeEnabled());
   });
 
   it('blocks deletion after a failed refresh until a successful Retry', async () => {
@@ -1591,16 +1633,12 @@ describe('Action Items list deletion', () => {
     );
     await act(async () => vi.advanceTimersByTime(POLL_INTERVAL_MS));
     await screen.findByRole('alert');
-    const button = screen.getByRole('button', { name: 'Delete Task 1' });
+    const button = actionButton('Delete Task 1');
     expect(button).toBeDisabled();
     fireEvent.click(button);
     expect(api.actionItems.remove).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'Delete Task 1' }),
-      ).toBeEnabled(),
-    );
+    await waitFor(() => expect(actionButton('Delete Task 1')).toBeEnabled());
   });
 
   it.each(['{Enter}', ' '])(
@@ -1613,7 +1651,7 @@ describe('Action Items list deletion', () => {
       const bubbled = vi.fn();
       window.addEventListener('keydown', bubbled);
       try {
-        screen.getByRole('button', { name: 'Delete Task 1' }).focus();
+        actionButton('Delete Task 1').focus();
         await user.keyboard(key);
         expect(api.actionItems.remove).toHaveBeenCalledTimes(1);
         expect(api.actionItems.remove).toHaveBeenCalledWith(1, 1);
@@ -1740,7 +1778,7 @@ it('keeps sorting quiet and reports pending retries while protecting retained ro
   expect(
     screen.getByRole('button', { name: 'Complete Task 1' }),
   ).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'Delete Task 1' })).toBeDisabled();
+  expect(actionButton('Delete Task 1')).toBeDisabled();
   expect(
     screen.getByRole('button', { name: 'Move Task 1 to project' }),
   ).toBeDisabled();
@@ -1847,9 +1885,7 @@ describe('Action item boundary moves', () => {
         limit: 10,
         ...(edge === 'top' ? { project: 'Work' } : { unassigned: true }),
       });
-      fireEvent.click(
-        screen.getByRole('button', { name: `Move Task 12 to ${edge}` }),
-      );
+      fireEvent.click(actionButton(`Move Task 12 to ${edge}`));
       await waitFor(() =>
         expect(api.actionItemQueue.move).toHaveBeenCalledExactlyOnceWith(
           queueMove(12, {
@@ -1880,19 +1916,13 @@ describe('Action item boundary moves', () => {
         }),
       );
       await renderReady();
-      const top = screen.getByRole('button', { name: 'Move Task 1 to top' });
-      const bottom = screen.getByRole('button', {
-        name: `Move Task ${count} to bottom`,
-      });
+      const top = actionButton('Move Task 1 to top');
+      const bottom = actionButton(`Move Task ${count} to bottom`);
       expect(top).toBeDisabled();
       expect(bottom).toBeDisabled();
       if (count > 1) {
-        expect(
-          screen.getByRole('button', { name: 'Move Task 2 to top' }),
-        ).toBeEnabled();
-        expect(
-          screen.getByRole('button', { name: 'Move Task 2 to bottom' }),
-        ).toBeEnabled();
+        expect(actionButton('Move Task 2 to top')).toBeEnabled();
+        expect(actionButton('Move Task 2 to bottom')).toBeEnabled();
       }
       fireEvent.click(top);
       fireEvent.click(bottom);
@@ -1925,23 +1955,19 @@ describe('Action item boundary moves', () => {
         total: 3,
       }),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Move Task 2 to top' }));
+    fireEvent.click(actionButton('Move Task 2 to top'));
     await waitFor(() =>
       expect(api.actionItemQueue.list).toHaveBeenCalledTimes(3),
     );
     expect(api.actionItemQueue.move).not.toHaveBeenCalled();
-    expect(
-      screen.getByRole('button', { name: 'Move Task 2 to top' }),
-    ).toBeEnabled();
+    expect(actionButton('Move Task 2 to top')).toBeEnabled();
   });
 
   it('disables boundary controls during pending criteria and enables the accepted filtered result', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await renderReady();
-    const top = screen.getByRole('button', { name: 'Move Task 2 to top' });
-    const bottom = screen.getByRole('button', {
-      name: 'Move Task 2 to bottom',
-    });
+    const top = actionButton('Move Task 2 to top');
+    const bottom = actionButton('Move Task 2 to bottom');
     expect(top).toBeEnabled();
     expect(bottom).toBeEnabled();
     fireEvent.change(screen.getByLabelText('Search action items'), {
@@ -1973,12 +1999,10 @@ describe('Action item boundary moves', () => {
     vi.mocked(api.actionItemQueue.move).mockReturnValueOnce(
       saving.promise.then(() => ({ saved: true })),
     );
-    const top = screen.getByRole('button', { name: 'Move Task 2 to top' });
+    const top = actionButton('Move Task 2 to top');
     fireEvent.click(top);
     fireEvent.click(top);
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Move Task 1 to bottom' }),
-    );
+    fireEvent.click(actionButton('Move Task 1 to bottom'));
     expect(api.actionItemQueue.list).toHaveBeenCalledTimes(2);
     expect(api.actionItemQueue.move).not.toHaveBeenCalled();
     expect(screen.getByRole('status')).toHaveTextContent('Saving order…');
@@ -1987,7 +2011,7 @@ describe('Action item boundary moves', () => {
       screen.getByLabelText('Search action items'),
       screen.getByRole('button', { name: 'Title' }),
       screen.getByRole('button', { name: 'Complete Task 1' }),
-      screen.getByRole('button', { name: 'Delete Task 1' }),
+      actionButton('Delete Task 1'),
     ])
       expect(control).toBeDisabled();
     await act(async () => {
@@ -2023,9 +2047,7 @@ describe('Action item boundary moves', () => {
     expect(titles()).toEqual(['Task 2', 'Task 1', 'Task 3']);
     expect(screen.getByLabelText('Search action items')).toBeEnabled();
     expect(top).toBeDisabled();
-    expect(
-      screen.getByRole('button', { name: 'Move Task 1 to top' }),
-    ).toBeEnabled();
+    expect(actionButton('Move Task 1 to top')).toBeEnabled();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
     });
@@ -2061,14 +2083,10 @@ describe('Action item boundary moves', () => {
             new ApiError('Source changed', 409),
           );
       }
-      fireEvent.click(
-        screen.getByRole('button', { name: 'Move Task 2 to top' }),
-      );
+      fireEvent.click(actionButton('Move Task 2 to top'));
       await screen.findByRole('alert');
       await waitFor(() =>
-        expect(
-          screen.getByRole('button', { name: 'Move Task 2 to top' }),
-        ).toBeEnabled(),
+        expect(actionButton('Move Task 2 to top')).toBeEnabled(),
       );
       if (stage === 'lookup')
         expect(screen.getByRole('alert')).toHaveTextContent(
@@ -2096,18 +2114,14 @@ describe('Action item boundary moves', () => {
     vi.mocked(api.actionItemQueue.list)
       .mockResolvedValueOnce(queuePage({ items: [rows[0]], total: 3 }))
       .mockRejectedValueOnce(new Error('Reread failed'));
-    fireEvent.click(screen.getByRole('button', { name: 'Move Task 2 to top' }));
+    fireEvent.click(actionButton('Move Task 2 to top'));
     await screen.findByRole('alert');
-    expect(
-      screen.getByRole('button', { name: 'Move Task 2 to top' }),
-    ).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Move Task 2 to top' }));
+    expect(actionButton('Move Task 2 to top')).toBeDisabled();
+    fireEvent.click(actionButton('Move Task 2 to top'));
     expect(api.actionItemQueue.move).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'Move Task 2 to top' }),
-      ).toBeEnabled(),
+      expect(actionButton('Move Task 2 to top')).toBeEnabled(),
     );
     expect(api.actionItemQueue.move).toHaveBeenCalledTimes(1);
   });
@@ -2125,9 +2139,7 @@ describe('Action item boundary moves', () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
       });
-      fireEvent.click(
-        screen.getByRole('button', { name: 'Move Task 2 to top' }),
-      );
+      fireEvent.click(actionButton('Move Task 2 to top'));
       await act(async () => {
         polling.resolve(
           queuePage({
@@ -2141,9 +2153,7 @@ describe('Action item boundary moves', () => {
       );
       expect(api.actionItemQueue.move).not.toHaveBeenCalled();
       expect(api.actionItemQueue.list).toHaveBeenCalledTimes(4);
-      expect(
-        screen.getByRole('button', { name: 'Move Task 2 to top' }),
-      ).toBeEnabled();
+      expect(actionButton('Move Task 2 to top')).toBeEnabled();
     },
   );
 
@@ -2151,7 +2161,7 @@ describe('Action item boundary moves', () => {
     const rendered = await renderReady();
     const lookup = deferred<ActionItemGroupedPage>();
     vi.mocked(api.actionItemQueue.list).mockReturnValueOnce(lookup.promise);
-    fireEvent.click(screen.getByRole('button', { name: 'Move Task 2 to top' }));
+    fireEvent.click(actionButton('Move Task 2 to top'));
     rendered.unmount();
     await act(async () =>
       lookup.resolve(queuePage({ items: [rows[0]], total: 3 })),
@@ -2174,7 +2184,7 @@ describe('Action item boundary moves', () => {
     vi.mocked(api.actionItemQueue.list)
       .mockReturnValueOnce(lookup.promise)
       .mockResolvedValue(queuePage({ items: [actionItem(9)], total: 1 }));
-    fireEvent.click(screen.getByRole('button', { name: 'Move Task 2 to top' }));
+    fireEvent.click(actionButton('Move Task 2 to top'));
     fireEvent.click(screen.getByRole('link', { name: 'Change view' }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);

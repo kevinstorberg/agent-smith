@@ -1,3 +1,4 @@
+import { findActionButton } from './actionItemControls';
 import {
   act,
   fireEvent,
@@ -60,7 +61,7 @@ beforeEach(() => {
 });
 
 describe('saved Action Item Epics', () => {
-  it('shows due and updated timestamps and sorts children without changing Epic membership', async () => {
+  it('uses one visible sort header and sorts children without changing Epic membership', async () => {
     const members = [
       actionItem(2, {
         title: 'Zulu work',
@@ -102,12 +103,8 @@ describe('saved Action Item Epics', () => {
       within(currentTable())
         .getAllByRole('button', { name: /^(Zulu|Alpha) work$/ })
         .map((button) => button.textContent?.replace(/^[⌄›]/, ''));
-    expect(
-      within(table).getByRole('columnheader', { name: 'Due date' }),
-    ).toBeVisible();
-    expect(
-      within(table).getByRole('columnheader', { name: 'Updated' }),
-    ).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Due date' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Updated' })).toBeVisible();
     const zulu = within(table)
       .getByRole('button', { name: 'Zulu work' })
       .closest('tr')!;
@@ -119,30 +116,22 @@ describe('saved Action Item Epics', () => {
     );
 
     await waitFor(() =>
-      expect(
-        within(currentTable()).getByRole('button', { name: 'Title' }),
-      ).toBeEnabled(),
+      expect(screen.getByRole('button', { name: 'Title' })).toBeEnabled(),
     );
-    fireEvent.click(
-      within(currentTable()).getByRole('button', { name: 'Title' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Title' }));
     await waitFor(() =>
       expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ sort: 'title' }),
       ),
     );
     await waitFor(() => expect(titles()).toEqual(['Alpha work', 'Zulu work']));
-    fireEvent.click(
-      within(currentTable()).getByRole('button', { name: 'Updated' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Updated' }));
     await waitFor(() =>
       expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ sort: 'updated' }),
       ),
     );
-    fireEvent.click(
-      within(currentTable()).getByRole('button', { name: 'Updated' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Updated' }));
     await waitFor(() => expect(titles()).toEqual(['Zulu work', 'Alpha work']));
     expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
       expect.objectContaining({ sort: 'updated_asc' }),
@@ -192,9 +181,7 @@ describe('saved Action Item Epics', () => {
     renderWithProviders(<ActionItemsIndexPage />, {
       initialEntries: ['/action-items?project=Work&q=Task'],
     });
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'Move Task 3 to top' }),
-    );
+    fireEvent.click(await findActionButton('Move Task 3 to top'));
     await waitFor(() =>
       expect(api.actionItemQueue.move).toHaveBeenCalledExactlyOnceWith({
         source: { kind: 'item', id: 3, expected_revision: 1 },
@@ -215,11 +202,7 @@ describe('saved Action Item Epics', () => {
     renderWithProviders(<ActionItemsIndexPage />, {
       initialEntries: ['/action-items?project=Work&tags=security&q=Task'],
     });
-    fireEvent.click(
-      await screen.findByRole('button', {
-        name: 'Move Epic Release to bottom',
-      }),
-    );
+    fireEvent.click(await findActionButton('Move Epic Release to bottom'));
     await waitFor(() =>
       expect(api.actionItemQueue.move).toHaveBeenCalledExactlyOnceWith({
         source: {
@@ -254,9 +237,7 @@ describe('saved Action Item Epics', () => {
     renderWithProviders(<ActionItemsIndexPage />, {
       initialEntries: ['/action-items?status=all'],
     });
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'Move Task 2 to Epic' }),
-    );
+    fireEvent.click(await findActionButton('Move Task 2 to Epic'));
     const picker = await screen.findByRole('combobox', {
       name: 'Move to Epic',
     });
@@ -278,9 +259,7 @@ describe('saved Action Item Epics', () => {
       items: [epicGroup().epic, other],
     });
     renderWithProviders(<ActionItemsIndexPage />);
-    const button = await screen.findByRole('button', {
-      name: 'Move Task 2 to Epic',
-    });
+    const button = await findActionButton('Move Task 2 to Epic');
     fireEvent.click(button);
     await screen.findByRole('option', { name: 'Release #11' });
     expect(
@@ -345,7 +324,9 @@ describe('saved Action Item Epics', () => {
       new ApiError('Epic changed', 409),
     );
     renderWithProviders(<ActionItemsIndexPage />);
-    fireEvent.click(await screen.findByLabelText('Actions for Epic Release'));
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Actions for Epic Release' }),
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Remove Epic' }));
     await waitFor(() =>
       expect(api.actionItemQueue.list).toHaveBeenCalledTimes(2),
@@ -355,6 +336,14 @@ describe('saved Action Item Epics', () => {
       expected_revision: 3,
       cohort: 'cohort-10',
     });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Actions for Epic Release' }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Actions for Epic Release' }),
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Remove Epic' }));
     await waitFor(() =>
       expect(api.actionItemEpics.remove).toHaveBeenCalledTimes(2),
@@ -439,9 +428,7 @@ describe('saved Action Item Epics', () => {
       new ApiError('Source changed', 409),
     );
     renderWithProviders(<ActionItemsIndexPage />);
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'Move Task 2 to Epic' }),
-    );
+    fireEvent.click(await findActionButton('Move Task 2 to Epic'));
     const picker = await screen.findByRole('combobox', {
       name: 'Move to Epic',
     });
@@ -470,9 +457,7 @@ describe('saved Action Item Epics', () => {
       .mockRejectedValueOnce(new ApiError('Changed source', 409))
       .mockResolvedValue(actionItem(2));
     renderWithProviders(<ActionItemsIndexPage />);
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'Move Task 2 to Epic' }),
-    );
+    fireEvent.click(await findActionButton('Move Task 2 to Epic'));
     const picker = await screen.findByRole('combobox', {
       name: 'Move to Epic',
     });

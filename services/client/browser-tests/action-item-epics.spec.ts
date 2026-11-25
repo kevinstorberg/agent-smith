@@ -15,6 +15,7 @@ import {
   expectMainContained,
 } from './geometry';
 import { enlargeComputedText } from './typography';
+import { openEpicActions, openItemActions } from './actionItemDisclosures';
 
 test('Epics support create, singleton membership, collapse, rename, and removal that keeps tasks', async ({
   page,
@@ -154,6 +155,7 @@ test('Epics support create, singleton membership, collapse, rename, and removal 
   const group = page.getByRole('region', { name: 'Epic Launch', exact: true });
   await expect(group).toBeVisible();
   await expect(group.getByText('0 items', { exact: true })).toBeVisible();
+  await openItemActions(page, 'Task 1');
   await page
     .getByRole('button', { name: 'Move Task 1 to Epic', exact: true })
     .click();
@@ -177,7 +179,7 @@ test('Epics support create, singleton membership, collapse, rename, and removal 
     group.getByRole('button', { name: 'Task 1', exact: true }),
   ).toHaveCount(0);
   await group.getByRole('button', { name: 'Launch', exact: true }).click();
-  await group.getByLabel('Actions for Epic Launch', { exact: true }).click();
+  await openEpicActions(page, 'Launch');
   await group.getByRole('button', { name: 'Rename Epic', exact: true }).click();
   await group
     .getByRole('textbox', { name: 'Epic name', exact: true })
@@ -203,9 +205,7 @@ test('Epics support create, singleton membership, collapse, rename, and removal 
     path: testInfo.outputPath('epic-singleton-enlarged.png'),
     fullPage: true,
   });
-  await renamed
-    .getByLabel('Actions for Epic Launch checklist', { exact: true })
-    .click();
+  await openEpicActions(page, 'Launch checklist');
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: testInfo.outputPath('epic-menu-enlarged.png'),
@@ -315,6 +315,19 @@ for (const collapsed of [false, true]) {
     await handle.scrollIntoViewIfNeeded();
     const from = await handle.boundingBox();
     expect(from).not.toBeNull();
+    const targetRow = target.locator('xpath=ancestor::tr[1]');
+    // Freeze the intended page slot before lift; SDK displacement moves the rendered target during scrolling.
+    const targetPageRect = await targetRow.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return {
+        x: bounds.x + window.scrollX,
+        y: bounds.y + window.scrollY,
+        width: bounds.width,
+        height: bounds.height,
+      };
+    });
+    expect(targetPageRect.width).toBeGreaterThan(0);
+    expect(targetPageRect.height).toBeGreaterThan(0);
     await page.mouse.move(
       from!.x + from!.width / 2,
       from!.y + from!.height / 2,
@@ -329,12 +342,22 @@ for (const collapsed of [false, true]) {
       'position',
       'fixed',
     );
-    const targetRow = target.locator('xpath=ancestor::tr[1]');
     await targetRow.scrollIntoViewIfNeeded();
-    const to = await targetRow.boundingBox();
-    expect(to).not.toBeNull();
-    // Auto-scroll can move the list away from a pointer held near its bottom edge.
-    await page.mouse.move(to!.x + 30, to!.y + to!.height * 0.75, { steps: 20 });
+    const pointerDestination = await page.evaluate(
+      (bounds) => ({
+        x: bounds.x + 30 - window.scrollX,
+        y: bounds.y + bounds.height * 0.75 - window.scrollY,
+        viewportHeight: window.innerHeight,
+      }),
+      targetPageRect,
+    );
+    expect(pointerDestination.y).toBeGreaterThan(0);
+    expect(pointerDestination.y).toBeLessThan(
+      pointerDestination.viewportHeight,
+    );
+    await page.mouse.move(pointerDestination.x, pointerDestination.y, {
+      steps: 20,
+    });
     await expect(page.locator('[id^="rfd-announcement-"]')).toHaveText(
       /You have moved the item from position 1\s+to position 3/,
     );
@@ -353,7 +376,7 @@ for (const collapsed of [false, true]) {
   });
 }
 
-test('Epic headers sort child rows and show updated timestamps while preserving membership', async ({
+test('one visible header sorts Epic children and shows updated timestamps while preserving membership', async ({
   page,
   fixtureAPI,
 }) => {
@@ -390,19 +413,24 @@ test('Epic headers sort child rows and show updated timestamps while preserving 
     exact: true,
   });
   const titles = table.locator('.action-item-title');
+  const root = page.locator('.action-item-grouped-table');
   await expect(
     table.getByRole('columnheader', { name: 'Updated', exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(1);
+  await expect(table.locator('thead')).toHaveClass('visually-hidden');
+  await expect(
+    table.getByRole('button', { name: 'Title', exact: true }),
+  ).toHaveCount(0);
   await expect(table.locator('.action-updated-cell').first()).toContainText(
     'Nov 24',
   );
-  await table.getByRole('button', { name: 'Title', exact: true }).click();
+  await root.getByRole('button', { name: 'Title', exact: true }).click();
   await expect(titles).toHaveText(['›Alpha work', '›Zulu work']);
-  await table.getByRole('button', { name: 'Updated', exact: true }).click();
+  await root.getByRole('button', { name: 'Updated', exact: true }).click();
   await expect(
-    table.getByRole('columnheader', { name: 'Updated', exact: true }),
+    root.getByRole('columnheader', { name: 'Updated', exact: true }).first(),
   ).toHaveAttribute('aria-sort', 'descending');
-  await table.getByRole('button', { name: 'Updated', exact: true }).click();
+  await root.getByRole('button', { name: 'Updated', exact: true }).click();
   await expect(titles).toHaveText(['›Zulu work', '›Alpha work']);
   await expect(
     region.getByRole('button', { name: 'Task 4', exact: true }),
@@ -482,6 +510,7 @@ test('ambiguous inline creation keeps its UUID and reviewed membership for an ex
     504,
   );
   await page.goto('/action-items');
+  await openItemActions(page, 'Task 1');
   await page
     .getByRole('button', { name: 'Move Task 1 to Epic', exact: true })
     .click();
@@ -556,9 +585,11 @@ test('filtered whole-root edge movement preserves hidden membership and reports 
     exact: true,
   });
   await expect(region.getByText('1 of 8 matching')).toBeVisible();
+  await openItemActions(page, 'Task 2');
   await expect(
     region.getByRole('button', { name: 'Move Task 2 to top', exact: true }),
   ).toBeDisabled();
+  await openEpicActions(page, 'Release');
   await region
     .getByRole('button', { name: 'Move Epic Release to bottom', exact: true })
     .click();
@@ -613,6 +644,7 @@ test('a failed membership selection stays canonical and permits the same explici
     409,
   );
   await page.goto('/action-items');
+  await openItemActions(page, 'Task 2');
   await page
     .getByRole('button', { name: 'Move Task 2 to Epic', exact: true })
     .click();
