@@ -259,8 +259,8 @@ def test_profile_mode_builds_a_lazy_callable_without_static_key_fallback(
     from services.graphs.bedrock_auth import BedrockProfileTokenProvider
 
     model_env.setenv("GRAPH_MODEL_AUTH_MODE", "aws_profile")
-    model_env.setenv("GRAPH_MODEL_AWS_PROFILE", "paralign-source")
-    model_env.setenv("GRAPH_MODEL_AWS_ACCOUNT_ID", "180425283135")
+    model_env.setenv("GRAPH_MODEL_AWS_PROFILE", "test-profile")
+    model_env.setenv("GRAPH_MODEL_AWS_ACCOUNT_ID", "111122223333")
     monkeypatch.setattr(
         bedrock_auth,
         "Session",
@@ -279,8 +279,8 @@ def test_profile_model_guard_blocks_before_any_aws_access(model_env, monkeypatch
     from scripts.shared.automated_tests import PaidModelCallBlocked
 
     model_env.setenv("GRAPH_MODEL_AUTH_MODE", "aws_profile")
-    model_env.setenv("GRAPH_MODEL_AWS_PROFILE", "paralign-source")
-    model_env.setenv("GRAPH_MODEL_AWS_ACCOUNT_ID", "180425283135")
+    model_env.setenv("GRAPH_MODEL_AWS_PROFILE", "test-profile")
+    model_env.setenv("GRAPH_MODEL_AWS_ACCOUNT_ID", "111122223333")
     monkeypatch.setattr(
         bedrock_auth,
         "Session",

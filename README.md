@@ -53,8 +53,7 @@ Generate the ERD separately with `./erd.sh` (requires native Graphviz).
 ./run.sh --help              # help without activation, Git, or startup requirements
 ```
 
-Activation defaults to this checkout's `.venv/bin/activate`, which resolves to
-`/Users/paralign/projects/agent-smith/.venv/bin/activate` in the canonical checkout.
+Activation defaults to `.venv/bin/activate` in this checkout.
 Override it with `AGENT_SMITH_VENV_ACTIVATE`; paths containing spaces are supported.
 Explicit `AGENT_SMITH_PYTHON` and `LAUNCH_PYTHON` interpreter overrides remain supported.
 Help, status, and stop bypass activation and Git/update prerequisites.
@@ -1194,12 +1193,12 @@ gitignored environment override: `.env.production` for `./run.sh`, or
 These settings belong to each local Agent Smith server process. A remote MCP
 client uses the AWS account configured on the server it calls.
 
-On the work device, route every graph model role through Paralign:
+On the work device, set the work AWS profile and account:
 
 ```dotenv
 GRAPH_MODEL_AUTH_MODE=aws_profile
-GRAPH_MODEL_AWS_PROFILE=paralign-source
-GRAPH_MODEL_AWS_ACCOUNT_ID=YOUR_PARALIGN_12_DIGIT_ACCOUNT_ID
+GRAPH_MODEL_AWS_PROFILE=WORK_AWS_PROFILE
+GRAPH_MODEL_AWS_ACCOUNT_ID=WORK_AWS_ACCOUNT_ID
 ```
 
 On the personal device, replace these placeholders with its own AWS profile and
