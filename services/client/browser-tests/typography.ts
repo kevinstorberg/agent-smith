@@ -34,6 +34,20 @@ export async function enlargeComputedText(
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
+    // Font transitions move scroll anchors and can cancel a pending mouse drag.
+    await Promise.allSettled(
+      document
+        .getAnimations()
+        .filter(
+          (animation) =>
+            animation instanceof CSSTransition &&
+            ['font-size', 'line-height'].includes(animation.transitionProperty),
+        )
+        .map((animation) => animation.finished),
+    );
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
     return snapshot;
   }, scale);
   if (!options.restorable) {
