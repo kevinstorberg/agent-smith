@@ -6,7 +6,14 @@ from typing import ParamSpec, TypeVar
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from services.memory.db import search_page, list_page, get, update, delete
+from services.memory.db import (
+    search_page,
+    browse_page,
+    listing_config,
+    get,
+    update,
+    delete,
+)
 from services.memory.catalog import Conflict, NoWritePerformed, Unavailable
 from services.api.routers.base import (
     require_found,
@@ -22,7 +29,7 @@ _R = TypeVar("_R")
 
 
 SORT_PATTERN = r"^(|relevance|created_at_(asc|desc)|updated_at_(asc|desc))$"
-LIST_SORT_PATTERN = r"^(|created_at_(asc|desc)|updated_at_(asc|desc))$"
+LIST_SORT_PATTERN = r"^(|id_asc|created_at_(asc|desc)|updated_at_(asc|desc))$"
 
 
 def _memory_result(
@@ -69,17 +76,23 @@ def list_all(
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
     meeting_only: bool = False,
+    cursor: str | None = None,
 ):
-    items, total = _memory_result(
-        list_page,
+    return _memory_result(
+        browse_page,
         repo=empty_to_none(repo),
         tags=tags or None,
-        sort=sort or "created_at_desc",
+        sort=sort or None,
         limit=limit,
         offset=offset,
         meeting_only=meeting_only,
+        cursor=cursor,
     )
-    return list_response(items, total)
+
+
+@router.get("/config")
+def memory_config():
+    return _memory_result(listing_config)
 
 
 @router.get("/{memory_id}")

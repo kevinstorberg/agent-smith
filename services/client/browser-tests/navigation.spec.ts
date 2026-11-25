@@ -6,7 +6,7 @@ test('Navigation stays compact on mobile and supports keyboard recovery', async 
   page,
   fixtureAPI,
 }) => {
-  fixtureAPI.get('/api/memory/list', { items: [], total: 0 });
+  fixtureAPI.get('/api/memory/list', { mode: 'offset', items: [], total: 0 });
   flatQueueFixture(fixtureAPI, { items: [], total: 0 });
   await page.goto('/memory');
   await expect(

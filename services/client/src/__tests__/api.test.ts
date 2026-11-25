@@ -1074,6 +1074,26 @@ describe('specific API methods', () => {
     });
   });
 
+  it('loads local memory capabilities and serializes one opaque cursor without offset filters', async () => {
+    globalThis.fetch = mockFetch({
+      mode: 'cursor',
+      items: [],
+      next_cursor: null,
+      order: 'id_asc',
+    });
+    await api.memory.config();
+    await api.memory.list({ limit: 10, cursor: 'opaque+/=?&token' });
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    expect(new URL(calls[0][0]).pathname).toBe('/api/memory/config');
+    expect(Object.fromEntries(new URL(calls[1][0]).searchParams)).toEqual({
+      limit: '10',
+      cursor: 'opaque+/=?&token',
+    });
+    expect(calls.every((call) => call[1].signal instanceof AbortSignal)).toBe(
+      true,
+    );
+  });
+
   it('serializes meeting-only filtering for both list and semantic search', async () => {
     globalThis.fetch = mockFetch({ items: [], total: 0 });
     await api.memory.list({

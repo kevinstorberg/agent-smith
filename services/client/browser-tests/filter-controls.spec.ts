@@ -49,7 +49,11 @@ test.beforeEach(async ({ fixtureAPI }) => {
     '/api/eval-configs/suites',
     '/api/evals',
   ])
-    fixtureAPI.get(path, { items: [], total: 0 });
+    fixtureAPI.get(path, {
+      items: [],
+      total: 0,
+      ...(path === '/api/memory/list' ? { mode: 'offset' } : {}),
+    });
   fixtureAPI.get('/api/chat/config', { participants: [] });
   fixtureAPI.get('/api/audit/counts', { claude: 0, codex: 0, gemini: 0 });
   fixtureAPI.get('/api/proposals/counts', {

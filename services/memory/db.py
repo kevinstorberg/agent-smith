@@ -4,9 +4,11 @@ import json
 import logging
 import os
 import uuid
+from base64 import b64decode, urlsafe_b64encode
 from collections.abc import Callable, Iterator
 from copy import deepcopy
 from datetime import datetime, timezone
+from hashlib import sha256
 from threading import Lock, RLock
 from typing import TYPE_CHECKING, TypeVar
 
@@ -38,6 +40,7 @@ DECAY_RATE = float(os.environ.get("MEMORY_DECAY_RATE", "0.01"))
 DEFAULT_LIMIT = int(os.environ.get("MEMORY_DEFAULT_LIMIT", "20"))
 SEARCH_FETCH_CEILING = 50
 LIST_PAGE_CEILING = 100
+BROWSE_CURSOR_MAX_LENGTH = 16384
 _T = TypeVar("_T")
 _LOGGER = logging.getLogger("agent_smith.memory.embedding")
 
@@ -820,6 +823,111 @@ def list_page(
     return _refresh_rows(selected), total
 
 
+def listing_config() -> dict:
+    backend = get_backend()
+    source = _pinecone_source(backend)
+    native = source is not None
+    return {
+        "listing": {
+            "mode": "cursor" if native else "offset",
+            "filters": not native,
+            "sort_options": ["id_asc"] if native else list(_SORT_KEYS),
+            "total": not native,
+            "source": _browse_source_key(source)
+            if source is not None
+            else backend.__name__,
+        },
+        "search": {"max_candidates": SEARCH_FETCH_CEILING},
+    }
+
+
+def _browse_source_key(source: Source) -> str:
+    return sha256(source.key.encode()).hexdigest()
+
+
+def _browse_cursor(cursor: str | None, source: Source) -> str | None:
+    if cursor is None:
+        return None
+    try:
+        if (
+            not isinstance(cursor, str)
+            or not 1 <= len(cursor) <= BROWSE_CURSOR_MAX_LENGTH
+        ):
+            raise ValueError
+        value = json.loads(b64decode(cursor, altchars=b"-_", validate=True))
+        if (
+            not isinstance(value, dict)
+            or set(value) != {"source", "cursor"}
+            or value["source"] != _browse_source_key(source)
+            or not isinstance(value["cursor"], str)
+            or not value["cursor"].strip()
+        ):
+            raise ValueError
+        return value["cursor"]
+    except (ValueError, TypeError, UnicodeError):
+        raise ValueError(
+            "Memory cursor is invalid or belongs to another source; restart browsing from the first page"
+        ) from None
+
+
+def _next_browse_cursor(cursor: str | None, source: Source) -> str | None:
+    if cursor is None:
+        return None
+    value = json.dumps(
+        {"source": _browse_source_key(source), "cursor": cursor}, separators=(",", ":")
+    )
+    return urlsafe_b64encode(value.encode()).decode()
+
+
+def browse_page(
+    *,
+    limit: int | None = None,
+    cursor: str | None = None,
+    repo: str | None = None,
+    tags: list[str] | None = None,
+    sort: str | None = None,
+    offset: int = 0,
+    meeting_only: bool = False,
+) -> dict:
+    _validate_scope(repo, tags)
+    bounded_limit = DEFAULT_LIMIT if limit is None else limit
+    _page([], bounded_limit, offset)
+    if bounded_limit > LIST_PAGE_CEILING:
+        raise ValueError(f"Memory listing limit must not exceed {LIST_PAGE_CEILING}")
+    if type(meeting_only) is not bool:
+        raise ValueError("meeting_only must be a boolean")
+    backend = get_backend()
+    source = _pinecone_source(backend)
+    if source is None:
+        if cursor is not None:
+            raise ValueError("This memory backend uses offsets, not cursors")
+        items, total = list_page(
+            repo=repo,
+            tags=tags,
+            sort=sort or "created_at_desc",
+            limit=bounded_limit,
+            offset=offset,
+            meeting_only=meeting_only,
+        )
+        return {"mode": "offset", "items": items, "total": total}
+    if repo or tags or meeting_only or offset or sort not in (None, "", "id_asc"):
+        raise ValueError(
+            "Pinecone browsing supports only ID order and cursors; "
+            "use memory_search or semantic search for repository, tag, and meeting filters"
+        )
+    _require_source(backend, source)
+    rows, next_cursor = backend.browse_page(
+        limit=bounded_limit, cursor=_browse_cursor(cursor, source)
+    )
+    _require_source(backend, source)
+    return {
+        "mode": "cursor",
+        "items": _with_context_tags([_raw_to_row(row) for row in rows]),
+        "next_cursor": _next_browse_cursor(next_cursor, source),
+        "order": "id_asc",
+    }
+
+
 def _catalog_listing_page(
     backend: MemoryBackend,
     source: Source,
@@ -832,6 +940,7 @@ def _catalog_listing_page(
     meeting_only: bool,
     changed_after: datetime | None,
     expected_generation: int | None = None,
+    fetch: Callable[[list[str]], list[dict]] | None = None,
 ) -> tuple[list[dict], Page]:
     from services.memory import catalog
 
@@ -850,7 +959,7 @@ def _catalog_listing_page(
             "Memory listing changed during lookback; restart the operation"
         )
     _require_source(backend, source)
-    fetched = backend.get_rows(page.ids) if page.ids else []
+    fetched = (fetch or backend.get_rows)(page.ids) if page.ids else []
     _require_source(backend, source)
     catalog.check_page(source, page.generation)
     records = {}
@@ -876,6 +985,9 @@ def iter_recent_memories(
     repo: str | None = None,
     changed_after: datetime,
     batch_size: int = SEARCH_FETCH_CEILING,
+    max_records: int = 100000,
+    max_requests: int = 5000,
+    deadline_seconds: float = 120,
 ) -> Iterator[dict]:
     _validate_scope(repo, None)
     cutoff = _lookback_cutoff(changed_after)
@@ -885,30 +997,73 @@ def iter_recent_memories(
         )
     backend = get_backend()
     source = _pinecone_source(backend)
-    offset, generation = 0, None
+    if source is not None:
+        from services.memory import catalog, maintenance
+
+        budget = maintenance.MaintenanceBudget(
+            max_records, max_requests, deadline_seconds
+        )
+        state = catalog.read_state(source)
+        catalog.check_state(source, state)
+        # Only the explicitly invoked improve job needs exhaustive legacy lookback.
+        with maintenance.open_index(source, budget) as index:
+            if state.status == "ready":
+
+                def fetch(ids):
+                    budget.reserve_records(len(ids))
+                    return maintenance.fetch_rows(index, ids, budget)
+
+                offset = 0
+                while True:
+                    budget.check()
+                    remaining = budget.max_records - budget.records
+                    rows, page = _catalog_listing_page(
+                        backend,
+                        source,
+                        repo=repo,
+                        tags=None,
+                        sort="created_at_desc",
+                        limit=min(batch_size, max(1, remaining)),
+                        offset=offset,
+                        meeting_only=False,
+                        changed_after=cutoff,
+                        expected_generation=state.generation,
+                        fetch=fetch,
+                    )
+                    catalog.check_state(source, state)
+                    yield from rows
+                    offset += len(rows)
+                    if not rows or offset >= page.total:
+                        break
+            else:
+                for batch in maintenance.iter_rows(index, budget, page_size=batch_size):
+                    _require_source(backend, source)
+                    catalog.check_state(source, state)
+                    selected = []
+                    for record in batch:
+                        row = _raw_to_row(record)
+                        changed = row.get("updated_at") or row.get("created_at")
+                        if (
+                            (repo is None or row.get("repo") == repo)
+                            and changed is not None
+                            and metadata_datetime(changed, "changed_at") >= cutoff
+                        ):
+                            selected.append(row)
+                    yield from _with_context_tags(selected)
+                    budget.check()
+            _require_source(backend, source)
+            catalog.check_state(source, state)
+            budget.check()
+        return
+    offset = 0
     while True:
-        if source is None:
-            rows, total = list_page(
-                repo=repo,
-                sort="created_at_desc",
-                limit=batch_size,
-                offset=offset,
-                changed_after=cutoff,
-            )
-        else:
-            rows, page = _catalog_listing_page(
-                backend,
-                source,
-                repo=repo,
-                tags=None,
-                sort="created_at_desc",
-                limit=batch_size,
-                offset=offset,
-                meeting_only=False,
-                changed_after=cutoff,
-                expected_generation=generation,
-            )
-            generation, total = page.generation, page.total
+        rows, total = list_page(
+            repo=repo,
+            sort="created_at_desc",
+            limit=batch_size,
+            offset=offset,
+            changed_after=cutoff,
+        )
         yield from rows
         offset += len(rows)
         if not rows or offset >= total:
@@ -918,13 +1073,21 @@ def iter_recent_memories(
 def list_memories(
     repo: str | None = None,
     tags: list[str] | None = None,
-    sort: str = "created_at_desc",
+    sort: str | None = None,
     limit: int | None = None,
     meeting_only: bool = False,
 ) -> list[dict]:
-    return list_page(
+    if _pinecone_source(get_backend()) is None:
+        return list_page(
+            repo=repo,
+            tags=tags,
+            sort=sort or "created_at_desc",
+            limit=limit,
+            meeting_only=meeting_only,
+        )[0]
+    return browse_page(
         repo=repo, tags=tags, sort=sort, limit=limit, meeting_only=meeting_only
-    )[0]
+    )["items"]
 
 
 def get(id: str, *, record_access: bool = True) -> dict | None:

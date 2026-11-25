@@ -1,4 +1,5 @@
 from copy import deepcopy
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from importlib import reload
 from uuid import UUID, uuid4
@@ -13,6 +14,7 @@ from psycopg2.extras import execute_values
 from services.api.routers.memory import router
 from services.db import get_connection
 from services.memory import catalog as listing_catalog, db, server
+from services.memory import maintenance
 from services.memory.backends import pinecone_backend
 from tests.test_memory_content import SyntheticPineconeIndex
 from tests.test_pgvector_backend import FakeEmbeddings
@@ -169,6 +171,23 @@ def forbid_listing_hydration(monkeypatch, index):
     monkeypatch.setattr(pinecone_backend, "load_all", forbidden)
 
 
+def install_explicit_bulk(monkeypatch, index):
+    lifecycle = []
+
+    @contextmanager
+    def open_index(source, budget):
+        assert source == index.source
+        budget.request()
+        lifecycle.append("opened")
+        try:
+            yield index
+        finally:
+            lifecycle.append("closed")
+
+    monkeypatch.setattr(maintenance, "open_index", open_index)
+    return lifecycle
+
+
 @pytest.fixture
 def client():
     app = FastAPI()
@@ -180,8 +199,8 @@ def client():
 @pytest.mark.parametrize(
     "sort", ["created_at_asc", "created_at_desc", "updated_at_asc", "updated_at_desc"]
 )
-def test_http_pages_fetch_only_requested_ids_across_old_ceiling(
-    catalog, client, monkeypatch, sort
+def test_explicit_catalog_pages_fetch_only_requested_ids_across_old_ceiling(
+    catalog, monkeypatch, sort
 ):
     index = catalog(10051)
     forbid_listing_hydration(monkeypatch, index)
@@ -191,31 +210,10 @@ def test_http_pages_fetch_only_requested_ids_across_old_ceiling(
     if sort.endswith("desc"):
         ordered.reverse()
 
-    first = client.get(
-        "/api/memory/list", params={"sort": sort, "limit": 10, "offset": 0}
-    )
-    assert first.status_code == 200
-    assert first.json()["total"] == 10051
-    assert [row["id"] for row in first.json()["items"]] == ordered[:10]
-    assert index.fetches == [ordered[:10]]
-
-    following = client.get(
-        "/api/memory/list", params={"sort": sort, "limit": 10, "offset": 10}
-    )
-    assert following.status_code == 200
-    assert following.json()["total"] == 10051
-    assert [row["id"] for row in following.json()["items"]] == ordered[10:20]
-
-    last = client.get(
-        "/api/memory/list", params={"sort": sort, "limit": 10, "offset": 10040}
-    )
-    assert last.status_code == 200
-    assert last.json()["total"] == 10051
-    assert [row["id"] for row in last.json()["items"]] == ordered[10040:10050]
-    larger = client.get("/api/memory/list", params={"sort": sort, "limit": 100})
-    assert larger.status_code == 200
-    assert larger.json()["total"] == 10051
-    assert [row["id"] for row in larger.json()["items"]] == ordered[:100]
+    for offset, limit in [(0, 10), (10, 10), (10040, 10), (0, 100)]:
+        items, total = db.list_page(sort=sort, limit=limit, offset=offset)
+        assert total == 10051
+        assert [row["id"] for row in items] == ordered[offset : offset + limit]
     assert index.fetches == [
         ordered[:10],
         ordered[10:20],
@@ -227,8 +225,8 @@ def test_http_pages_fetch_only_requested_ids_across_old_ceiling(
     assert db._retriever is None
 
 
-def test_http_page_total_and_offsets_apply_after_all_filters(
-    catalog, client, monkeypatch
+def test_explicit_catalog_total_and_offsets_apply_after_all_filters(
+    catalog, monkeypatch
 ):
     index = catalog(10051)
     forbid_listing_hydration(monkeypatch, index)
@@ -239,47 +237,39 @@ def test_http_page_total_and_offsets_apply_after_all_filters(
     ]
     params = {
         "repo": "project",
-        "tags": "keep",
-        "meeting_only": "true",
+        "tags": ["keep"],
+        "meeting_only": True,
         "sort": "created_at_asc",
         "limit": 10,
     }
 
-    first = client.get("/api/memory/list", params=params)
-    later = client.get("/api/memory/list", params={**params, "offset": 90})
-
-    assert first.status_code == later.status_code == 200
-    assert first.json()["total"] == later.json()["total"] == len(expected)
-    assert [row["id"] for row in first.json()["items"]] == expected[:10]
-    assert [row["id"] for row in later.json()["items"]] == expected[90:100]
+    first, total = db.list_page(**params)
+    later, later_total = db.list_page(**params, offset=90)
+    assert total == later_total == len(expected)
+    assert [row["id"] for row in first] == expected[:10]
+    assert [row["id"] for row in later] == expected[90:100]
     assert index.fetches == [expected[:10], expected[90:100]]
     assert index.pages == index.queries == []
     assert index.touches == []
 
 
-def test_empty_deep_page_returns_total_without_opening_provider(
-    catalog, client, monkeypatch
+def test_empty_explicit_catalog_page_returns_total_without_opening_provider(
+    catalog, monkeypatch
 ):
     index = catalog(10051)
     forbid_listing_hydration(monkeypatch, index)
 
-    response = client.get("/api/memory/list", params={"limit": 10, "offset": 20000})
-
-    assert response.status_code == 200
-    assert response.json() == {"items": [], "total": 10051}
+    assert db.list_page(limit=10, offset=20000) == ([], 10051)
     assert index.opens == 0
     assert index.fetches == index.pages == index.queries == index.touches == []
 
 
-def test_missing_listing_index_fails_before_any_provider_call(
-    catalog, client, monkeypatch
-):
+def test_missing_explicit_catalog_fails_before_any_provider_call(catalog, monkeypatch):
     index = catalog(3, ready=False)
     forbid_listing_hydration(monkeypatch, index)
 
-    response = client.get("/api/memory/list", params={"limit": 10})
-
-    assert response.status_code == 503
+    with pytest.raises(listing_catalog.Unavailable):
+        db.list_page(limit=10)
     assert index.opens == 0
     assert index.fetches == index.pages == index.queries == index.touches == []
 
@@ -309,8 +299,8 @@ def test_invalid_listing_request_fails_before_sql_or_provider(
     assert index.opens == 0
 
 
-def test_generation_change_during_fetch_fails_without_retry(
-    catalog, client, monkeypatch
+def test_explicit_catalog_generation_change_during_fetch_fails_without_retry(
+    catalog, monkeypatch
 ):
     index = catalog(10051)
     forbid_listing_hydration(monkeypatch, index)
@@ -326,9 +316,8 @@ def test_generation_change_during_fetch_fails_without_retry(
         return result
 
     monkeypatch.setattr(index, "fetch", changed_during_fetch)
-    response = client.get("/api/memory/list", params={"limit": 10})
-
-    assert response.status_code == 503
+    with pytest.raises(listing_catalog.Unavailable):
+        db.list_page(limit=10)
     assert len(index.fetches) == 1 and len(index.fetches[0]) == 10
     assert index.pages == index.queries == index.touches == []
 
@@ -433,10 +422,11 @@ def test_pinecone_full_hydration_is_forbidden_before_provider_or_embedding_calls
 
 
 @pytest.mark.asyncio
-async def test_mcp_listing_fetches_at_most_fifty_and_never_enumerates(
+async def test_mcp_listing_fetches_one_native_page_of_at_most_fifty(
     catalog, monkeypatch
 ):
     index = catalog(10051)
+    index.forbid_listing = False
     forbid_listing_hydration(monkeypatch, index)
     tools = {tool.name: tool for tool in await server.mcp.list_tools()}
     limit_schema = tools["memory_list"].inputSchema["properties"]["limit"]
@@ -447,7 +437,8 @@ async def test_mcp_listing_fetches_at_most_fifty_and_never_enumerates(
 
     assert len(response[1]["result"]) == 50
     assert len(index.fetches) == 1 and len(index.fetches[0]) == 50
-    assert index.pages == index.queries == index.touches == []
+    assert len(index.pages) == 1 and index.pages[0]["limit"] == 50
+    assert index.queries == index.touches == []
     with pytest.raises(ToolError):
         await server.mcp.call_tool("memory_list", {"limit": 51})
     assert len(index.fetches) == 1
@@ -458,6 +449,7 @@ async def test_large_configured_default_is_bounded_in_actual_mcp_schema_and_list
     catalog, monkeypatch
 ):
     index = catalog(10051)
+    index.forbid_listing = False
     forbid_listing_hydration(monkeypatch, index)
     try:
         with monkeypatch.context() as patch:
@@ -490,7 +482,7 @@ def test_invalid_configured_listing_default_fails_before_sql_or_provider(
 
 
 def test_acknowledged_writes_keep_listing_counts_filters_and_dates_current(
-    catalog, client, monkeypatch
+    catalog, monkeypatch
 ):
     index = catalog(3)
     monkeypatch.setattr(
@@ -498,21 +490,19 @@ def test_acknowledged_writes_keep_listing_counts_filters_and_dates_current(
     )
 
     id = db.add("A new Python memory", repo="new-project", tags=["before"])
-    first = client.get("/api/memory/list", params={"limit": 10})
-    assert first.status_code == 200 and first.json()["total"] == 4
-    assert first.json()["items"][0]["id"] == id
+    first, total = db.list_page(limit=10)
+    assert total == 4
+    assert first[0]["id"] == id
 
     db.update(id, repo="changed-project", tags=["after"])
-    filtered = client.get(
-        "/api/memory/list", params={"repo": "changed-project", "tags": "after"}
-    )
-    assert filtered.status_code == 200 and filtered.json()["total"] == 1
-    assert filtered.json()["items"][0]["id"] == id
+    filtered, total = db.list_page(repo="changed-project", tags=["after"])
+    assert total == 1
+    assert filtered[0]["id"] == id
 
     db.delete(id.upper())
-    after = client.get("/api/memory/list", params={"limit": 10})
-    assert after.status_code == 200 and after.json()["total"] == 3
-    assert id not in {row["id"] for row in after.json()["items"]}
+    after, total = db.list_page(limit=10)
+    assert total == 3
+    assert id not in {row["id"] for row in after}
     assert index.upserts == [[id], [id]] and index.deletes == [[id]]
     assert index.pages == index.queries == index.touches == []
 
@@ -564,6 +554,7 @@ def test_recent_job_reads_all_501_qualifying_bodies_in_fifty_row_pages(
     from services.graphs.library import improve
 
     index = catalog(503)
+    lifecycle = install_explicit_bulk(monkeypatch, index)
     forbid_listing_hydration(monkeypatch, index)
     ids = list(index.rows)
     now = datetime.now(timezone.utc).isoformat()
@@ -593,3 +584,94 @@ def test_recent_job_reads_all_501_qualifying_bodies_in_fifty_row_pages(
     assert [len(batch) for batch in index.fetches] == [50] * 10 + [1]
     assert {id for batch in index.fetches for id in batch} == set(ids[:501])
     assert index.pages == index.queries == index.touches == []
+    assert lifecycle == ["opened", "closed"]
+
+
+def test_explicit_legacy_lookback_reads_last_match_after_500_without_catalog(
+    catalog, monkeypatch
+):
+    index = catalog(503, ready=False)
+    index.forbid_listing = False
+    forbid_listing_hydration(monkeypatch, index)
+    lifecycle = install_explicit_bulk(monkeypatch, index)
+    ids = list(index.rows)
+    now = datetime.now(timezone.utc)
+    for id in ids[:500] + ids[-1:]:
+        index.rows[id]["metadata"]["updated_at"] = now.isoformat()
+    monkeypatch.setattr(
+        listing_catalog,
+        "select_page",
+        lambda *a, **k: pytest.fail(
+            "Uninitialized legacy lookback used catalog entries"
+        ),
+    )
+
+    rows = list(
+        db.iter_recent_memories(
+            changed_after=now - timedelta(days=7), max_records=503, max_requests=23
+        )
+    )
+
+    assert [row["id"] for row in rows] == ids[:500] + ids[-1:]
+    assert len(index.pages) == len(index.fetches) == 11
+    assert all(page["limit"] == 50 for page in index.pages[:-1])
+    assert index.pages[-1]["limit"] == 3
+    assert sum(map(len, index.fetches)) == 503
+    assert index.queries == index.touches == []
+    assert lifecycle == ["opened", "closed"]
+
+
+@pytest.mark.parametrize("ready", [False, True])
+def test_explicit_lookback_rejects_generation_drift_and_closes_client(
+    catalog, monkeypatch, ready
+):
+    index = catalog(3, ready=ready)
+    index.forbid_listing = False
+    lifecycle = install_explicit_bulk(monkeypatch, index)
+    original = index.fetch
+
+    def changed(ids, **kwargs):
+        result = original(ids, **kwargs)
+        with get_connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO memory_catalog_sources(source_key) VALUES(%s) ON CONFLICT DO NOTHING",
+                (index.source.key,),
+            )
+            cursor.execute(
+                "UPDATE memory_catalog_sources SET generation=generation+1 WHERE source_key=%s",
+                (index.source.key,),
+            )
+        return result
+
+    monkeypatch.setattr(index, "fetch", changed)
+    with pytest.raises(listing_catalog.Unavailable, match="changed"):
+        list(
+            db.iter_recent_memories(
+                changed_after=datetime(2020, 1, 1, tzinfo=timezone.utc)
+            )
+        )
+    assert len(index.fetches) == 1
+    assert lifecycle == ["opened", "closed"]
+
+
+@pytest.mark.parametrize("ready", [False, True])
+@pytest.mark.parametrize("budgets", [{"max_records": 1}, {"max_requests": 2}])
+def test_explicit_lookback_budget_fails_instead_of_returning_partial_corpus(
+    catalog, monkeypatch, ready, budgets
+):
+    index = catalog(3, ready=ready)
+    index.forbid_listing = False
+    lifecycle = install_explicit_bulk(monkeypatch, index)
+    with pytest.raises(maintenance.BudgetExceeded):
+        list(
+            db.iter_recent_memories(
+                changed_after=datetime(2020, 1, 1, tzinfo=timezone.utc),
+                batch_size=1,
+                **budgets,
+            )
+        )
+    assert lifecycle == ["opened", "closed"]
+    assert sum(map(len, index.fetches)) <= budgets.get("max_records", 100000)
+    assert len(index.pages) + len(index.fetches) + 1 <= budgets.get(
+        "max_requests", 5000
+    )

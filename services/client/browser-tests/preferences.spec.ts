@@ -338,7 +338,11 @@ for (const view of cases) {
   }) => {
     if (!baseURL)
       throw new Error('Preference browser tests require the owned preview');
-    fixtureAPI.get(view.api, { items: [], total: 100 });
+    fixtureAPI.get(view.api, {
+      items: [],
+      total: 100,
+      ...(view.api === '/api/memory/list' ? { mode: 'offset' } : {}),
+    });
     for (const fixture of view.fixtures ?? [])
       fixtureAPI.get(fixture.path, fixture.body);
     if (view.counts) fixtureAPI.get(view.counts.path, view.counts.body);
@@ -377,7 +381,7 @@ test('Memory sequential typing preserves the full applied search and independent
   page,
   fixtureAPI,
 }) => {
-  fixtureAPI.get('/api/memory/list', { items: [], total: 0 });
+  fixtureAPI.get('/api/memory/list', { mode: 'offset', items: [], total: 0 });
   fixtureAPI.get('/api/memory/search', { items: [], total: 0 });
   await page.goto('/memory');
   const input = page.getByRole('textbox', {

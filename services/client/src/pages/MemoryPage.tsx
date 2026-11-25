@@ -1,5 +1,5 @@
 import { FilterCheckbox } from '../components/FilterCheckbox';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api';
 import type { MemoryItem } from '../api';
@@ -7,9 +7,12 @@ import { Pagination } from '../components/Pagination';
 import { CopyButton } from '../components/CopyButton';
 import { useNotification } from '../context/useNotification';
 import { usePagination } from '../hooks/usePagination';
+import { useApiRead } from '../hooks/useApiRead';
+import { useMemoryCursorPagination } from '../hooks/useMemoryCursorPagination';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { parseTags } from '../utils/tags';
 import {
+  PAGE_LIMITS,
   MEMORY_LIST_SORT_OPTIONS,
   MEMORY_SEARCH_SORT_OPTIONS,
 } from '../constants';
@@ -75,18 +78,16 @@ export function MemoryPage() {
   const sortOptions =
     mode === 'search' ? MEMORY_SEARCH_SORT_OPTIONS : MEMORY_LIST_SORT_OPTIONS;
 
-  const {
-    items,
-    total,
-    loading,
-    error,
-    refresh,
-    limit,
-    offset,
-    setLimit,
-    setOffset,
-  } = usePagination<MemoryItem>(
-    (limit, offset) => {
+  const capabilities = useApiRead(api.memory.config);
+  const configured = capabilities.data !== null && !capabilities.error;
+  const cursorMode =
+    configured &&
+    capabilities.data?.listing.mode === 'cursor' &&
+    mode === 'list';
+  const showFilters =
+    configured && (mode === 'search' || capabilities.data?.listing.filters);
+  const offsetPage = usePagination<MemoryItem>(
+    async (limit, offset) => {
       const opts = {
         limit,
         offset,
@@ -95,17 +96,68 @@ export function MemoryPage() {
         ...(tagsArray.length ? { tags: tagsArray } : {}),
         ...(sort ? { sort } : {}),
       };
-      return searchTerm
-        ? api.memory.search(searchTerm, opts)
-        : api.memory.list(opts);
+      if (searchTerm) return api.memory.search(searchTerm, opts);
+      const result = await api.memory.list(opts);
+      if (result.mode !== 'offset')
+        throw new Error('Memory backend changed; reload the page');
+      return result;
     },
-    [searchTerm, meetingsOnly, repo, tagsArray, sort],
+    [
+      searchTerm,
+      meetingsOnly,
+      repo,
+      tagsArray,
+      sort,
+      capabilities.data?.listing.source,
+    ],
     10,
     {
       ...preferences.pagination,
-      enabled: repo === filterRepo.trim() && tagText === filterTags,
+      enabled:
+        configured &&
+        !cursorMode &&
+        repo === filterRepo.trim() &&
+        tagText === filterTags,
     },
   );
+  const fetchCursorPage = useCallback(
+    async (limit: number, cursor: string | null) => {
+      const result = await api.memory.list({
+        limit,
+        ...(cursor ? { cursor } : {}),
+      });
+      if (result.mode !== 'cursor')
+        throw new Error('Memory backend changed; reload the page');
+      return result;
+    },
+    [],
+  );
+  const cursorPage = useMemoryCursorPagination(fetchCursorPage, {
+    enabled: Boolean(cursorMode),
+    limit: preferences.values.limit,
+    source: capabilities.data?.listing.source ?? '',
+  });
+  const items = cursorMode ? cursorPage.items : offsetPage.items;
+  const loading =
+    capabilities.loading ||
+    Boolean(
+      configured && (cursorMode ? cursorPage.loading : offsetPage.loading),
+    );
+  const error =
+    capabilities.error ||
+    (configured ? (cursorMode ? cursorPage.error : offsetPage.error) : null);
+  const refresh = !configured
+    ? capabilities.refresh
+    : cursorMode
+      ? cursorPage.refresh
+      : offsetPage.refresh;
+  const retry = !configured
+    ? capabilities.refresh
+    : cursorMode
+      ? cursorPage.retry
+      : offsetPage.refresh;
+  const controlsDisabled =
+    loading || saving || !!editingId || !!confirmDeleteId;
 
   const onSortChange = (value: string) => {
     if (mode === 'search')
@@ -172,7 +224,7 @@ export function MemoryPage() {
         <h2 className="page-title">Memory</h2>
         <button
           className="btn"
-          disabled={loading || saving || !!editingId || !!confirmDeleteId}
+          disabled={controlsDisabled}
           onClick={() => refresh()}
         >
           Refresh
@@ -195,52 +247,74 @@ export function MemoryPage() {
         )}
       </div>
 
-      <div className="search-bar memory-controls">
-        <label>
-          <span className="form-label">Repository</span>
-          <input
-            className="input"
-            placeholder="Filter by repo"
-            value={filterRepo}
-            onChange={(e) => preferences.setField('repo', e.target.value)}
-          />
-        </label>
-        <label>
-          <span className="form-label">Tags</span>
-          <input
-            className="input"
-            placeholder="Filter by tags (comma-separated)"
-            value={filterTags}
-            onChange={(e) => preferences.setField('tags', e.target.value)}
-          />
-        </label>
-        <label>
-          <span className="form-label">Sort</span>
-          <select
-            id="memory-sort"
-            aria-label="Sort"
-            className="pagination-select"
-            value={sort}
-            onChange={(e) => onSortChange(e.target.value)}
+      {showFilters && (
+        <div className="search-bar memory-controls">
+          <label>
+            <span className="form-label">Repository</span>
+            <input
+              className="input"
+              placeholder="Filter by repo"
+              value={filterRepo}
+              onChange={(e) => preferences.setField('repo', e.target.value)}
+            />
+          </label>
+          <label>
+            <span className="form-label">Tags</span>
+            <input
+              className="input"
+              placeholder="Filter by tags (comma-separated)"
+              value={filterTags}
+              onChange={(e) => preferences.setField('tags', e.target.value)}
+            />
+          </label>
+          <label>
+            <span className="form-label">Sort</span>
+            <select
+              id="memory-sort"
+              aria-label="Sort"
+              className="pagination-select"
+              value={sort}
+              onChange={(e) => onSortChange(e.target.value)}
+            >
+              {sortOptions
+                .filter(
+                  (opt) =>
+                    mode === 'search' ||
+                    capabilities.data?.listing.sort_options.includes(opt.value),
+                )
+                .map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <FilterCheckbox
+            checked={meetingsOnly}
+            onChange={(event) =>
+              preferences.setField('meeting_only', event.target.checked)
+            }
           >
-            {sortOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <FilterCheckbox
-          checked={meetingsOnly}
-          onChange={(event) =>
-            preferences.setField('meeting_only', event.target.checked)
-          }
-        >
-          Meetings only
-        </FilterCheckbox>
-      </div>
+            Meetings only
+          </FilterCheckbox>
+        </div>
+      )}
 
-      {tagsArray.length > 0 && (
+      {cursorMode && (
+        <div className="text-muted-sm" style={{ marginBottom: 12 }}>
+          <div>Memory ID order</div>
+          <div>
+            Use semantic search to filter by repository, tags, or meetings.
+          </div>
+        </div>
+      )}
+      {configured && mode === 'search' && (
+        <p className="text-muted-sm">
+          Search results are limited to the top{' '}
+          {capabilities.data?.search.max_candidates} semantic matches.
+        </p>
+      )}
+      {showFilters && tagsArray.length > 0 && (
         <div className="text-muted-sm" style={{ marginTop: 4 }}>
           Tag filter (AND): {tagsArray.join(' + ')}
         </div>
@@ -250,24 +324,39 @@ export function MemoryPage() {
       {error && (
         <div role="alert" className="card">
           Could not load memories.{' '}
-          <button className="btn btn-sm" onClick={() => refresh()}>
+          <button
+            className="btn btn-sm"
+            disabled={controlsDisabled}
+            onClick={() => retry()}
+          >
             Retry
           </button>
+          {cursorMode && (
+            <button
+              className="btn btn-sm"
+              disabled={controlsDisabled}
+              onClick={() => cursorPage.restart()}
+            >
+              Restart from first page
+            </button>
+          )}
         </div>
       )}
 
       {!loading && !error && items.length === 0 && (
         <div className="loading">
-          {mode === 'search'
-            ? 'No results found'
-            : meetingsOnly || filterRepo || tagsArray.length > 0
-              ? 'No memories match the current filters'
-              : 'No memories yet'}
+          {cursorMode
+            ? 'No memories on this page'
+            : mode === 'search'
+              ? 'No results found'
+              : meetingsOnly || filterRepo || tagsArray.length > 0
+                ? 'No memories match the current filters'
+                : 'No memories yet'}
         </div>
       )}
 
       {!loading &&
-        !error &&
+        (!error || cursorMode) &&
         items.map((item) => {
           const isEditing = editingId === item.id;
 
@@ -499,17 +588,74 @@ export function MemoryPage() {
           );
         })}
 
-      {!loading && !error && (
-        <Pagination
-          total={total}
-          limit={limit}
-          offset={offset}
-          onPageChange={setOffset}
-          onLimitChange={(newLimit) => {
-            setLimit(newLimit);
-            setOffset(0);
-          }}
-        />
+      {cursorMode ? (
+        <nav className="pagination" aria-label="Pagination">
+          <div className="pagination-layout">
+            <div className="pagination-summary">
+              <label
+                className="pagination-page-size"
+                htmlFor="memory-page-size"
+              >
+                <span>Rows per page</span>
+                <select
+                  id="memory-page-size"
+                  className="pagination-select"
+                  value={preferences.values.limit}
+                  disabled={controlsDisabled}
+                  onChange={(event) =>
+                    preferences.setField(
+                      'limit',
+                      parseViewField(
+                        'memory',
+                        'limit',
+                        Number(event.target.value),
+                      ),
+                    )
+                  }
+                >
+                  {PAGE_LIMITS.map((value) => (
+                    <option key={value} value={value}>
+                      {value} / page
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="pagination-controls">
+              <span className="pagination-info" aria-current="page">
+                Page {cursorPage.page}
+              </span>
+              <button
+                type="button"
+                className="pagination-btn"
+                disabled={controlsDisabled || !cursorPage.hasPrevious}
+                onClick={cursorPage.previous}
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                className="pagination-btn"
+                disabled={controlsDisabled || !cursorPage.hasNext}
+                onClick={cursorPage.next}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </nav>
+      ) : (
+        !loading &&
+        !error && (
+          <Pagination
+            total={offsetPage.total}
+            limit={offsetPage.limit}
+            offset={offsetPage.offset}
+            onPageChange={offsetPage.setOffset}
+            onLimitChange={offsetPage.setLimit}
+            disabled={controlsDisabled}
+          />
+        )
       )}
     </div>
   );

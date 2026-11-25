@@ -57,6 +57,13 @@ class Page:
     generation: int
 
 
+@dataclass(frozen=True)
+class ListingState:
+    status: str | None
+    generation: int
+    dirty: bool
+
+
 _SORTS = {
     "created_at_asc": "created_at ASC NULLS FIRST, id ASC",
     "created_at_desc": "created_at DESC NULLS LAST, id ASC",
@@ -196,6 +203,27 @@ def check_page(source: Source, generation: int) -> None:
     if row["generation"] != generation:
         raise Unavailable(
             "Memory listing changed while its page was fetched; refresh before continuing"
+        )
+
+
+def read_state(source: Source) -> ListingState:
+    if not isinstance(source, Source):
+        raise ValueError("Memory listing state requires a source")
+    with _cursor() as cursor:
+        cursor.execute(_STATE, (source.key,))
+        row = cursor.fetchone()
+    return (
+        ListingState(row["status"], row["generation"], row["dirty"])
+        if row is not None
+        else ListingState(None, 0, False)
+    )
+
+
+def check_state(source: Source, expected: ListingState) -> None:
+    current = read_state(source)
+    if current != expected or current.dirty or current.status == "building":
+        raise Unavailable(
+            "Memory source changed during explicit lookback; restart the job"
         )
 
 

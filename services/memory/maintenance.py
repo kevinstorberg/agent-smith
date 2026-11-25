@@ -134,8 +134,16 @@ def fetch_rows(
 
 
 def iter_rows(
-    index, budget: MaintenanceBudget, *, strict: bool = True
+    index,
+    budget: MaintenanceBudget,
+    *,
+    strict: bool = True,
+    page_size: int = backend.LIST_PAGE_SIZE,
 ) -> Iterator[list[dict]]:
+    if type(page_size) is not int or not 1 <= page_size <= backend.LIST_PAGE_SIZE:
+        raise ValueError(
+            f"Memory enumeration page size must be between 1 and {backend.LIST_PAGE_SIZE}"
+        )
     seen_ids: set[str] = set()
     seen_tokens: set[str] = set()
     token: str | None = None
@@ -147,9 +155,9 @@ def iter_rows(
             remaining_records = budget.max_records - budget.records
             if remaining_records <= 0:
                 raise BudgetExceeded("Memory maintenance exceeded its record budget")
-            page_size = min(backend.LIST_PAGE_SIZE, remaining_records)
+            requested_size = min(page_size, remaining_records)
             page = index.list_paginated(
-                limit=page_size,
+                limit=requested_size,
                 pagination_token=token,
                 _request_timeout=budget.request(),
             )
@@ -158,9 +166,9 @@ def iter_rows(
             stage = "decode"
             prefix = f"Pinecone memory enumeration page {pages}"
             vectors = backend._response_field(page, "vectors")
-            if not isinstance(vectors, list) or len(vectors) > page_size:
+            if not isinstance(vectors, list) or len(vectors) > requested_size:
                 raise RuntimeError(
-                    f"{prefix} must contain at most {page_size} vector IDs"
+                    f"{prefix} must contain at most {requested_size} vector IDs"
                 )
             ids = []
             for vector in vectors:
