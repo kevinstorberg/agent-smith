@@ -14,6 +14,7 @@ from typing import Any
 from langchain_core.documents import Document
 from langchain_core.vectorstores import VectorStore
 from langchain_pinecone import PineconeVectorStore
+from pinecone.exceptions import PineconeApiException
 
 from scripts.shared.validation import validate_memory_id
 from services.config import PINECONE_INDEX as INDEX_NAME
@@ -31,6 +32,7 @@ ENUMERATION_SECONDS = 120
 ACCESS_BATCH_SECONDS = 30
 REQUEST_SECONDS = 10
 ACCESS_WORKERS = 4
+CURSOR_MAX_LENGTH = 8192
 
 _index = None
 _write_lock = Lock()
@@ -181,6 +183,8 @@ class _ObservedPinecone:
             and kwargs["top_k"] >= 0
         ):
             metadata["count"] = kwargs["top_k"]
+        elif name == "list_paginated" and type(kwargs.get("limit")) is int:
+            metadata["count"] = kwargs["limit"]
         return metadata
 
 
@@ -252,10 +256,73 @@ def load_all() -> list[dict]:
 
 
 def list_rows(repo: str | None = None, limit: int = 20) -> list[dict]:
-    rows = load_all()
     if repo:
-        rows = [r for r in rows if r.get("metadata", {}).get("repo") == repo]
-    return rows[: int(limit)]
+        raise ValueError(
+            "Pinecone browsing does not support repository filters; use memory_search"
+        )
+    return browse_page(limit=limit)[0]
+
+
+def browse_page(
+    *, limit: int, cursor: str | None = None
+) -> tuple[list[dict], str | None]:
+    from services.memory.catalog import Unavailable
+
+    if type(limit) is not int or not 1 <= limit <= LIST_PAGE_SIZE:
+        raise ValueError(f"Memory page limit must be between 1 and {LIST_PAGE_SIZE}")
+    if cursor is not None and (
+        not isinstance(cursor, str)
+        or not cursor.strip()
+        or len(cursor) > CURSOR_MAX_LENGTH
+    ):
+        raise ValueError("Invalid memory cursor; restart browsing from the first page")
+    deadline = time.monotonic() + ACCESS_BATCH_SECONDS
+    try:
+        index = _get_index()
+        page = index.list_paginated(
+            limit=limit,
+            pagination_token=cursor,
+            namespace="",
+            _request_timeout=min(REQUEST_SECONDS, _remaining(deadline)),
+        )
+        _remaining(deadline)
+        namespace = _response_field(page, "namespace")
+        if namespace is not None and namespace not in ("", "__default__"):
+            raise Unavailable("Pinecone memory page returned another namespace")
+        vectors = _response_field(page, "vectors")
+        if not isinstance(vectors, list) or len(vectors) > limit:
+            raise Unavailable("Pinecone memory page contains invalid vector IDs")
+        ids = [_response_field(vector, "id") for vector in vectors]
+        if memory_ids(ids) != ids:
+            raise Unavailable("Pinecone memory page IDs must be unique canonical UUIDs")
+        pagination = _response_field(page, "pagination")
+        if pagination is not None and not (
+            isinstance(pagination, Mapping) or hasattr(pagination, "get")
+        ):
+            raise Unavailable("Pinecone memory page contains invalid pagination")
+        next_cursor = _response_field(pagination, "next")
+        if next_cursor is not None and (
+            not isinstance(next_cursor, str)
+            or not next_cursor.strip()
+            or len(next_cursor) > CURSOR_MAX_LENGTH
+            or next_cursor == cursor
+        ):
+            raise Unavailable("Pinecone memory page contains an invalid next cursor")
+        rows = _fetch_rows(ids, index, deadline, namespace="") if ids else []
+        _remaining(deadline)
+        return rows, next_cursor
+    except PineconeApiException as error:
+        if cursor is not None and error.status == 400:
+            raise ValueError(
+                "Memory cursor is no longer valid; restart browsing from the first page"
+            ) from error
+        raise Unavailable("Pinecone memory page could not be read") from error
+    except Unavailable:
+        raise
+    except Exception as error:
+        raise Unavailable(
+            "Pinecone memory page could not be read; retry the page"
+        ) from error
 
 
 def _response_field(result: Any, name: str, default: Any = None) -> Any:
@@ -287,13 +354,23 @@ def _serialized_writes(deadline: float):
         _write_lock.release()
 
 
-def _fetch_rows(ids: list[str], index, deadline: float) -> list[dict]:
+def _fetch_rows(
+    ids: list[str], index, deadline: float, *, namespace: str | None = None
+) -> list[dict]:
     rows = {}
     for offset in range(0, len(ids), 1000):
         result = index.fetch(
             ids=ids[offset : offset + 1000],
             _request_timeout=min(REQUEST_SECONDS, _remaining(deadline)),
+            **({"namespace": namespace} if namespace is not None else {}),
         )
+        served_namespace = _response_field(result, "namespace")
+        if (
+            namespace == ""
+            and served_namespace is not None
+            and served_namespace not in ("", "__default__")
+        ):
+            raise ValueError("Pinecone memory fetch returned another namespace")
         for id, vector in _fetch_vectors(result).items():
             metadata = (
                 vector.get("metadata", {})

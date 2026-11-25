@@ -383,15 +383,23 @@ profile-owned rows exist, preventing accidental loss of topic ownership.
 Vector memory with time-weighted retrieval, served as MCP tools on the dashboard endpoint.
 Meeting-generated memories join this same reusable store and remain available to other agents.
 
-Pinecone listing uses a PostgreSQL metadata catalog for global sorting, filtering and exact
-totals, then fetches only the requested page's IDs from Pinecone. Opening, paging or refreshing
-Memory never initializes the catalog or enumerates the index. An uninitialized, incomplete or
-dirty catalog returns an explicit unavailable response. Memory refreshes after user changes
-and through **Refresh**, without automatic polling. Semantic retrieval remains independent;
-ordinary agent searches and lists return at most 50 memories.
+Pinecone browsing uses native cursor pages in memory-ID order. Each page makes one ID-list
+request and fetches only those IDs; it requires no catalog initialization, import or backfill.
+**Previous**, **Next** and **Rows per page** navigate visited pages without calculating a global
+total or walking to an offset. Native browsing has no global date order or repository/tag/meeting
+filters; use semantic search for those filters. Other backends retain offset pagination,
+date sorting, filters and totals. Memory refreshes after user changes and through **Refresh**,
+without automatic polling. Agent semantic searches return at most 50 candidates; Pinecone
+`memory_list` returns an unfiltered first ID page of at most 50, rather than the newest memories.
 The configured Pinecone index must already exist and be ready: reads and backend initialization
 only perform bounded discovery, never create an index or poll for readiness. Provision missing
 indexes explicitly before using the application.
+
+Catalog maintenance is optional and is never required for ordinary browsing or searching.
+The explicitly invoked improve job can use a ready catalog for exhaustive lookback; otherwise
+it uses a separate bulk reader with finite record, request and deadline budgets. That job fails
+on application-write drift or unresolved writes, and cannot promise a provider transaction
+snapshot or detect external console mutations. Ordinary pages and searches never invoke it.
 
 Catalog initialization is a separate, explicitly authorized maintenance operation. Stop old
 application workers, initializer processes and external Pinecone writers before confirming
@@ -484,13 +492,14 @@ For Claude capture, open **Hooks → claude_memories** and update the metadata's
 `hooks[].prompt` using the reviewed artifact before saving and syncing. Repository changes
 do not update live skills, hooks, or generated client settings automatically.
 
-On **Memory**, enable **Meetings only** to filter by meeting provenance without changing the
-records' tags or creating another store. The list/search API accepts `meeting_only=true`;
+On **Memory**, enable **Meetings only** during semantic search to filter by meeting provenance
+without changing the records' tags or creating another store. Offset backends also support this
+filter while browsing. Search accepts `meeting_only=true`;
 returned records include `from_meeting`, `source_type` and `source_id` when known.
 New meeting memories carry useful topic tags such as `product`, `paralign` and `security`.
 Meeting origin is separate from tags. Legacy origin tags are hidden on reads without
 rewriting old memories or rerunning their meetings. Agents can use `tags` and
-`meeting_only` on both MCP `memory_search` and `memory_list`, for example
+`meeting_only` on MCP `memory_search` (and `memory_list` with an offset backend), for example
 `memory_search(query="MFA follow-up", tags=["security"], meeting_only=True)`.
 Defaults to LanceDB (local, stored in `memory_store/`). The supported backends are
 `lancedb`, `pinecone`, and `pgvector`. The pgvector backend uses the existing

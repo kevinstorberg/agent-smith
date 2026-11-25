@@ -409,6 +409,30 @@ export interface McpServer {
   config: Record<string, unknown>;
 }
 
+export interface MemoryConfig {
+  listing: {
+    mode: 'cursor' | 'offset';
+    source: string;
+    filters: boolean;
+    sort_options: string[];
+    total: boolean;
+  };
+  search: { max_candidates: number };
+}
+
+export interface MemoryCursorPage {
+  mode: 'cursor';
+  items: MemoryItem[];
+  next_cursor: string | null;
+  order: 'id_asc';
+}
+
+export interface MemoryOffsetPage extends Paginated<MemoryItem> {
+  mode: 'offset';
+}
+
+export type MemoryListPage = MemoryCursorPage | MemoryOffsetPage;
+
 export interface MemoryItem {
   context_tags?: string[];
   from_meeting?: boolean;
@@ -1837,6 +1861,7 @@ export const api = {
       ),
   },
   memory: {
+    config: () => get<MemoryConfig>('/memory/config', undefined, 10_000),
     search: (
       q: string,
       opts?: PaginationParams & {
@@ -1846,33 +1871,43 @@ export const api = {
         meeting_only?: boolean;
       },
     ) =>
-      get<Paginated<MemoryItem>>('/memory/search', {
-        q,
-        ...(opts?.repo ? { repo: opts.repo } : {}),
-        ...(opts?.tags && opts.tags.length ? { tags: opts.tags } : {}),
-        ...(opts?.sort ? { sort: opts.sort } : {}),
-        ...(opts?.meeting_only !== undefined
-          ? { meeting_only: String(opts.meeting_only) }
-          : {}),
-        ...paginationToParams(opts),
-      }),
+      get<Paginated<MemoryItem>>(
+        '/memory/search',
+        {
+          q,
+          ...(opts?.repo ? { repo: opts.repo } : {}),
+          ...(opts?.tags && opts.tags.length ? { tags: opts.tags } : {}),
+          ...(opts?.sort ? { sort: opts.sort } : {}),
+          ...(opts?.meeting_only !== undefined
+            ? { meeting_only: String(opts.meeting_only) }
+            : {}),
+          ...paginationToParams(opts),
+        },
+        10_000,
+      ),
     list: (
       opts?: PaginationParams & {
+        cursor?: string;
         repo?: string;
         tags?: string[];
         sort?: string;
         meeting_only?: boolean;
       },
     ) =>
-      get<Paginated<MemoryItem>>('/memory/list', {
-        ...(opts?.repo ? { repo: opts.repo } : {}),
-        ...(opts?.tags && opts.tags.length ? { tags: opts.tags } : {}),
-        ...(opts?.sort ? { sort: opts.sort } : {}),
-        ...(opts?.meeting_only !== undefined
-          ? { meeting_only: String(opts.meeting_only) }
-          : {}),
-        ...paginationToParams(opts),
-      }),
+      get<MemoryListPage>(
+        '/memory/list',
+        {
+          ...(opts?.cursor ? { cursor: opts.cursor } : {}),
+          ...(opts?.repo ? { repo: opts.repo } : {}),
+          ...(opts?.tags && opts.tags.length ? { tags: opts.tags } : {}),
+          ...(opts?.sort ? { sort: opts.sort } : {}),
+          ...(opts?.meeting_only !== undefined
+            ? { meeting_only: String(opts.meeting_only) }
+            : {}),
+          ...paginationToParams(opts),
+        },
+        10_000,
+      ),
     get: (id: string) => get<MemoryItem>(`/memory/${id}`),
     update: (
       id: string,

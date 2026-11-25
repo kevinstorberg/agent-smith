@@ -38,9 +38,8 @@ def replace_metadata(index, id, **changes):
         )
 
 
-def test_pinecone_pages_join_live_meeting_labels_and_filter_mixed_own_context_tags(
+def test_explicit_catalog_joins_live_meeting_labels_and_filters_mixed_own_context_tags(
     catalog,
-    client,
     saved,
     monkeypatch,
 ):
@@ -65,39 +64,33 @@ def test_pinecone_pages_join_live_meeting_labels_and_filter_mixed_own_context_ta
         tags=["decision"],
     )
     forbid_listing_hydration(monkeypatch, index)
-    params = [("tags", "decision"), ("tags", "security"), ("limit", 1)]
-
-    first = client.get("/api/memory/list", params=params)
-    assert first.status_code == 200
-    assert first.json()["total"] == 1
-    row = first.json()["items"][0]
+    first, total = db.list_page(tags=["decision", "security"], limit=1)
+    assert total == 1
+    row = first[0]
     assert row["id"] == ids[0] and row["source_id"] == meeting_id
     assert row["tags"] == ["decision"] and row["context_tags"] == ["security"]
     assert index.fetches == [[ids[0]]]
 
     labels_db.update(meeting_id, 1, ["product"])
-    old_topic = client.get("/api/memory/list", params=params)
-    assert old_topic.json() == {"items": [], "total": 0}
+    assert db.list_page(tags=["decision", "security"], limit=1) == ([], 0)
     assert index.fetches == [[ids[0]]]
-    current = client.get("/api/memory/list", params={"tags": ["decision", "product"]})
-    assert current.json()["total"] == 1
-    assert current.json()["items"][0]["context_tags"] == ["product"]
+    current, total = db.list_page(tags=["decision", "product"])
+    assert total == 1
+    assert current[0]["context_tags"] == ["product"]
 
     with get_connection() as connection, connection.cursor() as cursor:
         cursor.execute(
             "UPDATE meeting_summaries SET available=false WHERE id=%s", (meeting_id,)
         )
-    hidden = client.get("/api/memory/list", params={"tags": "product"})
-    assert hidden.json() == {"items": [], "total": 0}
+    assert db.list_page(tags=["product"]) == ([], 0)
     assert index.fetches == [[ids[0]], [ids[0]]]
     assert index.pages == index.queries == index.touches == []
 
 
 @pytest.mark.parametrize("field", ["created_at", "updated_at"])
 @pytest.mark.parametrize("direction", ["asc", "desc"])
-def test_pinecone_pages_keep_missing_dates_and_ties_in_stable_global_order(
+def test_explicit_catalog_keeps_missing_dates_and_ties_in_stable_global_order(
     catalog,
-    client,
     monkeypatch,
     field,
     direction,
@@ -114,14 +107,35 @@ def test_pinecone_pages_keep_missing_dates_and_ties_in_stable_global_order(
     forbid_listing_hydration(monkeypatch, index)
     ordered = ids if direction == "asc" else [ids[3], ids[1], ids[2], ids[0]]
     for offset in range(4):
-        response = client.get(
-            "/api/memory/list",
-            params={"sort": f"{field}_{direction}", "limit": 1, "offset": offset},
-        )
-        assert response.status_code == 200
-        assert response.json()["total"] == 4
-        assert [row["id"] for row in response.json()["items"]] == ordered[
-            offset : offset + 1
-        ]
+        rows, total = db.list_page(sort=f"{field}_{direction}", limit=1, offset=offset)
+        assert total == 4
+        assert [row["id"] for row in rows] == ordered[offset : offset + 1]
     assert index.fetches == [[id] for id in ordered]
     assert index.pages == index.queries == index.touches == []
+
+
+def test_native_page_enriches_its_meeting_labels_without_catalog_readiness(
+    catalog, client, saved, monkeypatch
+):
+    from services.memory import catalog as listing_catalog
+
+    index = catalog(3, ready=False)
+    index.forbid_listing = False
+    ids = list(index.rows)
+    meeting_id = saved[1][0]["id"]
+    labels_db.update(meeting_id, 0, ["security"])
+    index.rows[ids[0]]["metadata"].update(source_type="meeting", source_id=meeting_id)
+    forbid_listing_hydration(monkeypatch, index)
+    monkeypatch.setattr(
+        listing_catalog,
+        "select_page",
+        lambda *a, **k: pytest.fail("Native browse read catalog"),
+    )
+
+    response = client.get("/api/memory/list", params={"limit": 2})
+
+    assert response.status_code == 200
+    assert [row["id"] for row in response.json()["items"]] == ids[:2]
+    assert response.json()["items"][0]["context_tags"] == ["security"]
+    assert index.fetches == [ids[:2]] and len(index.pages) == 1
+    assert index.queries == index.touches == []

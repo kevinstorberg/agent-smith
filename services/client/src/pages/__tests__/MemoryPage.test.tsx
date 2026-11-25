@@ -1,3 +1,4 @@
+import { offsetMemoryConfig } from './memoryFixture';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
@@ -6,6 +7,7 @@ import { MemoryPage } from '../MemoryPage';
 vi.mock('../../api', () => ({
   api: {
     memory: {
+      config: vi.fn(),
       list: vi.fn(),
       search: vi.fn(),
       update: vi.fn(),
@@ -41,7 +43,8 @@ const fakeMemories = [
 beforeEach(() => {
   document.cookie = 'agent-smith.ui.v1=; Path=/; Max-Age=0';
   vi.clearAllMocks();
-  mockList.mockResolvedValue({ items: fakeMemories, total: 2 });
+  vi.mocked(api.memory.config).mockResolvedValue(offsetMemoryConfig);
+  mockList.mockResolvedValue({ mode: 'offset', items: fakeMemories, total: 2 });
   mockSearch.mockResolvedValue({ items: [], total: 0 });
   mockUpdate.mockResolvedValue(fakeMemories[0]);
   mockRemove.mockResolvedValue({ deleted: true });
@@ -54,6 +57,7 @@ afterEach(() => {
 describe('MemoryPage', () => {
   it('shows inherited meeting topics once without copying them into the editable memory tags', async () => {
     mockList.mockResolvedValue({
+      mode: 'offset',
       items: [
         {
           ...fakeMemories[0],
@@ -84,7 +88,11 @@ describe('MemoryPage', () => {
   });
 
   it('applies the meeting filter before paging and preserves the search, repo, tags, and sort options', async () => {
-    mockList.mockResolvedValue({ items: fakeMemories, total: 40 });
+    mockList.mockResolvedValue({
+      mode: 'offset',
+      items: fakeMemories,
+      total: 40,
+    });
     mockSearch.mockResolvedValue({ items: fakeMemories, total: 40 });
     renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
     await screen.findByText('First memory content');
@@ -153,6 +161,7 @@ describe('MemoryPage', () => {
   it('shows meeting provenance and links to the source without hiding general memories', async () => {
     const meetingId = '54853e29-12dc-4d19-8987-ec0311f9d82e';
     mockList.mockResolvedValue({
+      mode: 'offset',
       items: [
         { ...fakeMemories[0], from_meeting: true, source_id: meetingId },
         fakeMemories[1],
@@ -183,6 +192,7 @@ describe('MemoryPage', () => {
 
   it('does not replace meeting-filtered results with an older all-memory response', async () => {
     let resolveOld!: (value: {
+      mode: 'offset';
       items: typeof fakeMemories;
       total: number;
     }) => void;
@@ -192,16 +202,18 @@ describe('MemoryPage', () => {
       }),
     );
     mockList.mockResolvedValueOnce({
+      mode: 'offset',
       items: [{ ...fakeMemories[0], content: 'Current meeting memory' }],
       total: 1,
     });
     renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
+    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Meetings only' }));
     expect(
       await screen.findByText('Current meeting memory'),
     ).toBeInTheDocument();
     await act(async () => {
-      resolveOld({ items: fakeMemories, total: 2 });
+      resolveOld({ mode: 'offset', items: fakeMemories, total: 2 });
     });
     expect(screen.getByText('Current meeting memory')).toBeInTheDocument();
     expect(screen.queryByText('Second memory content')).not.toBeInTheDocument();
@@ -221,7 +233,7 @@ describe('MemoryPage', () => {
   });
 
   it('shows empty state when no memories exist', async () => {
-    mockList.mockResolvedValue({ items: [], total: 0 });
+    mockList.mockResolvedValue({ mode: 'offset', items: [], total: 0 });
 
     renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
@@ -232,7 +244,11 @@ describe('MemoryPage', () => {
 
   it('keeps idle pages quiet and refreshes only the current requested page', async () => {
     vi.useFakeTimers();
-    mockList.mockResolvedValue({ items: fakeMemories, total: 40 });
+    mockList.mockResolvedValue({
+      mode: 'offset',
+      items: fakeMemories,
+      total: 40,
+    });
     await act(async () => {
       renderWithProviders(<MemoryPage />, {
         initialEntries: ['/memory'],
@@ -279,7 +295,7 @@ describe('MemoryPage', () => {
   });
 
   it('shows filter-specific empty state when filters return zero', async () => {
-    mockList.mockResolvedValue({ items: [], total: 0 });
+    mockList.mockResolvedValue({ mode: 'offset', items: [], total: 0 });
 
     renderWithProviders(<MemoryPage />, { initialEntries: ['/memory'] });
 
@@ -421,7 +437,11 @@ describe('MemoryPage', () => {
       expect(screen.getByText('Clear')).toBeInTheDocument();
     });
 
-    mockList.mockResolvedValue({ items: fakeMemories, total: 2 });
+    mockList.mockResolvedValue({
+      mode: 'offset',
+      items: fakeMemories,
+      total: 2,
+    });
 
     fireEvent.click(screen.getByText('Clear'));
 
@@ -451,7 +471,11 @@ describe('MemoryPage', () => {
   });
 
   it('saves edited memory with parsed tags', async () => {
-    mockList.mockResolvedValue({ items: fakeMemories, total: 2 });
+    mockList.mockResolvedValue({
+      mode: 'offset',
+      items: fakeMemories,
+      total: 2,
+    });
     mockUpdate.mockResolvedValue({
       ...fakeMemories[0],
       content: 'Updated content',

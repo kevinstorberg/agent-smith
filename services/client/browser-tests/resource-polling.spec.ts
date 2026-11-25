@@ -182,7 +182,11 @@ for (const mode of ['list', 'search']) {
     fixtureAPI,
   }) => {
     const endpoint = `/api/memory/${mode}`;
-    fixtureAPI.get(endpoint, { items: [], total: 50 });
+    fixtureAPI.get(endpoint, {
+      items: [],
+      total: 50,
+      ...(mode === 'list' ? { mode: 'offset' } : {}),
+    });
     await freezeClock(page);
     await page.goto(
       `/memory?repo=work&limit=10&offset=20${mode === 'search' ? '&q=review' : ''}`,

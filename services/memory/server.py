@@ -98,7 +98,10 @@ def memory_list(
     meeting_only: bool = False,
 ) -> list[dict]:
     """
-    List recent memories, newest first.
+    List one bounded page of memories without marking them accessed.
+    Pinecone returns the first page in memory ID order, without global filters.
+    Use memory_search for repository, tag, or meeting filters on Pinecone.
+    Other backends list newest memories first and support the listed filters.
 
     Args:
         repo:   Filter to this project/repo (optional).

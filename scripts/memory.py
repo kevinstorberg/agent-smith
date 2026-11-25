@@ -13,6 +13,7 @@ from scripts.shared.paths import REPO_ROOT
 def _db():
     sys.path.insert(0, str(REPO_ROOT))
     from services.memory import db
+
     return db
 
 
@@ -80,7 +81,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = p.add_subparsers(dest="command", required=True)
 
-    list_p = sub.add_parser("list", help="List recent memories")
+    list_p = sub.add_parser(
+        "list", help="List one memory page (Pinecone: ID order, no filters)"
+    )
     list_p.add_argument("--repo", default=None)
     list_p.add_argument("--limit", type=int, default=20)
 
