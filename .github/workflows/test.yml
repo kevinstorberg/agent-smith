@@ -120,3 +120,15 @@ jobs:
 
       - name: Run ${{ matrix.name }}
         run: npm run ${{ matrix.script }}
+
+      - name: Upload failed browser diagnostics
+        if: failure() && matrix.script == 'test:browser'
+        timeout-minutes: 2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            services/client/playwright-report/
+            services/client/test-results/
+          retention-days: 3
+          if-no-files-found: warn
