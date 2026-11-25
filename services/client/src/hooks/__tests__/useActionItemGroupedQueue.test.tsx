@@ -448,6 +448,135 @@ function expectNoDragWrite() {
 }
 
 describe('cross-Epic drag admission and cancellation', () => {
+  it.each(['mouseup', 'touchend'] as const)(
+    'freezes the exact %s target before later movement, scrolling and duplicate release',
+    async (type) => {
+      const { result, targets } = await renderMembershipDrag();
+      act(() => result.current.startDrag({ ...childDrag, mode: 'FLUID' }));
+      act(() => {
+        const event =
+          type === 'mouseup'
+            ? new MouseEvent(type, { clientX: 50, clientY: 300 })
+            : Object.assign(new Event(type), {
+                changedTouches: [{ clientX: 50, clientY: 300 }],
+              });
+        window.dispatchEvent(event);
+      });
+      expect(result.current.snapshot?.released).toBe(true);
+      expect(result.current.pendingMembership?.text).toBe(
+        'Moving Task 2 to Release #20…',
+      );
+      act(() => {
+        vi.mocked(targets[1].getBoundingClientRect).mockReturnValue(
+          new DOMRect(0, 600, 200, 100),
+        );
+        window.dispatchEvent(new Event('scroll'));
+        window.dispatchEvent(
+          new MouseEvent('mousemove', { clientX: 50, clientY: 450 }),
+        );
+        window.dispatchEvent(
+          new MouseEvent('mouseup', { clientX: 500, clientY: 600 }),
+        );
+      });
+      expect(result.current.snapshot?.epicTarget?.epic?.id).toBe(20);
+      await act(async () =>
+        result.current.endDrag({ ...childDrop, mode: 'FLUID' }),
+      );
+      expect(api.actionItemQueue.setEpic).toHaveBeenCalledExactlyOnceWith(2, {
+        expected_revision: 1,
+        expected_parent: { id: 10, expected_revision: 3, cohort: 'cohort-10' },
+        destination: { id: 20, expected_revision: 3, cohort: 'cohort-20' },
+      });
+    },
+  );
+
+  it('keeps an outside release outside despite later motion into an Epic', async () => {
+    const { result } = await renderMembershipDrag();
+    act(() => result.current.startDrag({ ...childDrag, mode: 'FLUID' }));
+    act(() => {
+      window.dispatchEvent(
+        new MouseEvent('mouseup', { clientX: 500, clientY: 600 }),
+      );
+      window.dispatchEvent(
+        new MouseEvent('mousemove', { clientX: 50, clientY: 300 }),
+      );
+      window.dispatchEvent(new Event('scroll'));
+    });
+    expect(result.current.snapshot?.epicTarget).toBeNull();
+    expect(result.current.pendingMembership).toBeUndefined();
+    await act(async () =>
+      result.current.endDrag({ ...childDrop, mode: 'FLUID' }),
+    );
+    expectNoDragWrite();
+  });
+
+  it('freezes keyboard release and ignores later target keys', async () => {
+    const { result } = await renderMembershipDrag();
+    selectOtherEpic(result);
+    key(' ');
+    key('ArrowRight', true);
+    key('ArrowDown');
+    expect(result.current.snapshot?.epicTarget?.epic?.id).toBe(20);
+    await act(async () => result.current.endDrag(childDrop));
+    expect(api.actionItemQueue.setEpic).toHaveBeenCalledExactlyOnceWith(2, {
+      expected_revision: 1,
+      expected_parent: { id: 10, expected_revision: 3, cohort: 'cohort-10' },
+      destination: { id: 20, expected_revision: 3, cohort: 'cohort-20' },
+    });
+  });
+
+  it('keeps Escape canceled even when a later release hits an Epic', async () => {
+    const { result } = await renderMembershipDrag();
+    act(() => result.current.startDrag({ ...childDrag, mode: 'FLUID' }));
+    key('Escape');
+    act(() =>
+      window.dispatchEvent(
+        new MouseEvent('mouseup', { clientX: 50, clientY: 300 }),
+      ),
+    );
+    expect(result.current.snapshot?.canceled).toBe(true);
+    expect(result.current.pendingMembership).toBeUndefined();
+    await act(async () =>
+      result.current.endDrag({ ...childDrop, mode: 'FLUID' }),
+    );
+    expectNoDragWrite();
+  });
+
+  it('keeps visible pending intent and the write lock through canonical refresh', async () => {
+    const { result } = await renderMembershipDrag();
+    const save = deferred<typeof child>();
+    const refresh = deferred<ActionItemGroupedPage>();
+    vi.mocked(api.actionItemQueue.setEpic).mockReturnValueOnce(save.promise);
+    vi.mocked(api.actionItemQueue.list).mockReturnValueOnce(refresh.promise);
+    selectOtherEpic(result);
+    key(' ');
+    let moving!: Promise<void>;
+    act(() => {
+      moving = result.current.endDrag(childDrop);
+    });
+    expect(result.current.pendingMembership?.destinationId).toBe(20);
+    expect(result.current.freezeControls).toBe(true);
+    await act(async () => save.resolve(child));
+    await waitFor(() =>
+      expect(api.actionItemQueue.list).toHaveBeenCalledTimes(2),
+    );
+    expect(result.current.busy).toBe(true);
+    expect(result.current.pendingMembership?.destinationId).toBe(20);
+    expect(result.current.roots[0]).toHaveProperty('children.0.item.id', 2);
+    await act(async () => {
+      refresh.resolve({
+        items: [epicGroup(10, []), epicGroup(20, [child])],
+        total: 2,
+        matching_count: 1,
+      });
+      await moving;
+    });
+    expect(result.current.busy).toBe(false);
+    expect(result.current.pendingMembership).toBeUndefined();
+    expect(result.current.roots[1]).toHaveProperty('children.0.item.id', 2);
+    expect(api.actionItemQueue.setEpic).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['CANCEL', 'outside', 'same parent'] as const)(
     'does not write after %s',
     async (reason) => {

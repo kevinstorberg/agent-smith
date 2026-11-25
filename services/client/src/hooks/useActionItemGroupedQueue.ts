@@ -143,23 +143,45 @@ interface GroupDrag extends ProjectDragSnapshot {
   itemId?: string;
   parent?: ActionItemEpicGroup;
   rootTask?: { index: number; height: number };
+  pendingMembership?: {
+    destinationId: number | null;
+    destination: string;
+    text: string;
+  };
+}
+
+function draggedItem(captured: GroupDrag | null) {
+  return captured?.items.find((item) => `item:${item.id}` === captured.itemId);
+}
+
+function epicDestination(captured: GroupDrag) {
+  return captured.epicTarget?.epic
+    ? epicOptionLabel(
+        captured.epicTarget.epic,
+        captured.roots
+          .filter((root) => root.kind === 'epic')
+          .map((root) => root.epic),
+      )
+    : 'No Epic';
+}
+
+function pendingMembership(captured: GroupDrag | null) {
+  const item = draggedItem(captured);
+  if (!captured?.epicTarget || !item) return;
+  const destination = epicDestination(captured);
+  return {
+    destinationId: captured.epicTarget.epic?.id ?? null,
+    destination,
+    text: `Moving ${item.title} to ${destination}…`,
+  };
 }
 
 function dragMovement(captured: GroupDrag | null): string | null {
-  const item = captured?.items.find(
-    (item) => `item:${item.id}` === captured.itemId,
-  );
+  const item = draggedItem(captured);
   if (item && captured?.rootOrderTarget)
     return `Move ${item.title} ${captured.rootOrderTarget.edge} ${captured.rootOrderTarget.label}`;
   const destination = captured?.epicTarget
-    ? captured.epicTarget.epic
-      ? epicOptionLabel(
-          captured.epicTarget.epic,
-          captured.roots
-            .filter((root) => root.kind === 'epic')
-            .map((root) => root.epic),
-        )
-      : 'No Epic'
+    ? epicDestination(captured)
     : captured?.project;
   return item && destination ? `Move ${item.title} to ${destination}` : null;
 }
@@ -622,6 +644,8 @@ export function useActionItemGroupedQueue({
     if (!captured || !writes.mounted.current) return;
     const dropped = {
       ...captured,
+      pendingMembership:
+        result.reason === 'DROP' ? pendingMembership(captured) : undefined,
       rootTask: undefined,
       project: undefined,
       epicTarget: undefined,
@@ -658,10 +682,11 @@ export function useActionItemGroupedQueue({
       !sameProjects ||
       !sameChildren ||
       !current.current.readable ||
+      captured.canceled ||
       result.reason === 'CANCEL'
     ) {
       setSnapshot(null);
-      if (result.reason !== 'CANCEL')
+      if (result.reason !== 'CANCEL' && !captured.canceled)
         await list.refresh({ showLoading: false });
       return;
     }
@@ -819,6 +844,9 @@ export function useActionItemGroupedQueue({
     startDrag,
     endDrag,
     externalMovement: dragMovement(snapshot),
+    pendingMembership:
+      snapshot?.pendingMembership ??
+      (snapshot?.released ? pendingMembership(snapshot) : undefined),
     externalDragAnnouncement: () => dragMovement(drag.current),
     changeStatus,
     removeItem,

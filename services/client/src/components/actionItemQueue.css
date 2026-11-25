@@ -57,9 +57,19 @@
   font-size: inherit;
 }
 .action-item-epic-group[data-drop-selected='true'],
+.action-item-epic-group[data-move-pending='true'],
 .action-item-no-epic-target[data-drop-selected='true'] {
   outline: 2px solid var(--info);
   outline-offset: -2px;
+}
+.action-item-pending-move {
+  position: fixed;
+  z-index: 6001;
+  right: 16px;
+  bottom: 16px;
+  max-width: min(36rem, calc(100vw - 32px));
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 .action-item-no-epic-target {
   position: fixed;
