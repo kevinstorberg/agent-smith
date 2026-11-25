@@ -4,10 +4,13 @@ import { actionItem } from '../src/pages/__tests__/actionItemFixture';
 import { expectSortableHeaderLayout } from './sortableHeaderLayout';
 import {
   expectControlContained,
+  expectControlReachable,
+  expectDialogContained,
   expectDocumentContained,
   expectMainContained,
 } from './geometry';
 import { enlargeComputedText } from './typography';
+import { openProjectOptions } from './actionItemDisclosures';
 
 const initialProject = {
   id: 7,
@@ -44,19 +47,23 @@ test('project management follows the existing workspace, form and action-item na
   });
   await page.goto('/action-items');
   const toolbar = page.getByRole('group', { name: 'Project management' });
-  const manage = toolbar.getByRole('link', { name: 'Manage projects' });
-  const create = toolbar.getByRole('button', {
+  await openProjectOptions(page);
+  const options = toolbar.getByRole('group', {
+    name: 'Project options',
+    exact: true,
+  });
+  const manage = options.getByRole('link', { name: 'Manage projects' });
+  const create = options.getByRole('button', {
     name: 'New project',
     exact: true,
   });
   await expect(manage).toHaveClass(/btn btn-sm/);
   await expect(manage).toHaveCSS('text-decoration-line', 'none');
-  await manage.scrollIntoViewIfNeeded();
-  const controls = await Promise.all([
-    manage.boundingBox(),
-    create.boundingBox(),
-  ]);
-  expect(Math.abs(controls[0]!.y - controls[1]!.y)).toBeLessThanOrEqual(1);
+  await expectDialogContained(options);
+  for (const control of [create, manage]) {
+    await expectControlContained(control, options);
+    await expectControlReachable(control);
+  }
   await manage.click();
   await expect(
     page.getByRole('heading', { name: 'Projects', exact: true }),
