@@ -258,7 +258,9 @@ describe('Proposed Action Items', () => {
     });
     const { container } = render();
     expect(await screen.findByText('Creates completed item')).toBeVisible();
-    expect(screen.getByText(/^Due/)).toHaveTextContent('November 25, 2026');
+    expect(
+      container.querySelector('.action-item-proposal-due'),
+    ).toHaveTextContent('November 25, 2026');
     expect(
       container.querySelector('.action-item-proposal-description-preview'),
     ).toHaveTextContent('Complete supporting context');
@@ -307,10 +309,10 @@ describe('Proposed Action Items', () => {
     const { container } = render();
     await screen.findByText('New action item');
     expect(
-      container.querySelector('.action-item-proposal-metadata'),
+      container.querySelector('.action-item-proposal-topics'),
     ).toHaveTextContent('Proposed project');
     expect(
-      container.querySelector('.action-item-proposal-metadata'),
+      container.querySelector('.action-item-proposal-topics'),
     ).not.toHaveTextContent('Review context');
   });
 
@@ -409,13 +411,12 @@ describe('Proposed Action Items', () => {
 
   it('shows the actual proposed changes and their evidence in the list', async () => {
     render();
-    expect(
-      await screen.findByRole('region', {
-        name: 'Proposed action item changes',
-      }),
-    ).toHaveTextContent('Deadline');
-    expect(screen.getByText(/November 18, 2026/)).toBeInTheDocument();
-    expect(screen.getByText(/November 20, 2026/)).toBeInTheDocument();
+    const changes = await screen.findByRole('region', {
+      name: 'Proposed action item changes',
+    });
+    expect(changes).toHaveTextContent('Deadline');
+    expect(within(changes).getByText(/November 18, 2026/)).toBeInTheDocument();
+    expect(within(changes).getByText(/November 20, 2026/)).toBeInTheDocument();
     const evidence = screen.getByText(
       'Move the release report deadline to Friday at 5 PM UTC.',
     );

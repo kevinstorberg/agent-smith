@@ -7,7 +7,12 @@ import {
   within,
 } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { api, ApiError, type ActionItemEpic } from '../../api';
+import {
+  api,
+  ApiError,
+  type ActionItemEpic,
+  type ActionItemQueueRoot,
+} from '../../api';
 import { ActionItemsIndexPage } from '../ActionItemsIndexPage';
 import { renderWithProviders } from '../../test-utils';
 import { actionItem, deferred } from './actionItemFixture';
@@ -62,6 +67,248 @@ beforeEach(() => {
   vi.mocked(api.actionItemEpics.remove).mockResolvedValue({
     deleted: true,
     id: 10,
+  });
+});
+
+describe('creating an Epic directly from a saved task', () => {
+  it.each([
+    ['root', 'open'],
+    ['root', 'completed'],
+    ['child', 'open'],
+    ['child', 'completed'],
+  ] as const)(
+    'prefills and atomically groups a %s %s task without loading the catalog',
+    async (location, status) => {
+      const item = actionItem(2, { status, revision: 7 });
+      vi.mocked(api.actionItemQueue.list).mockResolvedValue(
+        location === 'child'
+          ? { items: [epicGroup(10, [item])], total: 1, matching_count: 1 }
+          : queuePage({ items: [item], total: 1 }),
+      );
+      vi.mocked(api.actionItemEpics.create).mockResolvedValue(
+        epicGroup(11).epic,
+      );
+      renderWithProviders(<ActionItemsIndexPage />, {
+        initialEntries: ['/action-items?status=all'],
+      });
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'More actions for Task 2' }),
+      );
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Create Epic from this item' }),
+      );
+      const name = screen.getByRole('textbox', { name: 'Epic name' });
+      expect(name).toHaveValue(item.title);
+      fireEvent.click(screen.getByRole('button', { name: 'Save Epic' }));
+      await waitFor(() =>
+        expect(api.actionItemEpics.create).toHaveBeenCalledTimes(1),
+      );
+      expect(vi.mocked(api.actionItemEpics.create).mock.calls[0][0]).toEqual({
+        title: item.title,
+        request_id: expect.any(String),
+        item_id: item.id,
+        membership: {
+          expected_revision: 7,
+          expected_parent:
+            location === 'child'
+              ? { id: 10, expected_revision: 3, cohort: 'cohort-10' }
+              : null,
+        },
+      });
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('textbox', { name: 'Epic name' }),
+        ).not.toBeInTheDocument(),
+      );
+      expect(api.actionItemEpics.list).not.toHaveBeenCalled();
+      expect(api.actionItemQueue.setEpic).not.toHaveBeenCalled();
+      expect(api.actionItems.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it('cancels the direct form without a write and restores its own trigger', async () => {
+    renderWithProviders(<ActionItemsIndexPage />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'More actions for Task 2' }),
+    );
+    const trigger = screen.getByRole('button', {
+      name: 'Create Epic from this item',
+    });
+    fireEvent.click(trigger);
+    expect(screen.getByRole('textbox', { name: 'Epic name' })).toHaveValue(
+      'Task 2',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(api.actionItemEpics.create).not.toHaveBeenCalled();
+    expect(api.actionItemQueue.setEpic).not.toHaveBeenCalled();
+    expect(api.actionItemEpics.list).not.toHaveBeenCalled();
+  });
+
+  it('keeps the direct creation receipt unchanged after an uncertain response', async () => {
+    vi.mocked(api.actionItemEpics.create).mockRejectedValue(
+      new Error('Uncertain response'),
+    );
+    renderWithProviders(<ActionItemsIndexPage />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'More actions for Task 2' }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Create Epic from this item' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Save Epic' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Uncertain response',
+    );
+    const name = screen.getByRole('textbox', { name: 'Epic name' });
+    expect(name).toHaveValue('Task 2');
+    expect(name).toHaveAttribute('readonly');
+    expect(
+      screen.queryByRole('group', { name: 'Unfinished Epic creation' }),
+    ).toBeNull();
+    fireEvent.change(name, { target: { value: 'Changed after uncertainty' } });
+    expect(name).toHaveValue('Task 2');
+    fireEvent.click(screen.getByRole('button', { name: 'Save Epic' }));
+    await waitFor(() =>
+      expect(api.actionItemEpics.create).toHaveBeenCalledTimes(2),
+    );
+    expect(vi.mocked(api.actionItemEpics.create).mock.calls[1]).toEqual(
+      vi.mocked(api.actionItemEpics.create).mock.calls[0],
+    );
+  });
+
+  it.each(['root', 'child'] as const)(
+    'retains the original create receipt after an applied-but-lost %s response reparents the task',
+    async (location) => {
+      const item = actionItem(2, {
+        revision: 7,
+        description: 'Preserve the complete task',
+        project: 'Work',
+        tags: ['delivery'],
+        due_at: '2026-12-01T14:00:00Z',
+      });
+      const previous = epicGroup(10, [item]);
+      const created = epicGroup(12, [{ ...item, revision: 8 }]);
+      created.epic.title = item.title;
+      let roots: ActionItemQueueRoot[] =
+        location === 'root'
+          ? queuePage({ items: [item], total: 1 }).items
+          : [previous];
+      vi.mocked(api.actionItemQueue.list).mockImplementation(async () => ({
+        items: roots,
+        total: roots.length,
+        matching_count: 1,
+      }));
+      vi.mocked(api.actionItemEpics.create)
+        .mockImplementationOnce(async () => {
+          roots =
+            location === 'root'
+              ? [created]
+              : [
+                  {
+                    ...previous,
+                    children: [],
+                    matching_count: 0,
+                    total_count: 0,
+                  },
+                  created,
+                ];
+          throw new ApiError('Creation response was lost', 504);
+        })
+        .mockResolvedValueOnce(created.epic);
+      renderWithProviders(<ActionItemsIndexPage />, {
+        initialEntries: ['/action-items?status=all'],
+      });
+      fireEvent.click(
+        await screen.findByRole('button', {
+          name: `More actions for ${item.title}`,
+        }),
+      );
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Create Epic from this item' }),
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Save Epic' }));
+
+      const recovery = await screen.findByRole('group', {
+        name: 'Unfinished Epic creation',
+      });
+      expect(screen.queryByRole('textbox', { name: 'Epic name' })).toBeNull();
+      expect(api.actionItemEpics.create).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: 'New Epic' })).toBeDisabled();
+      expect(
+        screen.getByRole('button', { name: `Move ${item.title} to project` }),
+      ).toBeDisabled();
+      const original = structuredClone(
+        vi.mocked(api.actionItemEpics.create).mock.calls[0][0],
+      );
+      expect(original).toEqual({
+        title: item.title,
+        request_id: expect.any(String),
+        item_id: item.id,
+        membership: {
+          expected_revision: 7,
+          expected_parent:
+            location === 'root'
+              ? null
+              : { id: 10, expected_revision: 3, cohort: 'cohort-10' },
+        },
+      });
+      fireEvent.click(within(recovery).getByRole('button', { name: 'Retry' }));
+      await waitFor(() =>
+        expect(api.actionItemEpics.create).toHaveBeenCalledTimes(2),
+      );
+      expect(vi.mocked(api.actionItemEpics.create).mock.calls[1][0]).toEqual(
+        original,
+      );
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('group', { name: 'Unfinished Epic creation' }),
+        ).toBeNull(),
+      );
+      expect(api.actionItemQueue.setEpic).not.toHaveBeenCalled();
+      expect(api.actionItems.update).not.toHaveBeenCalled();
+      expect({ ...created.children[0].item, revision: item.revision }).toEqual(
+        item,
+      );
+    },
+  );
+
+  it('cancels the retained create retry without writing or undoing the canonical task', async () => {
+    const item = actionItem(2, { revision: 7 });
+    const created = epicGroup(12, [{ ...item, revision: 8 }]);
+    let roots = queuePage({ items: [item], total: 1 }).items;
+    vi.mocked(api.actionItemQueue.list).mockImplementation(async () => ({
+      items: roots,
+      total: roots.length,
+      matching_count: 1,
+    }));
+    vi.mocked(api.actionItemEpics.create).mockImplementationOnce(async () => {
+      roots = [created];
+      throw new ApiError('Creation response was lost', 504);
+    });
+    renderWithProviders(<ActionItemsIndexPage />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'More actions for Task 2' }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Create Epic from this item' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Save Epic' }));
+    const recovery = await screen.findByRole('group', {
+      name: 'Unfinished Epic creation',
+    });
+    fireEvent.click(
+      within(recovery).getByRole('button', { name: 'Cancel retry' }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('group', { name: 'Unfinished Epic creation' }),
+      ).toBeNull(),
+    );
+    expect(screen.getByRole('button', { name: 'New Epic' })).toBeEnabled();
+    expect(api.actionItemEpics.create).toHaveBeenCalledTimes(1);
+    expect(api.actionItemQueue.setEpic).not.toHaveBeenCalled();
+    expect(roots).toEqual([created]);
   });
 });
 

@@ -248,10 +248,72 @@ def test_review_reports_live_parent_without_taking_write_locks(
             response = future.result(timeout=2)
     assert response.status_code == 200
     assert response.json()["current_parent"] == ref(parent)
+    assert response.json()["current_parent_title"] == parent["title"]
     assert response.json()["target_stale"] is False
     assert client.get("/action-item-proposals").json()["items"][0][
         "current_parent"
     ] == ref(parent)
+    assert (
+        client.get("/action-item-proposals").json()["items"][0]["current_parent_title"]
+        == parent["title"]
+    )
+
+
+def test_review_parent_name_and_reference_share_the_read_snapshot(
+    source, client, monkeypatch
+):
+    parent = epic("Reviewed Epic")
+    item = membership(tasks.create({"title": "Review design"}), destination=parent)
+    parent = current(parent["id"])
+    pending = proposals.stage_and_persist(
+        source, candidate(target=item, changes={"description": "Approved"})
+    )
+    original = queue_db._catalog
+    renamed = False
+
+    def rename_before_catalog(cursor):
+        nonlocal renamed
+        if not renamed:
+            renamed = True
+            queue_db.rename_epic(
+                parent["id"],
+                {
+                    "expected_revision": parent["revision"],
+                    "title": "Renamed after review began",
+                },
+            )
+        return original(cursor)
+
+    monkeypatch.setattr(queue_db, "_catalog", rename_before_catalog)
+    response = client.get(f"/action-item-proposals/{pending['id']}")
+    assert response.status_code == 200, response.text
+    assert renamed
+    assert response.json()["current_parent"] == ref(parent)
+    assert response.json()["current_parent_title"] == "Reviewed Epic"
+    assert set(response.json()["current_parent"]) == {
+        "id",
+        "expected_revision",
+        "cohort",
+    }
+    assert current(parent["id"])["title"] == "Renamed after review began"
+    refreshed = client.get(f"/action-item-proposals/{pending['id']}").json()
+    assert refreshed["current_parent_title"] == "Renamed after review began"
+    assert refreshed["current_parent"]["expected_revision"] > parent["revision"]
+
+
+@pytest.mark.parametrize("action", ["create", "update"])
+def test_review_without_an_epic_has_no_parent_name(source, client, action):
+    item = tasks.create({"title": "Review design"}) if action == "update" else None
+    pending = proposals.stage_and_persist(
+        source,
+        candidate(target=item, changes={"description": "Approved"})
+        if item
+        else candidate(),
+    )
+    response = client.get(f"/action-item-proposals/{pending['id']}")
+    assert response.status_code == 200, response.text
+    assert response.json()["current_parent"] is None
+    assert response.json()["current_parent_title"] is None
 
 
 def test_placement_replay_is_frozen_after_later_edit_movement_and_deletion(source):

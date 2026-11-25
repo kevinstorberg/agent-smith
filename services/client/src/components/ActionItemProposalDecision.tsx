@@ -88,21 +88,21 @@ export function ActionItemProposalDecision({
   const currentEpic =
     currentParent && epics.find((epic) => epic.id === currentParent.id);
   const currentPlacement = currentParent
-    ? currentEpic
-      ? epicOptionLabel(currentEpic, epics)
-      : `Epic #${currentParent.id} (name unavailable)`
+    ? proposal.current_parent_title
+      ? epicOptionLabel(
+          { id: currentParent.id, title: proposal.current_parent_title },
+          epics,
+        )
+      : currentEpic && sameReference(currentParent, epicReference(currentEpic))
+        ? epicOptionLabel(currentEpic, epics)
+        : `Epic #${currentParent.id} (name unavailable)`
     : 'No Epic';
-  const placementContext =
-    proposal.action === 'update'
-      ? parentKnown
-        ? `Current placement: ${currentPlacement}`
-        : 'Refresh the proposal before choosing an Epic.'
-      : !selection
-        ? 'No Epic creates a standalone action item.'
-        : `Save in: ${selection.label}`;
-  const destinationContext =
-    proposal.action === 'update' && selection
-      ? `Save in: ${selection.label}`
+  const placementContext = !parentKnown
+    ? 'Refresh the proposal before choosing an Epic.'
+    : selection
+      ? proposal.action === 'update'
+        ? `Current: ${currentPlacement}. Selected: ${selection.label}.`
+        : `Selected: ${selection.label}`
       : null;
   const destination =
     selection &&
@@ -123,11 +123,7 @@ export function ActionItemProposalDecision({
         <ActionItemEpicSelect
           label="Save in"
           ariaLabel={`Epic for ${proposal.target_name}`}
-          ariaDescribedBy={
-            placementContext
-              ? `${descriptionId}${destinationContext ? ` ${descriptionId}-destination` : ''}`
-              : undefined
-          }
+          ariaDescribedBy={placementContext ? descriptionId : undefined}
           value={
             selection
               ? earlier
@@ -135,10 +131,9 @@ export function ActionItemProposalDecision({
                 : String(selection.placement.destination.id)
               : ''
           }
-          defaultLabel={
-            proposal.action === 'create' ? 'No Epic' : 'Keep current'
-          }
+          defaultLabel={parentKnown ? currentPlacement : 'Epic unavailable'}
           epics={epics}
+          omitEpicId={currentParent?.id}
           disabled={busy || !parentKnown}
           retainedOption={
             earlier && selection
@@ -201,14 +196,6 @@ export function ActionItemProposalDecision({
         <span className="text-muted-sm action-item-proposal-current-placement">
           Earlier Epic details are kept for retry. Choose again to use current
           details.
-        </span>
-      )}
-      {destinationContext && (
-        <span
-          id={`${descriptionId}-destination`}
-          className="text-muted-sm action-item-proposal-current-placement"
-        >
-          {destinationContext}
         </span>
       )}
     </div>

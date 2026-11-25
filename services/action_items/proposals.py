@@ -443,7 +443,10 @@ def review_details(proposals: list[dict]) -> list[dict]:
         result.append(
             {
                 **proposal,
-                "current_parent": parents.get(proposal["target_id"]),
+                **parents.get(
+                    proposal["target_id"],
+                    {"current_parent": None, "current_parent_title": None},
+                ),
                 **{
                     key: payload[key]
                     for key in (

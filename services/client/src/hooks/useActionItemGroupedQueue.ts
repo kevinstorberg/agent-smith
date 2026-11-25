@@ -19,10 +19,14 @@ import { usePolling } from './usePolling';
 import { useActionItemWrites } from './useActionItemWrites';
 import {
   projectTargets,
+  epicTargets,
   useActionItemProjectDrag,
   type ProjectDragSnapshot,
 } from './useActionItemProjectDrag';
-import { epicReference as buildEpicReference } from '../utils/actionItemEpics';
+import {
+  epicOptionLabel,
+  epicReference as buildEpicReference,
+} from '../utils/actionItemEpics';
 export const epicReference: (epic: ActionItemEpic) => ActionItemEpicReference =
   buildEpicReference;
 
@@ -138,6 +142,26 @@ interface GroupDrag extends ProjectDragSnapshot {
   signature: string;
   itemId?: string;
   parent?: ActionItemEpicGroup;
+  rootTask?: { index: number; height: number };
+}
+
+function dragMovement(captured: GroupDrag | null): string | null {
+  const item = captured?.items.find(
+    (item) => `item:${item.id}` === captured.itemId,
+  );
+  if (item && captured?.rootOrderTarget)
+    return `Move ${item.title} ${captured.rootOrderTarget.edge} ${captured.rootOrderTarget.label}`;
+  const destination = captured?.epicTarget
+    ? captured.epicTarget.epic
+      ? epicOptionLabel(
+          captured.epicTarget.epic,
+          captured.roots
+            .filter((root) => root.kind === 'epic')
+            .map((root) => root.epic),
+        )
+      : 'No Epic'
+    : captured?.project;
+  return item && destination ? `Move ${item.title} to ${destination}` : null;
 }
 
 export function useActionItemGroupedQueue({
@@ -159,10 +183,15 @@ export function useActionItemGroupedQueue({
   const [snapshot, setSnapshot] = useState<GroupDrag | null>(null);
   const drag = useRef<GroupDrag | null>(null);
   const projectTabsRef = useRef<HTMLDivElement>(null);
+  const epicTargetsRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState(false);
   const [showing, setShowing] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [created, setCreated] = useState<ActionItemEpic | null>(null);
+  const [epicCreateReceipt, setEpicCreateReceipt] =
+    useState<ActionItemEpicCreate | null>(null);
+  const epicCreateReceiptRef = useRef<ActionItemEpicCreate | null>(null);
+  const [epicCreateFormMounted, setEpicCreateFormMounted] = useState(false);
   const [membershipNotice, setMembershipNotice] = useState<{
     itemId: number;
     title: string;
@@ -199,8 +228,14 @@ export function useActionItemGroupedQueue({
     onFinish: () => setSnapshot(null),
   });
   const busy = writes.busy;
-  const freezeControls = Boolean(snapshot) || busy || editing || showing;
-  const canAct = () => canWrite() && !editing && !showing;
+  const freezeControls =
+    Boolean(snapshot) ||
+    busy ||
+    editing ||
+    showing ||
+    epicCreateReceipt !== null;
+  const canAct = () =>
+    canWrite() && !editing && !showing && epicCreateReceiptRef.current === null;
   const roots = snapshot?.roots ?? list.items;
   const flatten = (items: ActionItemQueueRoot[]) =>
     items.flatMap((root) => (root.kind === 'item' ? [root] : root.children));
@@ -311,13 +346,28 @@ export function useActionItemGroupedQueue({
     };
   }
   async function createEpic(payload: ActionItemEpicCreate) {
+    if (!canWrite() || showing) return false;
+    const previous = epicCreateReceiptRef.current;
+    if (previous && JSON.stringify(previous) !== JSON.stringify(payload)) {
+      setReviewError(
+        `Retry or cancel “${previous.title}” before creating another Epic.`,
+      );
+      return false;
+    }
+    const receipt = previous ?? structuredClone(payload);
+    if (!previous) {
+      epicCreateReceiptRef.current = receipt;
+      setEpicCreateReceipt(receipt);
+    }
     setReviewError(null);
     const result = await writes.runWrite(
-      () => api.actionItemEpics.create(payload),
+      () => api.actionItemEpics.create(receipt),
       'Could not create this Epic.',
       { order: true },
     );
     if (result && writes.mounted.current) {
+      epicCreateReceiptRef.current = null;
+      setEpicCreateReceipt(null);
       setCreated(result.value);
       setClosed((previous) => {
         const next = new Set(previous);
@@ -326,6 +376,12 @@ export function useActionItemGroupedQueue({
       });
     }
     return Boolean(result);
+  }
+  function cancelEpicCreation() {
+    if (writes.writing.current) return;
+    epicCreateReceiptRef.current = null;
+    setEpicCreateReceipt(null);
+    setReviewError(null);
   }
   async function showCreated(onLocated: (position: number) => void) {
     if (!created || !canAct() || showing) return;
@@ -504,6 +560,56 @@ export function useActionItemGroupedQueue({
             projects: projectTargets(projectTabsRef.current),
             project: null,
             mode: start?.mode ?? 'FLUID',
+            epics: epicTargets(epicTargetsRef.current, list.items).filter(
+              (target) =>
+                target.epic?.id !== parent?.epic.id &&
+                (target.epic !== null || Boolean(parent)),
+            ),
+            epicTarget: null,
+            ...(!parent && start?.mode === 'FLUID'
+              ? {
+                  rootTask: {
+                    index: start.source.index,
+                    height:
+                      epicTargetsRef.current
+                        ?.querySelector(
+                          `[data-rfd-draggable-id="${start.draggableId}"]`,
+                        )
+                        ?.getBoundingClientRect().height ?? 0,
+                  },
+                  rootOrders: reorderableView
+                    ? Array.from(
+                        epicTargetsRef.current?.querySelectorAll<HTMLElement>(
+                          '[data-root-order-id]',
+                        ) ?? [],
+                      ).flatMap((element) => {
+                        const root = list.items.find(
+                          (root) =>
+                            queueIdentity(root) === element.dataset.rootOrderId,
+                        );
+                        const edge = element.dataset.rootOrderEdge;
+                        if (
+                          !root ||
+                          queueIdentity(root) === start.draggableId ||
+                          (edge !== 'before' && edge !== 'after')
+                        )
+                          return [];
+                        return [
+                          {
+                            element,
+                            anchor: reference(root),
+                            edge,
+                            label:
+                              root.kind === 'epic'
+                                ? `Epic ${root.epic.title}`
+                                : root.item.title,
+                          },
+                        ];
+                      })
+                    : [],
+                  rootOrderTarget: null,
+                }
+              : {}),
           }
         : {}),
     };
@@ -514,6 +620,16 @@ export function useActionItemGroupedQueue({
     const captured = drag.current;
     drag.current = null;
     if (!captured || !writes.mounted.current) return;
+    const dropped = {
+      ...captured,
+      rootTask: undefined,
+      project: undefined,
+      epicTarget: undefined,
+      epics: undefined,
+      rootOrders: undefined,
+      rootOrderTarget: undefined,
+    };
+    setSnapshot(dropped);
     const liveParent = captured.parent
       ? current.current.items.find(
           (root): root is ActionItemEpicGroup =>
@@ -577,12 +693,47 @@ export function useActionItemGroupedQueue({
       } else setSnapshot(null);
       return;
     }
-    const destination = result.destination;
+    if (captured.epicTarget && source.kind === 'item') {
+      const target = captured.epicTarget;
+      if (!target.element.isConnected) {
+        setSnapshot(null);
+        return;
+      }
+      if (writes.focus.current)
+        writes.focus.current.fallback = target.epic
+          ? target.element
+          : (epicTargetsRef.current ?? undefined);
+      await setEpic(source.item, target.epic);
+      return;
+    }
+    let destination = result.destination;
+    const ordering = captured.rootOrderTarget;
+    if (ordering) {
+      const anchorIndex = siblings.findIndex(
+        (entry) =>
+          queueIdentity(entry) ===
+          `${ordering.anchor.kind}:${ordering.anchor.id}`,
+      );
+      if (
+        captured.parent ||
+        source.kind !== 'item' ||
+        !ordering.element.isConnected ||
+        anchorIndex < 0
+      ) {
+        setSnapshot(null);
+        return;
+      }
+      const gap = anchorIndex + (ordering.edge === 'after' ? 1 : 0);
+      destination = {
+        droppableId: result.source.droppableId,
+        index: gap - (result.source.index < gap ? 1 : 0),
+      };
+    }
     if (
       !reorderableView ||
       !destination ||
       result.source.droppableId !== destination.droppableId ||
-      result.source.index === destination.index ||
+      (!ordering && result.source.index === destination.index) ||
       destination.index < 0 ||
       destination.index >= siblings.length
     ) {
@@ -595,7 +746,7 @@ export function useActionItemGroupedQueue({
     const next = reordered[destination.index + 1];
     const previous = reordered[destination.index - 1];
     setSnapshot({
-      ...captured,
+      ...dropped,
       roots: captured.parent
         ? captured.roots.map((root) =>
             root.kind === 'epic' && root.epic.id === captured.parent!.epic.id
@@ -612,9 +763,13 @@ export function useActionItemGroupedQueue({
           ...(captured.parent
             ? { parent: epicReference(captured.parent.epic) }
             : {}),
-          ...(next
-            ? { before: reference(next) }
-            : { after: reference(previous) }),
+          ...(ordering
+            ? ordering.edge === 'before'
+              ? { before: ordering.anchor }
+              : { after: ordering.anchor }
+            : next
+              ? { before: reference(next) }
+              : { after: reference(previous) }),
         }),
       'Could not save this order.',
       { order: true },
@@ -627,7 +782,8 @@ export function useActionItemGroupedQueue({
     projectTabsRef,
   });
   usePolling(() => list.refresh({ showLoading: false }), {
-    enabled: !snapshot && !busy && !editing && !showing,
+    enabled:
+      !snapshot && !busy && !editing && !showing && epicCreateReceipt === null,
   });
   return {
     ...list,
@@ -646,10 +802,24 @@ export function useActionItemGroupedQueue({
     reorderableView,
     projectAssignment: !taskView,
     projectTabsRef,
-    canDrag: !taskView && readable && !busy && !editing && !showing,
-    dragSurfaceEnabled: !taskView && readable && !editing && !showing,
+    epicTargetsRef,
+    canDrag:
+      !taskView &&
+      readable &&
+      !busy &&
+      !editing &&
+      !showing &&
+      epicCreateReceipt === null,
+    dragSurfaceEnabled:
+      !taskView &&
+      readable &&
+      !editing &&
+      !showing &&
+      epicCreateReceipt === null,
     startDrag,
     endDrag,
+    externalMovement: dragMovement(snapshot),
+    externalDragAnnouncement: () => dragMovement(drag.current),
     changeStatus,
     removeItem,
     deletionEnabled: true,
@@ -670,6 +840,10 @@ export function useActionItemGroupedQueue({
     editing,
     setEditing,
     createEpic,
+    epicCreateReceipt,
+    epicCreateFormMounted,
+    setEpicCreateFormMounted,
+    cancelEpicCreation,
     showCreated,
     renameEpic,
     removeEpic,

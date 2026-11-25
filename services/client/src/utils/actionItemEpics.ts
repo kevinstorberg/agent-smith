@@ -8,6 +8,9 @@ export const epicReference = (
   cohort: epic.cohort,
 });
 
-export function epicOptionLabel(epic: ActionItemEpic, epics: ActionItemEpic[]) {
+export function epicOptionLabel(
+  epic: Pick<ActionItemEpic, 'id' | 'title'>,
+  epics: ActionItemEpic[],
+) {
   return `${epic.title}${epics.some((other) => other.id !== epic.id && other.title === epic.title) ? ` #${epic.id}` : ''}`;
 }

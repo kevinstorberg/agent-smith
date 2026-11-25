@@ -257,7 +257,12 @@ async function verifyDisabledSelection(
     const color = await inactive.evaluate(
       (element) => getComputedStyle(element).color,
     );
-    await inactive.hover();
+    // Disabled drag controls pass pointer events through to preserve release handling.
+    const bounds = (await inactive.boundingBox())!;
+    await page.mouse.move(
+      bounds.x + bounds.width / 2,
+      bounds.y + bounds.height / 2,
+    );
     await settleSelection(group);
     await expect(inactive).toHaveCSS('color', color);
     await capture(group, info, 'disabled-hover');

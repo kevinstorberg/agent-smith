@@ -15,7 +15,11 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { StrictMode } from 'react';
-import type { DragStart, DropResult } from '@hello-pangea/dnd';
+import type {
+  DragStart,
+  DropResult,
+  ResponderProvided,
+} from '@hello-pangea/dnd';
 import type { ActionItemGroupedPage } from '../../api';
 import { Link, Route, Routes } from 'react-router';
 import userEvent from '@testing-library/user-event';
@@ -39,13 +43,18 @@ vi.mock('@hello-pangea/dnd', () => ({
     children: ReactNode;
     onBeforeCapture: () => void;
     onDragStart: (start?: DragStart) => void;
-    onDragEnd: (result: DropResult) => Promise<void>;
+    onDragEnd: (
+      result: DropResult,
+      provided: ResponderProvided,
+    ) => void | Promise<void>;
   }) => {
     drag.start = (start) => {
       onBeforeCapture();
       onDragStart(start);
     };
-    drag.end = onDragEnd;
+    drag.end = async (result) => {
+      await onDragEnd(result, { announce: vi.fn() });
+    };
     return <>{children}</>;
   },
   Droppable: ({

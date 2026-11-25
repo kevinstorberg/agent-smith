@@ -1152,6 +1152,7 @@ export interface ActionItemProposal extends ReviewMetadata<ActionItemProposalSta
   proposed_item?: Partial<ActionItem> | null;
   current_target?: Partial<ActionItem> | null;
   current_parent?: ActionItemEpicReference | null;
+  current_parent_title?: string | null;
   before_snapshot?: Partial<ActionItem> | null;
   source_stale?: boolean;
   source_available?: boolean;

@@ -442,7 +442,7 @@ def list_epics() -> dict:
         return {"items": _catalog(cursor)}
 
 
-def parent_snapshots(cursor, item_ids: list[int]) -> dict[int, dict | None]:
+def parent_snapshots(cursor, item_ids: list[int]) -> dict[int, dict]:
     if not item_ids:
         return {}
     cursor.execute(
@@ -454,15 +454,16 @@ def parent_snapshots(cursor, item_ids: list[int]) -> dict[int, dict | None]:
     entries = [dict(row) for row in cursor.fetchall()]
     epics = {row["id"]: row for row in _catalog(cursor)}
     return {
-        entry["action_item_id"]: (
-            {
+        entry["action_item_id"]: {
+            "current_parent": {
                 "id": parent["id"],
                 "expected_revision": parent["revision"],
                 "cohort": parent["cohort"],
             }
             if (parent := epics.get(entry["parent_epic_id"])) is not None
-            else None
-        )
+            else None,
+            "current_parent_title": parent["title"] if parent else None,
+        }
         for entry in entries
     }
 
