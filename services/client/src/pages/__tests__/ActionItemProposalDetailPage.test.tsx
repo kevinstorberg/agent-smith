@@ -89,7 +89,7 @@ describe('ActionItemProposalDetailPage', () => {
     });
     mockApprove.mockRejectedValueOnce(new Error('Changed during review'));
     renderWithProviders(<ActionItemProposalDetailPage />);
-    const approve = await screen.findByRole('button', { name: 'Approve' });
+    const approve = await screen.findByRole('button', { name: 'Accept' });
     approve.focus();
     fireEvent.click(approve);
     await screen.findByText(/Changed during review/);
@@ -132,12 +132,12 @@ describe('ActionItemProposalDetailPage', () => {
     const view = renderWithProviders(<ActionItemProposalDetailPage />);
     await screen.findByRole('option', { name: destination.title });
     fireEvent.change(screen.getByRole('combobox'), { target: { value: '10' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
     routeId = '2';
     view.rerender(<ActionItemProposalDetailPage />);
     await screen.findByRole('heading', { name: second.title });
     expect(screen.getByRole('combobox')).toHaveDisplayValue('No Epic');
-    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
     expect(mockApprove.mock.calls).toEqual([
       [
         1,
@@ -209,7 +209,7 @@ describe('ActionItemProposalDetailPage', () => {
     fireEvent.change(screen.getByRole('combobox', { name: /Epic for/ }), {
       target: { value: '10' },
     });
-    const approve = screen.getByRole('button', { name: 'Approve' });
+    const approve = screen.getByRole('button', { name: 'Accept' });
     approve.focus();
     fireEvent.click(approve);
     fireEvent.click(approve);
@@ -257,7 +257,7 @@ describe('ActionItemProposalDetailPage', () => {
         ).toHaveAttribute('href', '/action-items/proposals/7');
       }
       expect(
-        screen.queryByRole('button', { name: 'Approve' }),
+        screen.queryByRole('button', { name: 'Accept' }),
       ).not.toBeInTheDocument();
       expect(
         screen.queryByRole('button', { name: 'Reject' }),
@@ -291,7 +291,7 @@ describe('ActionItemProposalDetailPage', () => {
         'Move the release report deadline to Friday at 5 PM UTC.',
       ),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Approve' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Accept' })).toBeEnabled();
   });
 
   it('renders a new action item and links to its saved result after approval', async () => {
@@ -301,6 +301,7 @@ describe('ActionItemProposalDetailPage', () => {
       base_version: null,
       before_snapshot: null,
       current_target: null,
+      project: 'Review context',
     });
     mockGet.mockResolvedValue(proposal);
     const approved = {
@@ -312,11 +313,15 @@ describe('ActionItemProposalDetailPage', () => {
       mockGet.mockResolvedValue(approved);
       return approved;
     });
-    renderWithProviders(<ActionItemProposalDetailPage />);
+    const { container } = renderWithProviders(<ActionItemProposalDetailPage />);
 
     const content = await screen.findByRole('region', {
       name: 'Proposed action item',
     });
+    expect(container.querySelector('.tag-project')).toHaveTextContent('Work');
+    expect(container.querySelector('.tag-project')).not.toHaveTextContent(
+      'Review context',
+    );
     expect(
       within(content).getByRole('rowheader', { name: 'Title' }),
     ).toBeInTheDocument();
@@ -326,7 +331,7 @@ describe('ActionItemProposalDetailPage', () => {
     expect(
       within(content).queryByRole('columnheader', { name: 'Before' }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
     expect(
       await screen.findByRole('link', { name: 'Open saved action item' }),
     ).toHaveAttribute('href', '/action-items/35');
@@ -347,7 +352,7 @@ describe('ActionItemProposalDetailPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'This action item changed',
     );
-    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Accept' })).toBeDisabled();
     const changes = screen.getByRole('region', {
       name: 'Proposed action item changes',
     });
@@ -375,7 +380,7 @@ describe('ActionItemProposalDetailPage', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent(
         'The source meeting changed or is unavailable.',
       );
-      expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Accept' })).toBeDisabled();
       expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled();
     },
   );

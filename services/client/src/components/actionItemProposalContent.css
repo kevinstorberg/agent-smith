@@ -1,39 +1,81 @@
 .scrollable-table .table.action-item-proposal-table {
+  display: block;
   min-width: 0;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
 }
 
-.action-item-proposal-table th:first-child {
-  width: 22%;
+.action-item-proposal-table tbody {
+  display: grid;
+  gap: 8px;
+}
+
+.action-item-proposal-table tbody tr {
+  display: grid;
+  grid-template-columns: minmax(6em, 8em) minmax(0, 1fr);
+  gap: 4px 14px;
+}
+
+.table.action-item-proposal-table th,
+.table.action-item-proposal-table td {
+  min-width: 0;
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow-wrap: anywhere;
+}
+
+.table.action-item-proposal-table th {
+  grid-column: 1;
+  color: var(--text);
+  font-size: inherit;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.table.action-item-proposal-table .action-item-proposal-change > th {
+  grid-row: 1 / span 2;
+}
+
+.table.action-item-proposal-table td {
+  grid-column: 2;
+  max-width: 80ch;
+}
+.table.action-item-proposal-table td > div {
+  display: inline;
+}
+.table.action-item-proposal-table
+  td[data-label='Proposed']:only-of-type::before {
+  content: none;
+}
+
+.table.action-item-proposal-table td[data-label='Before'] {
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.table.action-item-proposal-table td::before {
+  content: attr(data-label) ': ';
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.table.action-item-proposal-table tbody tr:hover td {
+  background: transparent;
 }
 
 @media (max-width: 600px) {
-  .action-item-proposal-table thead {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
-  .action-item-proposal-table tbody {
-    display: block;
-  }
-
   .action-item-proposal-table tbody tr {
-    display: grid;
     grid-template-columns: minmax(0, 1fr);
   }
-
-  .action-item-proposal-table th:first-child {
-    width: auto;
+  .table.action-item-proposal-table th,
+  .table.action-item-proposal-table td {
+    grid-column: 1;
+    grid-row: auto;
   }
-
-  .action-item-proposal-table td::before {
-    content: attr(data-label);
-    display: block;
-    margin-bottom: 4px;
-    font-weight: 600;
+  .table.action-item-proposal-table .action-item-proposal-change > th {
+    grid-row: auto;
   }
 }

@@ -21,7 +21,7 @@ describe('proposal Epic choice', () => {
         />,
       );
       expect(screen.getByRole('combobox')).toHaveDisplayValue(
-        action === 'create' ? 'No Epic' : 'Keep current Epic',
+        action === 'create' ? 'No Epic' : 'Keep current',
       );
       fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
       expect(onDecide).toHaveBeenLastCalledWith('approve', undefined);
@@ -29,6 +29,50 @@ describe('proposal Epic choice', () => {
       expect(onDecide).toHaveBeenLastCalledWith('reject');
     },
   );
+
+  it('describes standalone and grouped current placement without changing the default request', () => {
+    const epic = epicGroup(10, []).epic;
+    const onDecide = vi.fn();
+    const props = {
+      proposal: actionItemProposal(),
+      catalog: { data: { items: [epic] }, loading: false, error: null },
+      busy: false,
+      saving: false,
+      approveDisabled: false,
+      onDecide,
+    };
+    const view = render(<ActionItemProposalDecision {...props} />);
+    expect(screen.getByText('Current placement: No Epic')).toBeVisible();
+    view.rerender(
+      <ActionItemProposalDecision
+        {...props}
+        proposal={actionItemProposal({ current_parent: epicReference(epic) })}
+      />,
+    );
+    expect(screen.getByText(`Current placement: ${epic.title}`)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    expect(onDecide).toHaveBeenCalledExactlyOnceWith('approve', undefined);
+    view.rerender(
+      <ActionItemProposalDecision
+        {...props}
+        proposal={actionItemProposal({ current_parent: epicReference(epic) })}
+        catalog={{ data: null, loading: false, error: 'Unavailable' }}
+      />,
+    );
+    expect(
+      screen.getByText(
+        `Current placement: Epic #${epic.id} (name unavailable)`,
+      ),
+    ).toBeVisible();
+    view.rerender(
+      <ActionItemProposalDecision
+        {...props}
+        proposal={actionItemProposal({ current_parent: undefined })}
+      />,
+    );
+    expect(screen.queryByText(/^Current placement:/)).toBeNull();
+    expect(screen.getByRole('combobox')).toBeDisabled();
+  });
 
   it('freezes both references through catalog and parent changes until explicit reselection', () => {
     const epic = epicGroup(10, []).epic;

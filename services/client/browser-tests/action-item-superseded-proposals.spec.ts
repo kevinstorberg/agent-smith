@@ -61,11 +61,11 @@ test('replaced Action Item proposals remain inspectable without decision control
     page.getByRole('link', { name: 'View replacement' }),
   ).toBeVisible();
   await expect(
-    page.getByRole('button', { name: /^(Approve|Reject)$/ }),
+    page.getByRole('button', { name: /^(Accept|Reject)$/ }),
   ).toHaveCount(0);
   await page.getByRole('link', { name: 'View replacement' }).click();
   await expect(
-    page.getByRole('button', { name: 'Approve', exact: true }),
+    page.getByRole('button', { name: 'Accept', exact: true }),
   ).toBeEnabled();
   expect(
     fixtureAPI.requests.filter((request) => request.method !== 'GET'),

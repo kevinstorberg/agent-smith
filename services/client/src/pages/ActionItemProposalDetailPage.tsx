@@ -14,6 +14,8 @@ import { useApiMutation } from '../hooks/useApiMutation';
 import { useApiRead } from '../hooks/useApiRead';
 import { usePageLifetime } from '../hooks/usePageLifetime';
 import { usePolling } from '../hooks/usePolling';
+import { actionItemProposalProject } from '../utils/actionItems';
+import './actionItemProposals.css';
 
 export function ActionItemProposalDetailPage() {
   const { id } = useParams();
@@ -79,6 +81,7 @@ function ActionItemProposalDetail({ id }: { id: number }) {
   const proposal = read.data;
   if (!proposal) return <p role="status">Loading proposed Action Item…</p>;
   const isUpdate = proposal.action === 'update';
+  const itemProject = actionItemProposalProject(proposal);
   const targetMissing = isUpdate && !proposal.current_target;
   const targetStale =
     proposal.status === 'pending' &&
@@ -99,25 +102,6 @@ function ActionItemProposalDetail({ id }: { id: number }) {
           {proposal.title}
         </h2>
         <div className="flex-wrap" style={{ gap: 8 }}>
-          {proposal.status === 'pending' && (
-            <ActionItemProposalDecision
-              proposal={proposal}
-              catalog={catalog}
-              busy={busy || read.loading || Boolean(read.error)}
-              saving={review.pendingId === proposal.id}
-              approveLabel="Approve"
-              approveDisabled={
-                targetMissing ||
-                targetStale ||
-                Boolean(sourceStale) ||
-                Boolean(proposal.target_stale) ||
-                !proposal.proposed_item
-              }
-              onDecide={(action, placement) => {
-                void review.decide(proposal, action, placement);
-              }}
-            />
-          )}
           <button
             className="btn sidebar-btn-danger"
             disabled={busy}
@@ -130,18 +114,6 @@ function ActionItemProposalDetail({ id }: { id: number }) {
           </button>
         </div>
       </div>
-      {proposal.status === 'pending' && (
-        <ActionItemProposalEpicCatalogStatus
-          catalog={catalog}
-          busy={busy}
-          onRefresh={() => {
-            void Promise.all([
-              catalog.refresh(),
-              read.refresh({ showLoading: false }),
-            ]);
-          }}
-        />
-      )}
       {review.error && (
         <p role="alert">
           Could not decide this Action Item: {review.error.message}
@@ -161,8 +133,8 @@ function ActionItemProposalDetail({ id }: { id: number }) {
           <span className="tag">
             {isUpdate ? 'Update Action Item' : 'New Action Item'}
           </span>
-          {proposal.project && (
-            <span className="tag tag-project">{proposal.project}</span>
+          {itemProject && (
+            <span className="tag tag-project">{itemProject}</span>
           )}
         </div>
         <ActionItemProposalSupersession proposal={proposal} />
@@ -192,6 +164,52 @@ function ActionItemProposalDetail({ id }: { id: number }) {
         )}
       </section>
       <section className="card">
+        <h3 className="section-title">
+          {isUpdate ? 'Review changes' : 'Review new Action Item'}
+        </h3>
+        {proposal.status === 'pending' && (
+          <p className="action-item-proposal-effect">
+            {isUpdate
+              ? 'Accept applies these changes to the existing action item.'
+              : 'Accept creates this action item.'}
+          </p>
+        )}
+        <ActionItemProposalContent
+          proposal={proposal}
+          targetStale={targetStale}
+        />
+        {proposal.status === 'pending' && (
+          <div className="action-item-proposal-review-footer">
+            <ActionItemProposalDecision
+              proposal={proposal}
+              catalog={catalog}
+              busy={busy || read.loading || Boolean(read.error)}
+              saving={review.pendingId === proposal.id}
+              approveDisabled={
+                targetMissing ||
+                targetStale ||
+                Boolean(sourceStale) ||
+                Boolean(proposal.target_stale) ||
+                !proposal.proposed_item
+              }
+              onDecide={(action, placement) => {
+                void review.decide(proposal, action, placement);
+              }}
+            />
+            <ActionItemProposalEpicCatalogStatus
+              catalog={catalog}
+              busy={busy}
+              onRefresh={() => {
+                void Promise.all([
+                  catalog.refresh(),
+                  read.refresh({ showLoading: false }),
+                ]);
+              }}
+            />
+          </div>
+        )}
+      </section>
+      <section className="card">
         <h3 className="section-title">Why this Action Item is proposed</h3>
         <p>{proposal.rationale}</p>
       </section>
@@ -212,15 +230,6 @@ function ActionItemProposalDetail({ id }: { id: number }) {
             </blockquote>
           </div>
         ))}
-      </section>
-      <section className="card">
-        <h3 className="section-title">
-          {isUpdate ? 'Review changes' : 'Review new Action Item'}
-        </h3>
-        <ActionItemProposalContent
-          proposal={proposal}
-          targetStale={targetStale}
-        />
       </section>
     </div>
   );
