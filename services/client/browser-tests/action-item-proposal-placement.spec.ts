@@ -8,6 +8,25 @@ import {
   expectDocumentContained,
   expectMainContained,
 } from './geometry';
+import type { Page } from '@playwright/test';
+
+async function expectDecisionRows(page: Page) {
+  const controls = page.locator('.action-item-proposal-decision-controls');
+  const buttons = controls.getByRole('button');
+  const [approve, reject] = await Promise.all([
+    buttons.nth(0).boundingBox(),
+    buttons.nth(1).boundingBox(),
+  ]);
+  expect(Math.abs(approve!.y - reject!.y)).toBeLessThanOrEqual(1);
+  if (page.viewportSize()!.width <= 600) {
+    const [select, container] = await Promise.all([
+      controls.getByRole('combobox').boundingBox(),
+      controls.boundingBox(),
+    ]);
+    expect(select!.width).toBeGreaterThanOrEqual(container!.width - 2);
+    expect(approve!.y).toBeGreaterThanOrEqual(select!.y + select!.height);
+  }
+}
 
 test('list acceptance retains the chosen Epic receipt through refresh and an explicit retry', async ({
   page,
@@ -51,6 +70,7 @@ test('list acceptance retains the chosen Epic receipt through refresh and an exp
     row.getByRole('option', { name: 'Release #10', exact: true }),
   ).toHaveCount(1);
   await select.selectOption('10');
+  await expectDecisionRows(page);
   expect(fixtureAPI.requests.filter((entry) => entry.method !== 'GET')).toEqual(
     [],
   );
@@ -81,6 +101,7 @@ test('list acceptance retains the chosen Epic receipt through refresh and an exp
   );
   await restore?.();
   restore = await enlargeComputedText(page, 2, { restorable: true });
+  await expectDecisionRows(page);
   if (page.viewportSize()!.width > 600) {
     const heading = (await row
       .locator('.action-item-proposal-heading')
@@ -192,6 +213,7 @@ test('detail acceptance uses fresh parent and destination only after explicit re
     fullPage: true,
   });
   await enlargeComputedText(page);
+  await expectDecisionRows(page);
   await expectControlContained(select, page.locator('#main-content'));
   await expectControlContained(
     page.getByRole('button', { name: 'Approve', exact: true }),

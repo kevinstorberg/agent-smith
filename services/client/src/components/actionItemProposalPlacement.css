@@ -12,6 +12,11 @@
   min-width: 0;
   max-width: 20em;
 }
+.action-item-proposal-decision-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .action-item-proposal-epic-choice > label {
   display: block;
   min-width: 0;
@@ -40,6 +45,10 @@
   flex: 1 1 50%;
 }
 @media (max-width: 600px) {
+  .action-item-proposal-epic-choice {
+    flex-basis: 100%;
+    max-width: none;
+  }
   .action-item-proposals-page .action-item-proposal-identity,
   .action-item-proposals-page .action-item-proposal-actions {
     flex-basis: auto;

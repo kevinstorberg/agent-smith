@@ -152,27 +152,29 @@ export function ActionItemProposalDecision({
           </span>
         )}
       </div>
-      <button
-        type="button"
-        className="btn btn-primary"
-        disabled={busy || approveDisabled}
-        onClick={() => {
-          if (!busy && !approveDisabled)
-            onDecide('approve', selection?.placement);
-        }}
-      >
-        {saving ? 'Saving…' : approveLabel}
-      </button>
-      <button
-        type="button"
-        className="btn"
-        disabled={busy}
-        onClick={() => {
-          if (!busy) onDecide('reject');
-        }}
-      >
-        Reject
-      </button>
+      <div className="action-item-proposal-decision-buttons">
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={busy || approveDisabled}
+          onClick={() => {
+            if (!busy && !approveDisabled)
+              onDecide('approve', selection?.placement);
+          }}
+        >
+          {saving ? 'Saving…' : approveLabel}
+        </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={busy}
+          onClick={() => {
+            if (!busy) onDecide('reject');
+          }}
+        >
+          Reject
+        </button>
+      </div>
     </div>
   );
 }
