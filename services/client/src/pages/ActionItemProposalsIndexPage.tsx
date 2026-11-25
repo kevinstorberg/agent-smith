@@ -21,6 +21,7 @@ import { usePagination } from '../hooks/usePagination';
 import { usePolling } from '../hooks/usePolling';
 import { useViewPreferences } from '../hooks/useViewPreferences';
 import { parseViewField } from '../utils/viewPreferences';
+import { actionItemProposalDecisionMessage } from '../utils/actionItems';
 import './actionItemProposals.css';
 
 export function ActionItemProposalsIndexPage() {
@@ -70,15 +71,17 @@ export function ActionItemProposalsIndexPage() {
     onSuccess: (result) => {
       proposals.setItems((items) =>
         items.map((item) =>
-          item.id === result.id ? { ...item, status: result.status } : item,
+          item.id === result.id
+            ? {
+                ...item,
+                status: result.status,
+                applied_ref: result.applied_ref,
+                review_outcome: result.review_outcome,
+              }
+            : item,
         ),
       );
-      notify(
-        result.status === 'approved'
-          ? 'Action Item accepted'
-          : 'Action Item rejected',
-        'success',
-      );
+      notify(actionItemProposalDecisionMessage(result), 'success');
     },
   });
   const pendingId = review.pendingId;

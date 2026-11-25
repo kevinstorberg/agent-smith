@@ -13,14 +13,18 @@ import type { Page } from '@playwright/test';
 
 async function expectDecisionRows(page: Page) {
   const controls = page.locator('.action-item-proposal-decision-controls');
-  const buttons = controls
-    .locator('.action-item-proposal-decision-buttons')
-    .getByRole('button');
-  const [approve, reject] = await Promise.all([
-    buttons.nth(0).boundingBox(),
-    buttons.nth(1).boundingBox(),
+  const buttons = controls.locator('.action-item-proposal-decision-buttons');
+  const [approve, reject, complete] = await Promise.all([
+    buttons.getByRole('button', { name: 'Accept', exact: true }).boundingBox(),
+    buttons.getByRole('button', { name: 'Reject', exact: true }).boundingBox(),
+    buttons.getByRole('button', { name: /^Complete / }).boundingBox(),
   ]);
   expect(Math.abs(approve!.y - reject!.y)).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs(
+      complete!.y + complete!.height / 2 - (approve!.y + approve!.height / 2),
+    ),
+  ).toBeLessThanOrEqual(1);
   if (page.viewportSize()!.width <= 600) {
     const [select, container] = await Promise.all([
       controls.getByRole('button', { name: /Epic for/ }).boundingBox(),

@@ -14,6 +14,7 @@ import { useApiMutation } from '../hooks/useApiMutation';
 import { useApiRead } from '../hooks/useApiRead';
 import { usePageLifetime } from '../hooks/usePageLifetime';
 import { usePolling } from '../hooks/usePolling';
+import { actionItemProposalDecisionMessage } from '../utils/actionItems';
 import './actionItemProposals.css';
 
 export function ActionItemProposalDetailPage() {
@@ -57,12 +58,7 @@ function ActionItemProposalDetail({ id }: { id: number }) {
         )),
     onSuccess: (result) => {
       if (!isCurrent()) return;
-      notify(
-        result.status === 'approved'
-          ? 'Action Item proposal approved'
-          : 'Action Item proposal rejected',
-        'success',
-      );
+      notify(actionItemProposalDecisionMessage(result), 'success');
     },
   });
   const busy = review.pendingId !== null || remove.loading;

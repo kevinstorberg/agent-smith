@@ -23,6 +23,7 @@ class ProposalPlacement(Contract):
 
 class ProposalApprove(Contract):
     placement: ProposalPlacement | None = None
+    complete: bool = False
 
 
 class ActionItemCandidate(BaseModel):

@@ -12,3 +12,13 @@ export function actionItemProposalProject(proposal: ActionItemProposal) {
     ? proposal.proposed_item?.project
     : proposal.project;
 }
+
+export function actionItemProposalDecisionMessage(
+  proposal: ActionItemProposal,
+) {
+  return proposal.review_outcome === 'completed'
+    ? 'Action Item accepted as done'
+    : proposal.status === 'approved'
+      ? 'Action Item accepted'
+      : 'Action Item rejected';
+}

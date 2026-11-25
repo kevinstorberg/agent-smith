@@ -3,10 +3,12 @@ import type {
   ActionItemEpic,
   ActionItemEpicReference,
   ActionItemProposal,
+  ActionItemProposalDecisionAction,
   ActionItemProposalPlacement,
 } from '../api';
 import { epicOptionLabel, epicReference } from '../utils/actionItemEpics';
 import { ActionItemEpicSelect } from './ActionItemEpicSelect';
+import { ActionItemStatusButton } from './ActionItemStatusButton';
 import './actionItemProposalPlacement.css';
 
 export interface ProposalEpicCatalog {
@@ -71,7 +73,7 @@ export function ActionItemProposalDecision({
   approveDisabled: boolean;
   approveLabel?: string;
   onDecide: (
-    action: 'approve' | 'reject',
+    action: ActionItemProposalDecisionAction,
     placement?: ActionItemProposalPlacement,
   ) => void;
 }) {
@@ -173,6 +175,17 @@ export function ActionItemProposalDecision({
         >
           {saving ? 'Saving…' : approveLabel}
         </button>
+        <ActionItemStatusButton
+          item={{ title: proposal.target_name, status: 'open' }}
+          small
+          iconOnly
+          disabled={busy || approveDisabled}
+          completionPrompt={`Accept this proposal and save “${proposal.target_name}” as completed?`}
+          onChange={() => {
+            if (!busy && !approveDisabled)
+              onDecide('complete', selection?.placement);
+          }}
+        />
         <button
           type="button"
           className="btn"
