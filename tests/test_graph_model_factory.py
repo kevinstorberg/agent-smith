@@ -12,7 +12,7 @@ from langchain_openai import ChatOpenAI
 
 from scripts.shared.env import read_env_file
 from services.graphs import model_factory
-from services.graphs.model_config import GraphModelConfig
+from services.graphs.model_config import BedrockApiKeyAuth, GraphModelConfig
 from services.graphs.model_factory import ModelOutputTruncatedError, build_chat_model
 
 API_KEY = "bedrock-test-key-0123456789abcdef"
@@ -56,7 +56,9 @@ def captured_adapter_kwargs(monkeypatch):
         def __init__(self, **kwargs):
             captured.update(kwargs)
 
-    monkeypatch.setattr(model_factory, "_ObservedChatCompletionsTransportAdapter", _FakeTransportAdapter)
+    monkeypatch.setattr(
+        model_factory, "_ObservedChatCompletionsTransportAdapter", _FakeTransportAdapter
+    )
     return captured
 
 
@@ -73,13 +75,21 @@ def test_adapter_is_built_from_the_resolved_config(model_env, captured_adapter_k
     assert captured["streaming"] is False
     assert "stream_usage" not in captured
     assert "extra_body" not in captured
-    assert [type(callback).__name__ for callback in captured["callbacks"]] == ["_ModelGuard"]
+    assert [type(callback).__name__ for callback in captured["callbacks"]] == [
+        "_ModelGuard"
+    ]
 
 
-def test_shipped_memory_adapter_uses_preset_timeout_without_inheriting_retries(model_env, captured_adapter_kwargs):
-    for name, value in read_env_file(Path(__file__).resolve().parents[1] / ".env.default").items():
+def test_shipped_memory_adapter_uses_preset_timeout_without_inheriting_retries(
+    model_env, captured_adapter_kwargs
+):
+    for name, value in read_env_file(
+        Path(__file__).resolve().parents[1] / ".env.default"
+    ).items():
         if "_MODEL_" in name:
-            model_env.setenv(name, API_KEY if name.endswith("_MODEL_SERVER_API_KEY") else value)
+            model_env.setenv(
+                name, API_KEY if name.endswith("_MODEL_SERVER_API_KEY") else value
+            )
 
     build_chat_model("meeting_memory", fallback_role="curator")
 
@@ -94,11 +104,16 @@ def test_grader_role_builds_from_its_own_preset(model_env, captured_adapter_kwar
     build_chat_model("opinion_grader", fallback_role="opinion")
 
     assert captured_adapter_kwargs["model"] == "qwen.qwen3-coder-480b-a35b-instruct"
-    assert captured_adapter_kwargs["base_url"] == "https://bedrock-mantle.us-east-1.api.aws/v1"
+    assert (
+        captured_adapter_kwargs["base_url"]
+        == "https://bedrock-mantle.us-east-1.api.aws/v1"
+    )
     assert captured_adapter_kwargs["api_key"] == API_KEY
 
 
-def test_streaming_also_requests_usage_in_the_stream(model_env, captured_adapter_kwargs):
+def test_streaming_also_requests_usage_in_the_stream(
+    model_env, captured_adapter_kwargs
+):
     model_env.setenv("BIG_MODEL_STREAMING", "true")
 
     build_chat_model("opinion")
@@ -107,7 +122,9 @@ def test_streaming_also_requests_usage_in_the_stream(model_env, captured_adapter
     assert captured_adapter_kwargs["stream_usage"] is True
 
 
-def test_extra_body_is_passed_through_as_a_plain_dict(model_env, captured_adapter_kwargs):
+def test_extra_body_is_passed_through_as_a_plain_dict(
+    model_env, captured_adapter_kwargs
+):
     model_env.setenv("OPINION_MODEL_EXTRA_BODY", '{"service_tier": "flex"}')
 
     build_chat_model("opinion")
@@ -123,7 +140,12 @@ def test_real_adapter_accepts_every_factory_option(model_env):
     model = build_chat_model("opinion")
 
     assert isinstance(model, ChatOpenAI)
-    assert (model.model_name, model.max_tokens, model.streaming, model.stream_usage) == (
+    assert (
+        model.model_name,
+        model.max_tokens,
+        model.streaming,
+        model.stream_usage,
+    ) == (
         "us.moonshotai.kimi-k3",
         16384,
         True,
@@ -154,7 +176,10 @@ class _FixedReplyModel(BaseChatModel):
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         if self.metadata_only:
-            message = AIMessage(content="partial", response_metadata={"finish_reason": self.finish_reason})
+            message = AIMessage(
+                content="partial",
+                response_metadata={"finish_reason": self.finish_reason},
+            )
             generation = ChatGeneration(message=message)
         else:
             generation = ChatGeneration(
@@ -164,14 +189,16 @@ class _FixedReplyModel(BaseChatModel):
         return ChatResult(generations=[generation])
 
 
-def _guarded(finish_reason: str, *, metadata_only: bool = False, streaming: bool = False) -> _FixedReplyModel:
+def _guarded(
+    finish_reason: str, *, metadata_only: bool = False, streaming: bool = False
+) -> _FixedReplyModel:
     config = GraphModelConfig(
         role="opinion",
         settings_chain=("OPINION", "BIG", "GRAPH"),
         provider="bedrock",
         model_id="us.moonshotai.kimi-k3",
         server_url=RUNTIME_US_EAST_1,
-        server_api_key=API_KEY,
+        authentication=BedrockApiKeyAuth(API_KEY),
         temperature=1.0,
         top_p=0.95,
         max_tokens=64,
@@ -195,7 +222,10 @@ def test_truncated_reply_raises_through_ainvoke():
     message = str(failure.value)
     assert "Graph model role 'opinion' (us.moonshotai.kimi-k3)" in message
     assert "64-token output cap" in message
-    assert "OPINION_MODEL_MAX_TOKENS, BIG_MODEL_MAX_TOKENS, GRAPH_MODEL_MAX_TOKENS" in message
+    assert (
+        "OPINION_MODEL_MAX_TOKENS, BIG_MODEL_MAX_TOKENS, GRAPH_MODEL_MAX_TOKENS"
+        in message
+    )
 
 
 def test_truncated_reply_raises_through_invoke():
@@ -220,3 +250,42 @@ def test_truncation_reported_only_in_response_metadata_still_raises():
 @pytest.mark.parametrize("finish_reason", ["stop", "tool_calls"])
 def test_complete_replies_pass_the_guard(finish_reason):
     assert asyncio.run(_guarded(finish_reason).ainvoke("hello")).content == "partial"
+
+
+def test_profile_mode_builds_a_lazy_callable_without_static_key_fallback(
+    model_env, captured_adapter_kwargs, monkeypatch
+):
+    from services.graphs import bedrock_auth
+    from services.graphs.bedrock_auth import BedrockProfileTokenProvider
+
+    model_env.setenv("GRAPH_MODEL_AUTH_MODE", "aws_profile")
+    model_env.setenv("GRAPH_MODEL_AWS_PROFILE", "paralign-source")
+    model_env.setenv("GRAPH_MODEL_AWS_ACCOUNT_ID", "180425283135")
+    monkeypatch.setattr(
+        bedrock_auth,
+        "Session",
+        lambda **k: pytest.fail("AWS accessed during construction"),
+    )
+    build_chat_model("opinion")
+    assert isinstance(captured_adapter_kwargs["api_key"], BedrockProfileTokenProvider)
+    assert captured_adapter_kwargs["api_key"] != API_KEY
+    assert [type(c).__name__ for c in captured_adapter_kwargs["callbacks"]] == [
+        "_ModelGuard"
+    ]
+
+
+def test_profile_model_guard_blocks_before_any_aws_access(model_env, monkeypatch):
+    from services.graphs import bedrock_auth
+    from scripts.shared.automated_tests import PaidModelCallBlocked
+
+    model_env.setenv("GRAPH_MODEL_AUTH_MODE", "aws_profile")
+    model_env.setenv("GRAPH_MODEL_AWS_PROFILE", "paralign-source")
+    model_env.setenv("GRAPH_MODEL_AWS_ACCOUNT_ID", "180425283135")
+    monkeypatch.setattr(
+        bedrock_auth,
+        "Session",
+        lambda **k: pytest.fail("AWS accessed during automated test"),
+    )
+    model = build_chat_model("opinion")
+    with pytest.raises(PaidModelCallBlocked):
+        model.invoke("synthetic")

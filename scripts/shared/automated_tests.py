@@ -6,13 +6,24 @@ from collections.abc import Mapping, MutableMapping
 AUTOMATED_TESTS_ENV = "AGENT_SMITH_AUTOMATED_TESTS"
 LIVE_EVALS_ENV = "AGENT_SMITH_EVAL_RUN"
 _CREDENTIALS = {
-    "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_SECURITY_TOKEN",
-    "AWS_BEARER_TOKEN_BEDROCK", "AWS_PROFILE", "AWS_DEFAULT_PROFILE",
-    "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_SECURITY_TOKEN",
+    "AWS_BEARER_TOKEN_BEDROCK",
+    "AWS_PROFILE",
+    "AWS_DEFAULT_PROFILE",
+    "AWS_CONFIG_FILE",
+    "AWS_SHARED_CREDENTIALS_FILE",
+    "GRAPH_MODEL_AUTH_MODE",
+    "GRAPH_MODEL_AWS_PROFILE",
+    "GRAPH_MODEL_AWS_ACCOUNT_ID",
 }
 _TRACING_DISABLED = {
-    "LANGCHAIN_TRACING": "false", "LANGCHAIN_TRACING_V2": "false",
-    "LANGSMITH_TRACING": "false", "OTEL_SDK_DISABLED": "true",
+    "LANGCHAIN_TRACING": "false",
+    "LANGCHAIN_TRACING_V2": "false",
+    "LANGSMITH_TRACING": "false",
+    "OTEL_SDK_DISABLED": "true",
 }
 
 
@@ -26,7 +37,9 @@ def automated_tests_enabled(env: Mapping[str, str] | None = None) -> bool:
 
 def require_model_calls_allowed() -> None:
     if automated_tests_enabled():
-        raise PaidModelCallBlocked("Paid model requests are disabled in automated tests; use a scripted model or fake agent.")
+        raise PaidModelCallBlocked(
+            "Paid model requests are disabled in automated tests; use a scripted model or fake agent."
+        )
 
 
 def live_evals_enabled(env: Mapping[str, str] | None = None) -> bool:

@@ -1107,6 +1107,42 @@ in development and test.
 
 See `.env.default` for all available configuration options.
 
+### Bedrock authentication
+
+`GRAPH_MODEL_AUTH_MODE=api_key` preserves per-role `MODEL_SERVER_API_KEY`
+authentication. To route every graph model role through the Paralign AWS profile,
+set the following in the development or production environment override:
+
+```dotenv
+GRAPH_MODEL_AUTH_MODE=aws_profile
+GRAPH_MODEL_AWS_PROFILE=paralign-source
+GRAPH_MODEL_AWS_ACCOUNT_ID=180425283135
+```
+
+Profile authentication is application-wide; role/preset overrides are rejected.
+Configured static model keys are unused in this mode. Each HTTP attempt resolves
+fresh credentials from the explicit named profile, freezes them, verifies their
+account with STS, and signs a 15-minute Bedrock bearer token. Changed credentials
+are reverified; unchanged credentials reuse the previous identity check. Account
+mismatches, missing credentials, or expired login sessions stop the request.
+Ambient host credentials and custom AWS endpoint overrides cannot substitute for
+the configured profile. Bedrock Runtime uses `/openai/v1`; Mantle supports `/v1`
+and `/openai/v1` according to the model card.
+
+Before activating the settings and restarting, run this read-only check with the
+application's Python environment:
+
+```sh
+python -m scripts.check_bedrock_auth --profile paralign-source --expected-account 180425283135 --region us-east-1
+```
+
+It verifies the same credential snapshot through STS and lists Mantle models;
+it invokes no model and prints only profile, account, region, and model count.
+The profile needs access to STS and its login/role refresh service, the endpoint's
+bearer-token action, and the relevant model permissions. Automated tests block
+credential resolution and AWS calls. Switching authentication changes the request
+identity; it does not establish the account's consolidated billing payer.
+
 ## Existing installations
 
 The code migration does not stop existing services or remove Docker volumes. Keep

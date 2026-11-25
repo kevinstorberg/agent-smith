@@ -14,11 +14,21 @@ from langchain_core.outputs import ChatGeneration, Generation, LLMResult
 from langchain_openai import ChatOpenAI as ChatCompletionsTransportAdapter
 
 from scripts.shared.automated_tests import require_model_calls_allowed
-from services.graphs.model_config import SUPPORTED_PROVIDERS, GraphModelConfig, load_model_config
+from services.graphs.bedrock_auth import BedrockProfileTokenProvider
+from services.graphs.model_config import (
+    SUPPORTED_PROVIDERS,
+    BedrockApiKeyAuth,
+    GraphModelConfig,
+    load_model_config,
+)
 from services.observability import BillableEvent, error_outcome
 
-_model_invocation: ContextVar[UUID | None] = ContextVar("model_invocation", default=None)
-_FINISH_REASONS = frozenset({"stop", "length", "tool_calls", "function_call", "content_filter"})
+_model_invocation: ContextVar[UUID | None] = ContextVar(
+    "model_invocation", default=None
+)
+_FINISH_REASONS = frozenset(
+    {"stop", "length", "tool_calls", "function_call", "content_filter"}
+)
 
 
 class ModelOutputTruncatedError(RuntimeError):
@@ -58,7 +68,11 @@ def _build_bedrock(config: GraphModelConfig) -> BaseChatModel:
     return _ObservedChatCompletionsTransportAdapter(
         model=config.model_id,
         base_url=config.server_url,
-        api_key=config.server_api_key,
+        api_key=(
+            config.authentication.api_key
+            if isinstance(config.authentication, BedrockApiKeyAuth)
+            else BedrockProfileTokenProvider(config.authentication, config.server_url)
+        ),
         temperature=config.temperature,
         top_p=config.top_p,
         max_tokens=config.max_tokens,
@@ -88,11 +102,17 @@ class _TruncationGuard(BaseCallbackHandler):
         self._config = config
 
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
-        reasons = (_finish_reason(g) for generations in response.generations for g in generations)
+        reasons = (
+            _finish_reason(g)
+            for generations in response.generations
+            for g in generations
+        )
         if "length" not in reasons:
             return
         config = self._config
-        settings = ", ".join(f"{prefix}_MODEL_MAX_TOKENS" for prefix in config.settings_chain)
+        settings = ", ".join(
+            f"{prefix}_MODEL_MAX_TOKENS" for prefix in config.settings_chain
+        )
         raise ModelOutputTruncatedError(
             f"Graph model role '{config.role}' ({config.model_id}) stopped at its "
             f"{config.max_tokens}-token output cap (finish_reason=length), so the reply is "
@@ -107,21 +127,34 @@ class _ModelGuard(_TruncationGuard):
         self._events_lock = Lock()
 
     def on_chat_model_start(
-        self, serialized: dict[str, Any], messages: list[list[BaseMessage]], *,
-        run_id: UUID, parent_run_id: UUID | None = None, **kwargs: Any,
+        self,
+        serialized: dict[str, Any],
+        messages: list[list[BaseMessage]],
+        *,
+        run_id: UUID,
+        parent_run_id: UUID | None = None,
+        **kwargs: Any,
     ) -> None:
         require_model_calls_allowed()
         config = self._config
         parameters = kwargs.get("invocation_params")
-        streaming = parameters.get("stream") if isinstance(parameters, Mapping) else None
+        streaming = (
+            parameters.get("stream") if isinstance(parameters, Mapping) else None
+        )
         streaming = streaming if type(streaming) is bool else config.streaming
         with self._events_lock:
             if run_id in self._events:
                 raise ValueError("Model call run_id is already active")
             event = BillableEvent.start(
-                config.provider, "chat_completion", model_role=config.role, model=config.model_id,
-                streaming=streaming, sdk_retries=config.max_retries,
-                model_run_id=run_id, parent_model_run_id=parent_run_id, **_input_size(messages),
+                config.provider,
+                "chat_completion",
+                model_role=config.role,
+                model=config.model_id,
+                streaming=streaming,
+                sdk_retries=config.max_retries,
+                model_run_id=run_id,
+                parent_model_run_id=parent_run_id,
+                **_input_size(messages),
             )
             self._events[run_id] = (event, _model_invocation.get())
 
@@ -132,7 +165,9 @@ class _ModelGuard(_TruncationGuard):
             pending[0].finish(**_completion_fields(response))
         super().on_llm_end(response, run_id=run_id, **kwargs)
 
-    def on_llm_error(self, error: BaseException, *, run_id: UUID, **kwargs: Any) -> None:
+    def on_llm_error(
+        self, error: BaseException, *, run_id: UUID, **kwargs: Any
+    ) -> None:
         with self._events_lock:
             pending = self._events.pop(run_id, None)
         if pending is not None:
@@ -140,7 +175,11 @@ class _ModelGuard(_TruncationGuard):
 
     def finish_invocation(self, invocation: UUID, error: BaseException) -> None:
         with self._events_lock:
-            active = [run_id for run_id, (_, owner) in self._events.items() if owner == invocation]
+            active = [
+                run_id
+                for run_id, (_, owner) in self._events.items()
+                if owner == invocation
+            ]
             pending = [self._events.pop(run_id)[0] for run_id in active]
         for event in pending:
             event.finish(error_outcome(error), error=error)
@@ -148,18 +187,49 @@ class _ModelGuard(_TruncationGuard):
 
 def _completion_fields(response: LLMResult) -> dict[str, Any]:
     usage = (response.llm_output or {}).get("token_usage")
-    aliases = {"prompt_tokens": "tokens_input", "completion_tokens": "tokens_output", "total_tokens": "total_tokens"}
+    aliases = {
+        "prompt_tokens": "tokens_input",
+        "completion_tokens": "tokens_output",
+        "total_tokens": "total_tokens",
+    }
     if not isinstance(usage, Mapping):
-        usage = next((getattr(generation.message, "usage_metadata", None)
-                      for group in response.generations for generation in group
-                      if isinstance(generation, ChatGeneration)
-                      and isinstance(getattr(generation.message, "usage_metadata", None), Mapping)), {})
-        aliases = {"input_tokens": "tokens_input", "output_tokens": "tokens_output", "total_tokens": "total_tokens"}
-    fields = {target: usage[source] for source, target in aliases.items()
-              if type(usage.get(source)) is int and usage[source] >= 0}
-    reasons = [_finish_reason(generation) for group in response.generations for generation in group]
-    known = [reason for reason in reasons if isinstance(reason, str) and reason in _FINISH_REASONS]
-    return {**fields, "finish_reason": known[0] if known else "unknown", "completion": "sdk_call"}
+        usage = next(
+            (
+                getattr(generation.message, "usage_metadata", None)
+                for group in response.generations
+                for generation in group
+                if isinstance(generation, ChatGeneration)
+                and isinstance(
+                    getattr(generation.message, "usage_metadata", None), Mapping
+                )
+            ),
+            {},
+        )
+        aliases = {
+            "input_tokens": "tokens_input",
+            "output_tokens": "tokens_output",
+            "total_tokens": "total_tokens",
+        }
+    fields = {
+        target: usage[source]
+        for source, target in aliases.items()
+        if type(usage.get(source)) is int and usage[source] >= 0
+    }
+    reasons = [
+        _finish_reason(generation)
+        for group in response.generations
+        for generation in group
+    ]
+    known = [
+        reason
+        for reason in reasons
+        if isinstance(reason, str) and reason in _FINISH_REASONS
+    ]
+    return {
+        **fields,
+        "finish_reason": known[0] if known else "unknown",
+        "completion": "sdk_call",
+    }
 
 
 def _input_size(messages: list[list[BaseMessage]]) -> dict[str, int]:
