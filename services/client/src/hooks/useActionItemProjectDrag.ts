@@ -108,6 +108,8 @@ export interface ProjectDragSnapshot {
   epicTarget?: EpicTarget | null;
   rootOrders?: RootOrderTarget[];
   rootOrderTarget?: RootOrderTarget | null;
+  released?: boolean;
+  canceled?: boolean;
 }
 export function useActionItemProjectDrag<T extends ProjectDragSnapshot>({
   enabled,
@@ -161,7 +163,8 @@ export function useActionItemProjectDrag<T extends ProjectDragSnapshot>({
     function pointer(x: number, y: number) {
       lastPointer = { x, y };
       const captured = drag.current;
-      if (captured?.mode !== 'FLUID') return;
+      if (captured?.mode !== 'FLUID' || captured.released || captured.canceled)
+        return;
       const project = projectAtPoint(
         projectTabsRef.current,
         captured.projects ?? [],
@@ -187,6 +190,17 @@ export function useActionItemProjectDrag<T extends ProjectDragSnapshot>({
       selectTarget({ epicTarget: null });
     }
     const mouse = (event: MouseEvent) => pointer(event.clientX, event.clientY);
+    function release() {
+      const captured = drag.current;
+      if (!captured?.mode || captured.released || captured.canceled) return;
+      drag.current = { ...captured, released: true };
+      setSnapshot(drag.current);
+    }
+    const mouseRelease = (event: MouseEvent) => {
+      if (drag.current?.mode !== 'FLUID') return;
+      mouse(event);
+      release();
+    };
     const scroll = () => {
       if (lastPointer) pointer(lastPointer.x, lastPointer.y);
     };
@@ -194,9 +208,25 @@ export function useActionItemProjectDrag<T extends ProjectDragSnapshot>({
       const point = event.changedTouches[0];
       if (point) pointer(point.clientX, point.clientY);
     };
+    const touchRelease = (event: TouchEvent) => {
+      if (drag.current?.mode !== 'FLUID') return;
+      touch(event);
+      release();
+    };
     function keyboard(event: KeyboardEvent) {
       const captured = drag.current;
+      if (!captured || captured.released || captured.canceled) return;
+      if (event.key === 'Escape') {
+        selectTarget({ project: null });
+        drag.current = { ...drag.current!, canceled: true };
+        setSnapshot(drag.current);
+        return;
+      }
       if (captured?.mode !== 'SNAP') return;
+      if (event.key === ' ') {
+        release();
+        return;
+      }
       if (['ArrowUp', 'ArrowDown', 'Escape'].includes(event.key)) {
         selectTarget({ project: null });
         return;
@@ -247,12 +277,15 @@ export function useActionItemProjectDrag<T extends ProjectDragSnapshot>({
       capture: true,
       passive: true,
     });
-    window.addEventListener('mouseup', mouse, { capture: true, passive: true });
+    window.addEventListener('mouseup', mouseRelease, {
+      capture: true,
+      passive: true,
+    });
     window.addEventListener('touchmove', touch, {
       capture: true,
       passive: true,
     });
-    window.addEventListener('touchend', touch, {
+    window.addEventListener('touchend', touchRelease, {
       capture: true,
       passive: true,
     });
@@ -260,9 +293,9 @@ export function useActionItemProjectDrag<T extends ProjectDragSnapshot>({
     window.addEventListener('scroll', scroll, true);
     return () => {
       window.removeEventListener('mousemove', mouse, true);
-      window.removeEventListener('mouseup', mouse, true);
+      window.removeEventListener('mouseup', mouseRelease, true);
       window.removeEventListener('touchmove', touch, true);
-      window.removeEventListener('touchend', touch, true);
+      window.removeEventListener('touchend', touchRelease, true);
       window.removeEventListener('keydown', keyboard, true);
       window.removeEventListener('scroll', scroll, true);
     };

@@ -122,6 +122,13 @@ function TaskEntry({
             aria-busy={queue.pendingId === item.id}
             style={{
               ...row.draggableProps.style,
+              // Zero duration suppresses the SDK's required transition-end event.
+              ...(state.isDropAnimating &&
+              queue.snapshot?.released &&
+              queue.snapshot.epicTarget &&
+              queue.snapshot.itemId === queueIdentity(entry)
+                ? { transitionDuration: '0.001s' }
+                : {}),
               ...(entry.parent_epic_id === null
                 ? rootLiftStyle(queue, index, state.isDragging)
                 : {}),
@@ -210,6 +217,9 @@ function EpicEntry({
               data-epic-drop-target={epic.id}
               data-drop-selected={
                 queue.snapshot?.epicTarget?.epic?.id === epic.id
+              }
+              data-move-pending={
+                queue.pendingMembership?.destinationId === epic.id
               }
               tabIndex={-1}
             >
@@ -368,14 +378,21 @@ export function ActionItemGroupedQueue({
   return (
     <>
       <span role="status" aria-live="polite" className="visually-hidden">
-        {queue.savingOrder
-          ? 'Saving order…'
-          : queue.pendingId !== null
-            ? 'Saving action item…'
-            : externalMovement
-              ? `${externalMovement}. Press Space to drop, or Escape to cancel.`
-              : ''}
+        {queue.pendingMembership
+          ? queue.pendingMembership.text
+          : queue.savingOrder
+            ? 'Saving order…'
+            : queue.pendingId !== null
+              ? 'Saving action item…'
+              : externalMovement
+                ? `${externalMovement}. Press Space to drop, or Escape to cancel.`
+                : ''}
       </span>
+      {queue.pendingMembership && (
+        <p aria-hidden="true" className="card action-item-pending-move">
+          Moving to {queue.pendingMembership.destination}…
+        </p>
+      )}
       {queue.initialLoading && <p className="loading">Loading action items…</p>}
       {queue.error && (
         <div role="alert" className="card">

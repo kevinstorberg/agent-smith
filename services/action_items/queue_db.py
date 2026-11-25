@@ -169,6 +169,20 @@ def validate_membership(
     *,
     destination_id: int | None = None,
 ) -> MembershipChange:
+    entry = task_entry(cursor, item_id) if item_id is not None else None
+    return _validated_membership(
+        cursor, item_id, entry, expected_parent, destination, destination_id
+    )
+
+
+def _validated_membership(
+    cursor,
+    item_id: int | None,
+    entry: dict | None,
+    expected_parent: EpicReference | None,
+    destination: EpicReference | None,
+    destination_id: int | None,
+) -> MembershipChange:
     if item_id is None:
         if expected_parent is not None:
             raise _tasks().Conflict(
@@ -176,7 +190,8 @@ def validate_membership(
             )
         parent_id = None
     else:
-        entry = task_entry(cursor, item_id)
+        if entry is None or entry["action_item_id"] != item_id:
+            raise ValueError("Locked queue entry belongs to another Action Item")
         _check_parent(cursor, entry, expected_parent)
         parent_id = entry["parent_epic_id"]
     if destination is not None:
@@ -186,12 +201,20 @@ def validate_membership(
 
 
 def apply_membership(cursor, task: dict, change: MembershipChange) -> None:
-    # The queue write lock keeps validated identities stable through our own status changes.
     item_id = task["id"]
     if change.item_id is not None and change.item_id != item_id:
         raise ValueError("Validated membership belongs to another Action Item")
-    task = _tasks()._live(cursor, item_id, _tasks()._Scope(None), task["revision"])
-    entry = task_entry(cursor, item_id)
+    # Proposal updates can change status and queue position after validation.
+    live = _tasks()._live(cursor, item_id, _tasks()._Scope(None), task["revision"])
+    _apply_membership(cursor, live, task_entry(cursor, item_id), change)
+
+
+def _apply_membership(
+    cursor, task: dict, entry: dict, change: MembershipChange
+) -> None:
+    item_id = task["id"]
+    if entry["action_item_id"] != item_id or change.item_id not in {None, item_id}:
+        raise ValueError("Validated membership belongs to another Action Item")
     parent = entry["parent_epic_id"]
     if parent != change.parent_id:
         raise _tasks().Conflict(
@@ -232,14 +255,16 @@ def _move_membership(
     task = _tasks()._live(
         cursor, item_id, _tasks()._Scope(None), request.expected_revision
     )
-    change = validate_membership(
+    entry = task_entry(cursor, item_id)
+    change = _validated_membership(
         cursor,
         item_id,
+        entry,
         request.expected_parent,
         request.destination,
-        destination_id=destination_id,
+        destination_id,
     )
-    apply_membership(cursor, task, change)
+    _apply_membership(cursor, task, entry, change)
 
 
 def create_epic(payload: EpicCreate | dict) -> dict:

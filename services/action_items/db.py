@@ -37,6 +37,12 @@ from services.meetings import profile_db
 from services.meetings.db import MeetingStorageError
 
 _WRITE_LOCK = "agent-smith:action-items-write"
+_WRITE_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
+_TRANSACTION_SETUP = (
+    "SET LOCAL TIME ZONE 'UTC'; "
+    "SET LOCAL lock_timeout = '5s'; "
+    "SET LOCAL statement_timeout = '6s'; "
+)
 _TASK_ROWS = "action_items a LEFT JOIN action_item_projects p ON p.id=a.project_id"
 _PROJECT_ROWS = (
     "action_item_ordered_items a LEFT JOIN action_item_projects p ON p.id=a.project_id"
@@ -124,8 +130,16 @@ def _resolve_scope(cursor, profile_id: str | None) -> _Scope:
 
 
 def acquire_write_lock(cursor) -> None:
+    cursor.execute(_WRITE_LOCK_SQL, (_WRITE_LOCK,))
+
+
+def _configure_transaction(cursor, *, write: bool) -> None:
+    operation = (
+        _WRITE_LOCK_SQL if write else "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"
+    )
     cursor.execute(
-        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (_WRITE_LOCK,)
+        _TRANSACTION_SETUP + operation + "; SET LOCAL statement_timeout = '5s'",
+        (_WRITE_LOCK,) if write else None,
     )
 
 
@@ -144,14 +158,7 @@ def _cursor(profile_id: str | None, *, write: bool, conn: Connection | None = No
                 connection.cursor(cursor_factory=RealDictCursor)
             )
         with _storage_errors():
-            cursor.execute("SET LOCAL TIME ZONE 'UTC'")
-            cursor.execute("SET LOCAL lock_timeout = '5s'")
-            cursor.execute("SET LOCAL statement_timeout = '6s'")
-            if write:
-                acquire_write_lock(cursor)
-            else:
-                cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-            cursor.execute("SET LOCAL statement_timeout = '5s'")
+            _configure_transaction(cursor, write=write)
             yield cursor, _resolve_scope(cursor, profile_id)
 
 
