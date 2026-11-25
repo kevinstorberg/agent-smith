@@ -16,6 +16,8 @@ from services.action_items.queue_contracts import (
     EpicRemove,
     Membership,
     QueueMove,
+    QueueKind,
+    QueueQuery,
 )
 from services.action_items.contracts import (
     Create,
@@ -31,7 +33,7 @@ from services.api.routers.shared.items import call_item as _call
 router = APIRouter()
 
 
-def _query(
+def _query_fields(
     request: Request,
     q: str | None = None,
     status: str = "open",
@@ -42,12 +44,7 @@ def _query(
     offset: int = 0,
     unassigned: bool = False,
     due_within_hours: int | None = None,
-) -> Query:
-    unknown = set(request.query_params) - Query.model_fields.keys()
-    if unknown:
-        raise HTTPException(
-            422, f"Unknown action item filters: {', '.join(sorted(unknown))}"
-        )
+) -> dict:
     if "unassigned" in request.query_params and request.query_params[
         "unassigned"
     ] not in {"true", "false"}:
@@ -59,20 +56,38 @@ def _query(
                 422,
                 f"due_within_hours must be an integer from 1 through {MAX_DUE_WINDOW_HOURS}",
             )
-    return _call(
-        Query.model_validate,
-        {
-            "q": q,
-            "status": status,
-            "project": project,
-            "tags": tags,
-            "sort": sort,
-            "limit": limit,
-            "offset": offset,
-            "unassigned": unassigned,
-            "due_within_hours": due_within_hours,
-        },
-    )
+    return {
+        "q": q,
+        "status": status,
+        "project": project,
+        "tags": tags,
+        "sort": sort,
+        "limit": limit,
+        "offset": offset,
+        "unassigned": unassigned,
+        "due_within_hours": due_within_hours,
+    }
+
+
+def _validated_query(request: Request, fields: dict, model: type[Query]) -> Query:
+    unknown = set(request.query_params) - model.model_fields.keys()
+    if unknown:
+        raise HTTPException(
+            422, f"Unknown action item filters: {', '.join(sorted(unknown))}"
+        )
+    return _call(model.model_validate, fields)
+
+
+def _query(request: Request, fields: dict = Depends(_query_fields)) -> Query:
+    return _validated_query(request, fields, Query)
+
+
+def _queue_query(
+    request: Request,
+    kind: QueueKind = "all",
+    fields: dict = Depends(_query_fields),
+) -> QueueQuery:
+    return _validated_query(request, {**fields, "kind": kind}, QueueQuery)
 
 
 @router.get("")
@@ -86,7 +101,7 @@ def create(body: Create):
 
 
 @router.get("/queue")
-def grouped_queue(query: Query = Depends(_query)):
+def grouped_queue(query: QueueQuery = Depends(_queue_query)):
     return _call(queue_db.list_queue, query)
 
 

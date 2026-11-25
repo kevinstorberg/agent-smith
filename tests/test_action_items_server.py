@@ -171,6 +171,7 @@ async def test_action_items_actual_mounted_mcp_and_rest_share_one_resource():
         ("action_item_get", {"item_id": True}),
         ("action_item_get", {"item_id": "1"}),
         ("action_item_list", {"limit": "10"}),
+        ("action_item_list", {"kind": "epic"}),
         (
             "action_item_update",
             {"item_id": 1, "changes": {"expected_revision": 1, "sort_key": 7}},
@@ -182,6 +183,8 @@ async def test_action_items_actual_mounted_mcp_and_rest_share_one_resource():
         ("action_item_move", {"item_id": 1, "expected_revision": 1}),
         ("action_item_queue_list", {"filters": {"limit": "10"}}),
         ("action_item_queue_list", {"filters": {"epic_id": 1}}),
+        ("action_item_queue_list", {"filters": {"kind": "single"}}),
+        ("action_item_queue_list", {"filters": {"kind": True}}),
         ("action_item_epic_create", {"title": "Epic", "request_id": "bad"}),
         (
             "action_item_epic_create",
@@ -255,6 +258,14 @@ async def test_action_items_mcp_groups_maintains_and_orders_existing_tasks_with_
         return next(root for root in queue["items"] if root["kind"] == "epic")
 
     current = await read_group()
+    epics_only = await call(
+        "action_item_queue_list", filters={"kind": "epic", "limit": 1}
+    )
+    assert epics_only["total"] == 1 and epics_only["matching_count"] == 2
+    assert epics_only["items"][0]["kind"] == "epic"
+    singles_only = await call("action_item_queue_list", filters={"kind": "item"})
+    assert singles_only["total"] == singles_only["matching_count"] == 1
+    assert singles_only["items"][0]["item"]["id"] == outside["id"]
     assert [child["item"]["title"] for child in current["children"]] == [
         "First",
         "Second",

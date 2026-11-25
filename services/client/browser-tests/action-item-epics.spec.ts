@@ -343,6 +343,18 @@ for (const collapsed of [false, true]) {
       'fixed',
     );
     await targetRow.scrollIntoViewIfNeeded();
+    // Keep the intended slot away from the viewport edge so auto-scroll cannot move it away from the pointer.
+    await page.evaluate(
+      (bounds) =>
+        window.scrollTo({
+          top: Math.max(
+            0,
+            bounds.y + bounds.height * 0.75 - window.innerHeight * 0.6,
+          ),
+          behavior: 'instant',
+        }),
+      targetPageRect,
+    );
     const pointerDestination = await page.evaluate(
       (bounds) => ({
         x: bounds.x + 30 - window.scrollX,
@@ -589,6 +601,7 @@ test('filtered whole-root edge movement preserves hidden membership and reports 
   await expect(
     region.getByRole('button', { name: 'Move Task 2 to top', exact: true }),
   ).toBeDisabled();
+  await page.keyboard.press('Escape');
   await openEpicActions(page, 'Release');
   await region
     .getByRole('button', { name: 'Move Epic Release to bottom', exact: true })

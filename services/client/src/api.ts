@@ -3,6 +3,7 @@ import type { CostResponse } from './types/costs';
 import type {
   ACTION_ITEM_SORT_OPTIONS,
   ACTION_ITEM_PROPOSAL_STATUSES,
+  ActionItemQueueKind,
 } from './constants';
 
 const BASE = '/api';
@@ -226,6 +227,10 @@ export interface ActionItemFilters extends PaginationParams {
   tags?: string[];
   status?: ActionItemStatus | 'all';
   sort?: ActionItemSort;
+}
+
+export interface ActionItemQueueFilters extends ActionItemFilters {
+  kind?: ActionItemQueueKind;
 }
 
 export interface ActionItemEpic {
@@ -1315,12 +1320,15 @@ export const api = {
       ),
   },
   actionItemQueue: {
-    list: (filters: ActionItemFilters = {}) =>
-      get<ActionItemGroupedPage>(
+    list: (filters: ActionItemQueueFilters = {}) => {
+      const params = actionItemFilterParams(filters);
+      if (filters.kind && filters.kind !== 'all') params.kind = filters.kind;
+      return get<ActionItemGroupedPage>(
         '/action-items/queue',
-        actionItemFilterParams(filters),
+        params,
         ACTION_ITEM_TIMEOUT_MS,
-      ),
+      );
+    },
     move: (body: ActionItemQueueMove) =>
       post<{ saved: boolean }>(
         '/action-items/queue/move',

@@ -96,6 +96,24 @@
   white-space: nowrap;
 }
 
+.action-items-type-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.action-items-type-filter .form-label {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.action-items-type-filter .input {
+  width: auto;
+  max-width: 14em;
+}
+
 .action-items-active-filters {
   display: flex;
   align-items: baseline;
@@ -162,6 +180,18 @@
 
   .action-items-search {
     flex: 1 1 8rem;
+  }
+
+  .action-items-type-filter {
+    display: grid;
+    flex-basis: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .action-items-type-filter .input {
+    width: 100%;
+    max-width: none;
   }
 
   .action-items-index-page .project-options-label {

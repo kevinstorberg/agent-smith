@@ -5,9 +5,14 @@ from uuid import UUID
 
 from pydantic import Field, field_validator, model_validator
 
-from services.action_items.contracts import Contract, Delete, PositiveInt, Title
+from services.action_items.contracts import Contract, Delete, PositiveInt, Query, Title
 
 Cohort = Annotated[str, Field(pattern=r"^v1:[0-9a-f]{64}$")]
+QueueKind = Literal["all", "epic", "item"]
+
+
+class QueueQuery(Query):
+    kind: QueueKind = "all"
 
 
 class EpicReference(Delete):

@@ -1,4 +1,6 @@
 import { test, expect, type APIRequest } from './fixtures';
+import type { Locator } from '@playwright/test';
+import type { ActionItemGroupedPage } from '../src/api';
 import { actionItem } from '../src/pages/__tests__/actionItemFixture';
 import {
   epicGroup,
@@ -18,6 +20,49 @@ import {
   expectMainContained,
 } from './geometry';
 import { enlargeComputedText } from './typography';
+
+async function expectEpicFrame(region: Locator) {
+  const frame = await region.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const heading = element.querySelector('.action-item-epic-heading')!;
+    return {
+      borders: [
+        style.borderTopWidth,
+        style.borderRightWidth,
+        style.borderBottomWidth,
+        style.borderLeftWidth,
+      ].map(parseFloat),
+      background: style.backgroundColor,
+      headingBackground: getComputedStyle(heading).backgroundColor,
+    };
+  });
+  for (const border of frame.borders) expect(border).toBeGreaterThan(0);
+  expect(frame.headingBackground).not.toBe(frame.background);
+  const heading = region.locator('.action-item-epic-heading');
+  await expectControlContained(heading, region);
+  const regionBounds = (await region.boundingBox())!;
+  const headingBounds = (await heading.boundingBox())!;
+  expect(headingBounds.y).toBeGreaterThanOrEqual(regionBounds.y);
+  expect(headingBounds.y + headingBounds.height).toBeLessThanOrEqual(
+    regionBounds.y + regionBounds.height,
+  );
+  const children = region.locator('.epic-children');
+  if (await children.count()) {
+    await expectControlContained(children, region);
+    await expect(children).toHaveCSS('box-shadow', 'none');
+    await expect(children.getByRole('table')).toHaveCSS('box-shadow', 'none');
+    const lastChild = (await children
+      .locator('tbody > tr')
+      .last()
+      .boundingBox())!;
+    expect(lastChild.y).toBeGreaterThanOrEqual(
+      headingBounds.y + headingBounds.height - 1,
+    );
+    expect(lastChild.y + lastChild.height).toBeLessThanOrEqual(
+      regionBounds.y + regionBounds.height + 1,
+    );
+  }
+}
 
 for (const scale of [1, 2]) {
   test(`Action Items hierarchy and action disclosures remain usable at ${scale}x text`, async ({
@@ -58,21 +103,25 @@ for (const scale of [1, 2]) {
     ]);
     security.epic.title = 'Security readiness';
     security.epic.position = 3;
+    const empty = epicGroup(12, []);
+    empty.epic.title = 'Future work';
+    empty.epic.position = 4;
     fixtureAPI.get('/api/action-items/projects', {
       items: [{ id: 1, name: 'Work', created_at: '2026-11-01T12:00:00Z' }],
       total: 1,
     });
     fixtureAPI.get('/api/action-items/epics', {
-      items: [group.epic, security.epic],
+      items: [group.epic, security.epic, empty.epic],
     });
     fixtureAPI.get('/api/action-items/queue', {
       items: [
         standalone.items[0],
         group,
         security,
-        { ...standalone.items[1], position: 4 },
+        empty,
+        { ...standalone.items[1], position: 5 },
       ],
-      total: 4,
+      total: 5,
       matching_count: 5,
     });
     await page.goto('/action-items');
@@ -97,6 +146,14 @@ for (const scale of [1, 2]) {
         restorable: true,
       });
     };
+    const type = page.getByRole('combobox', { name: 'Item type', exact: true });
+    await expectControlContained(type, page.locator('#main-content'));
+    await expectControlReachable(type);
+    await page.evaluate(() =>
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' }),
+    );
+    for (const region of await page.locator('.action-item-epic-group').all())
+      await expectEpicFrame(region);
     if (page.viewportSize()!.width >= 1400) {
       await testInfo.attach('desktop-column-widths.json', {
         body: JSON.stringify(
@@ -437,4 +494,158 @@ test('active filters stay visible when collapsed and disclosure never changes th
   expect(fixtureAPI.requests.filter((entry) => entry.method !== 'GET')).toEqual(
     [],
   );
+});
+
+test('root type requests preserve server pagination, complete Epics, and standalone membership', async ({
+  page,
+  fixtureAPI,
+}, testInfo) => {
+  const singles = queuePage({
+    items: Array.from({ length: 12 }, (_, index) =>
+      actionItem(100 + index, { title: `Single task ${index + 1}` }),
+    ),
+    total: 12,
+  }).items;
+  const release = epicGroup(10, [actionItem(2), actionItem(3)]);
+  const empty = epicGroup(11, []);
+  empty.epic.title = 'Future work';
+  const security = epicGroup(12, [actionItem(4)]);
+  security.epic.title = 'Security';
+  const roots: ActionItemGroupedPage['items'] = [
+    singles[0],
+    release,
+    singles[1],
+    empty,
+    singles[2],
+    security,
+    ...singles.slice(3),
+  ];
+  roots.forEach((root, index) => {
+    if (root.kind === 'epic') root.epic.position = index + 1;
+    else root.position = index + 1;
+  });
+  fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
+  fixtureAPI.get('/api/action-items/queue', ({ url }: APIRequest) => {
+    const kind = url.searchParams.get('kind') || 'all';
+    const filtered = roots.filter(
+      (root) => kind === 'all' || root.kind === kind,
+    );
+    const offset = Number(url.searchParams.get('offset') || 0);
+    const limit = Number(url.searchParams.get('limit') || 10);
+    return {
+      items: filtered.slice(offset, offset + limit),
+      total: filtered.length,
+      matching_count: filtered.reduce(
+        (count, root) =>
+          count + (root.kind === 'item' ? 1 : root.matching_count),
+        0,
+      ),
+    };
+  });
+  await page.goto('/action-items?offset=10&keep=1');
+  await expect(
+    page.getByText('Showing 11–15 of 15', { exact: true }),
+  ).toBeVisible();
+  const type = page.getByRole('combobox', { name: 'Item type', exact: true });
+  await expect(type).toHaveValue('all');
+  await type.selectOption('epic');
+  await expect(
+    page.getByText('Showing 1–3 of 3', { exact: true }),
+  ).toBeVisible();
+  const rootRows = page.locator(
+    '.action-item-grouped-table > tbody > tr[data-rfd-draggable-id]',
+  );
+  await expect(rootRows).toHaveCount(3);
+  expect(
+    await rootRows.evaluateAll((rows) =>
+      rows.map((row) => row.getAttribute('data-rfd-draggable-id')),
+    ),
+  ).toEqual(['epic:10', 'epic:11', 'epic:12']);
+  await expect(
+    page.getByRole('button', { name: 'Task 2', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Task 3', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Single task 1', exact: true }),
+  ).toHaveCount(0);
+  const releaseRegion = page.getByRole('region', {
+    name: 'Epic Release',
+    exact: true,
+  });
+  await releaseRegion
+    .getByRole('button', { name: 'Release', exact: true })
+    .click();
+  await expect(releaseRegion).toHaveAttribute('data-expanded', 'false');
+  await expectEpicFrame(releaseRegion);
+  const emptyRegion = page.getByRole('region', {
+    name: 'Epic Future work',
+    exact: true,
+  });
+  await expect(
+    emptyRegion.getByText('No matching action items in this Epic.'),
+  ).toBeVisible();
+  await expectEpicFrame(emptyRegion);
+  await page.screenshot({
+    path: testInfo.outputPath('collapsed-and-empty-epic-frames.png'),
+    fullPage: true,
+  });
+
+  await type.selectOption('item');
+  await expect(
+    page.getByText('Showing 1–10 of 12', { exact: true }),
+  ).toBeVisible();
+  await expect(rootRows).toHaveCount(10);
+  await expect(page.locator('.action-item-epic-group')).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Task 2', exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(
+    page.getByText('Showing 11–12 of 12', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Single task 12', exact: true }),
+  ).toBeVisible();
+  await type.selectOption('all');
+  await expect(
+    page.getByText('Showing 1–10 of 15', { exact: true }),
+  ).toBeVisible();
+  await type.selectOption('epic');
+  await expect(rootRows).toHaveCount(3);
+  await page.reload();
+  await expect(type).toHaveValue('epic');
+  await expect(
+    page.getByText('Showing 1–3 of 3', { exact: true }),
+  ).toBeVisible();
+  expect(new URL(page.url()).searchParams.get('keep')).toBe('1');
+  const reads = fixtureAPI.requests
+    .filter(
+      (entry) => new URL(entry.url).pathname === '/api/action-items/queue',
+    )
+    .map((entry) => new URL(entry.url));
+  expect(
+    reads.some(
+      (url) =>
+        url.searchParams.get('kind') === 'item' &&
+        url.searchParams.get('offset') === '10',
+    ),
+  ).toBe(true);
+  expect(
+    reads.some(
+      (url) =>
+        url.searchParams.get('kind') === 'epic' &&
+        url.searchParams.get('offset') === '0',
+    ),
+  ).toBe(true);
+  expect(reads.some((url) => !url.searchParams.has('kind'))).toBe(true);
+  expect(reads.every((url) => url.searchParams.get('kind') !== 'all')).toBe(
+    true,
+  );
+  expect(fixtureAPI.requests.filter((entry) => entry.method !== 'GET')).toEqual(
+    [],
+  );
+  await expectDocumentContained(page);
+  await expectMainContained(page);
 });
