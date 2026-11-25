@@ -85,7 +85,8 @@
   text-transform: none;
 }
 .action-items-index-page .action-item-grouped-table > thead {
-  background: var(--action-table-header-surface);
+  background: transparent;
+  border-bottom: 1px solid var(--border);
 }
 .action-items-index-page
   .action-item-grouped-table

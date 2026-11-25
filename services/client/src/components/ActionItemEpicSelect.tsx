@@ -12,6 +12,7 @@ export function ActionItemEpicSelect({
   allowCreate = false,
   retainedOption,
   ariaLabel,
+  ariaDescribedBy,
 }: {
   label: string;
   value: string;
@@ -23,6 +24,7 @@ export function ActionItemEpicSelect({
   allowCreate?: boolean;
   retainedOption?: { value: string; label: string };
   ariaLabel?: string;
+  ariaDescribedBy?: string;
 }) {
   return (
     <label>
@@ -33,6 +35,7 @@ export function ActionItemEpicSelect({
         disabled={disabled}
         autoFocus={autoFocus}
         aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
         onChange={(event) => onChange(event.target.value)}
       >
         <option value="">{defaultLabel}</option>

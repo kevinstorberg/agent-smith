@@ -5,18 +5,44 @@
 
 .action-item-proposals-page .action-item-proposal-row {
   display: grid;
-  gap: 10px;
+  gap: 6px;
   min-width: 0;
-  padding: 16px 0;
+  padding: 12px 0;
   border-bottom: 1px solid var(--border);
   overflow-wrap: anywhere;
 }
 
 .action-item-proposals-page .action-item-proposal-heading {
+  display: block;
+}
+
+.action-item-proposal-intro {
+  color: var(--text-muted);
+}
+
+.action-item-proposal-effect {
+  color: var(--text-muted);
+  max-width: 80ch;
+  margin: 0;
+  font-size: 0.9em;
+}
+
+.action-item-proposal-description-preview {
+  max-width: 80ch;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.action-item-proposal-review-footer {
   display: flex;
   align-items: start;
-  justify-content: space-between;
-  gap: 12px 24px;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin-top: 20px;
+}
+
+.action-item-proposal-review-footer > .action-item-proposal-decision-controls {
+  flex: 0 1 44em;
 }
 
 .action-item-proposals-page .action-item-proposal-identity {
@@ -82,10 +108,4 @@
 
 .action-item-proposals-page .action-item-proposal-created {
   color: var(--text-muted);
-}
-
-@media (max-width: 600px) {
-  .action-item-proposals-page .action-item-proposal-heading {
-    flex-direction: column;
-  }
 }

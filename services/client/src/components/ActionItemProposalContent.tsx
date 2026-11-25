@@ -13,6 +13,14 @@ const FIELDS = [
 ] as const;
 
 type TaskField = (typeof FIELDS)[number][0];
+const EMPTY_VALUES: Record<TaskField, string> = {
+  title: 'No title',
+  description: 'No description',
+  project: 'No project',
+  tags: 'No tags',
+  status: 'No status',
+  due_at: 'No deadline',
+};
 
 function valueOf(
   item: Partial<ActionItem> | null | undefined,
@@ -36,8 +44,27 @@ function TaskValue({
   }
   return (
     <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-      {Array.isArray(value) ? value.join(', ') || 'None' : value || 'None'}
+      {Array.isArray(value)
+        ? value.join(', ') || EMPTY_VALUES[field]
+        : value || EMPTY_VALUES[field]}
     </span>
+  );
+}
+
+export function ActionItemProposalDescriptionPreview({
+  description,
+}: {
+  description?: string;
+}) {
+  const text = description?.trim();
+  if (!text) return null;
+  const paragraph = text.split(/\n\s*\n/, 1)[0];
+  const preview = Array.from(paragraph).slice(0, 180).join('');
+  return (
+    <p className="action-item-proposal-description-preview">
+      {preview}
+      {preview === text ? '' : '…'}
+    </p>
   );
 }
 
@@ -74,7 +101,7 @@ export function ActionItemProposalContent({
             isUpdate ? 'Proposed action item changes' : 'Proposed action item'
           }
         >
-          <thead>
+          <thead className="visually-hidden">
             <tr>
               <th>Field</th>
               {isUpdate && <th>Before</th>}
@@ -83,7 +110,11 @@ export function ActionItemProposalContent({
           </thead>
           <tbody role="rowgroup">
             {fields.map(([field, label]) => (
-              <tr key={field} role="row">
+              <tr
+                key={field}
+                role="row"
+                className={isUpdate ? 'action-item-proposal-change' : undefined}
+              >
                 <th scope="row" role="rowheader">
                   {label}
                 </th>
@@ -107,7 +138,7 @@ export function ActionItemProposalContent({
             label="Current saved action item"
             className="action-item-proposal-table"
           >
-            <thead>
+            <thead className="visually-hidden">
               <tr>
                 <th>Field</th>
                 <th>Current value</th>

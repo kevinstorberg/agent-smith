@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type {
   ActionItemEpic,
   ActionItemEpicReference,
@@ -79,11 +79,31 @@ export function ActionItemProposalDecision({
     label: string;
     placement: ActionItemProposalPlacement;
   } | null>(null);
+  const descriptionId = useId();
   const epics = catalog.data?.items ?? [];
   const parentKnown =
     proposal.action === 'create' || proposal.current_parent !== undefined;
   const currentParent =
     proposal.action === 'create' ? null : (proposal.current_parent ?? null);
+  const currentEpic =
+    currentParent && epics.find((epic) => epic.id === currentParent.id);
+  const currentPlacement = currentParent
+    ? currentEpic
+      ? epicOptionLabel(currentEpic, epics)
+      : `Epic #${currentParent.id} (name unavailable)`
+    : 'No Epic';
+  const placementContext =
+    proposal.action === 'update'
+      ? parentKnown
+        ? `Current placement: ${currentPlacement}`
+        : 'Refresh the proposal before choosing an Epic.'
+      : !selection
+        ? 'No Epic creates a standalone action item.'
+        : `Save in: ${selection.label}`;
+  const destinationContext =
+    proposal.action === 'update' && selection
+      ? `Save in: ${selection.label}`
+      : null;
   const destination =
     selection &&
     epics.find((epic) => epic.id === selection.placement.destination.id);
@@ -101,8 +121,13 @@ export function ActionItemProposalDecision({
     <div className="action-item-proposal-decision-controls">
       <div className="action-item-proposal-epic-choice">
         <ActionItemEpicSelect
-          label="Epic"
+          label="Save in"
           ariaLabel={`Epic for ${proposal.target_name}`}
+          ariaDescribedBy={
+            placementContext
+              ? `${descriptionId}${destinationContext ? ` ${descriptionId}-destination` : ''}`
+              : undefined
+          }
           value={
             selection
               ? earlier
@@ -111,7 +136,7 @@ export function ActionItemProposalDecision({
               : ''
           }
           defaultLabel={
-            proposal.action === 'create' ? 'No Epic' : 'Keep current Epic'
+            proposal.action === 'create' ? 'No Epic' : 'Keep current'
           }
           epics={epics}
           disabled={busy || !parentKnown}
@@ -140,17 +165,6 @@ export function ActionItemProposalDecision({
             });
           }}
         />
-        {earlier && (
-          <span className="text-muted-sm">
-            Earlier Epic details are kept for retry. Choose again to use current
-            details.
-          </span>
-        )}
-        {!parentKnown && (
-          <span className="text-muted-sm">
-            Refresh the proposal before choosing an Epic.
-          </span>
-        )}
       </div>
       <div className="action-item-proposal-decision-buttons">
         <button
@@ -175,6 +189,28 @@ export function ActionItemProposalDecision({
           Reject
         </button>
       </div>
+      {placementContext && (
+        <span
+          id={descriptionId}
+          className="text-muted-sm action-item-proposal-current-placement"
+        >
+          {placementContext}
+        </span>
+      )}
+      {earlier && (
+        <span className="text-muted-sm action-item-proposal-current-placement">
+          Earlier Epic details are kept for retry. Choose again to use current
+          details.
+        </span>
+      )}
+      {destinationContext && (
+        <span
+          id={`${descriptionId}-destination`}
+          className="text-muted-sm action-item-proposal-current-placement"
+        >
+          {destinationContext}
+        </span>
+      )}
     </div>
   );
 }

@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { ActionItemProposalsIndexPage } from '../ActionItemProposalsIndexPage';
 import { actionItemProposal } from './actionItemProposalFixture';
@@ -253,7 +259,14 @@ describe('Proposed Action Items', () => {
     const { container } = render();
     expect(await screen.findByText('Creates completed item')).toBeVisible();
     expect(screen.getByText(/^Due/)).toHaveTextContent('November 25, 2026');
-    expect(screen.getByText('Complete supporting context')).not.toBeVisible();
+    expect(
+      container.querySelector('.action-item-proposal-description-preview'),
+    ).toHaveTextContent('Complete supporting context');
+    expect(
+      within(container.querySelector('details')!).getByText(
+        'Complete supporting context',
+      ),
+    ).not.toBeVisible();
     expect(container.querySelector('details')).not.toHaveAttribute('open');
     expect(
       screen.getAllByRole('link', { name: proposal.target_name }),
@@ -261,11 +274,44 @@ describe('Proposed Action Items', () => {
     expect(
       screen.queryByRole('link', { name: 'Review new Action Item' }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText('Details & evidence'));
-    expect(screen.getByText('Complete supporting context')).toBeVisible();
+    fireEvent.click(screen.getByText('Review proposed item & evidence'));
+    expect(
+      within(container.querySelector('details')!).getByText(
+        'Complete supporting context',
+      ),
+    ).toBeVisible();
     expect(
       screen.queryByRole('rowheader', { name: 'Title' }),
     ).not.toBeInTheDocument();
+  });
+
+  it('shows the proposed create project rather than its review context', async () => {
+    vi.mocked(api.actionItemProposals.list).mockResolvedValue({
+      items: [
+        actionItemProposal({
+          action: 'create',
+          target_id: null,
+          base_version: null,
+          current_target: null,
+          before_snapshot: null,
+          project: 'Review context',
+          proposed_item: {
+            title: 'New partner task',
+            project: 'Proposed project',
+            status: 'open',
+          },
+        }),
+      ],
+      total: 1,
+    });
+    const { container } = render();
+    await screen.findByText('New action item');
+    expect(
+      container.querySelector('.action-item-proposal-metadata'),
+    ).toHaveTextContent('Proposed project');
+    expect(
+      container.querySelector('.action-item-proposal-metadata'),
+    ).not.toHaveTextContent('Review context');
   });
 
   it('omits an empty create table without changing the detail navigation', async () => {
@@ -286,7 +332,7 @@ describe('Proposed Action Items', () => {
     expect(
       await screen.findByRole('link', { name: 'Send the release report' }),
     ).toHaveAttribute('href', '/action-items/proposals/1');
-    fireEvent.click(screen.getByText('Details & evidence'));
+    fireEvent.click(screen.getByText('Review proposed item & evidence'));
     expect(
       screen.queryByRole('region', {
         name: 'Proposed action item',
@@ -340,9 +386,9 @@ describe('Proposed Action Items', () => {
         expect.objectContaining({ q: 'release' }),
       ),
     );
-    expect(
-      screen.getByPlaceholderText('Search proposed action items...'),
-    ).toHaveValue('release');
+    expect(screen.getByPlaceholderText('Search proposals…')).toHaveValue(
+      'release',
+    );
   });
 
   it('does not refresh another view after a pending decision unmounts', async () => {
@@ -584,7 +630,7 @@ describe('Proposed Action Items', () => {
     expect(
       screen.getByRole('heading', { name: 'Proposed Action Items' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('Update')).toBeInTheDocument();
+    expect(screen.getByText('Update existing action item')).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Generate now' }),
     ).not.toBeInTheDocument();
@@ -606,7 +652,7 @@ describe('Proposed Action Items', () => {
       total: 1,
     });
     render();
-    expect(await screen.findByText('New')).toBeInTheDocument();
+    expect(await screen.findByText('New action item')).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: 'Saved action items' }),
     ).toHaveAttribute('href', '/action-items');
@@ -627,10 +673,9 @@ describe('Proposed Action Items', () => {
 
   it('searches its own records', async () => {
     render();
-    fireEvent.change(
-      screen.getByPlaceholderText('Search proposed action items...'),
-      { target: { value: 'release' } },
-    );
+    fireEvent.change(screen.getByPlaceholderText('Search proposals…'), {
+      target: { value: 'release' },
+    });
     await waitFor(() =>
       expect(api.actionItemProposals.list).toHaveBeenLastCalledWith(
         'pending',

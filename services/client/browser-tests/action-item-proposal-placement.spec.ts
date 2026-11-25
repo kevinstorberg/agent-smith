@@ -216,7 +216,7 @@ test('detail acceptance uses fresh parent and destination only after explicit re
   await expectDecisionRows(page);
   await expectControlContained(select, page.locator('#main-content'));
   await expectControlContained(
-    page.getByRole('button', { name: 'Approve', exact: true }),
+    page.getByRole('button', { name: 'Accept', exact: true }),
     page.locator('#main-content'),
   );
   await page.screenshot({
@@ -224,7 +224,7 @@ test('detail acceptance uses fresh parent and destination only after explicit re
     fullPage: true,
   });
   expect(bodies).toEqual([]);
-  await page.getByRole('button', { name: 'Approve', exact: true }).click();
+  await page.getByRole('button', { name: 'Accept', exact: true }).click();
   await expect(
     page.getByRole('link', { name: 'Open saved action item' }),
   ).toHaveAttribute('href', '/action-items/12');
@@ -274,11 +274,11 @@ test('an unavailable catalog leaves ordinary update acceptance and rejection ind
   await expect(page.getByRole('alert')).toContainText('Could not load Epics');
   await expect(
     page.getByRole('combobox', { name: /Epic for/ }).locator('option:checked'),
-  ).toHaveText('Keep current Epic');
+  ).toHaveText('Keep current');
   await expect(
     page.getByRole('button', { name: 'Reject', exact: true }),
   ).toBeEnabled();
-  await page.getByRole('button', { name: 'Approve', exact: true }).click();
+  await page.getByRole('button', { name: 'Accept', exact: true }).click();
   await expect(
     page.getByRole('link', { name: 'Open saved action item' }),
   ).toBeVisible();

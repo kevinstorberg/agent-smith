@@ -17,6 +17,74 @@ test.beforeEach(({ fixtureAPI }) => {
   fixtureAPI.get('/api/action-items/epics', { items: [] });
 });
 
+test('an added description has explicit reviewed values before its placement and decision controls', async ({
+  page,
+  fixtureAPI,
+}, testInfo) => {
+  const original = actionItemProposal();
+  const before = {
+    ...original.before_snapshot,
+    title: 'Coordinate the partner meeting',
+    description: '',
+  };
+  const description =
+    'Schedule a technical call before Thursday and confirm how the partner will send the screening data.';
+  const proposal = actionItemProposal({
+    target_name: before.title,
+    before_snapshot: before,
+    current_target: before,
+    proposed_item: { ...before, description },
+  });
+  fixtureAPI.get('/api/action-item-proposals', { items: [proposal], total: 1 });
+  fixtureAPI.get('/api/action-item-proposals/counts', {
+    pending: 1,
+    approved: 0,
+    rejected: 0,
+    superseded: 0,
+  });
+  await page.goto('/action-items/proposals');
+  const row = page
+    .getByRole('list', { name: 'Proposed Action Items', exact: true })
+    .getByRole('listitem');
+  const field = row
+    .getByRole('rowheader', { name: 'Description', exact: true })
+    .locator('..');
+  await expect(field.getByRole('cell').nth(0)).toHaveText('No description');
+  await expect(field.getByRole('cell').nth(1)).toHaveText(description);
+  await expect(row.getByText('Current placement: No Epic')).toBeVisible();
+  for (const scale of [1, 2]) {
+    if (scale === 2) await enlargeComputedText(page);
+    const select = row.getByRole('combobox', { name: /Epic for/ });
+    const accept = row.getByRole('button', { name: 'Accept', exact: true });
+    const reject = row.getByRole('button', { name: 'Reject', exact: true });
+    const [contentBox, selectBox, acceptBox, rejectBox] = await Promise.all([
+      field.boundingBox(),
+      select.boundingBox(),
+      accept.boundingBox(),
+      reject.boundingBox(),
+    ]);
+    expect(
+      selectBox!.y,
+      'Placement follows the full reviewed change',
+    ).toBeGreaterThanOrEqual(contentBox!.y + contentBox!.height);
+    expect(
+      Math.abs(acceptBox!.y - rejectBox!.y),
+      'Accept and Reject stay together',
+    ).toBeLessThanOrEqual(1);
+    for (const control of [select, accept, reject])
+      await expectControlContained(control, row);
+    await expectDocumentContained(page);
+    await expectMainContained(page);
+    await page.screenshot({
+      path: testInfo.outputPath(`description-addition-${scale}x.png`),
+      fullPage: true,
+    });
+  }
+  expect(fixtureAPI.requests.filter((entry) => entry.method !== 'GET')).toEqual(
+    [],
+  );
+});
+
 function compactCreateProposals(): ActionItemProposal[] {
   return [
     {
@@ -111,9 +179,16 @@ test('compact create rows expose decisions and keep complete context recoverable
     ).toHaveCount(1);
     await expect(row.locator('details')).not.toHaveAttribute('open');
     await expect(
-      row.getByText(proposals[index].proposed_item!.description!, {
-        exact: true,
-      }),
+      row.locator('.action-item-proposal-description-preview'),
+    ).toContainText(
+      proposals[index].proposed_item!.description!.split('\n\n')[0],
+    );
+    await expect(
+      row
+        .locator('details')
+        .getByText(proposals[index].proposed_item!.description!, {
+          exact: true,
+        }),
     ).not.toBeVisible();
     for (const name of ['Accept', 'Reject'])
       await expectControlContained(
@@ -479,7 +554,7 @@ test('meeting proposal evidence and reviewed fields lead to one explicit approva
     body: await page.screenshot({ fullPage: true }),
     contentType: 'image/png',
   });
-  await page.getByRole('button', { name: 'Approve', exact: true }).click();
+  await page.getByRole('button', { name: 'Accept', exact: true }).click();
   await expect(
     page.getByRole('link', { name: 'Open saved action item' }),
   ).toHaveAttribute('href', '/action-items/12');
@@ -521,7 +596,7 @@ test('rejecting a new task proposal never writes an action item', async ({
   await page.getByRole('button', { name: 'Reject', exact: true }).click();
   await expect(page.getByText('rejected', { exact: true })).toBeVisible();
   await expect(
-    page.getByRole('button', { name: 'Approve', exact: true }),
+    page.getByRole('button', { name: 'Accept', exact: true }),
   ).toHaveCount(0);
   expect(fixtureAPI.requests.filter((entry) => entry.method !== 'GET')).toEqual(
     [
@@ -551,7 +626,7 @@ test('stale task proposals preserve their reviewed comparison and block approval
     'This action item changed',
   );
   await expect(
-    page.getByRole('button', { name: 'Approve', exact: true }),
+    page.getByRole('button', { name: 'Accept', exact: true }),
   ).toBeDisabled();
   await expect(
     page.getByRole('button', { name: 'Reject', exact: true }),

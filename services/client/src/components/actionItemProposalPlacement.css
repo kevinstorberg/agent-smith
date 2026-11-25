@@ -30,7 +30,7 @@
   align-items: baseline;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 12px;
+  margin: 0;
   color: var(--text-muted);
 }
 .action-item-proposal-epic-status button {
@@ -38,11 +38,17 @@
 }
 .action-item-proposals-page .action-item-proposal-actions {
   min-width: 0;
-  max-width: 100%;
-  flex: 0 1 45%;
+  max-width: 44em;
+  width: 100%;
 }
-.action-item-proposals-page .action-item-proposal-identity {
-  flex: 1 1 50%;
+.action-item-proposal-current-placement {
+  flex: 0 0 100%;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.action-item-proposals-page .filters > .action-item-proposal-epic-status {
+  align-self: end;
+  padding-block: 8px;
 }
 @media (max-width: 600px) {
   .action-item-proposal-epic-choice {

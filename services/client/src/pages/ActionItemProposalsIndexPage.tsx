@@ -2,7 +2,10 @@ import { useCallback, useRef } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api';
 import type { ActionItemProposal } from '../api';
-import { ActionItemProposalContent } from '../components/ActionItemProposalContent';
+import {
+  ActionItemProposalContent,
+  ActionItemProposalDescriptionPreview,
+} from '../components/ActionItemProposalContent';
 import { ActionItemProposalSupersession } from '../components/ActionItemProposalSupersession';
 import {
   ActionItemProposalDecision,
@@ -20,6 +23,7 @@ import { usePagination } from '../hooks/usePagination';
 import { usePolling } from '../hooks/usePolling';
 import { useViewPreferences } from '../hooks/useViewPreferences';
 import { parseViewField } from '../utils/viewPreferences';
+import { actionItemProposalProject } from '../utils/actionItems';
 import './actionItemProposals.css';
 
 export function ActionItemProposalsIndexPage() {
@@ -92,10 +96,14 @@ export function ActionItemProposalsIndexPage() {
           Saved action items
         </Link>
       </div>
+      <p className="action-item-proposal-intro">
+        Accept creates a new action item or applies the displayed changes;
+        Reject leaves saved items unchanged.
+      </p>
       <FilterBar
         nameValue={q}
         onNameChange={(value) => preferences.setField('q', value)}
-        namePlaceholder="Search proposed action items..."
+        namePlaceholder="Search proposals…"
       >
         <label>
           <span className="form-label">Status</span>
@@ -124,16 +132,16 @@ export function ActionItemProposalsIndexPage() {
             ))}
           </select>
         </label>
+        {hasPending && (
+          <ActionItemProposalEpicCatalogStatus
+            catalog={catalog}
+            busy={busy}
+            onRefresh={() => {
+              void Promise.all([catalog.refresh(), refresh()]);
+            }}
+          />
+        )}
       </FilterBar>
-      {hasPending && (
-        <ActionItemProposalEpicCatalogStatus
-          catalog={catalog}
-          busy={busy}
-          onRefresh={() => {
-            void Promise.all([catalog.refresh(), refresh()]);
-          }}
-        />
-      )}
       {review.error && (
         <p role="alert">
           Could not decide this Action Item: {review.error.message}
@@ -176,6 +184,7 @@ export function ActionItemProposalsIndexPage() {
             proposal.source_available === false ||
             proposal.target_stale;
           const isCreate = proposal.action === 'create';
+          const itemProject = actionItemProposalProject(proposal);
           return (
             <li
               key={proposal.id}
@@ -193,11 +202,16 @@ export function ActionItemProposalsIndexPage() {
                     </Link>
                   </h3>
                   <div className="action-item-proposal-metadata">
-                    <span>{isCreate ? 'New' : 'Update'}</span>
-                    {proposal.project && <span>{proposal.project}</span>}
-                    {(!status || proposal.status !== 'pending') && (
-                      <span>{proposal.status}</span>
-                    )}
+                    <span>
+                      {isCreate
+                        ? 'New action item'
+                        : 'Update existing action item'}
+                    </span>
+                    {itemProject && <span>{itemProject}</span>}
+                    {isCreate &&
+                      proposal.proposed_item?.tags?.map((tag) => (
+                        <span key={tag}>{tag}</span>
+                      ))}
                     {isCreate && proposal.proposed_item?.due_at && (
                       <div className="action-item-proposal-deadline">
                         Due{' '}
@@ -214,23 +228,10 @@ export function ActionItemProposalsIndexPage() {
                           Creates {proposal.proposed_item.status} item
                         </span>
                       )}
+                    {(!status || proposal.status !== 'pending') && (
+                      <span>{proposal.status}</span>
+                    )}
                   </div>
-                </div>
-                <div className="action-item-proposal-actions">
-                  {proposal.status === 'pending' && (
-                    <ActionItemProposalDecision
-                      proposal={proposal}
-                      catalog={catalog}
-                      busy={busy || updating || Boolean(proposals.error)}
-                      saving={pendingId === proposal.id}
-                      approveDisabled={
-                        Boolean(stale) || !proposal.proposed_item
-                      }
-                      onDecide={(action, placement) => {
-                        void review.decide(proposal, action, placement);
-                      }}
-                    />
-                  )}
                 </div>
               </div>
               <ActionItemProposalSupersession proposal={proposal} />
@@ -240,6 +241,11 @@ export function ActionItemProposalsIndexPage() {
                   unavailable; generate a fresh proposal before accepting.
                 </p>
               )}
+              {isCreate && (
+                <ActionItemProposalDescriptionPreview
+                  description={proposal.proposed_item?.description}
+                />
+              )}
               {!isCreate && proposal.proposed_item && (
                 <ActionItemProposalContent
                   proposal={proposal}
@@ -248,7 +254,11 @@ export function ActionItemProposalsIndexPage() {
                 />
               )}
               <details className="action-item-proposal-details">
-                <summary>Details &amp; evidence</summary>
+                <summary>
+                  {isCreate
+                    ? 'Review proposed item & evidence'
+                    : 'Details & evidence'}
+                </summary>
                 <div className="action-item-proposal-context">
                   {isCreate && proposal.proposed_item && (
                     <ActionItemProposalContent
@@ -270,6 +280,20 @@ export function ActionItemProposalsIndexPage() {
                   </div>
                 </div>
               </details>
+              <div className="action-item-proposal-actions">
+                {proposal.status === 'pending' && (
+                  <ActionItemProposalDecision
+                    proposal={proposal}
+                    catalog={catalog}
+                    busy={busy || updating || Boolean(proposals.error)}
+                    saving={pendingId === proposal.id}
+                    approveDisabled={Boolean(stale) || !proposal.proposed_item}
+                    onDecide={(action, placement) => {
+                      void review.decide(proposal, action, placement);
+                    }}
+                  />
+                )}
+              </div>
             </li>
           );
         })}
