@@ -117,7 +117,13 @@ for (const scale of [1, 2] as const) {
       await expect(handle).toBeEnabled();
       if (scale === 2)
         await enlargeComputedText(page, 2, { preserveMotion: true });
-      await handle.scrollIntoViewIfNeeded();
+      await handle.evaluate((element) =>
+        element.scrollIntoView({
+          behavior: 'instant',
+          block: 'center',
+          inline: 'nearest',
+        }),
+      );
       const start = (await handle.boundingBox())!;
       await page.mouse.move(
         start.x + start.width / 2,
