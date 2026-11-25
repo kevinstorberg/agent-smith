@@ -315,13 +315,22 @@ for (const input of ['keyboard', 'pointer'] as const) {
       });
       await expect(edge).toHaveAttribute('data-selected', 'true');
     }
-    await expect(page.locator('[id^="rfd-announcement"]')).toContainText(
-      input === 'keyboard'
-        ? 'position 1 to position 3'
-        : 'Move Task 1 after Task 4',
-    );
+    if (input === 'keyboard')
+      await expect(page.locator('[id^="rfd-announcement"]')).toContainText(
+        'position 1 to position 3',
+      );
+    else
+      await expect(
+        page
+          .getByRole('status')
+          .filter({ hasText: 'Move Task 1 after Task 4' }),
+      ).toBeVisible();
     if (input === 'keyboard') await page.keyboard.press('Space');
     else await page.mouse.up();
+    if (input === 'pointer')
+      await expect(page.locator('[id^="rfd-announcement"]')).toContainText(
+        'Move Task 1 after Task 4. Checking the current list.',
+      );
     await expect.poll(() => writes.length).toBe(1);
     await expect(
       page.locator(

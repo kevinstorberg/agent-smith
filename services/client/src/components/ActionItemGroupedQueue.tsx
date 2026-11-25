@@ -402,10 +402,8 @@ export function ActionItemGroupedQueue({
         onDragStart={(start) => queue.startDrag(start)}
         onDragUpdate={(update, provided) => {
           const movement = queue.externalDragAnnouncement();
-          if (movement)
-            provided.announce(
-              `${movement}. Press Space to drop, or Escape to cancel.`,
-            );
+          // External targets can change without a new SDK impact, so their live region owns updates.
+          if (movement) provided.announce('');
           else if (
             !update.destination &&
             update.draggableId.startsWith('item:')
