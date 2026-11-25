@@ -15,6 +15,7 @@ inherited from the parent role: every role names its own model.
 Pure environment parsing (no LangChain, no HTTP), so the chat participant
 registry can validate participants without building clients.
 """
+
 from __future__ import annotations
 
 import json
@@ -35,13 +36,18 @@ SETTINGS_REFERENCE = "See the graph model settings in .env.default."
 _REGION = r"[a-z]{2}(?:-[a-z]+)+-\d+"
 _REGION_PATTERN = re.compile(_REGION)
 _BEDROCK_URL_PATTERN = re.compile(
-    rf"https://bedrock-[a-z0-9-]+\.(?P<region>{_REGION})\.(?:api\.aws|amazonaws\.com)(?:/\S*)?"
+    rf"https://(?P<service>bedrock-[a-z0-9-]+)\.(?P<region>{_REGION})"
+    rf"\.(?P<domain>api\.aws|amazonaws\.com)(?P<path>/\S*)?"
 )
 _REGION_PLACEHOLDER = "{region}"
-_PLACEHOLDER_API_KEYS = frozenset({"", "your-bedrock-api-key", "local-kimi", "changeme"})
+_PLACEHOLDER_API_KEYS = frozenset(
+    {"", "your-bedrock-api-key", "local-kimi", "changeme"}
+)
 _MIN_API_KEY_LENGTH = 20
 _BOOLEANS = {"true": True, "false": False}
-_PROVIDER_REQUIREMENT = f"one of the supported providers: {', '.join(SUPPORTED_PROVIDERS)}"
+_PROVIDER_REQUIREMENT = (
+    f"one of the supported providers: {', '.join(SUPPORTED_PROVIDERS)}"
+)
 _BEDROCK_URL_EXAMPLES = (
     "https://bedrock-mantle.{region}.api.aws/v1 or "
     "https://bedrock-runtime.{region}.amazonaws.com/openai/v1"
@@ -80,13 +86,36 @@ T = TypeVar("T")
 
 
 @dataclass(frozen=True)
+class BedrockApiKeyAuth:
+    api_key: str = field(repr=False)
+
+
+@dataclass(frozen=True)
+class BedrockProfileAuth:
+    profile_name: str
+    expected_account_id: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.profile_name, str) or not self.profile_name.strip():
+            raise ValueError(
+                "GRAPH_MODEL_AWS_PROFILE must name an explicit AWS profile"
+            )
+        if not isinstance(self.expected_account_id, str) or not re.fullmatch(
+            r"[0-9]{12}", self.expected_account_id
+        ):
+            raise ValueError(
+                "GRAPH_MODEL_AWS_ACCOUNT_ID must be a 12-digit AWS account ID"
+            )
+
+
+@dataclass(frozen=True)
 class GraphModelConfig:
     role: str
     settings_chain: tuple[str, ...]
     provider: str
     model_id: str
     server_url: str
-    server_api_key: str = field(repr=False)
+    authentication: BedrockApiKeyAuth | BedrockProfileAuth = field(repr=False)
     temperature: float
     top_p: float
     max_tokens: int
@@ -94,6 +123,12 @@ class GraphModelConfig:
     request_timeout: float
     streaming: bool
     extra_body: Mapping[str, Any] | None
+
+    @property
+    def region(self) -> str:
+        match = _BEDROCK_URL_PATTERN.fullmatch(self.server_url)
+        assert match is not None, "Graph model endpoint must be a validated Bedrock URL"
+        return match["region"]
 
 
 def load_model_config(
@@ -103,18 +138,30 @@ def load_model_config(
     env: Mapping[str, str] | None = None,
 ) -> GraphModelConfig:
     settings = _role_settings(role, fallback_role, env)
-    provider = settings.require("MODEL_PROVIDER", _parse_provider, _PROVIDER_REQUIREMENT)
+    provider = settings.require(
+        "MODEL_PROVIDER", _parse_provider, _PROVIDER_REQUIREMENT
+    )
+    model_id = _model_id(settings)
+    server_url = _bedrock_server_url(settings)
     return GraphModelConfig(
         role=role,
         settings_chain=settings.prefixes,
         provider=provider,
-        model_id=_model_id(settings),
-        server_url=_bedrock_server_url(settings),
-        server_api_key=_bedrock_api_key(settings),
-        temperature=settings.require("MODEL_TEMPERATURE", _non_negative_float, "a number >= 0"),
-        top_p=settings.require("MODEL_TOP_P", _unit_interval_float, "a number in (0, 1]"),
-        max_tokens=settings.require("MODEL_MAX_TOKENS", _positive_int, "a positive integer"),
-        max_retries=settings.require("MODEL_MAX_RETRIES", _non_negative_int, "an integer >= 0"),
+        model_id=model_id,
+        server_url=server_url,
+        authentication=_authentication(settings, server_url),
+        temperature=settings.require(
+            "MODEL_TEMPERATURE", _non_negative_float, "a number >= 0"
+        ),
+        top_p=settings.require(
+            "MODEL_TOP_P", _unit_interval_float, "a number in (0, 1]"
+        ),
+        max_tokens=settings.require(
+            "MODEL_MAX_TOKENS", _positive_int, "a positive integer"
+        ),
+        max_retries=settings.require(
+            "MODEL_MAX_RETRIES", _non_negative_int, "an integer >= 0"
+        ),
         request_timeout=_request_timeout(settings),
         streaming=settings.require("MODEL_STREAMING", _parse_boolean, "true or false"),
         extra_body=_extra_body(settings),
@@ -142,7 +189,9 @@ def resolve_request_timeout(
 
 
 def _request_timeout(settings: _RoleSettings) -> float:
-    return settings.require("MODEL_REQUEST_TIMEOUT", _positive_float, "a positive number of seconds")
+    return settings.require(
+        "MODEL_REQUEST_TIMEOUT", _positive_float, "a positive number of seconds"
+    )
 
 
 @dataclass(frozen=True)
@@ -190,7 +239,9 @@ def _role_settings(
     fallback_role: str | None,
     env: Mapping[str, str] | None,
 ) -> _RoleSettings:
-    assert isinstance(role, str) and role.strip(), "graph model role must be a non-empty string"
+    assert isinstance(role, str) and role.strip(), (
+        "graph model role must be a non-empty string"
+    )
     env = os.environ if env is None else env
     role_prefix = env_prefix(role)
     levels = [role_prefix]
@@ -225,7 +276,9 @@ def _validated_preset(
 ) -> str:
     setting = f"{role_prefix}_MODEL_PRESET"
     if not preset_name.strip():
-        raise ValueError(f"{setting} is empty; name a preset or remove the setting. {SETTINGS_REFERENCE}")
+        raise ValueError(
+            f"{setting} is empty; name a preset or remove the setting. {SETTINGS_REFERENCE}"
+        )
     try:
         preset = env_prefix(preset_name)
     except ValueError as exc:
@@ -252,7 +305,9 @@ def _reject_obsolete_settings(prefixes: list[str], env: Mapping[str, str]) -> No
         for suffix, reason in _OBSOLETE_SUFFIXES.items():
             name = f"{prefix}_{suffix}"
             if name in env:
-                raise ValueError(f"{name} is obsolete: {reason}. Remove it. {SETTINGS_REFERENCE}")
+                raise ValueError(
+                    f"{name} is obsolete: {reason}. Remove it. {SETTINGS_REFERENCE}"
+                )
 
 
 def _model_id(settings: _RoleSettings) -> str:
@@ -272,7 +327,9 @@ def _bedrock_server_url(settings: _RoleSettings) -> str:
     if region is not None:
         region = region.strip()
         if not _REGION_PATTERN.fullmatch(region):
-            raise ValueError(f"{region_source} must be an AWS region such as us-east-1, got {region!r}")
+            raise ValueError(
+                f"{region_source} must be an AWS region such as us-east-1, got {region!r}"
+            )
 
     if _REGION_PLACEHOLDER in template:
         if region is None:
@@ -295,7 +352,11 @@ def _bedrock_server_url(settings: _RoleSettings) -> str:
             f"{source} must be an https Amazon Bedrock endpoint such as "
             f"{_BEDROCK_URL_EXAMPLES}, got {template!r}"
         )
-    if region is not None and _REGION_PLACEHOLDER not in template and match["region"] != region:
+    if (
+        region is not None
+        and _REGION_PLACEHOLDER not in template
+        and match["region"] != region
+    ):
         raise ValueError(
             f"{source} targets region {match['region']}, but {region_source} is {region!r}; "
             f"use {_REGION_PLACEHOLDER} in the URL or make them agree"
@@ -307,13 +368,62 @@ def _bedrock_api_key(settings: _RoleSettings) -> str:
     found = settings.find("MODEL_SERVER_API_KEY")
     key = found[1].strip() if found else ""
     if key in _PLACEHOLDER_API_KEYS or len(key) < _MIN_API_KEY_LENGTH:
-        source = found[0] if found else f"one of {', '.join(settings.candidates('MODEL_SERVER_API_KEY'))}"
+        source = (
+            found[0]
+            if found
+            else f"one of {', '.join(settings.candidates('MODEL_SERVER_API_KEY'))}"
+        )
         raise ValueError(
             f"{source} must be a real Amazon Bedrock API key for graph model role "
             f"'{settings.role}' (Bedrock console -> API keys -> create long-term key). "
             f"{SETTINGS_REFERENCE}"
         )
     return key
+
+
+def _authentication(
+    settings: _RoleSettings, server_url: str
+) -> BedrockApiKeyAuth | BedrockProfileAuth:
+    suffixes = ("_MODEL_AUTH_MODE", "_MODEL_AWS_PROFILE", "_MODEL_AWS_ACCOUNT_ID")
+    for name in settings.env:
+        if name.endswith(suffixes) and name not in {
+            f"GRAPH{suffix}" for suffix in suffixes
+        }:
+            raise ValueError(
+                f"{name} is not supported: model authentication is application-wide; use GRAPH_MODEL_* settings"
+            )
+    mode = settings.env.get("GRAPH_MODEL_AUTH_MODE", "api_key").strip().lower()
+    if mode == "api_key":
+        return BedrockApiKeyAuth(_bedrock_api_key(settings))
+    if mode != "aws_profile":
+        raise ValueError("GRAPH_MODEL_AUTH_MODE must be api_key or aws_profile")
+    bedrock_profile_region(server_url)
+    return BedrockProfileAuth(
+        profile_name=settings.env.get("GRAPH_MODEL_AWS_PROFILE", "").strip(),
+        expected_account_id=settings.env.get("GRAPH_MODEL_AWS_ACCOUNT_ID", "").strip(),
+    )
+
+
+def bedrock_profile_region(server_url: str) -> str:
+    match = _BEDROCK_URL_PATTERN.fullmatch(server_url)
+    endpoints = {
+        ("bedrock-runtime", "amazonaws.com", "/openai/v1"),
+        ("bedrock-mantle", "api.aws", "/v1"),
+        ("bedrock-mantle", "api.aws", "/openai/v1"),
+    }
+    if (
+        match is None
+        or (
+            match["service"],
+            match["domain"],
+            (match["path"] or "").removesuffix("/"),
+        )
+        not in endpoints
+    ):
+        raise ValueError(
+            "AWS profile authentication requires a Bedrock runtime /openai/v1 or mantle /v1 or /openai/v1 endpoint"
+        )
+    return match["region"]
 
 
 def _extra_body(settings: _RoleSettings) -> Mapping[str, Any] | None:
@@ -326,14 +436,17 @@ def _extra_body(settings: _RoleSettings) -> Mapping[str, Any] | None:
     except ValueError:
         body = None
     if not isinstance(body, dict):
-        raise ValueError(f"{source} must be a JSON object such as '{{\"service_tier\": \"flex\"}}', got {raw!r}")
+        raise ValueError(
+            f'{source} must be a JSON object such as \'{{"service_tier": "flex"}}\', got {raw!r}'
+        )
     for key in body:
         if key in _MANAGED_REQUEST_FIELDS:
             dedicated = _MANAGED_REQUEST_FIELDS[key]
-            remedy = f"set {dedicated} instead" if dedicated else "the graph runtime sets it"
+            remedy = (
+                f"set {dedicated} instead" if dedicated else "the graph runtime sets it"
+            )
             raise ValueError(f"{source} may not set {key!r}: {remedy}")
     return MappingProxyType(body)
-
 
 
 def _parse_provider(raw: str) -> str:
