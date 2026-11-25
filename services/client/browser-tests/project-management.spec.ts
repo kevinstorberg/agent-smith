@@ -11,6 +11,11 @@ import {
 } from './geometry';
 import { enlargeComputedText } from './typography';
 import { openProjectOptions } from './actionItemDisclosures';
+import {
+  actionItemSortControl,
+  expectActionItemSort,
+  selectActionItemSort,
+} from './actionItemSorting';
 
 const initialProject = {
   id: 7,
@@ -95,9 +100,24 @@ test('project management follows the existing workspace, form and action-item na
   await expect(
     page.getByRole('tab', { name: 'School / WGU', exact: true }),
   ).toHaveAttribute('aria-selected', 'true');
+  const sort = actionItemSortControl(page, 'Title');
+  await expect(sort).toBeVisible();
+  await expectControlReachable(sort);
   await expect(
-    page.getByRole('columnheader', { name: 'Title' }).getByRole('button'),
+    page.getByRole('button', { name: 'Task 1', exact: true }),
   ).toBeVisible();
+  expect(new URL(page.url()).searchParams.get('project')).toBe('School / WGU');
+  await selectActionItemSort(page, 'Title', 'title');
+  await expectActionItemSort(page, 'Title', 'title', 'ascending');
+  expect(new URL(page.url()).searchParams.get('project')).toBe('School / WGU');
+  await expect
+    .poll(() => {
+      const reads = fixtureAPI.requests.filter(
+        (entry) => new URL(entry.url).pathname === '/api/action-items/queue',
+      );
+      return Object.fromEntries(new URL(reads.at(-1)!.url).searchParams);
+    })
+    .toMatchObject({ project: 'School / WGU', sort: 'title', offset: '0' });
   await expectDocumentContained(page);
   await expectMainContained(page);
   await page.screenshot({

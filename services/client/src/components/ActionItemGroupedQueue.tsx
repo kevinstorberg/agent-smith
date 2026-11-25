@@ -14,7 +14,11 @@ import {
   ActionItemDescription,
   ActionItemQueueCells,
 } from './ActionItemQueueRow';
-import { ActionItemQueueHead } from './ActionItemQueueHead';
+import {
+  ActionItemQueueHead,
+  ActionItemQueueSort,
+} from './ActionItemQueueHead';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 import { EpicActions, EpicMembershipControl } from './ActionItemEpicControls';
 import { Pagination } from './Pagination';
 import './actionItemQueue.css';
@@ -43,7 +47,7 @@ function TaskEntry({
   queue: GroupedQueue;
   onEdit: (item: ActionItemRow) => void;
 }) {
-  const item = { ...entry.item, priority: entry.position };
+  const item = { ...entry.item, priority: queue.displayPriority(entry) };
   return (
     <Draggable
       draggableId={queueIdentity(entry)}
@@ -73,6 +77,9 @@ function TaskEntry({
               showUpdated
               showMoveActions
               compactActions
+              hideDragHandles={queue.taskView}
+              epicTitle={queue.parentEpic(item)?.title ?? null}
+              showEpicContext={queue.taskView}
               membership={
                 <EpicMembershipControl queue={queue} item={item} text />
               }
@@ -258,6 +265,7 @@ export function ActionItemGroupedQueue({
   onEdit: (item: ActionItemRow) => void;
 }) {
   const current = queue.dataCurrent && !queue.criteriaPending && !queue.error;
+  const compact = useMediaQuery('(max-width: 1100px)');
   const heading = (
     <ActionItemQueueHead
       sort={sort}
@@ -267,6 +275,8 @@ export function ActionItemGroupedQueue({
       status={status}
       showDueDate
       showUpdated
+      staticLabels={compact}
+      taskView={queue.taskView}
     />
   );
   const childHeading = (
@@ -304,6 +314,14 @@ export function ActionItemGroupedQueue({
         </div>
       )}
       {queue.reviewError && <p role="alert">{queue.reviewError}</p>}
+      {compact && (
+        <ActionItemQueueSort
+          sort={sort}
+          onSort={onSort}
+          status={status}
+          disabled={queue.freezeControls}
+        />
+      )}
       <DragDropContext
         onBeforeCapture={() => queue.setExpanded(null)}
         onDragStart={queue.startDrag}
@@ -321,8 +339,9 @@ export function ActionItemGroupedQueue({
             aria-busy={!current && (queue.loading || !queue.error)}
           >
             <caption className="visually-hidden">
-              Column sorting orders this list and the action items within each
-              Epic.
+              {queue.taskView
+                ? 'All matching Action Items, including tasks in Epics. Priority shows the global task rank.'
+                : 'Column sorting orders this list and the action items within each Epic.'}
             </caption>
             <Columns />
             {heading}
@@ -367,8 +386,9 @@ export function ActionItemGroupedQueue({
       </DragDropContext>
       {current && (
         <p className="epic-queue-summary">
-          {queue.total} items and Epics · {queue.matchingCount} matching Action
-          Items
+          {queue.taskView
+            ? `${queue.total} matching Action Items`
+            : `${queue.total} items and Epics · ${queue.matchingCount} matching Action Items`}
         </p>
       )}
       <Pagination

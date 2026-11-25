@@ -77,7 +77,21 @@ describe('Action Item proposal review', () => {
 });
 
 describe('Action Item root type filters', () => {
-  it.each(['epic', 'item'] as const)(
+  it('sends an absolute child edge with its reviewed source Epic and no anchors', async () => {
+    globalThis.fetch = mockFetch({ saved: true });
+    const body = {
+      source: { kind: 'item' as const, id: 12, expected_revision: 4 },
+      parent: { id: 7, expected_revision: 3, cohort: 'reviewed-full-cohort' },
+      edge: 'top' as const,
+    };
+    await api.actionItemQueue.move(body);
+    const [url, options] = vi.mocked(globalThis.fetch).mock.calls[0];
+    expect(url).toBe('/api/action-items/queue/move');
+    expect(JSON.parse(String(options?.body))).toEqual(body);
+    expect(options?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it.each(['epic', 'item', 'task'] as const)(
     'forwards %s with the complete grouped query through fetch',
     async (kind) => {
       globalThis.fetch = mockFetch({ items: [], total: 0, matching_count: 0 });

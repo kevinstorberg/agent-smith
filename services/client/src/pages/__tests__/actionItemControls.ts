@@ -7,7 +7,8 @@ function triggerFor(name: string) {
     return 'Project options';
   const item =
     /^(?:Edit|Delete) (.+)$/.exec(name) ??
-    /^Move (.+) to (?:top|bottom|Epic)$/.exec(name);
+    /^Move (.+) (?:to|out of) Epic$/.exec(name) ??
+    /^Move (.+) to (?:top|bottom)(?: of (?:Epic|matching list))?$/.exec(name);
   if (!item) throw new Error(`No action disclosure for ${name}`);
   return `More actions for ${item[1]}`;
 }
@@ -31,7 +32,7 @@ export async function findActionButton(name: string): Promise<HTMLElement> {
 }
 
 export function showFilters() {
-  const trigger = screen.getByRole('button', { name: /^Filters/ });
+  const trigger = screen.getByRole('button', { name: /^More filters/ });
   if (trigger.getAttribute('aria-expanded') === 'false')
     fireEvent.click(trigger);
 }
@@ -42,6 +43,6 @@ export function filterCheckbox(name: string): HTMLElement {
 }
 
 export async function findFilterCheckbox(name: string): Promise<HTMLElement> {
-  await screen.findByRole('button', { name: /^Filters/ });
+  await screen.findByRole('button', { name: /^More filters/ });
   return filterCheckbox(name);
 }

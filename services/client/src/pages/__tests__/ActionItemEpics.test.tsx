@@ -11,7 +11,12 @@ import { api, ApiError, type ActionItemEpic } from '../../api';
 import { ActionItemsIndexPage } from '../ActionItemsIndexPage';
 import { renderWithProviders } from '../../test-utils';
 import { actionItem, deferred } from './actionItemFixture';
-import { epicGroup, queuePage } from './actionItemEpicFixture';
+import {
+  epicGroup,
+  queuePage,
+  taskEntry,
+  taskPage,
+} from './actionItemEpicFixture';
 
 vi.mock('../../api', async (original) => {
   const actual = await original<typeof import('../../api')>();
@@ -63,8 +68,18 @@ beforeEach(() => {
 describe('saved Action Item Epics', () => {
   it('keeps root type visible and resets paging while preserving independent criteria', async () => {
     vi.mocked(api.actionItemQueue.list).mockImplementation(async (filters) =>
-      filters?.kind === 'item'
-        ? queuePage({ items: [actionItem(1)], total: 25 })
+      filters?.kind === 'task'
+        ? taskPage({
+            items: [
+              taskEntry(actionItem(1), {
+                parent: null,
+                rootIndex: 0,
+                position: 1,
+              }),
+            ],
+            total: 25,
+            root_total: 25,
+          })
         : { items: [epicGroup()], total: 25, matching_count: 25 },
     );
     renderWithProviders(<ActionItemsIndexPage />, {
@@ -73,17 +88,19 @@ describe('saved Action Item Epics', () => {
       ],
     });
     await screen.findByRole('button', { name: 'Task 1' });
-    const type = screen.getByRole('combobox', { name: 'Item type' });
-    expect(type).toBeVisible();
-    expect(type).toHaveValue('item');
-    expect(screen.getByRole('button', { name: 'Filters (2)' })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    );
+    const views = within(screen.getByRole('group', { name: 'Show' }));
+    const tasks = views.getByRole('button', {
+      name: 'Action Items',
+    });
+    expect(tasks).toBeVisible();
+    expect(tasks).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      screen.getByRole('button', { name: 'More filters (2)' }),
+    ).toHaveAttribute('aria-expanded', 'false');
     expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
-      expect.objectContaining({ kind: 'item', offset: 10 }),
+      expect.objectContaining({ kind: 'task', offset: 10 }),
     );
-    fireEvent.change(type, { target: { value: 'epic' } });
+    fireEvent.click(views.getByRole('button', { name: 'Epics' }));
     await waitFor(() =>
       expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({
@@ -99,7 +116,7 @@ describe('saved Action Item Epics', () => {
       ),
     );
     expect(screen.getByRole('region', { name: 'Epic Release' })).toBeVisible();
-    fireEvent.change(type, { target: { value: 'all' } });
+    fireEvent.click(views.getByRole('button', { name: 'All' }));
     await waitFor(() =>
       expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.not.objectContaining({ kind: expect.anything() }),
@@ -119,20 +136,27 @@ describe('saved Action Item Epics', () => {
       filters?.kind === 'epic'
         ? stale.promise
         : Promise.resolve(
-            queuePage({
-              items: [actionItem(9, { title: 'Current single' })],
+            taskPage({
+              items: [
+                taskEntry(actionItem(9, { title: 'Current single' }), {
+                  parent: null,
+                  rootIndex: 0,
+                  position: 1,
+                }),
+              ],
               total: 1,
+              root_total: 1,
             }),
           ),
     );
-    const type = screen.getByRole('combobox', { name: 'Item type' });
-    fireEvent.change(type, { target: { value: 'epic' } });
+    const views = within(screen.getByRole('group', { name: 'Show' }));
+    fireEvent.click(views.getByRole('button', { name: 'Epics' }));
     await waitFor(() =>
       expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ kind: 'epic' }),
       ),
     );
-    fireEvent.change(type, { target: { value: 'item' } });
+    fireEvent.click(views.getByRole('button', { name: 'Action Items' }));
     await screen.findByRole('button', { name: 'Current single' });
     await act(async () =>
       stale.resolve(
@@ -142,7 +166,10 @@ describe('saved Action Item Epics', () => {
         }),
       ),
     );
-    expect(type).toHaveValue('item');
+    expect(views.getByRole('button', { name: 'Action Items' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
     expect(
       screen.queryByRole('button', { name: 'Stale result' }),
     ).not.toBeInTheDocument();
@@ -271,12 +298,12 @@ describe('saved Action Item Epics', () => {
     renderWithProviders(<ActionItemsIndexPage />, {
       initialEntries: ['/action-items?project=Work&q=Task'],
     });
-    fireEvent.click(await findActionButton('Move Task 3 to top'));
+    fireEvent.click(await findActionButton('Move Task 3 to top of Epic'));
     await waitFor(() =>
       expect(api.actionItemQueue.move).toHaveBeenCalledExactlyOnceWith({
         source: { kind: 'item', id: 3, expected_revision: 1 },
         parent: { id: 10, expected_revision: 3, cohort: 'cohort-10' },
-        before: { kind: 'item', id: 2, expected_revision: 1 },
+        edge: 'top',
       }),
     );
     expect(api.actionItemQueue.list).toHaveBeenCalledTimes(2);
@@ -393,7 +420,11 @@ describe('saved Action Item Epics', () => {
     fireEvent.click(button);
     expect(api.actionItemEpics.create).toHaveBeenCalledTimes(1);
     expect(button).toBeDisabled();
-    expect(screen.getByRole('combobox', { name: 'Item type' })).toBeDisabled();
+    expect(
+      within(screen.getByRole('group', { name: 'Show' })).getByRole('button', {
+        name: 'Action Items',
+      }),
+    ).toBeDisabled();
     await act(async () => save.reject(new Error('Uncertain response')));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Uncertain response',
@@ -466,11 +497,21 @@ describe('saved Action Item Epics', () => {
     vi.mocked(api.actionItemEpics.create).mockResolvedValue(created);
     const catalog = deferred<{ items: ActionItemEpic[] }>();
     vi.mocked(api.actionItemEpics.list).mockReturnValue(catalog.promise);
-    vi.mocked(api.actionItemQueue.list).mockResolvedValue({
-      items: [epicGroup()],
-      total: 25,
-      matching_count: 25,
-    });
+    vi.mocked(api.actionItemQueue.list).mockImplementation(async (filters) =>
+      filters?.kind === 'task'
+        ? taskPage({
+            items: [
+              taskEntry(actionItem(2), {
+                parent: epicGroup().epic,
+                rootIndex: 0,
+                position: 1,
+              }),
+            ],
+            total: 25,
+            root_total: 25,
+          })
+        : { items: [epicGroup()], total: 25, matching_count: 25 },
+    );
     renderWithProviders(<ActionItemsIndexPage />, {
       initialEntries: [
         '/action-items?kind=item&project=Work&q=Task&tags=security',
@@ -484,7 +525,9 @@ describe('saved Action Item Epics', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save Epic' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Show Epic' }));
     expect(
-      screen.getByRole('button', { name: 'Reorder Epic Release' }),
+      within(screen.getByRole('group', { name: 'Show' })).getByRole('button', {
+        name: 'Action Items',
+      }),
     ).toBeDisabled();
     await act(async () => catalog.resolve({ items: [created] }));
     await waitFor(() =>
@@ -500,9 +543,11 @@ describe('saved Action Item Epics', () => {
         }),
       ),
     );
-    expect(screen.getByRole('combobox', { name: 'Item type' })).toHaveValue(
-      'all',
-    );
+    expect(
+      within(screen.getByRole('group', { name: 'Show' })).getByRole('button', {
+        name: 'All',
+      }),
+    ).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Show Epic' })).toBeEnabled();
   });
 

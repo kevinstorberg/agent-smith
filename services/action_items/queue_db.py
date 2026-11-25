@@ -107,6 +107,15 @@ def _member_rows(cursor, epic_id: int | None = None) -> list[dict]:
     return [dict(row) for row in cursor.fetchall()]
 
 
+def _member_summary(rows: list[dict]) -> dict:
+    live = [row for row in rows if row["deleted_at"] is None]
+    return {
+        "cohort": _cohort(rows),
+        "total_count": len(live),
+        "open_count": sum(row["status"] == "open" for row in live),
+    }
+
+
 def _epic(cursor, epic_id: int, *, expected=None) -> dict:
     cursor.execute(
         f"SELECT {_EPIC} FROM action_item_epics e JOIN action_item_queue_entries q ON q.epic_id=e.id WHERE e.id=%s AND e.deleted_at IS NULL FOR UPDATE OF e,q",
@@ -116,7 +125,7 @@ def _epic(cursor, epic_id: int, *, expected=None) -> dict:
     if row is None:
         raise _tasks().NotFound("Epic not found or removed")
     result = _tasks()._record(row)
-    result["cohort"] = _cohort(_member_rows(cursor, epic_id))
+    result.update(_member_summary(_member_rows(cursor, epic_id)))
     if expected is not None:
         if result["revision"] != expected.expected_revision or (
             getattr(expected, "cohort", None) is not None
@@ -378,16 +387,38 @@ def move(payload: QueueMove | dict) -> dict:
                 raise _tasks().Conflict("Only open Action Items can be reordered")
             return task_entry(cursor, reference.id)
 
-        source, anchor = (
-            resolve(request.source),
-            resolve(request.before or request.after),
-        )
+        source = resolve(request.source)
         _check_parent(cursor, source, request.parent)
+        if request.edge is not None:
+            direction = "ASC" if request.edge == "top" else "DESC"
+            cursor.execute(
+                f"""SELECT q.* FROM action_item_queue_entries q
+                JOIN action_items a ON a.id=q.action_item_id
+                WHERE q.parent_epic_id=%s AND q.sort_key IS NOT NULL
+                  AND a.status='open' AND a.deleted_at IS NULL
+                ORDER BY q.sort_key {direction},q.id {direction} LIMIT 1 FOR UPDATE OF q,a""",
+                (request.parent.id,),
+            )
+            anchor = cursor.fetchone()
+            if anchor is None:
+                raise _tasks().StorageError(
+                    "Epic has no open sibling for its open Action Item"
+                )
+            anchor = dict(anchor)
+            if anchor["id"] == source["id"]:
+                return {"saved": True}
+        else:
+            anchor = resolve(request.before or request.after)
         if source["parent_epic_id"] != anchor["parent_epic_id"]:
             raise _tasks().Conflict(
                 "Move anchors must have the same parent. Use Move to Epic for membership."
             )
-        _reorder(cursor, source, anchor, after=request.after is not None)
+        _reorder(
+            cursor,
+            source,
+            anchor,
+            after=request.edge == "bottom" or request.after is not None,
+        )
         return {"saved": True}
 
 
@@ -401,10 +432,7 @@ def _catalog(cursor) -> list[dict]:
     result = []
     for record in cursor.fetchall():
         epic = _tasks()._record(record)
-        epic["cohort"] = _cohort(members[epic["id"]])
-        epic["total_count"] = sum(
-            row["deleted_at"] is None for row in members[epic["id"]]
-        )
+        epic.update(_member_summary(members[epic["id"]]))
         result.append(epic)
     return result
 
@@ -581,14 +609,36 @@ def list_queue(payload=None) -> dict:
                         "total_count": epic["total_count"],
                     }
                 )
-        roots = [
-            row for row in roots if query.kind == "all" or row["kind"] == query.kind
-        ]
-        ordered = _sort_values(roots, lambda row: _root_value(row, sort), sort)
+        if query.kind == "task":
+            roots = [row for row in roots if row["kind"] == "item" or row["children"]]
+            root_order = _sort_values(roots, lambda row: _root_value(row, sort), sort)
+            records = [
+                {
+                    **entry,
+                    "parent": root["epic"] if root["kind"] == "epic" else None,
+                    "root_index": index,
+                }
+                for index, root in enumerate(root_order)
+                for entry in ([root] if root["kind"] == "item" else root["children"])
+            ]
+            ordered = _sort_values(
+                records,
+                lambda row: _task_value(row["item"], row["item"]["priority"], sort),
+                sort,
+            )
+            matching_count = len(records)
+        else:
+            roots = [
+                row for row in roots if query.kind == "all" or row["kind"] == query.kind
+            ]
+            records = roots
+            ordered = _sort_values(roots, lambda row: _root_value(row, sort), sort)
+            matching_count = sum(
+                1 if row["kind"] == "item" else row["matching_count"] for row in roots
+            )
         return {
             "items": ordered[query.offset : query.offset + query.limit],
-            "total": len(roots),
-            "matching_count": sum(
-                1 if row["kind"] == "item" else row["matching_count"] for row in roots
-            ),
+            "total": len(records),
+            "matching_count": matching_count,
+            "root_total": len(roots),
         }

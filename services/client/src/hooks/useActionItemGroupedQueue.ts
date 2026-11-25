@@ -6,10 +6,13 @@ import {
   type ActionItemEpicCreate,
   type ActionItemEpicGroup,
   type ActionItemEpicReference,
+  type ActionItemEntryReference,
   type ActionItemQueueFilters,
   type ActionItemGroupedPage,
+  type ActionItemQueueEntry,
   type ActionItemQueueRoot,
   type ActionItemRow,
+  type ActionItemTaskPage,
 } from '../api';
 import { usePagination, type PaginationOptions } from './usePagination';
 import { usePolling } from './usePolling';
@@ -25,19 +28,35 @@ export const epicReference: (epic: ActionItemEpic) => ActionItemEpicReference =
 
 export const queueIdentity = (root: ActionItemQueueRoot) =>
   root.kind === 'item' ? `item:${root.item.id}` : `epic:${root.epic.id}`;
+const taskReference = (
+  entry: ActionItemQueueEntry,
+): Extract<ActionItemEntryReference, { kind: 'item' }> => ({
+  kind: 'item',
+  id: entry.item.id,
+  expected_revision: entry.item.revision,
+});
 const reference = (root: ActionItemQueueRoot) =>
   root.kind === 'item'
-    ? {
-        kind: 'item' as const,
-        id: root.item.id,
-        expected_revision: root.item.revision,
-      }
+    ? taskReference(root)
     : { kind: 'epic' as const, ...epicReference(root.epic) };
 const rootSignature = (roots: ActionItemQueueRoot[]) =>
   JSON.stringify(
     roots.map((root) =>
       root.kind === 'item'
-        ? [root.kind, root.item.id, root.item.revision, root.position]
+        ? [
+            root.kind,
+            root.item.id,
+            root.item.revision,
+            root.position,
+            root.item.priority,
+            root.root_index,
+            root.parent && [
+              root.parent.id,
+              root.parent.revision,
+              root.parent.cohort,
+              root.parent.open_count,
+            ],
+          ]
         : [
             root.kind,
             root.epic.id,
@@ -47,6 +66,63 @@ const rootSignature = (roots: ActionItemQueueRoot[]) =>
           ],
     ),
   );
+
+function requireTaskPage(
+  page: ActionItemGroupedPage,
+): asserts page is ActionItemTaskPage {
+  const invalid = () =>
+    new Error(
+      'Action Item membership context is incomplete. Refresh before organizing tasks.',
+    );
+  if (
+    !Number.isSafeInteger(page.total) ||
+    page.total < 0 ||
+    !Number.isSafeInteger(page.root_total) ||
+    page.root_total! < 0 ||
+    page.root_total! > page.total ||
+    page.matching_count !== page.total
+  )
+    throw invalid();
+  for (const entry of page.items) {
+    if (
+      entry.kind !== 'item' ||
+      !Object.hasOwn(entry, 'parent') ||
+      entry.parent === undefined ||
+      !Number.isSafeInteger(entry.root_index) ||
+      entry.root_index! < 0 ||
+      entry.root_index! >= page.root_total!
+    )
+      throw invalid();
+    const parent = entry.parent;
+    if (
+      entry.item.status === 'open'
+        ? !Number.isSafeInteger(entry.position) || entry.position! < 1
+        : entry.position !== null
+    )
+      throw invalid();
+    if (parent === null) {
+      if (entry.parent_epic_id !== null) throw invalid();
+    } else if (
+      entry.parent_epic_id !== parent.id ||
+      !Number.isSafeInteger(parent.id) ||
+      parent.id < 1 ||
+      !Number.isSafeInteger(parent.revision) ||
+      parent.revision < 1 ||
+      !parent.cohort ||
+      !Number.isSafeInteger(parent.open_count) ||
+      parent.open_count < 0 ||
+      (entry.item.status === 'open' && entry.position! > parent.open_count)
+    ) {
+      throw invalid();
+    }
+  }
+}
+
+async function readQueue(filters: ActionItemQueueFilters) {
+  const page = await api.actionItemQueue.list(filters);
+  if (filters.kind === 'task') requireTaskPage(page);
+  return page;
+}
 const childSignature = (group: ActionItemEpicGroup) =>
   JSON.stringify(
     group.children.map((child) => [
@@ -79,6 +155,7 @@ export function useActionItemGroupedQueue({
   criteriaPending: boolean;
   pagination: PaginationOptions;
 }) {
+  const taskView = filters.kind === 'task';
   const [snapshot, setSnapshot] = useState<GroupDrag | null>(null);
   const drag = useRef<GroupDrag | null>(null);
   const projectTabsRef = useRef<HTMLDivElement>(null);
@@ -86,12 +163,17 @@ export function useActionItemGroupedQueue({
   const [showing, setShowing] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [created, setCreated] = useState<ActionItemEpic | null>(null);
+  const [membershipNotice, setMembershipNotice] = useState<{
+    itemId: number;
+    title: string;
+    epicTitle: string;
+  } | null>(null);
   const [closed, setClosed] = useState<Set<number>>(new Set());
   const [expanded, setExpanded] = useState<{ id: number; view: string } | null>(
     null,
   );
   const list = usePagination<ActionItemQueueRoot>(
-    (limit, offset) => api.actionItemQueue.list({ ...filters, limit, offset }),
+    (limit, offset) => readQueue({ ...filters, limit, offset }),
     [criteria],
     10,
     pagination,
@@ -99,7 +181,8 @@ export function useActionItemGroupedQueue({
   const view = JSON.stringify([viewKey, list.limit, list.offset]);
   const readable =
     list.dataCurrent && !criteriaPending && !list.loading && !list.error;
-  const signature = rootSignature(list.items);
+  const rootTotal = (list.result as ActionItemGroupedPage | null)?.root_total;
+  const signature = JSON.stringify([rootSignature(list.items), rootTotal]);
   const current = useRef({ view, signature, readable, items: list.items });
   useLayoutEffect(() => {
     current.current = { view, signature, readable, items: list.items };
@@ -127,14 +210,16 @@ export function useActionItemGroupedQueue({
         root.kind === 'item' &&
         root.item.id === item.id &&
         root.item.revision === item.revision
-      )
-        return { entry: root, parent: undefined };
+      ) {
+        if (taskView && root.parent === undefined) return null;
+        return { entry: root, parent: taskView ? root.parent! : null };
+      }
       if (root.kind === 'epic') {
         const entry = root.children.find(
           (child) =>
             child.item.id === item.id && child.item.revision === item.revision,
         );
-        if (entry) return { entry, parent: root };
+        if (entry) return { entry, parent: root.epic };
       }
     }
     return null;
@@ -187,18 +272,27 @@ export function useActionItemGroupedQueue({
   ) {
     const located = locate(item);
     if (!located) return;
+    setMembershipNotice(null);
     const success = await rowWrite(
       item,
       () =>
         api.actionItemQueue.setEpic(item.id, {
           expected_revision: item.revision,
           expected_parent: located.parent
-            ? epicReference(located.parent.epic)
+            ? epicReference(located.parent)
             : null,
           destination: destination ? epicReference(destination) : null,
         }),
-      'Could not move this action item to the Epic.',
+      destination
+        ? 'Could not move this action item to the Epic.'
+        : 'Could not move this action item out of its Epic.',
     );
+    if (success && !destination && located.parent && writes.mounted.current)
+      setMembershipNotice({
+        itemId: item.id,
+        title: item.title,
+        epicTitle: located.parent.title,
+      });
     if (success && destination)
       setClosed((previous) => {
         const next = new Set(previous);
@@ -213,9 +307,7 @@ export function useActionItemGroupedQueue({
       throw new Error('The list changed. Refresh before grouping this item.');
     return {
       expected_revision: item.revision,
-      expected_parent: located.parent
-        ? epicReference(located.parent.epic)
-        : null,
+      expected_parent: located.parent ? epicReference(located.parent) : null,
     };
   }
   async function createEpic(payload: ActionItemEpicCreate) {
@@ -293,13 +385,17 @@ export function useActionItemGroupedQueue({
     const index = list.items.findIndex(
       (row) => queueIdentity(row) === queueIdentity(root),
     );
+    const ordinal =
+      taskView && root.kind === 'item' ? root.root_index : list.offset + index;
+    const total = taskView ? rootTotal : list.total;
     return (
       canAct() &&
       reorderableView &&
       index >= 0 &&
-      (edge === 'top'
-        ? list.offset + index > 0
-        : list.offset + index < list.total - 1)
+      ordinal !== undefined &&
+      total !== undefined &&
+      !(taskView && root.kind === 'item' && root.parent) &&
+      (edge === 'top' ? ordinal > 0 : ordinal < total - 1)
     );
   }
   function canMoveToEdge(item: ActionItemRow, edge: 'top' | 'bottom') {
@@ -307,10 +403,16 @@ export function useActionItemGroupedQueue({
     if (!located || item.status !== 'open' || !canAct() || !reorderableView)
       return false;
     if (!located.parent) return canMoveRoot(located.entry, edge);
-    const index = located.parent.children.indexOf(located.entry);
     return edge === 'top'
-      ? index > 0
-      : index < located.parent.children.length - 1;
+      ? located.entry.position !== null && located.entry.position > 1
+      : located.entry.position !== null &&
+          located.entry.position < located.parent.open_count;
+  }
+  function moveScopeLabel(item: ActionItemRow, edge: 'top' | 'bottom') {
+    const parent = locate(item)?.parent;
+    return parent
+      ? `Move to ${edge} of Epic ${parent.title}`
+      : `Move to ${edge} of matching list`;
   }
   async function moveRoot(root: ActionItemQueueRoot, edge: 'top' | 'bottom') {
     if (!canMoveRoot(root, edge)) return;
@@ -319,7 +421,7 @@ export function useActionItemGroupedQueue({
     const captured = current.current;
     await writes.runWrite(
       async () => {
-        const boundary = await api.actionItemQueue.list({
+        const boundary = await readQueue({
           ...filters,
           sort: edge === 'top' ? 'manual' : 'manual_desc',
           limit: 1,
@@ -332,17 +434,20 @@ export function useActionItemGroupedQueue({
           !current.current.readable
         )
           return;
-        const anchor = boundary.items[0];
-        if (!anchor)
+        const boundaryEntry = boundary.items[0];
+        if (!boundaryEntry)
           throw new Error(
             'The list changed. Refresh before moving this entry.',
           );
-        if (queueIdentity(anchor) === queueIdentity(root)) return;
+        const anchor =
+          taskView && boundaryEntry.kind === 'item' && boundaryEntry.parent
+            ? { kind: 'epic' as const, ...epicReference(boundaryEntry.parent) }
+            : reference(boundaryEntry);
+        const source = reference(root);
+        if (anchor.kind === source.kind && anchor.id === source.id) return;
         await api.actionItemQueue.move({
-          source: reference(root),
-          ...(edge === 'top'
-            ? { before: reference(anchor) }
-            : { after: reference(anchor) }),
+          source,
+          ...(edge === 'top' ? { before: anchor } : { after: anchor }),
         });
       },
       'Could not save this order.',
@@ -357,25 +462,21 @@ export function useActionItemGroupedQueue({
       return;
     }
     const parent = located.parent;
-    const anchor =
-      edge === 'top' ? parent.children[0] : parent.children.at(-1)!;
     rememberFocus();
     setReviewError(null);
     await writes.runWrite(
       () =>
         api.actionItemQueue.move({
-          source: reference(located.entry),
-          parent: epicReference(parent.epic),
-          ...(edge === 'top'
-            ? { before: reference(anchor) }
-            : { after: reference(anchor) }),
+          source: taskReference(located.entry),
+          parent: epicReference(parent),
+          edge,
         }),
       'Could not save this order.',
       { order: true },
     );
   }
   function startDrag(start?: DragStart) {
-    if (!canAct()) return;
+    if (taskView || !canAct()) return;
     const parent =
       !start || start.source.droppableId === 'action-items'
         ? undefined
@@ -520,7 +621,7 @@ export function useActionItemGroupedQueue({
     );
   }
   useActionItemProjectDrag({
-    enabled: true,
+    enabled: !taskView,
     drag,
     setSnapshot,
     projectTabsRef,
@@ -533,6 +634,7 @@ export function useActionItemGroupedQueue({
     matchingCount:
       (list.result as ActionItemGroupedPage | null)?.matching_count ?? 0,
     roots,
+    taskView,
     source: api.actionItems,
     view,
     criteriaPending,
@@ -542,10 +644,10 @@ export function useActionItemGroupedQueue({
     pendingId: writes.pendingId,
     freezeControls,
     reorderableView,
-    projectAssignment: true,
+    projectAssignment: !taskView,
     projectTabsRef,
-    canDrag: readable && !busy && !editing && !showing,
-    dragSurfaceEnabled: readable && !editing && !showing,
+    canDrag: !taskView && readable && !busy && !editing && !showing,
+    dragSurfaceEnabled: !taskView && readable && !editing && !showing,
     startDrag,
     endDrag,
     changeStatus,
@@ -558,6 +660,7 @@ export function useActionItemGroupedQueue({
     setExpanded,
     canMoveToEdge,
     moveToEdge,
+    moveScopeLabel,
     canMoveRoot,
     moveRoot,
     reviewError,
@@ -572,7 +675,12 @@ export function useActionItemGroupedQueue({
     removeEpic,
     setEpic,
     membership,
-    parentId: (item: ActionItemRow) => locate(item)?.parent?.epic.id ?? null,
+    parentId: (item: ActionItemRow) => locate(item)?.parent?.id ?? null,
+    parentEpic: (item: ActionItemRow) => locate(item)?.parent ?? null,
+    displayPriority: (entry: ActionItemQueueEntry) =>
+      taskView ? entry.item.priority : entry.position,
+    membershipNotice,
+    clearMembershipNotice: () => setMembershipNotice(null),
     isOpen: (id: number) => !closed.has(id),
     toggle: (id: number) => {
       if (freezeControls) return;

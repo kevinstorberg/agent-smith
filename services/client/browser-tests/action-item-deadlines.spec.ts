@@ -402,7 +402,7 @@ for (const scale of [1, 2]) {
     await sort.focus();
     await page.keyboard.press('Tab');
     await expect(
-      page.getByRole('checkbox', { name: 'Unassigned only' }),
+      page.getByRole('checkbox', { name: 'No project' }),
     ).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(checkbox).toBeFocused();

@@ -83,7 +83,10 @@ export type ActionItemRowQueue = Pick<
   | 'deletionEnabled'
   | 'canRemove'
   | 'removeItem'
-> & { editing?: boolean };
+> & {
+  editing?: boolean;
+  moveScopeLabel?: (item: ActionItemRow, edge: 'top' | 'bottom') => string;
+};
 
 export function ActionItemQueueCells({
   item,
@@ -97,6 +100,9 @@ export function ActionItemQueueCells({
   showUpdated = !showDueDate,
   showMoveActions = false,
   compactActions = false,
+  hideDragHandles = false,
+  epicTitle = null,
+  showEpicContext = false,
   membership,
 }: {
   item: ActionItemRow;
@@ -110,6 +116,9 @@ export function ActionItemQueueCells({
   showUpdated?: boolean;
   showMoveActions?: boolean;
   compactActions?: boolean;
+  hideDragHandles?: boolean;
+  epicTitle?: string | null;
+  showEpicContext?: boolean;
   membership?: ReactNode;
 }) {
   const {
@@ -143,8 +152,11 @@ export function ActionItemQueueCells({
           key={edge}
           type="button"
           className={`btn btn-sm${iconActions ? ' action-item-icon-button' : ''}`}
-          aria-label={`Move ${item.title} to ${edge}`}
-          title={`Move to ${edge} of the matching action items`}
+          aria-label={`Move ${item.title} to ${edge}${queue.moveScopeLabel && epicTitle ? ' of Epic' : ''}`}
+          title={
+            queue.moveScopeLabel?.(item, edge) ??
+            `Move to ${edge} of the matching action items`
+          }
           disabled={!canMoveToEdge(item, edge)}
           onKeyDown={(event) => {
             if (!compactActions || event.key !== 'Escape')
@@ -156,7 +168,11 @@ export function ActionItemQueueCells({
             void moveToEdge(item, edge);
           }}
         >
-          {iconActions ? <ActionItemIcon name={edge} /> : `Move to ${edge}`}
+          {iconActions ? (
+            <ActionItemIcon name={edge} />
+          ) : (
+            (queue.moveScopeLabel?.(item, edge) ?? `Move to ${edge}`)
+          )}
         </button>
       ));
     const edit = (
@@ -228,7 +244,7 @@ export function ActionItemQueueCells({
           </span>
         )}
         <div className="flex-row">
-          {(reorderableView || projectAssignment) && (
+          {!hideDragHandles && (reorderableView || projectAssignment) && (
             <button
               type="button"
               className="btn btn-sm action-item-drag"
@@ -282,6 +298,11 @@ export function ActionItemQueueCells({
           <span aria-hidden="true">{expandedId === item.id ? '⌄' : '›'}</span>
           {item.title}
         </button>
+        {showEpicContext && (
+          <div className="action-item-epic-context">
+            {epicTitle ? `Epic: ${epicTitle}` : 'No Epic'}
+          </div>
+        )}
       </td>
       <td className="action-topics-cell">
         {showProject && item.project && (

@@ -87,9 +87,8 @@ test('projects persist independently and assignment leaves tags and status filte
     )
     .toBe(true);
   await page
-    .getByRole('tablist', { name: 'Action item status' })
-    .getByRole('tab', { name: 'Completed' })
-    .click();
+    .getByRole('combobox', { name: 'Status', exact: true })
+    .selectOption('completed');
   await expect(
     groups.getByRole('tab', { name: 'Work', exact: true }),
   ).toHaveAttribute('aria-selected', 'true');
@@ -97,9 +96,8 @@ test('projects persist independently and assignment leaves tags and status filte
     'security',
   );
   await page
-    .getByRole('tablist', { name: 'Action item status' })
-    .getByRole('tab', { name: 'Open', exact: true })
-    .click();
+    .getByRole('combobox', { name: 'Status', exact: true })
+    .selectOption('open');
   await openProjectOptions(page);
   await page.getByRole('button', { name: 'New project', exact: true }).click();
   await page.getByLabel('Project name').fill('  Family / QA & café #1  ');
@@ -145,7 +143,7 @@ test('projects persist independently and assignment leaves tags and status filte
   await page.goto('/action-items?unassigned=true&tags=urgent');
   await openAdvancedFilters(page);
   await expect(
-    page.getByRole('checkbox', { name: 'Unassigned only' }),
+    page.getByRole('checkbox', { name: 'No project' }),
   ).toBeChecked();
   await expect(
     groups.getByRole('tab', { name: 'Unassigned', exact: true }),
@@ -170,7 +168,7 @@ test('projects persist independently and assignment leaves tags and status filte
 });
 
 for (const scale of [1, 2]) {
-  test(`Unassigned only filters All projects in the shared control row at ${scale}x text`, async ({
+  test(`No project filters All projects in the shared control row at ${scale}x text`, async ({
     page,
     fixtureAPI,
   }, testInfo) => {
@@ -194,7 +192,7 @@ for (const scale of [1, 2]) {
     );
     await openAdvancedFilters(page);
     if (scale === 2) await enlargeComputedText(page);
-    const checkbox = page.getByRole('checkbox', { name: 'Unassigned only' });
+    const checkbox = page.getByRole('checkbox', { name: 'No project' });
     const all = page.getByRole('tab', { name: 'All projects', exact: true });
     const deadline = page.getByRole('checkbox', { name: 'Deadline window' });
     const sort = page.getByRole('textbox', { name: 'Tags', exact: true });
@@ -316,12 +314,12 @@ for (const scale of [1, 2]) {
       page.getByRole('button', { name: 'Task 1', exact: true }),
     ).toBeVisible();
     if (scale === 2) await enlargeComputedText(page);
-    const status = page.getByRole('tablist', { name: 'Action item status' });
+    const status = page.getByRole('combobox', { name: 'Status', exact: true });
     const options = page.getByRole('button', {
       name: 'Project options',
       exact: true,
     });
-    const filters = page.locator('.action-items-searchbar');
+    const filters = page.locator('.action-items-filter-region');
     const table = page.locator('.action-items-container');
     const [statusBox, createBox, filterBox, tabsBox, tableBox] =
       await Promise.all([
@@ -334,20 +332,21 @@ for (const scale of [1, 2]) {
     expect(
       statusBox && createBox && filterBox && tabsBox && tableBox,
     ).toBeTruthy();
-    if (page.viewportSize()!.width >= 1400 && scale === 1) {
-      expect(
-        Math.abs(
-          statusBox!.y +
-            statusBox!.height / 2 -
-            createBox!.y -
-            createBox!.height / 2,
-        ),
-      ).toBeLessThanOrEqual(2);
-    }
+    expect(statusBox!.y).toBeGreaterThanOrEqual(filterBox!.y);
+    expect(statusBox!.y + statusBox!.height).toBeLessThanOrEqual(
+      filterBox!.y + filterBox!.height,
+    );
+    expect(createBox!.y).toBeGreaterThanOrEqual(
+      filterBox!.y + filterBox!.height,
+    );
     await expectControlContained(status, page.locator('main'));
     await expectControlContained(options, page.locator('main'));
     expect(tabsBox!.y).toBeGreaterThanOrEqual(filterBox!.y + filterBox!.height);
-    const sectionGap = tableBox!.y - tabsBox!.y - tabsBox!.height;
+    const queueStart =
+      page.viewportSize()!.width <= 1100
+        ? (await page.locator('.action-item-sort-control').boundingBox())!
+        : tableBox!;
+    const sectionGap = queueStart.y - tabsBox!.y - tabsBox!.height;
     expect(sectionGap).toBeGreaterThanOrEqual(8);
     expect(sectionGap).toBeLessThanOrEqual(16);
     const active = groups.getByRole('tab', {

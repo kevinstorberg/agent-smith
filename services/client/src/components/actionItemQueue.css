@@ -71,7 +71,8 @@
   background: transparent;
   box-shadow: none;
   /* A mixed-unit clamp makes Chromium's fixed table layout split title space with this column. */
-  --action-priority-width: 96px;
+  --action-priority-width: 112px;
+  --action-title-gutter: 22px;
   --action-topics-width: 14%;
   --action-updated-width: 14%;
   --action-due-width: 14%;
@@ -86,16 +87,27 @@
 .action-items-index-page .action-item-grouped-table > thead {
   background: var(--action-table-header-surface);
 }
-.action-items-index-page .action-item-grouped-table > thead th:first-child {
-  padding-inline: 0;
+.action-items-index-page
+  .action-item-grouped-table
+  .action-priority-heading
+  .sortable-header-button {
+  flex-wrap: nowrap;
+  gap: 4px;
 }
 .action-items-index-page
   .action-item-grouped-table
   > thead
-  th:first-child
-  .sortable-header-button {
-  flex-wrap: nowrap;
+  .action-title-heading {
+  padding-inline-start: calc(8px + var(--action-title-gutter));
+}
+.action-item-sort-control {
+  display: grid;
   gap: 4px;
+  max-width: 28em;
+  margin-bottom: 12px;
+}
+.action-item-sort-control .input {
+  width: 100%;
 }
 .action-items-index-page .action-item-row > td {
   padding: 12px 8px;
@@ -150,11 +162,23 @@
   font-variant-numeric: tabular-nums;
 }
 .action-items-index-page .action-item-title {
+  padding-inline: 0;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
   width: 100%;
   gap: 6px;
   align-items: baseline;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+.action-items-index-page .action-item-title > span[aria-hidden] {
+  width: 16px;
+  text-align: center;
+}
+.action-item-epic-context {
+  margin-inline-start: var(--action-title-gutter);
+  color: var(--text-muted);
+  font-size: 0.9em;
 }
 .action-items-index-page .action-topics-cell {
   color: var(--text-muted);
@@ -235,11 +259,10 @@
 .action-items-index-page .epic-empty {
   color: var(--text-muted);
 }
-.action-items-index-page .epic-children .action-title-cell {
-  padding-inline-start: 22px;
-}
 .action-items-index-page .epic-membership-control {
   position: relative;
+  display: grid;
+  gap: 4px;
 }
 .action-items-index-page .epic-picker {
   position: absolute;
@@ -280,25 +303,6 @@
   }
   .action-items-index-page .action-item-grouped-table > colgroup,
   .action-items-index-page .epic-children colgroup {
-    display: none;
-  }
-  .action-items-index-page .action-item-grouped-table > thead {
-    display: block;
-    width: 100%;
-    border-bottom: 1px solid var(--border);
-  }
-  .action-items-index-page .action-item-grouped-table > thead tr {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 12px;
-    padding-block: 8px;
-  }
-  .action-items-index-page .action-item-grouped-table > thead th {
-    width: auto;
-    padding: 4px 0;
-    border: 0;
-  }
-  .action-items-index-page .action-item-grouped-table > thead th:last-child {
     display: none;
   }
   .action-items-index-page .action-item-row {
@@ -352,9 +356,6 @@
   .action-items-index-page .action-due-cell > div,
   .action-items-index-page .action-updated-cell > div {
     display: inline;
-  }
-  .action-items-index-page .epic-children .action-title-cell {
-    padding-inline-start: 16px;
   }
   .action-items-index-page .action-item-epic-row,
   .action-items-index-page .action-item-epic-row > td {

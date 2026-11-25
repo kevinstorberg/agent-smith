@@ -202,7 +202,10 @@ function EpicPicker({
         </p>
       )}
       <ActionItemEpicSelect
-        label="Move to Epic"
+        label={
+          queue.parentId(item) === null ? 'Add to Epic' : 'Move to another Epic'
+        }
+        ariaLabel="Move to Epic"
         autoFocus
         allowCreate
         value={selected}
@@ -245,6 +248,8 @@ export function EpicMembershipControl({
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const { open, start, close } = useEpicEditor(queue, trigger);
+  const grouped = queue.parentId(item) !== null;
+  const label = grouped ? 'Move to another Epic' : 'Add to Epic';
   return (
     <div className="epic-membership-control">
       <button
@@ -252,12 +257,25 @@ export function EpicMembershipControl({
         type="button"
         className={`btn btn-sm${text ? '' : ' action-item-icon-button'}`}
         aria-label={`Move ${item.title} to Epic`}
-        title="Move to Epic"
+        title={label}
         disabled={queue.freezeControls || !queue.canAct()}
         onClick={start}
       >
-        {text ? 'Move to Epic' : <ActionItemIcon name="epic" />}
+        {text ? label : <ActionItemIcon name="epic" />}
       </button>
+      {grouped && (
+        <button
+          type="button"
+          className="btn btn-sm"
+          aria-label={`Move ${item.title} out of Epic`}
+          disabled={queue.freezeControls || !queue.canAct()}
+          onClick={() => {
+            if (queue.canAct()) void queue.setEpic(item, null);
+          }}
+        >
+          Move out of Epic
+        </button>
+      )}
       {open && <EpicPicker queue={queue} item={item} onClose={close} />}
     </div>
   );
