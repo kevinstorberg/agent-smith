@@ -31,44 +31,10 @@ def enroll(
             action_items_status='pending',action_items_artifact='{}'::jsonb,action_items_attempts=0,
             action_items_error=NULL,action_items_next_attempt_at=clock_timestamp(),
             claim_owner=NULL,claim_until=NULL,updated_at=clock_timestamp()
-            WHERE meeting_id=%s AND (source_revision<>%s OR source_hash<>%s)""",
+            WHERE meeting_id=%s AND action_items_status='pending'
+            AND (source_revision<>%s OR source_hash<>%s)""",
             (revision, content_hash, meeting_id, revision, content_hash),
         )
-
-
-def reconcile(identities: list[tuple[str, str]]) -> dict:
-    if not identities:
-        return {"enrolled": 0, "refreshed": 0}
-    if any(
-        not isinstance(identity, tuple)
-        or len(identity) != 2
-        or any(not isinstance(part, str) or not part for part in identity)
-        for identity in identities
-    ):
-        raise ValueError(
-            "Action Item reconciliation requires configured provider/account identities"
-        )
-    with db._cursor() as cur:
-        cur.execute(
-            """SELECT m.id,m.revision,m.content_hash,r.meeting_id AS enrolled_id
-            FROM meeting_summaries m
-            JOIN meeting_sync_state state ON state.provider=m.provider AND state.account_key=m.account_key
-            LEFT JOIN meeting_action_item_runs r ON r.meeting_id=m.id
-            WHERE m.available AND (m.provider,m.account_key) IN %s AND (
-                (r.meeting_id IS NULL AND m.first_seen_at>=state.action_items_activated_at)
-                OR (r.meeting_id IS NOT NULL AND (r.source_revision<>m.revision OR r.source_hash<>m.content_hash))
-            ) ORDER BY m.id FOR UPDATE OF m""",
-            (tuple(identities),),
-        )
-        rows = list(cur.fetchall())
-        result = {"enrolled": 0, "refreshed": 0}
-        for row in rows:
-            create = row["enrolled_id"] is None
-            enroll(
-                cur, str(row["id"]), row["revision"], row["content_hash"], create=create
-            )
-            result["enrolled" if create else "refreshed"] += cur.rowcount
-        return result
 
 
 def _record(cur, meeting_id: str) -> dict | None:

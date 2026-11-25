@@ -14,7 +14,7 @@ from services.memory.content import MemoryTokenBudget
 # Calibrated against the configured encoder by the synthetic retrieval gate.
 COSINE_FLOOR = 0.25
 LEXICAL_FLOOR = 0.45
-POLICY_VERSION = 1
+POLICY_VERSION = 2
 
 
 def digest(value: object) -> str:
@@ -118,7 +118,7 @@ def _project(value: dict):
 
 def mandatory(candidate: dict, record: dict) -> bool:
     data = record["data"]
-    if record["kind"] == "candidate":
+    if record["kind"] in {"task", "candidate"}:
         return True
     if candidate.get("target_id") is not None and candidate["target_id"] == (
         data.get("id") if record["kind"] == "task" else data.get("target_id")

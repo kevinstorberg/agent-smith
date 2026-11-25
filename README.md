@@ -622,8 +622,15 @@ are preserved. Once independent proposal IDs overlap, rollback requires a pre-up
 This analysis has its own progress and retries, independent of transcript capture or successful
 memory generation. Only meetings first imported after the migration qualify automatically;
 historical meetings require **Propose action items** on their Overview tab. A running Meetings
-graph job must cover that connection. Summary changes refresh analysis only for already-enrolled
-meetings. Unchanged imports do not repeat model calls, and `digest=false` skips proposal analysis.
+graph job must cover that connection. Each newly imported meeting is enrolled once; missing
+historical runs are never recovered automatically. Summary changes refresh only an unfinished
+pending run, and completed or failed runs require an explicit request before running again.
+Unchanged imports do not repeat model calls, and `digest=false` skips proposal analysis.
+
+The duplicate filter compares every saved Action Item, including completed work, and requires
+an explicit comparison verdict before publication. Prerequisites, follow-ups and other substeps
+of an existing tracked outcome do not become separate tasks; meaningful changes target the
+existing item. Comparison windows bound both request size and the number of explicit verdicts.
 
 Approval checks the saved source and task revisions, including changes made while a proposal
 waited for review. Changed or deleted inputs require a fresh proposal; task reprioritization

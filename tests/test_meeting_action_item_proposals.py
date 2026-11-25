@@ -21,6 +21,7 @@ from services.meetings.analysis import AnalysisBudgetExpired
 from services.meetings.service import MeetingSyncError
 from services.action_items import proposals as proposals
 from tests.conftest import action_item_owner, jobs_cleanup
+from tests.action_item_filter_helpers import filter_decision
 from tests.test_meeting_sync import STAMP, note, page, source as source
 
 SUMMARY = "Morgan will send the design document. Morgan will prepare the checklist."
@@ -38,16 +39,7 @@ def scripted_action_item_filter(monkeypatch):
 
     async def compare(snapshot, data, **kwargs):
         return {
-            "items": [
-                {
-                    "candidate_id": index,
-                    "actionable": True,
-                    "matches": [],
-                    "rationale": "Synthetic distinct unfinished work",
-                    "evidence": data["candidates"][index]["evidence"],
-                }
-                for index in data["candidate_ids"]
-            ]
+            "items": [filter_decision(data, index) for index in data["candidate_ids"]]
         }
 
     monkeypatch.setattr(action_item_run.action_item_filter, "analyze_window", compare)
@@ -254,7 +246,7 @@ def test_historical_source_updates_do_not_enroll_without_an_explicit_request(
     assert has_requested_work(worker)
 
 
-def test_changed_enrolled_summary_resets_only_its_own_analysis(source, saved, runs):
+def test_changed_completed_summary_keeps_its_finished_analysis(source, saved, runs):
     meeting = saved()
     claim = runs.claim(
         [(source.provider, source.account_key)], action_item_owner("first-owner")
@@ -266,6 +258,7 @@ def test_changed_enrolled_summary_resets_only_its_own_analysis(source, saved, ru
         complete=True,
     )
     runs.release_owner(action_item_owner("first-owner"))
+    completed = runs.get_record(meeting["id"])
     assert claim["source_revision"] == 1 and not runs.has_work(
         [(source.provider, source.account_key)]
     )
@@ -274,13 +267,13 @@ def test_changed_enrolled_summary_resets_only_its_own_analysis(source, saved, ru
     )
     current = runs.get_record(meeting["id"])
     assert (
-        current["action_items_status"] == "pending"
-        and current["source_revision"] == updated["revision"]
+        current["action_items_status"] == "done"
+        and current["source_revision"] == 1
+        and updated["revision"] == 2
     )
-    assert (
-        current["action_items_artifact"] == {} and current["action_items_attempts"] == 0
-    )
-    assert runs.has_work([(source.provider, source.account_key)])
+    assert current["action_items_artifact"] == completed["action_items_artifact"]
+    assert current["updated_at"] == completed["updated_at"]
+    assert not runs.has_work([(source.provider, source.account_key)])
 
 
 def test_claim_expiry_and_owner_cleanup_cannot_steal_another_worker(

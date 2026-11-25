@@ -29,11 +29,12 @@ def record(status="pending", *, stale=False):
     }
 
 
-def decision(index=0, *, matches=None, actionable=True):
+def decision(index=0, *, matches=None, different_keys=None, actionable=True):
     return {
         "candidate_id": index,
         "actionable": actionable,
         "matches": matches or [],
+        "different_keys": different_keys or [],
         "rationale": "Compared the requested work and current desired state",
         "evidence": NEW["evidence"],
     }
@@ -82,11 +83,74 @@ async def test_action_item_filter_rejects_unsafe_outputs_before_corrected_submis
 ):
     instance = model(
         call("filter_action_items", items=bad),
-        call("filter_action_items", items=[decision()]),
+        call("filter_action_items", items=[decision(different_keys=["proposal:1"])]),
     )
     result = await filtering.analyze_window(SNAPSHOT, data([record()]))
     assert result["items"][0]["matches"] == []
     assert len(instance.seen) == 2
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        decision(),
+        decision(different_keys=["proposal:999"]),
+        decision(different_keys=["proposal:1", "proposal:1"]),
+        decision(
+            matches=[{"key": "proposal:1", "relation": "same"}],
+            different_keys=["proposal:1"],
+        ),
+    ],
+)
+def test_filter_requires_an_explicit_verdict_for_every_comparison(output):
+    parsed = filtering.FilterDecision.model_validate(output)
+    assert filtering.validate_decisions([parsed], data([record()]))
+
+
+@pytest.mark.asyncio
+async def test_filter_cannot_silently_skip_an_existing_task(model):
+    row = {
+        "key": "task:7",
+        "kind": "task",
+        "data": {
+            "id": 7,
+            "title": "Send supplier readiness checklist",
+            "status": "open",
+        },
+    }
+    instance = model(
+        call("filter_action_items", items=[decision()]),
+        call(
+            "filter_action_items",
+            items=[decision(matches=[{"key": "task:7", "relation": "overlap"}])],
+        ),
+    )
+    result = await filtering.analyze_window(SNAPSHOT, data([row]))
+    assert filtering.reduce_decisions([NEW], [row], [result])["keep"] == []
+    assert len(instance.seen) == 2
+
+
+@pytest.mark.parametrize("status", ["open", "completed"])
+def test_filter_suppresses_substeps_of_existing_work_and_preserves_updates(status):
+    row = {
+        "key": "task:7",
+        "kind": "task",
+        "data": {
+            "id": 7,
+            "title": "Onboard the DevOps contractor and sign the contract",
+            "status": status,
+        },
+    }
+    output = {"items": [decision(matches=[{"key": "task:7", "relation": "overlap"}])]}
+    assert filtering.reduce_decisions([NEW], [row], [output])["keep"] == []
+    update = {
+        **NEW,
+        "action": "update",
+        "target_id": 7,
+        "expected_revision": 1,
+        "changes": {"description": "Explicitly add the requested contract follow-up"},
+    }
+    assert filtering.reduce_decisions([update], [row], [output])["keep"] == [0]
 
 
 @pytest.mark.parametrize(
@@ -118,7 +182,7 @@ def test_action_item_filter_preserves_saved_desired_state_and_distinct_work():
         "data": {"id": 7, "title": "Send checklist", "status": "open"},
     }
     same = {"items": [decision(matches=[{"key": "task:7", "relation": "same"}])]}
-    different = {"items": [decision()]}
+    different = {"items": [decision(different_keys=["task:7"])]}
     assert filtering.reduce_decisions([NEW], [row], [same])["keep"] == []
     assert filtering.reduce_decisions([NEW], [row], [different])["keep"] == [0]
 
@@ -201,6 +265,34 @@ def test_action_item_filter_windows_do_not_truncate_or_omit_late_records():
         r["key"] for r in records
     ]
     assert result[-1]["comparison_records"][-1]["data"]["rationale"] == "x" * 2000
+
+
+def test_filter_windows_bound_explicit_output_for_large_short_record_batches():
+    candidates = [NEW for _ in range(20)]
+    records = [
+        {
+            "key": f"task:{index}",
+            "kind": "task",
+            "data": {"id": index, "title": "Saved work"},
+        }
+        for index in range(200)
+    ]
+    hits = {
+        str(index): [{"key": record["key"]} for record in records]
+        for index in range(len(candidates))
+    }
+    windows = filtering.windows(SNAPSHOT, candidates, records, hits)
+    covered = {str(index): [] for index in range(len(candidates))}
+    for window in windows:
+        assert len(window["candidate_ids"]) <= filtering.MAX_CANDIDATES_PER_WINDOW
+        assert (
+            sum(map(len, window["comparison_pairs"].values()))
+            <= filtering.MAX_COMPARISON_PAIRS
+        )
+        for index, keys in window["comparison_pairs"].items():
+            covered[index].extend(keys)
+    expected = [record["key"] for record in records]
+    assert all(keys == expected for keys in covered.values())
 
 
 @pytest.mark.parametrize(
