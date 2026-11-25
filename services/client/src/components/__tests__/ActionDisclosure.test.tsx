@@ -180,4 +180,20 @@ describe('ActionDisclosure', () => {
     expect(screen.getByRole('button', { name: 'Next row' })).toHaveFocus();
     expect(screen.getByText('Edit First')).not.toBeVisible();
   });
+  it('exposes open state additively so transient content resets while existing callers remain mounted', async () => {
+    const user = userEvent.setup();
+    render(
+      <ActionDisclosure label="Choose Epic">
+        {(_close, open) => open && <input aria-label="Search choices" />}
+      </ActionDisclosure>,
+    );
+    const trigger = screen.getByRole('button', { name: 'Choose Epic' });
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    await user.click(trigger);
+    await user.type(screen.getByRole('textbox'), 'temporary query');
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    await user.click(trigger);
+    expect(screen.getByRole('textbox')).toHaveValue('');
+  });
 });

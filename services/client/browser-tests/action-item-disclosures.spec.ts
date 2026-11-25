@@ -1,3 +1,4 @@
+import { chooseEpic, expectEpicSelection } from './epicPicker';
 import { test, expect, type APIRequest } from './fixtures';
 import type { Locator } from '@playwright/test';
 import type { ActionItemGroupedPage } from '../src/api';
@@ -280,7 +281,7 @@ for (const scale of [1, 2]) {
       'Move Epic Release to top',
       'Move Epic Release to bottom',
       'Rename Epic',
-      'Remove Epic',
+      'Delete Epic',
     ]) {
       await expectControlReachable(
         epicPanel.getByRole('button', { name: label, exact: true }),
@@ -350,15 +351,15 @@ for (const scale of [1, 2]) {
       name: `Epic for ${title}`,
       exact: true,
     });
-    const destination = picker.getByRole('combobox', {
+    const destination = picker.getByRole('button', {
       name: 'Move to Epic',
       exact: true,
     });
     await expect(destination).toBeEnabled();
-    await expect(destination).toHaveValue('10');
+    await expectEpicSelection(destination, 'Release');
     await expectDialogContained(panel);
     await expectControlContained(destination, panel);
-    await destination.selectOption('new');
+    await chooseEpic(destination, 'new');
     await expect(
       picker.getByRole('textbox', { name: 'Epic name', exact: true }),
     ).toBeVisible();

@@ -1,0 +1,72 @@
+.action-item-epic-select {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+.action-item-epic-select > .action-disclosure {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+.action-item-epic-select .action-disclosure-trigger.btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border-color: var(--control-border);
+  background: var(--bg);
+  color: var(--text);
+  text-align: left;
+  white-space: normal;
+}
+.action-item-epic-select .action-disclosure-trigger > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.epic-choices {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.epic-choices > label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.epic-choices input {
+  width: 100%;
+  min-width: 0;
+}
+.epic-choice-results {
+  display: grid;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.epic-choices .epic-choice.btn {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding: 8px 10px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+}
+.epic-choices .epic-choice[aria-current] {
+  background: var(--surface-hover);
+}
+.epic-choices .epic-choice:hover {
+  background: var(--surface-hover);
+}
+.epic-choice-count {
+  margin: 4px 0;
+}

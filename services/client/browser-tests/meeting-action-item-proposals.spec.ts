@@ -1,3 +1,4 @@
+import { openEpicPicker, expectEpicSelection } from './epicPicker';
 import { test, expect, type APIRequest } from './fixtures';
 import {
   expectControlContained,
@@ -51,13 +52,17 @@ test('an added description has explicit reviewed values before its placement and
     .locator('..');
   await expect(field.getByRole('cell').nth(0)).toHaveText('No description');
   await expect(field.getByRole('cell').nth(1)).toHaveText(description);
-  await expect(row.getByRole('combobox', { name: /Epic for/ })).toHaveValue('');
-  await expect(
-    row.getByRole('combobox', { name: /Epic for/ }).locator('option:checked'),
-  ).toHaveText('No Epic');
+  const destination = row.getByRole('button', { name: /Epic for/ });
+  await expectEpicSelection(destination, 'No Epic');
+  const choices = await openEpicPicker(destination);
+  await expect(choices.locator('button.epic-choice[value=""]')).toHaveAttribute(
+    'aria-current',
+    'true',
+  );
+  await page.keyboard.press('Escape');
   for (const scale of [1, 2]) {
     if (scale === 2) await enlargeComputedText(page);
-    const select = row.getByRole('combobox', { name: /Epic for/ });
+    const select = row.getByRole('button', { name: /Epic for/ });
     const accept = row.getByRole('button', { name: 'Accept', exact: true });
     const reject = row.getByRole('button', { name: 'Reject', exact: true });
     const [contentBox, selectBox, acceptBox, rejectBox] = await Promise.all([

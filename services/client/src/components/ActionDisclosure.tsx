@@ -18,14 +18,18 @@ export function ActionDisclosure({
   resetKey,
   triggerContent,
   triggerRef,
+  ariaDescribedBy,
+  autoFocus = false,
 }: {
   label: string;
-  children: ReactNode | ((close: () => void) => ReactNode);
+  children: ReactNode | ((close: () => void, open: boolean) => ReactNode);
   disabled?: boolean;
   dismissible?: boolean;
   resetKey?: string | number;
   triggerContent?: ReactNode;
   triggerRef?: RefObject<HTMLButtonElement | null>;
+  ariaDescribedBy?: string;
+  autoFocus?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const container = useRef<HTMLDivElement>(null);
@@ -117,6 +121,7 @@ export function ActionDisclosure({
       className="action-disclosure"
       onClick={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
+        if (event.key === 'Escape' && !open) return;
         event.stopPropagation();
         if (event.key === 'Escape' && open && dismissible) {
           event.preventDefault();
@@ -133,6 +138,8 @@ export function ActionDisclosure({
         type="button"
         className={`btn btn-sm action-disclosure-trigger${triggerContent === undefined ? ' action-disclosure-icon' : ''}`}
         aria-label={label}
+        aria-describedby={ariaDescribedBy}
+        autoFocus={autoFocus}
         aria-expanded={open}
         aria-controls={id}
         title={label}
@@ -152,7 +159,9 @@ export function ActionDisclosure({
         aria-label={label}
         hidden={!open}
       >
-        {typeof children === 'function' ? children(() => close()) : children}
+        {typeof children === 'function'
+          ? children(() => close(), open)
+          : children}
       </div>
     </div>
   );
