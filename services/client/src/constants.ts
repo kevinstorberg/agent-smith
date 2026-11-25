@@ -135,12 +135,12 @@ export const VOCABULARY_SORT_OPTIONS = [
 ] as const;
 
 export const ACTION_ITEM_QUEUE_KIND_OPTIONS = [
-  { value: 'all', label: 'All items' },
+  { value: 'all', label: 'All' },
   { value: 'epic', label: 'Epics' },
-  { value: 'item', label: 'Single action items' },
+  { value: 'task', label: 'Action Items' },
 ] as const;
 export type ActionItemQueueKind =
-  (typeof ACTION_ITEM_QUEUE_KIND_OPTIONS)[number]['value'];
+  (typeof ACTION_ITEM_QUEUE_KIND_OPTIONS)[number]['value'] | 'item';
 
 export const ACTION_ITEM_STATUSES = [
   ['open', 'Open'],

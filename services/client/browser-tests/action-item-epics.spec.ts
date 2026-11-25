@@ -1,3 +1,7 @@
+import {
+  expectActionItemSort,
+  selectActionItemSort,
+} from './actionItemSorting';
 import { test, expect, type APIRequest } from './fixtures';
 import type {
   ActionItemEpicCreate,
@@ -425,7 +429,6 @@ test('one visible header sorts Epic children and shows updated timestamps while 
     exact: true,
   });
   const titles = table.locator('.action-item-title');
-  const root = page.locator('.action-item-grouped-table');
   await expect(
     table.getByRole('columnheader', { name: 'Updated', exact: true }),
   ).toHaveCount(1);
@@ -436,13 +439,11 @@ test('one visible header sorts Epic children and shows updated timestamps while 
   await expect(table.locator('.action-updated-cell').first()).toContainText(
     'Nov 24',
   );
-  await root.getByRole('button', { name: 'Title', exact: true }).click();
+  await selectActionItemSort(page, 'Title', 'title');
   await expect(titles).toHaveText(['›Alpha work', '›Zulu work']);
-  await root.getByRole('button', { name: 'Updated', exact: true }).click();
-  await expect(
-    root.getByRole('columnheader', { name: 'Updated', exact: true }).first(),
-  ).toHaveAttribute('aria-sort', 'descending');
-  await root.getByRole('button', { name: 'Updated', exact: true }).click();
+  await selectActionItemSort(page, 'Updated', 'updated');
+  await expectActionItemSort(page, 'Updated', 'updated', 'descending');
+  await selectActionItemSort(page, 'Updated', 'updated_asc');
   await expect(titles).toHaveText(['›Zulu work', '›Alpha work']);
   await expect(
     region.getByRole('button', { name: 'Task 4', exact: true }),
@@ -599,7 +600,10 @@ test('filtered whole-root edge movement preserves hidden membership and reports 
   await expect(region.getByText('1 of 8 matching')).toBeVisible();
   await openItemActions(page, 'Task 2');
   await expect(
-    region.getByRole('button', { name: 'Move Task 2 to top', exact: true }),
+    region.getByRole('button', {
+      name: 'Move Task 2 to top of Epic',
+      exact: true,
+    }),
   ).toBeDisabled();
   await page.keyboard.press('Escape');
   await openEpicActions(page, 'Release');

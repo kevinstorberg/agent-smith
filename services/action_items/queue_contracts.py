@@ -8,7 +8,8 @@ from pydantic import Field, field_validator, model_validator
 from services.action_items.contracts import Contract, Delete, PositiveInt, Query, Title
 
 Cohort = Annotated[str, Field(pattern=r"^v1:[0-9a-f]{64}$")]
-QueueKind = Literal["all", "epic", "item"]
+QueueKind = Literal["all", "epic", "item", "task"]
+QueueEdge = Literal["top", "bottom"]
 
 
 class QueueQuery(Query):
@@ -81,11 +82,23 @@ class QueueMove(Contract):
     parent: EpicReference | None = None
     before: EntryReference | None = None
     after: EntryReference | None = None
+    edge: QueueEdge | None = None
 
     @model_validator(mode="after")
-    def exactly_one_anchor(self):
-        if (self.before is None) == (self.after is None):
-            raise ValueError("Provide exactly one before or after anchor")
+    def exactly_one_destination(self):
+        if (
+            sum(value is not None for value in (self.before, self.after, self.edge))
+            != 1
+        ):
+            raise ValueError(
+                "Provide exactly one before anchor, after anchor, or Epic edge"
+            )
+        if self.edge is not None:
+            if self.parent is None or self.source.kind != "item":
+                raise ValueError(
+                    "An Epic edge requires an Action Item source and its Epic parent"
+                )
+            return self
         anchor = self.before or self.after
         if self.source.kind == anchor.kind and self.source.id == anchor.id:
             raise ValueError("Source and anchor must differ")

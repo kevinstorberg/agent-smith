@@ -25,5 +25,5 @@ export function openProjectOptions(page: Page) {
 }
 
 export function openAdvancedFilters(page: Page) {
-  return openDisclosure(page, /^Filters\b/);
+  return openDisclosure(page, /^More filters\b/);
 }

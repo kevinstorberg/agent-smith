@@ -1,8 +1,63 @@
 import type { ActionItemSort } from '../api';
-import { ACTION_ITEM_SORT_COLUMNS } from '../constants';
+import { ACTION_ITEM_SORT_COLUMNS, actionItemSortOptions } from '../constants';
 import { columnDirection } from '../utils/tableSorting';
 import type { SortColumn } from '../utils/tableSorting';
 import { SortableHeader, SortButton } from './table/SortableHeader';
+
+const SORT_LABELS: Record<ActionItemSort, string> = {
+  manual: 'Priority: first to last',
+  manual_desc: 'Priority: last to first',
+  title: 'Title: A–Z',
+  title_desc: 'Title: Z–A',
+  project_asc: 'Project: A–Z',
+  project_desc: 'Project: Z–A',
+  tags_asc: 'Tags: A–Z',
+  tags_desc: 'Tags: Z–A',
+  due_asc: 'Due date: earliest first',
+  due_desc: 'Due date: latest first',
+  updated: 'Updated: newest first',
+  updated_asc: 'Updated: oldest first',
+  completed: 'Completed: newest first',
+  newest: 'Created: newest first',
+};
+
+export function ActionItemQueueSort({
+  sort,
+  onSort,
+  disabled,
+  status,
+}: {
+  sort: ActionItemSort;
+  onSort: (sort: ActionItemSort) => void;
+  disabled: boolean;
+  status: string;
+}) {
+  const options = actionItemSortOptions(
+    status === 'open' || status === 'completed' ? status : 'all',
+  );
+  return (
+    <label className="action-item-sort-control">
+      <span className="form-label">Sort by</span>
+      <select
+        className="input"
+        value={sort}
+        disabled={disabled}
+        onChange={(event) => {
+          const option = options.find(
+            (entry) => entry.value === event.target.value,
+          );
+          if (option) onSort(option.value);
+        }}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {SORT_LABELS[option.value]}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
 export function ActionItemQueueHead({
   sort,
@@ -14,6 +69,7 @@ export function ActionItemQueueHead({
   showDueDate = false,
   showUpdated = !showDueDate,
   staticLabels = false,
+  taskView = false,
 }: {
   sort: ActionItemSort;
   onSort: (sort: ActionItemSort) => void;
@@ -24,6 +80,7 @@ export function ActionItemQueueHead({
   showDueDate?: boolean;
   showUpdated?: boolean;
   staticLabels?: boolean;
+  taskView?: boolean;
 }) {
   const sorting = { sort, onSort, current, disabled };
   const columns = ACTION_ITEM_SORT_COLUMNS;
@@ -31,11 +88,19 @@ export function ActionItemQueueHead({
     label: string,
     column: SortColumn<ActionItemSort>,
     title?: string,
+    className?: string,
   ) =>
     staticLabels ? (
-      <th scope="col">{label}</th>
+      <th scope="col" className={className}>
+        {label}
+      </th>
     ) : (
-      <SortableHeader {...sorting} column={column} title={title}>
+      <SortableHeader
+        {...sorting}
+        column={column}
+        title={title}
+        className={className}
+      >
         {label}
       </SortableHeader>
     );
@@ -46,12 +111,17 @@ export function ActionItemQueueHead({
           heading(
             'Priority',
             columns.priority,
-            'Ascending Priority enables drag ordering',
+            taskView
+              ? 'Order by global task priority'
+              : 'Ascending Priority enables drag ordering',
+            'action-priority-heading',
           )
         ) : (
-          <th scope="col">Priority</th>
+          <th scope="col" className="action-priority-heading">
+            Priority
+          </th>
         )}
-        {heading('Title', columns.title)}
+        {heading('Title', columns.title, undefined, 'action-title-heading')}
         {showProject ? (
           staticLabels ? (
             <th scope="col">Project / Tags</th>

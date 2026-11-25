@@ -31,6 +31,7 @@ from services.action_items.queue_contracts import (
     Membership,
     QueueMove,
     QueueQuery,
+    QueueEdge,
 )
 from services.mcp_contracts import ContractMCP
 
@@ -227,9 +228,11 @@ def action_item_project_delete(project_id: PositiveInt) -> dict[str, Any]:
 def action_item_queue_list(filters: QueueQuery | None = None) -> dict[str, Any]:
     """Read grouped Action Items, Epic membership and current structural revisions before changing groups or order.
 
-    filters accepts the same fields as action_item_list plus kind=all, epic, item; status defaults to open.
-    kind selects root Epics or standalone items before counting and pagination; children stay grouped.
-    Use status=all to inspect completed members too. Pagination counts root groups,
+    filters accepts the same fields as action_item_list plus kind=all, epic, item, task; status defaults to open.
+    all/epic retain grouped roots; item retains standalone tasks. task returns every matching task,
+    including Epic members, with its explicit parent snapshot and global priority before task pagination.
+    task totals count tasks; root_total/root_index count matching nonempty roots for scoped root actions.
+    Use status=all to inspect completed members too. Grouped pagination counts root groups,
     and each returned Epic includes all matching children without splitting the Epic.
     Epic revision/cohort and child revisions are live snapshots; reread after each mutation.
     Sort applies within each Epic as well as to root groups; manual preserves saved sibling order.
@@ -242,16 +245,19 @@ def action_item_queue_move(
     parent: EpicReference | None = None,
     before: EntryReference | None = None,
     after: EntryReference | None = None,
+    edge: QueueEdge | None = None,
 ) -> dict[str, Any]:
     """Reorder a root Epic/standalone task or reorder tasks WITHIN one Epic, using fresh queue snapshots.
 
-    Supply exactly one before or after anchor, including its current expected_revision.
+    Supply exactly one before/after anchor or edge. Anchors include their current expected_revision.
+    edge=top/bottom requires an item source and its Epic parent; it uses every open sibling,
+    including siblings hidden by filters. Actual-edge requests are no-ops after snapshot validation.
     Epic references also require cohort. For Epic children, parent must identify their shared Epic.
     Source and anchor must share the same parent; use action_item_set_epic for membership changes.
     Stale source, anchor or parent snapshots conflict; reread action_item_queue_list before retrying.
     """
     return queue_db.move(
-        QueueMove(source=source, parent=parent, before=before, after=after)
+        QueueMove(source=source, parent=parent, before=before, after=after, edge=edge)
     )
 
 

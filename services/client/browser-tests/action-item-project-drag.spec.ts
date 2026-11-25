@@ -461,7 +461,7 @@ test('unassigned-only items move to a project without changing the current filte
   await expect.poll(() => writes.length).toBe(1);
   await expect(handle).toHaveCount(0);
   await expect(
-    page.getByRole('checkbox', { name: 'Unassigned only' }),
+    page.getByRole('checkbox', { name: 'No project' }),
   ).toBeChecked();
   await expect(
     page.getByRole('tab', { name: 'Work', exact: true }),

@@ -94,7 +94,7 @@ export interface ViewSettings extends Record<
   HarnessViewSettings
 > {
   actionItems: {
-    kind: ActionItemQueueKind;
+    kind: Exclude<ActionItemQueueKind, 'item'>;
     q: string;
     project: string;
     unassigned: boolean;
@@ -255,6 +255,9 @@ const dueWindow: Field<number | null> = {
 function choice<const T extends string>(values: readonly T[]): Field<T> {
   return { parse: (value) => values.find((candidate) => candidate === value) };
 }
+const actionItemKind = choice(
+  ACTION_ITEM_QUEUE_KIND_OPTIONS.map((option) => option.value),
+);
 const pageLimit: Field<PageLimit> = {
   parse: (value) => PAGE_LIMITS.find((limit) => limit === numeric(value)),
 };
@@ -321,9 +324,10 @@ const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
       offset: 0,
     },
     fields: {
-      kind: choice(
-        ACTION_ITEM_QUEUE_KIND_OPTIONS.map((option) => option.value),
-      ),
+      kind: {
+        parse: (value) =>
+          actionItemKind.parse(value === 'item' ? 'task' : value),
+      },
       q: text,
       project: projectName,
       unassigned: boolean,

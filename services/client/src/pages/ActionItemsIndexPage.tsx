@@ -36,7 +36,7 @@ export function ActionItemsIndexPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const activeFilters = [
     ...(tagsInput.trim() ? [`Tags: ${tagsInput.trim()}`] : []),
-    ...(unassigned ? ['Unassigned only'] : []),
+    ...(unassigned ? ['No project'] : []),
     ...(dueHoursInput !== null
       ? [`Due within ${dueHoursInput} hours, including overdue`]
       : []),
@@ -85,9 +85,9 @@ export function ActionItemsIndexPage() {
   });
   const { freezeControls } = queue;
   const searchControls = (
-    <div className="action-items-searchbar">
+    <div className="filters resource-controls action-items-primary-filters">
       <label className="action-items-search">
-        <span className="visually-hidden">Search action items</span>
+        <span className="form-label">Search action items</span>
         <input
           className="input"
           type="search"
@@ -98,6 +98,31 @@ export function ActionItemsIndexPage() {
           placeholder="Search title or description…"
         />
       </label>
+      <label className="action-items-status-filter">
+        <span className="form-label">Status</span>
+        <select
+          className="input"
+          value={status}
+          disabled={freezeControls}
+          onChange={(event) => {
+            const value = parseViewField(
+              'actionItems',
+              'status',
+              event.target.value,
+            );
+            preferences.setFields({
+              status: value,
+              sort: defaultActionItemSort(value),
+            });
+          }}
+        >
+          {ACTION_ITEM_STATUSES.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
       <button
         type="button"
         className="btn action-items-filter-toggle"
@@ -106,8 +131,7 @@ export function ActionItemsIndexPage() {
         disabled={freezeControls}
         onClick={() => setFiltersOpen((open) => !open)}
       >
-        Filters
-        {activeFilters.length ? ` (${activeFilters.length})` : ''}
+        More filters{activeFilters.length ? ` (${activeFilters.length})` : ''}
         <span aria-hidden="true">{filtersOpen ? '⌃' : '⌄'}</span>
       </button>
     </div>
@@ -136,6 +160,83 @@ export function ActionItemsIndexPage() {
           </Link>
         </div>
       </div>
+      <section
+        className="action-items-filter-region"
+        aria-label="Action item filters"
+      >
+        {searchControls}
+        <div
+          className="action-items-search-and-filters"
+          hidden={!activeFilters.length && !filtersOpen}
+        >
+          {activeFilters.length > 0 && (
+            <div
+              className="action-items-active-filters"
+              aria-label="Active filters"
+            >
+              <p>{activeFilters.join(' · ')}</p>
+              <button
+                type="button"
+                className="inline-clear"
+                disabled={freezeControls}
+                onClick={() =>
+                  preferences.setFields({
+                    tags: '',
+                    unassigned: false,
+                    due_within_hours: null,
+                  })
+                }
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
+          <div
+            id={filterId}
+            className="action-item-filters action-items-advanced-filters"
+            role="group"
+            aria-label="Filter action items"
+            hidden={!filtersOpen}
+          >
+            <label>
+              <span className="form-label">Tags</span>
+              <input
+                className="input"
+                value={tagsInput}
+                disabled={freezeControls}
+                onChange={(event) =>
+                  preferences.setField('tags', event.target.value)
+                }
+                placeholder="Tags, comma-separated"
+              />
+            </label>
+            <FilterCheckbox
+              checked={unassigned}
+              disabled={freezeControls || Boolean(project)}
+              title={
+                project
+                  ? 'Select All projects to filter unassigned items.'
+                  : undefined
+              }
+              onChange={(event) =>
+                preferences.setFields({
+                  project: '',
+                  unassigned: event.target.checked,
+                })
+              }
+            >
+              No project
+            </FilterCheckbox>
+            <ActionItemDeadlineWindow
+              hours={dueHoursInput}
+              onChange={(hours) =>
+                preferences.setField('due_within_hours', hours)
+              }
+              disabled={freezeControls}
+            />
+          </div>
+        </div>
+      </section>
       <ActionItemProjectTabs
         compactManagement
         scope={projectScope(project, unassigned)}
@@ -146,127 +247,45 @@ export function ActionItemsIndexPage() {
         dropProject={queue.snapshot?.project}
         dragging={Boolean(queue.snapshot) && !queue.busy}
         toolbarAccessory={
-          <div className="action-items-toolbar-controls">
-            {searchControls}
-            <label className="action-items-type-filter">
-              <span className="form-label">Item type</span>
-              <select
-                className="input"
-                value={kind}
-                disabled={freezeControls}
-                onChange={(event) =>
-                  preferences.setField(
-                    'kind',
-                    parseViewField('actionItems', 'kind', event.target.value),
-                  )
-                }
-              >
-                {ACTION_ITEM_QUEUE_KIND_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div
-              className="sub-tabs"
-              role="tablist"
-              aria-label="Action item status"
-            >
-              {ACTION_ITEM_STATUSES.map(([value, label]) => (
+          <div
+            className="action-items-view-filter"
+            role="group"
+            aria-label="Show"
+          >
+            <span className="form-label">Show</span>
+            <div className="sub-tabs">
+              {ACTION_ITEM_QUEUE_KIND_OPTIONS.map((option) => (
                 <button
-                  key={value}
-                  role="tab"
-                  aria-selected={status === value}
-                  className={status === value ? 'active' : ''}
+                  key={option.value}
+                  type="button"
+                  aria-pressed={kind === option.value}
+                  className={kind === option.value ? 'active' : ''}
                   disabled={freezeControls}
-                  onClick={() => {
-                    preferences.setFields({
-                      status: value,
-                      sort: defaultActionItemSort(value),
-                    });
-                  }}
+                  onClick={() => preferences.setField('kind', option.value)}
                 >
-                  {label}
+                  {option.label}
                 </button>
               ))}
             </div>
           </div>
         }
-        beforeTabs={
-          <div
-            className="action-items-search-and-filters"
-            hidden={!activeFilters.length && !filtersOpen}
-          >
-            {activeFilters.length > 0 && (
-              <div
-                className="action-items-active-filters"
-                aria-label="Active filters"
-              >
-                <p>{activeFilters.join(' · ')}</p>
-                <button
-                  type="button"
-                  className="inline-clear"
-                  disabled={freezeControls}
-                  onClick={() =>
-                    preferences.setFields({
-                      tags: '',
-                      unassigned: false,
-                      due_within_hours: null,
-                    })
-                  }
-                >
-                  Clear filters
-                </button>
-              </div>
-            )}
-            <div
-              id={filterId}
-              className="action-item-filters action-items-advanced-filters"
-              role="group"
-              aria-label="Filter action items"
-              hidden={!filtersOpen}
-            >
-              <label>
-                <span className="form-label">Tags</span>
-                <input
-                  className="input"
-                  value={tagsInput}
-                  disabled={freezeControls}
-                  onChange={(event) =>
-                    preferences.setField('tags', event.target.value)
-                  }
-                  placeholder="Tags, comma-separated"
-                />
-              </label>
-              <FilterCheckbox
-                checked={unassigned}
-                disabled={freezeControls || Boolean(project)}
-                title={
-                  project
-                    ? 'Select All projects to filter unassigned items.'
-                    : undefined
-                }
-                onChange={(event) =>
-                  preferences.setFields({
-                    project: '',
-                    unassigned: event.target.checked,
-                  })
-                }
-              >
-                Unassigned only
-              </FilterCheckbox>
-              <ActionItemDeadlineWindow
-                hours={dueHoursInput}
-                onChange={(hours) =>
-                  preferences.setField('due_within_hours', hours)
-                }
-                disabled={freezeControls}
-              />
-            </div>
-          </div>
-        }
       />
+      {queue.membershipNotice && (
+        <p role="status" className="action-items-membership-notice">
+          <Link to={`/action-items/${queue.membershipNotice.itemId}`}>
+            {queue.membershipNotice.title}
+          </Link>{' '}
+          moved out of Epic “{queue.membershipNotice.epicTitle}”. It is
+          available in All or Action Items.{' '}
+          <button
+            type="button"
+            className="inline-clear"
+            onClick={queue.clearMembershipNotice}
+          >
+            Dismiss
+          </button>
+        </p>
+      )}
       {queue.created &&
         !queue.items.some(
           (root) => root.kind === 'epic' && root.epic.id === queue.created?.id,

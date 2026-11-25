@@ -208,37 +208,93 @@ export function ActionItemProjectTabs({
     selectScope(tabs[next].scope);
   }
 
+  const managementControls = (
+    <div
+      className="action-projects-heading"
+      role="group"
+      aria-label="Project management"
+    >
+      {!toolbarAccessory && <strong>Projects</strong>}
+      {compactManagement ? (
+        <ActionDisclosure
+          label="Project options"
+          triggerContent={
+            <>
+              <span className="project-options-label">Project options</span>
+              <span className="project-options-symbol" aria-hidden="true">
+                ⋯
+              </span>
+            </>
+          }
+          disabled={busy}
+          resetKey={`${projectScopeKey(scope)}:${creating}`}
+        >
+          {management}
+        </ActionDisclosure>
+      ) : (
+        management()
+      )}
+    </div>
+  );
+  const projectTabs = (
+    <div
+      ref={dropTargetsRef}
+      className="action-project-tabs"
+      role="tablist"
+      aria-label="Action item projects"
+    >
+      {tabs.map((tab, index) => {
+        const projectName =
+          tab.scope.kind === 'named' ? tab.scope.name : undefined;
+        const active =
+          tab.scope.kind === 'all'
+            ? scope.kind !== 'named'
+            : projectScopeKey(tab.scope) === projectScopeKey(scope);
+        return (
+          <button
+            key={projectScopeKey(tab.scope)}
+            role="tab"
+            className={[
+              active ? 'active' : '',
+              tab.scope.kind === 'named' && tab.scope.name === dropProject
+                ? 'project-drop-target'
+                : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            data-project-id={
+              tab.scope.kind === 'named'
+                ? projects.find(({ name }) => name === projectName)?.id
+                : undefined
+            }
+            data-project-name={
+              tab.scope.kind === 'named' ? tab.scope.name : undefined
+            }
+            aria-selected={active}
+            tabIndex={active ? 0 : -1}
+            title={tab.label}
+            disabled={busy && !dragging}
+            aria-disabled={busy || undefined}
+            onClick={() => {
+              if (!busy) selectScope(tab.scope);
+            }}
+            onKeyDown={(event) => navigateTabs(event, index)}
+          >
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
   return (
     <section className="action-projects" aria-label="Projects">
-      <div className="action-projects-toolbar">
-        {toolbarAccessory}
-        <div
-          className="action-projects-heading"
-          role="group"
-          aria-label="Project management"
-        >
-          {!toolbarAccessory && <strong>Projects</strong>}
-          {compactManagement ? (
-            <ActionDisclosure
-              label="Project options"
-              triggerContent={
-                <>
-                  <span className="project-options-label">Project options</span>
-                  <span className="project-options-symbol" aria-hidden="true">
-                    ⋯
-                  </span>
-                </>
-              }
-              disabled={busy}
-              resetKey={`${projectScopeKey(scope)}:${creating}`}
-            >
-              {management}
-            </ActionDisclosure>
-          ) : (
-            management()
-          )}
+      {(toolbarAccessory || !compactManagement) && (
+        <div className="action-projects-toolbar">
+          {toolbarAccessory}
+          {!compactManagement && managementControls}
         </div>
-      </div>
+      )}
       {catalog.loading && !catalog.data && (
         <p role="status">Loading projects…</p>
       )}
@@ -301,54 +357,14 @@ export function ActionItemProjectTabs({
       )}
       {notice && <p role="alert">{notice}</p>}
       {beforeTabs}
-      <div
-        ref={dropTargetsRef}
-        className="action-project-tabs"
-        role="tablist"
-        aria-label="Action item projects"
-      >
-        {tabs.map((tab, index) => {
-          const projectName =
-            tab.scope.kind === 'named' ? tab.scope.name : undefined;
-          const active =
-            tab.scope.kind === 'all'
-              ? scope.kind !== 'named'
-              : projectScopeKey(tab.scope) === projectScopeKey(scope);
-          return (
-            <button
-              key={projectScopeKey(tab.scope)}
-              role="tab"
-              className={[
-                active ? 'active' : '',
-                tab.scope.kind === 'named' && tab.scope.name === dropProject
-                  ? 'project-drop-target'
-                  : '',
-              ]
-                .filter(Boolean)
-                .join(' ')}
-              data-project-id={
-                tab.scope.kind === 'named'
-                  ? projects.find(({ name }) => name === projectName)?.id
-                  : undefined
-              }
-              data-project-name={
-                tab.scope.kind === 'named' ? tab.scope.name : undefined
-              }
-              aria-selected={active}
-              tabIndex={active ? 0 : -1}
-              title={tab.label}
-              disabled={busy && !dragging}
-              aria-disabled={busy || undefined}
-              onClick={() => {
-                if (!busy) selectScope(tab.scope);
-              }}
-              onKeyDown={(event) => navigateTabs(event, index)}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      {compactManagement ? (
+        <div className="action-projects-rail">
+          {projectTabs}
+          {managementControls}
+        </div>
+      ) : (
+        projectTabs
+      )}
     </section>
   );
 }

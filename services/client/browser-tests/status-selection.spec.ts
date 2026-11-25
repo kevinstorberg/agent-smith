@@ -81,8 +81,8 @@ const views: SelectionView[] = [
   {
     name: 'Action items',
     path: '/action-items',
-    labels: ['Open', 'Completed', 'All'],
-    group: (page) => page.getByRole('tablist', { name: 'Action item status' }),
+    labels: ['All', 'Epics', 'Action Items'],
+    group: (page) => page.getByRole('group', { name: 'Show', exact: true }),
     disabled: 'queue',
   },
   {
@@ -361,12 +361,10 @@ for (const view of views) {
       await capture(group, info, 'hover');
       for (const label of view.labels) {
         await group
-          .getByRole(
-            view.name === 'Action items' || view.name === 'Discussion topics'
-              ? 'tab'
-              : 'button',
-            { name: label, exact: true },
-          )
+          .getByRole(view.name === 'Discussion topics' ? 'tab' : 'button', {
+            name: label,
+            exact: true,
+          })
           .click();
         await expectSelection(group, label);
         const positions = await buttonGeometry(group);
@@ -396,7 +394,10 @@ for (const view of views) {
       await page.emulateMedia({ forcedColors: 'none' });
 
       if (view.disabled === 'queue') {
-        await group.getByRole('tab', { name: 'Open', exact: true }).click();
+        if (view.name === 'Action items')
+          await group.getByRole('button', { name: 'All', exact: true }).click();
+        else
+          await group.getByRole('tab', { name: 'Open', exact: true }).click();
         const handle = page.getByRole('button', {
           name: 'Reorder Task 1',
           exact: true,

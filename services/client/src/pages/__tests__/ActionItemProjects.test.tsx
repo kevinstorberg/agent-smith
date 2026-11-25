@@ -177,7 +177,9 @@ describe('first-class project navigation', () => {
         expect.objectContaining({ project: 'Work', tags: ['security'] }),
       ),
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'Completed' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), {
+      target: { value: 'completed' },
+    });
     await waitFor(() =>
       expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({
@@ -195,7 +197,7 @@ describe('first-class project navigation', () => {
     expect(api.actionItemProjects.list).toHaveBeenCalledTimes(1);
   });
 
-  it('distinguishes the Unassigned only checkbox from real projects with navigation names', async () => {
+  it('distinguishes the No project checkbox from real projects with navigation names', async () => {
     renderPage();
     const tabs = await screen.findByRole('tablist', {
       name: 'Action item projects',
@@ -203,7 +205,7 @@ describe('first-class project navigation', () => {
     expect(
       within(tabs).queryByRole('tab', { name: 'Unassigned' }),
     ).not.toBeInTheDocument();
-    fireEvent.click(filterCheckbox('Unassigned only'));
+    fireEvent.click(filterCheckbox('No project'));
     await waitFor(() =>
       expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ unassigned: true, project: undefined }),
@@ -236,7 +238,7 @@ describe('first-class project navigation', () => {
     const all = await screen.findByRole('tab', {
       name: 'All projects',
     });
-    const checkbox = filterCheckbox('Unassigned only');
+    const checkbox = filterCheckbox('No project');
     expect(all).toHaveAttribute('aria-selected', 'true');
     expect(checkbox).toBeChecked();
     await userEvent.click(all);
@@ -277,7 +279,7 @@ describe('first-class project navigation', () => {
       limit: 25,
     });
     renderPage();
-    const checkbox = await findFilterCheckbox('Unassigned only');
+    const checkbox = await findFilterCheckbox('No project');
     expect(checkbox).toBeChecked();
     expect(screen.getByRole('tab', { name: 'All projects' })).toHaveAttribute(
       'aria-selected',
@@ -324,7 +326,7 @@ describe('first-class project navigation', () => {
       'aria-selected',
       'true',
     );
-    const checkbox = filterCheckbox('Unassigned only');
+    const checkbox = filterCheckbox('No project');
     expect(checkbox).not.toBeChecked();
     expect(checkbox).toBeDisabled();
     expect(checkbox).toHaveAttribute(

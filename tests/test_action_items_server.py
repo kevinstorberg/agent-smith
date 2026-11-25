@@ -286,6 +286,26 @@ async def test_action_items_mcp_groups_maintains_and_orders_existing_tasks_with_
         root["kind"] == "item" and root["item"]["id"] == outside["id"]
         for root in queue["items"]
     )
+    task_page = await call("action_item_queue_list", filters={"kind": "task"})
+    assert task_page["total"] == 3 and task_page["root_total"] == 2
+    child = next(row for row in task_page["items"] if row["item"]["id"] == first["id"])
+    assert child["parent"]["open_count"] == 2
+    await call(
+        "action_item_queue_move",
+        source=root_ref(child["item"]),
+        parent=ref(child["parent"]),
+        edge="top",
+    )
+    queue = await call("action_item_queue_list", filters={"sort": "manual"})
+    current = next(root for root in queue["items"] if root["kind"] == "epic")
+    await call(
+        "action_item_queue_move",
+        source=root_ref(current["children"][0]["item"]),
+        parent=ref(current["epic"]),
+        edge="bottom",
+    )
+    queue = await call("action_item_queue_list", filters={"sort": "manual"})
+    current = next(root for root in queue["items"] if root["kind"] == "epic")
     renamed = await call(
         "action_item_epic_rename",
         epic_id=group["id"],

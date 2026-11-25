@@ -242,6 +242,7 @@ export interface ActionItemEpic {
   entry_id: number;
   position: number;
   cohort: string;
+  open_count: number;
   total_count?: number;
 }
 export interface ActionItemEpicReference {
@@ -266,6 +267,12 @@ export interface ActionItemQueueEntry {
   entry_id: number;
   parent_epic_id: number | null;
   position: number | null;
+  parent?: ActionItemEpic | null;
+  root_index?: number;
+}
+export interface ActionItemTaskEntry extends ActionItemQueueEntry {
+  parent: ActionItemEpic | null;
+  root_index: number;
 }
 export interface ActionItemEpicGroup {
   kind: 'epic';
@@ -277,6 +284,11 @@ export interface ActionItemEpicGroup {
 export type ActionItemQueueRoot = ActionItemQueueEntry | ActionItemEpicGroup;
 export interface ActionItemGroupedPage extends Paginated<ActionItemQueueRoot> {
   matching_count: number;
+  root_total?: number;
+}
+export interface ActionItemTaskPage extends ActionItemGroupedPage {
+  items: ActionItemTaskEntry[];
+  root_total: number;
 }
 export type ActionItemEntryReference =
   | { kind: 'item'; id: number; expected_revision: number }
@@ -285,8 +297,15 @@ export type ActionItemQueueMove = {
   source: ActionItemEntryReference;
   parent?: ActionItemEpicReference | null;
 } & (
-  | { before: ActionItemEntryReference; after?: never }
-  | { after: ActionItemEntryReference; before?: never }
+  | { before: ActionItemEntryReference; after?: never; edge?: never }
+  | { after: ActionItemEntryReference; before?: never; edge?: never }
+  | {
+      source: Extract<ActionItemEntryReference, { kind: 'item' }>;
+      parent: ActionItemEpicReference;
+      edge: 'top' | 'bottom';
+      before?: never;
+      after?: never;
+    }
 );
 
 export interface ProfileDiscussionTopicRow extends Omit<

@@ -5,6 +5,8 @@ import { actionItem } from '../src/pages/__tests__/actionItemFixture';
 import {
   epicGroup,
   queuePage,
+  taskEntry,
+  taskPage,
 } from '../src/pages/__tests__/actionItemEpicFixture';
 import {
   openAdvancedFilters,
@@ -146,9 +148,10 @@ for (const scale of [1, 2]) {
         restorable: true,
       });
     };
-    const type = page.getByRole('combobox', { name: 'Item type', exact: true });
+    const type = page.getByRole('group', { name: 'Show', exact: true });
     await expectControlContained(type, page.locator('#main-content'));
-    await expectControlReachable(type);
+    for (const button of await type.getByRole('button').all())
+      await expectControlReachable(button);
     await page.evaluate(() =>
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' }),
     );
@@ -198,7 +201,7 @@ for (const scale of [1, 2]) {
     for (const label of ['Priority', 'Title', 'Tags', 'Due date', 'Updated']) {
       await expect(
         root.getByRole('button', { name: label, exact: true }),
-      ).toHaveCount(1);
+      ).toHaveCount(page.viewportSize()!.width > 1100 ? 1 : 0);
       await expect(
         children.getByRole('columnheader', {
           name: label === 'Tags' ? 'Project / Tags' : label,
@@ -454,7 +457,7 @@ test('active filters stay visible when collapsed and disclosure never changes th
   await page.goto(
     '/action-items?tags=security&unassigned=true&due_within_hours=48',
   );
-  const trigger = page.getByRole('button', { name: /^Filters\b/ });
+  const trigger = page.getByRole('button', { name: /^More filters\b/ });
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
   await expect(trigger).toContainText('3');
   await expect(
@@ -462,7 +465,7 @@ test('active filters stay visible when collapsed and disclosure never changes th
   ).toHaveCount(0);
   const summary = page.getByLabel('Active filters', { exact: true });
   await expect(summary).toContainText('security');
-  await expect(summary).toContainText('Unassigned only');
+  await expect(summary).toContainText('No project');
   await expect(summary).toContainText('48');
   await openAdvancedFilters(page);
   await expect(
@@ -472,7 +475,7 @@ test('active filters stay visible when collapsed and disclosure never changes th
   await expect(summary).toBeVisible();
   await openAdvancedFilters(page);
   await expect(
-    page.getByRole('checkbox', { name: 'Unassigned only' }),
+    page.getByRole('checkbox', { name: 'No project' }),
   ).toBeChecked();
   await expect(
     page.getByRole('spinbutton', { name: 'Hours', exact: true }),
@@ -496,7 +499,7 @@ test('active filters stay visible when collapsed and disclosure never changes th
   );
 });
 
-test('root type requests preserve server pagination, complete Epics, and standalone membership', async ({
+test('view requests preserve server pagination, complete Epics, and every task membership', async ({
   page,
   fixtureAPI,
 }, testInfo) => {
@@ -527,11 +530,39 @@ test('root type requests preserve server pagination, complete Epics, and standal
   fixtureAPI.get('/api/action-items/projects', { items: [], total: 0 });
   fixtureAPI.get('/api/action-items/queue', ({ url }: APIRequest) => {
     const kind = url.searchParams.get('kind') || 'all';
+    const taskRoots = roots.filter(
+      (root) => root.kind === 'item' || root.children.length > 0,
+    );
+    const allTasks = taskRoots.flatMap((root, rootIndex) =>
+      root.kind === 'item'
+        ? [
+            taskEntry(root.item, {
+              parent: null,
+              rootIndex,
+              position: root.position,
+            }),
+          ]
+        : root.children.map((child) =>
+            taskEntry(child.item, {
+              parent: root.epic,
+              rootIndex,
+              position: child.position,
+            }),
+          ),
+    );
     const filtered = roots.filter(
       (root) => kind === 'all' || root.kind === kind,
     );
     const offset = Number(url.searchParams.get('offset') || 0);
     const limit = Number(url.searchParams.get('limit') || 10);
+    if (kind === 'task')
+      return taskPage({
+        items: allTasks.slice(offset, offset + limit),
+        total: allTasks.length,
+        root_total: roots.filter(
+          (root) => root.kind === 'item' || root.children.length > 0,
+        ).length,
+      });
     return {
       items: filtered.slice(offset, offset + limit),
       total: filtered.length,
@@ -546,9 +577,11 @@ test('root type requests preserve server pagination, complete Epics, and standal
   await expect(
     page.getByText('Showing 11–15 of 15', { exact: true }),
   ).toBeVisible();
-  const type = page.getByRole('combobox', { name: 'Item type', exact: true });
-  await expect(type).toHaveValue('all');
-  await type.selectOption('epic');
+  const type = page.getByRole('group', { name: 'Show', exact: true });
+  await expect(
+    type.getByRole('button', { name: 'All', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await type.getByRole('button', { name: 'Epics', exact: true }).click();
   await expect(
     page.getByText('Showing 1–3 of 3', { exact: true }),
   ).toBeVisible();
@@ -592,30 +625,32 @@ test('root type requests preserve server pagination, complete Epics, and standal
     fullPage: true,
   });
 
-  await type.selectOption('item');
+  await type.getByRole('button', { name: 'Action Items', exact: true }).click();
   await expect(
-    page.getByText('Showing 1–10 of 12', { exact: true }),
+    page.getByText('Showing 1–10 of 15', { exact: true }),
   ).toBeVisible();
   await expect(rootRows).toHaveCount(10);
   await expect(page.locator('.action-item-epic-group')).toHaveCount(0);
   await expect(
     page.getByRole('button', { name: 'Task 2', exact: true }),
-  ).toHaveCount(0);
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
   await expect(
-    page.getByText('Showing 11–12 of 12', { exact: true }),
+    page.getByText('Showing 11–15 of 15', { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole('button', { name: 'Single task 12', exact: true }),
   ).toBeVisible();
-  await type.selectOption('all');
+  await type.getByRole('button', { name: 'All', exact: true }).click();
   await expect(
     page.getByText('Showing 1–10 of 15', { exact: true }),
   ).toBeVisible();
-  await type.selectOption('epic');
+  await type.getByRole('button', { name: 'Epics', exact: true }).click();
   await expect(rootRows).toHaveCount(3);
   await page.reload();
-  await expect(type).toHaveValue('epic');
+  await expect(
+    type.getByRole('button', { name: 'Epics', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
   await expect(
     page.getByText('Showing 1–3 of 3', { exact: true }),
   ).toBeVisible();
@@ -628,7 +663,7 @@ test('root type requests preserve server pagination, complete Epics, and standal
   expect(
     reads.some(
       (url) =>
-        url.searchParams.get('kind') === 'item' &&
+        url.searchParams.get('kind') === 'task' &&
         url.searchParams.get('offset') === '10',
     ),
   ).toBe(true);

@@ -187,11 +187,10 @@ describe('ActionItemsIndexPage', () => {
     expect(
       screen.queryByRole('checkbox', { name: 'Deadline window' }),
     ).toBeNull();
-    expect(screen.getByRole('button', { name: 'Filters' })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect(
+      screen.getByRole('button', { name: 'More filters' }),
+    ).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(screen.getByRole('button', { name: 'More filters' }));
     expect(
       screen.getByRole('checkbox', { name: 'Deadline window' }),
     ).toBeVisible();
@@ -207,7 +206,7 @@ describe('ActionItemsIndexPage', () => {
       ],
     });
     await screen.findByRole('button', { name: 'Task 1' });
-    const filters = screen.getByRole('button', { name: 'Filters (2)' });
+    const filters = screen.getByRole('button', { name: 'More filters (2)' });
     expect(filters).toHaveAttribute('aria-expanded', 'false');
     expect(
       screen.queryByRole('checkbox', { name: 'Deadline window' }),
@@ -229,10 +228,9 @@ describe('ActionItemsIndexPage', () => {
         }),
       ),
     );
-    expect(screen.getByRole('button', { name: 'Filters' })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    );
+    expect(
+      screen.getByRole('button', { name: 'More filters' }),
+    ).toHaveAttribute('aria-expanded', 'false');
     expect(api.actionItems.update).not.toHaveBeenCalled();
     expect(api.actionItems.remove).not.toHaveBeenCalled();
     expect(api.actionItemQueue.move).not.toHaveBeenCalled();
@@ -668,7 +666,9 @@ describe('ActionItemsIndexPage', () => {
         total: 1,
       }),
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'Completed' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), {
+      target: { value: 'completed' },
+    });
     await screen.findByRole('button', { name: 'Reopen Task 1' });
     expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
       expect.objectContaining({ status: 'completed', sort: 'completed' }),
@@ -683,7 +683,9 @@ describe('ActionItemsIndexPage', () => {
         status: 'open',
       }),
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'All' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), {
+      target: { value: 'all' },
+    });
     await waitFor(() =>
       expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
         expect.objectContaining({ status: 'all', sort: 'newest' }),
@@ -1157,7 +1159,9 @@ describe('ActionItemsIndexPage', () => {
         total: 1,
       }),
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'Completed' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), {
+      target: { value: 'completed' },
+    });
     await screen.findByRole('button', { name: 'Reopen Task 24' });
     expect(screen.getByLabelText('No open queue priority')).toHaveTextContent(
       '—',

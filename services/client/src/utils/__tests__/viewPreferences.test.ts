@@ -24,7 +24,22 @@ describe('view preference cookie boundary', () => {
     ).toMatchObject({ kind: 'epic', offset: 20 });
     expect(
       resolveView('actionItems', cookie, new URLSearchParams('kind=item')),
-    ).toMatchObject({ kind: 'item', q: 'Saved search', offset: 0 });
+    ).toMatchObject({ kind: 'task', q: 'Saved search', offset: 0 });
+    const legacy = `${VIEW_COOKIE_NAME}=${encodeURIComponent(
+      JSON.stringify({
+        v: 1,
+        views: [
+          {
+            key: 'actionItems',
+            values: { kind: 'item', q: 'Saved search', offset: 20 },
+          },
+        ],
+      }),
+    )}`;
+    expect(
+      resolveView('actionItems', legacy, new URLSearchParams()),
+    ).toMatchObject({ kind: 'task', q: 'Saved search', offset: 20 });
+    expect(readViewCookie(legacy)[0].values.kind).toBe('task');
     for (const value of ['all', '', 'invalid'])
       expect(
         resolveView(

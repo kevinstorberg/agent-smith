@@ -1,3 +1,9 @@
+import {
+  actionItemSortControl,
+  compactActionItems,
+  expectActionItemSort,
+  selectActionItemSort,
+} from './actionItemSorting';
 import { flatQueueFixture } from './actionItemQueueFixture';
 import { test, expect, type APIRequest } from './fixtures';
 import { actionItem, deferred } from '../src/pages/__tests__/actionItemFixture';
@@ -46,11 +52,8 @@ test('Action Items header toggles preserve filters, reset page two, and restore 
     page.getByRole('button', { name: 'Task 11', exact: true }),
   ).toBeVisible();
   const start = fixtureAPI.requests.length;
-  const table = page.getByRole('table');
-  await table.getByRole('button', { name: 'Title', exact: true }).click();
-  await expect(
-    table.getByRole('columnheader', { name: 'Title', exact: true }),
-  ).toHaveAttribute('aria-sort', 'ascending');
+  await selectActionItemSort(page, 'Title', 'title');
+  await expectActionItemSort(page, 'Title', 'title', 'ascending');
   const reads = fixtureAPI.requests
     .slice(start)
     .filter(
@@ -66,12 +69,13 @@ test('Action Items header toggles preserve filters, reset page two, and restore 
     sort: 'title',
   });
   for (const [label, ascending, descending] of pairs) {
-    const button = table.getByRole('button', { name: label, exact: true });
     const orders = [ascending, descending];
     for (const sort of orders) {
-      await button.click();
-      await expect(button.locator('xpath=ancestor::th')).toHaveAttribute(
-        'aria-sort',
+      await selectActionItemSort(page, label, sort);
+      await expectActionItemSort(
+        page,
+        label,
+        sort,
         sort === ascending ? 'ascending' : 'descending',
       );
       expect(new URL(page.url()).searchParams.get('sort')).toBe(sort);
@@ -87,17 +91,9 @@ test('Action Items header toggles preserve filters, reset page two, and restore 
     }
   }
   await page.reload();
-  await expect(
-    table
-      .getByRole('button', { name: 'Due date', exact: true })
-      .locator('xpath=ancestor::th'),
-  ).toHaveAttribute('aria-sort', 'descending');
-  await table.getByRole('button', { name: 'Priority', exact: true }).click();
-  await expect(
-    table
-      .getByRole('button', { name: 'Priority', exact: true })
-      .locator('xpath=ancestor::th'),
-  ).toHaveAttribute('aria-sort', 'ascending');
+  await expectActionItemSort(page, 'Due date', 'due_desc', 'descending');
+  await selectActionItemSort(page, 'Priority', 'manual');
+  await expectActionItemSort(page, 'Priority', 'manual', 'ascending');
   await expect(
     page.getByRole('button', { name: 'Reorder Task 1', exact: true }),
   ).toBeEnabled();
@@ -122,12 +118,13 @@ test('Action Item keyboard sorts retain rows and focus, reject stale responses, 
   );
   await page.goto('/action-items');
   const table = page.getByRole('table');
-  const title = table.getByRole('button', { name: 'Title', exact: true });
+  const title = actionItemSortControl(page, 'Title');
   await expect(
     page.getByRole('button', { name: 'Task 1', exact: true }),
   ).toBeVisible();
   await title.focus();
-  await page.keyboard.press('Enter');
+  if (compactActionItems(page)) await title.press('t');
+  else await page.keyboard.press('Enter');
   await expect(table).toHaveAttribute('aria-busy', 'true');
   await expect(
     page.getByText('Loading action items…', { exact: true }),
@@ -143,7 +140,8 @@ test('Action Item keyboard sorts retain rows and focus, reject stale responses, 
   ).toBeDisabled();
   await expect(title).toBeFocused();
   await expect(table.locator('[aria-sort]')).toHaveCount(0);
-  await page.keyboard.press('Space');
+  if (compactActionItems(page)) await title.selectOption('title_desc');
+  else await page.keyboard.press('Space');
   await expect
     .poll(() =>
       fixtureAPI.requests.some(
@@ -160,10 +158,7 @@ test('Action Item keyboard sorts retain rows and focus, reject stale responses, 
   );
   asc.resolve(response(3, 99));
   await (await oldResponse).finished();
-  await expect(title.locator('xpath=ancestor::th')).toHaveAttribute(
-    'aria-sort',
-    'descending',
-  );
+  await expectActionItemSort(page, 'Title', 'title_desc', 'descending');
   await expect(
     page.getByRole('button', { name: 'Task 3', exact: true }),
   ).toHaveCount(0);
@@ -209,13 +204,44 @@ for (const scope of ['action-items', 'discussion-topics'] as const) {
         scope === 'action-items'
           ? [...pairs.map(([name]) => name), 'Updated']
           : ['Priority', 'Title', 'Tags', 'Updated'];
-      await expectSortableHeaderLayout(page, testInfo, {
-        table: region.getByRole('table'),
-        scrollRegion: region,
-        labels,
-        fullyVisibleHeaders: labels,
-        artifactPrefix: `${scope}-sort-${font.toLowerCase()}`,
-      });
+      if (scope === 'action-items' && compactActionItems(page)) {
+        const sort = actionItemSortControl(page, 'Title');
+        for (const scale of [1, 2]) {
+          if (scale === 2) await enlargeComputedText(page);
+          await expectControlContained(sort, page.locator('main'));
+          await expectDocumentContained(page);
+          await expect(region.locator('thead button')).toHaveCount(0);
+          for (const value of [
+            'manual',
+            'manual_desc',
+            'title',
+            'title_desc',
+            'project_asc',
+            'project_desc',
+            'tags_asc',
+            'tags_desc',
+            'due_asc',
+            'due_desc',
+            'updated_asc',
+            'updated',
+          ]) {
+            await sort.selectOption(value);
+            await expect(sort).toHaveValue(value);
+            expect(new URL(page.url()).searchParams.get('sort')).toBe(value);
+          }
+          await page.screenshot({
+            path: testInfo.outputPath(`compact-sort-${font}-${scale}x.png`),
+            fullPage: true,
+          });
+        }
+      } else
+        await expectSortableHeaderLayout(page, testInfo, {
+          table: region.getByRole('table'),
+          scrollRegion: region,
+          labels,
+          fullyVisibleHeaders: labels,
+          artifactPrefix: `${scope}-sort-${font.toLowerCase()}`,
+        });
       expect(
         fixtureAPI.requests.filter((entry) => entry.method !== 'GET'),
       ).toEqual([]);
@@ -246,12 +272,8 @@ test('Empty Action Items keep usable headers and contained feedback at both hori
     await expectControlContained(empty, region);
     await expectDocumentContained(page);
   }
-  const title = region.getByRole('button', { name: 'Title', exact: true });
-  await title.click();
-  await expect(title.locator('xpath=ancestor::th')).toHaveAttribute(
-    'aria-sort',
-    'ascending',
-  );
+  await selectActionItemSort(page, 'Title', 'title');
+  await expectActionItemSort(page, 'Title', 'title', 'ascending');
 });
 
 test('Discussion Topic header sorting resets page two without leaking global project or due-date fields', async ({
@@ -318,7 +340,7 @@ test('Explicit Action Item Retry announces its pending read without adding refre
     page.getByRole('button', { name: 'Task 1', exact: true }),
   ).toBeVisible();
   flatQueueFixture(fixtureAPI, { detail: 'Synthetic failed read' }, 500);
-  await table.getByRole('button', { name: 'Title', exact: true }).click();
+  await selectActionItemSort(page, 'Title', 'title');
   await expect(page.getByRole('alert')).toContainText(
     'Could not refresh action items.',
   );
@@ -337,9 +359,7 @@ test('Explicit Action Item Retry announces its pending read without adding refre
   await expect(
     page.getByRole('button', { name: 'Task 2', exact: true }),
   ).toBeVisible();
-  await expect(
-    table.getByRole('columnheader', { name: 'Title', exact: true }),
-  ).toHaveAttribute('aria-sort', 'ascending');
+  await expectActionItemSort(page, 'Title', 'title', 'ascending');
   await expect(table).toHaveAttribute('aria-busy', 'false');
   expect(fixtureAPI.requests.filter((entry) => entry.method !== 'GET')).toEqual(
     [],
