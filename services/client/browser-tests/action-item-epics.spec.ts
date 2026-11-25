@@ -333,15 +333,15 @@ for (const collapsed of [false, true]) {
     await targetRow.scrollIntoViewIfNeeded();
     const to = await targetRow.boundingBox();
     expect(to).not.toBeNull();
-    await page.mouse.move(
-      to!.x + 30,
-      Math.min(page.viewportSize()!.height - 10, to!.y + to!.height - 8),
-      { steps: 20 },
-    );
+    // Auto-scroll can move the list away from a pointer held near its bottom edge.
+    await page.mouse.move(to!.x + 30, to!.y + to!.height * 0.75, { steps: 20 });
     await expect(page.locator('[id^="rfd-announcement-"]')).toHaveText(
       /You have moved the item from position 1\s+to position 3/,
     );
     await page.mouse.up();
+    await expect(page.locator('[id^="rfd-announcement-"]')).toHaveText(
+      /You have dropped the item\.\s+You have moved the item from position 1\s+to position 3/,
+    );
     await expect.poll(() => writes.length).toBe(2);
     expect(writes[1]).toMatchObject({
       after: { kind: 'item', id: 4, expected_revision: 1 },
