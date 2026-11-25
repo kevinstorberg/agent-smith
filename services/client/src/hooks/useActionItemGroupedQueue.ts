@@ -5,6 +5,7 @@ import {
   type ActionItemEpic,
   type ActionItemEpicCreate,
   type ActionItemEpicGroup,
+  type ActionItemEpicReference,
   type ActionItemFilters,
   type ActionItemGroupedPage,
   type ActionItemQueueRoot,
@@ -18,8 +19,9 @@ import {
   useActionItemProjectDrag,
   type ProjectDragSnapshot,
 } from './useActionItemProjectDrag';
-import { epicReference } from '../utils/actionItemEpics';
-export { epicReference } from '../utils/actionItemEpics';
+import { epicReference as buildEpicReference } from '../utils/actionItemEpics';
+export const epicReference: (epic: ActionItemEpic) => ActionItemEpicReference =
+  buildEpicReference;
 
 export const queueIdentity = (root: ActionItemQueueRoot) =>
   root.kind === 'item' ? `item:${root.item.id}` : `epic:${root.epic.id}`;
