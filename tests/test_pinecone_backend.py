@@ -5,17 +5,19 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import services.memory.backends.pinecone_backend as pb
+from services.memory import maintenance
 from tests.shared_backend_contract import (
-    VALID_ID, assert_get_row_not_found, assert_delete_raises_if_missing, assert_invalid_id_rejected,
+    VALID_ID,
+    assert_get_row_not_found,
+    assert_delete_raises_if_missing,
+    assert_invalid_id_rejected,
 )
 
 
 @pytest.fixture(autouse=True)
 def reset_globals():
-    pb._pc = None
     pb._index = None
     yield
-    pb._pc = None
     pb._index = None
 
 
@@ -30,26 +32,27 @@ def mock_index():
 
 @pytest.fixture
 def mock_pc(mock_index, monkeypatch):
-    monkeypatch.setenv("PINECONE_API_KEY", "test-api-key")
-    pc = MagicMock()
-    pc.has_index.return_value = True
-    pc.Index.return_value = mock_index
-    pc.describe_index.return_value = {"host": "test-index.example.invalid"}
-    with patch.object(pb, "_get_pc", return_value=pc), patch.object(pb, "Index", return_value=mock_index):
-        yield pc
+    with patch.object(
+        maintenance,
+        "connect_existing_index",
+        return_value=pb._ObservedPinecone(mock_index, index=pb.INDEX_NAME),
+    ) as connect:
+        yield connect
 
 
 def test_init_connects(mock_pc):
     pb.init()
-    mock_pc.has_index.assert_called_once()
+    pb.init()
+    mock_pc.assert_called_once()
 
 
 def test_init_configures_bounded_requests_without_sdk_retries(mock_pc):
     pb.init()
-    kwargs = pb.Index.call_args.kwargs
-    assert kwargs["host"] == "test-index.example.invalid"
-    assert kwargs["api_key"] == "test-api-key"
-    assert kwargs["openapi_config"].retries == 0
+    source, budget = mock_pc.call_args.args
+    assert source.index_name == pb.INDEX_NAME
+    assert source.namespace == ""
+    assert budget.max_requests == 1
+    assert budget.deadline_seconds == pb.REQUEST_SECONDS
 
 
 def test_get_row_found(mock_pc, mock_index):

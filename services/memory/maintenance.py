@@ -11,10 +11,11 @@ from dataclasses import dataclass, field
 from pinecone import Pinecone
 from pinecone.config.openapi_configuration import Configuration
 from pinecone.db_data.index import Index
+from pinecone.exceptions import NotFoundException
 
 from services.memory.backends import memory_ids
 from services.memory.backends import pinecone_backend as backend
-from services.memory.catalog import Source
+from services.memory.catalog import Source, Unavailable
 
 
 class BudgetExceeded(RuntimeError):
@@ -66,8 +67,7 @@ class MaintenanceBudget:
         self.records += count
 
 
-@contextmanager
-def open_index(source: Source, budget: MaintenanceBudget):
+def connect_existing_index(source: Source, budget: MaintenanceBudget):
     if not isinstance(source, Source) or source.namespace:
         raise ValueError("Memory maintenance requires the configured default namespace")
     api_key = os.environ.get("PINECONE_API_KEY")
@@ -77,22 +77,42 @@ def open_index(source: Source, budget: MaintenanceBudget):
     control._openapi_config.retries = 0
     api = control.db.index._index_api
     with closing(api.api_client):
-        description = backend._ObservedPinecone(api).describe_index(
-            index_name=source.index_name, _request_timeout=budget.request()
-        )
+        try:
+            description = backend._ObservedPinecone(api).describe_index(
+                index_name=source.index_name, _request_timeout=budget.request()
+            )
+        except NotFoundException:
+            raise Unavailable(
+                "Configured Pinecone memory index does not exist; provision it explicitly before use"
+            ) from None
         budget.check()
-        host = backend._response_field(description, "host")
-        if not isinstance(host, str) or not host.strip():
-            raise RuntimeError("Pinecone index discovery did not return a host")
-        configuration = Configuration()
-        configuration.retries = 0
-        with Index(
+    if (
+        backend._response_field(backend._response_field(description, "status"), "ready")
+        is not True
+    ):
+        raise Unavailable(
+            "Configured Pinecone memory index is not ready; complete explicit provisioning before use"
+        )
+    host = backend._response_field(description, "host")
+    if not isinstance(host, str) or not host.strip():
+        raise Unavailable("Pinecone index discovery did not return a host")
+    configuration = Configuration()
+    configuration.retries = 0
+    return backend._ObservedPinecone(
+        Index(
             api_key=api_key,
             host=host,
             openapi_config=configuration,
             pool_threads=1,
-        ) as raw_index:
-            yield backend._ObservedPinecone(raw_index, index=source.index_name)
+        ),
+        index=source.index_name,
+    )
+
+
+@contextmanager
+def open_index(source: Source, budget: MaintenanceBudget):
+    with closing(connect_existing_index(source, budget)) as index:
+        yield index
 
 
 def fetch_rows(

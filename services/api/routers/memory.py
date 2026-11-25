@@ -48,7 +48,8 @@ def search_memories(
     offset: int = Query(0, ge=0),
     meeting_only: bool = False,
 ):
-    items, total = search_page(
+    items, total = _memory_result(
+        search_page,
         q,
         repo=empty_to_none(repo),
         tags=tags or None,

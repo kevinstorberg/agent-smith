@@ -390,6 +390,9 @@ Memory never initializes the catalog or enumerates the index. An uninitialized, 
 dirty catalog returns an explicit unavailable response. Memory refreshes after user changes
 and through **Refresh**, without automatic polling. Semantic retrieval remains independent;
 ordinary agent searches and lists return at most 50 memories.
+The configured Pinecone index must already exist and be ready: reads and backend initialization
+only perform bounded discovery, never create an index or poll for readiness. Provision missing
+indexes explicitly before using the application.
 
 Catalog initialization is a separate, explicitly authorized maintenance operation. Stop old
 application workers, initializer processes and external Pinecone writers before confirming

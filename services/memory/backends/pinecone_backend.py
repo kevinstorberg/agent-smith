@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import Mapping
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor, as_completed
@@ -15,17 +14,9 @@ from typing import Any
 from langchain_core.documents import Document
 from langchain_core.vectorstores import VectorStore
 from langchain_pinecone import PineconeVectorStore
-from pinecone import Pinecone, ServerlessSpec
-from pinecone.config.openapi_configuration import Configuration
-from pinecone.db_data.index import Index
 
 from scripts.shared.validation import validate_memory_id
-from services.config import (
-    MEMORY_EMBEDDING_DIMENSION,
-    PINECONE_CLOUD as CLOUD,
-    PINECONE_INDEX as INDEX_NAME,
-    PINECONE_REGION as REGION,
-)
+from services.config import PINECONE_INDEX as INDEX_NAME
 from services.memory.backends import (
     access_datetime,
     build_row,
@@ -35,14 +26,12 @@ from services.memory.backends import (
 )
 from services.observability import BillableEvent, error_outcome, submit_with_context
 
-DIMENSION = MEMORY_EMBEDDING_DIMENSION
 LIST_PAGE_SIZE = 100
 ENUMERATION_SECONDS = 120
 ACCESS_BATCH_SECONDS = 30
 REQUEST_SECONDS = 10
 ACCESS_WORKERS = 4
 
-_pc = None
 _index = None
 _write_lock = Lock()
 _CONTROL_OPERATIONS = frozenset(
@@ -195,42 +184,20 @@ class _ObservedPinecone:
         return metadata
 
 
-def _get_pc():
-    global _pc
-    if _pc is None:
-        api_key = os.environ.get("PINECONE_API_KEY")
-        assert api_key, "PINECONE_API_KEY must be set when using pinecone backend."
-        _pc = _ObservedPinecone(Pinecone(api_key=api_key))
-    return _pc
-
-
 def _get_index():
     global _index
     if _index is None:
-        pc = _get_pc()
-        if not pc.has_index(INDEX_NAME):
-            pc.create_index(
-                name=INDEX_NAME,
-                dimension=DIMENSION,
-                metric="cosine",
-                spec=ServerlessSpec(cloud=CLOUD, region=REGION),
-            )
-            while not pc.describe_index(INDEX_NAME).status["ready"]:
-                time.sleep(1)
-        description = pc.describe_index(INDEX_NAME)
-        host = (
-            description["host"] if isinstance(description, dict) else description.host
+        from services.memory.maintenance import (
+            MaintenanceBudget,
+            connect_existing_index,
         )
-        configuration = Configuration()
-        # SDK retries multiply request timeouts and can outlive the access batch deadline.
-        configuration.retries = 0
-        _index = _ObservedPinecone(
-            Index(
-                api_key=os.environ.get("PINECONE_API_KEY"),
-                host=host,
-                openapi_config=configuration,
+        from services.memory.catalog import Source
+
+        _index = connect_existing_index(
+            Source(INDEX_NAME),
+            MaintenanceBudget(
+                max_records=1, max_requests=1, deadline_seconds=REQUEST_SECONDS
             ),
-            index=INDEX_NAME,
         )
     return _index
 

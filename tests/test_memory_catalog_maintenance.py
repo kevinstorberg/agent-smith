@@ -6,6 +6,9 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from pinecone.exceptions import NotFoundException
 from pinecone.openapi_support.api_client import ApiClient
 
 from scripts import memory_catalog
@@ -369,10 +372,11 @@ def test_explicit_abort_requires_stopped_initializer_and_performs_sql_only(
         catalog.select_page(runtime.source)
 
 
-def test_real_sdk_opener_constructs_bounded_requests_without_network(monkeypatch):
+@pytest.fixture
+def sdk_transport(monkeypatch):
     calls = []
     events = []
-    source = catalog.Source("test-real-sdk-transport")
+    state = {"index": "test-real-sdk-transport", "missing": False, "ready": True}
     id = str(UUID(int=1))
 
     def call_api(client, path, method, **kwargs):
@@ -380,8 +384,13 @@ def test_real_sdk_opener_constructs_bounded_requests_without_network(monkeypatch
         assert client.configuration.retries == 0
         assert 0 < kwargs["_request_timeout"] <= 10
         if path == "/indexes/{index_name}":
-            assert kwargs["path_params"] == {"index_name": source.index_name}
-            return {"host": "test-real-sdk.svc.test.pinecone.io"}
+            assert kwargs["path_params"] == {"index_name": state["index"]}
+            if state["missing"]:
+                raise NotFoundException(status=404, reason="Synthetic missing index")
+            return {
+                "host": "test-real-sdk.svc.test.pinecone.io",
+                "status": {"ready": state["ready"]},
+            }
         if path == "/vectors/list":
             return {"vectors": [{"id": id}]}
         if path == "/vectors/fetch":
@@ -402,18 +411,91 @@ def test_real_sdk_opener_constructs_bounded_requests_without_network(monkeypatch
             or SimpleNamespace(finish=lambda *a, **k: None)
         ),
     )
+    return SimpleNamespace(calls=calls, events=events, state=state)
+
+
+def test_real_sdk_opener_constructs_bounded_requests_without_network(sdk_transport):
+    source = catalog.Source(sdk_transport.state["index"])
+    id = str(UUID(int=1))
     budget = maintenance.MaintenanceBudget(1, 3, 20)
     with maintenance.open_index(source, budget) as index:
         rows = list(maintenance.iter_rows(index, budget))
     assert rows == [[{"id": id, "text": "", "metadata": {"repo": "test"}}]]
     assert budget.records == 1 and budget.requests == 3
-    assert [method for _, method, _ in calls] == ["GET", "GET", "GET"]
-    assert [event[0] for event in events] == [
+    assert [method for _, method, _ in sdk_transport.calls] == ["GET", "GET", "GET"]
+    assert [event[0] for event in sdk_transport.events] == [
         "describe_index",
         "list_paginated",
         "fetch",
     ]
-    assert all(metadata["index"] == source.index_name for _, metadata in events)
+    assert all(
+        metadata["index"] == source.index_name for _, metadata in sdk_transport.events
+    )
+
+
+@pytest.mark.parametrize("entrypoint", ["page", "search", "http-page", "http-search"])
+@pytest.mark.parametrize("failure", ["missing", "not-ready"])
+def test_real_sdk_normal_reads_never_create_or_poll_unavailable_indexes(
+    source, sdk_transport, monkeypatch, entrypoint, failure
+):
+    ready(source)
+    catalog.write_through(
+        source,
+        str(UUID(int=1)),
+        kind="upsert",
+        metadata={"id": str(UUID(int=1)), "tags": []},
+        operation=lambda: None,
+    )
+    sdk_transport.state.update(
+        index=source.index_name,
+        missing=failure == "missing",
+        ready=failure != "not-ready",
+    )
+    monkeypatch.setattr(backend, "_index", None)
+    monkeypatch.setattr(backend, "INDEX_NAME", source.index_name)
+    monkeypatch.setattr(db, "get_backend", lambda: backend)
+    monkeypatch.setattr(db, "_retriever", None)
+    monkeypatch.setattr(db, "_get_embeddings", lambda: object())
+    if entrypoint.startswith("http-"):
+        from services.api.routers.memory import router
+
+        app = FastAPI()
+        app.include_router(router, prefix="/api/memory")
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/memory/list"
+                if entrypoint == "http-page"
+                else "/api/memory/search",
+                params={"q": "synthetic", "limit": 10},
+            )
+        assert response.status_code == 503
+        assert "explicit" in response.json()["detail"]
+    else:
+        with pytest.raises(catalog.Unavailable, match="explicit"):
+            if entrypoint == "page":
+                db.list_page(limit=10)
+            else:
+                db.search_page("synthetic", limit=10)
+    assert backend._index is None
+    assert [(path, method) for path, method, _ in sdk_transport.calls] == [
+        ("/indexes/{index_name}", "GET")
+    ]
+    assert [operation for operation, _ in sdk_transport.events] == ["describe_index"]
+
+
+def test_real_sdk_healthy_backend_connection_is_cached(sdk_transport, monkeypatch):
+    monkeypatch.setattr(backend, "_index", None)
+    monkeypatch.setattr(backend, "INDEX_NAME", sdk_transport.state["index"])
+    backend.init()
+    index = backend._get_index()
+    try:
+        backend.init()
+        assert backend._get_index() is index
+        assert len(sdk_transport.calls) == 1
+        assert sdk_transport.calls[0][0:2] == ("/indexes/{index_name}", "GET")
+        assert index._client._openapi_config.retries == 0
+    finally:
+        index.close()
 
 
 @pytest.mark.parametrize(
