@@ -2,6 +2,7 @@ import { flatQueueFixture } from './actionItemQueueFixture';
 import { test, expect } from './fixtures';
 import { actionItem } from '../src/pages/__tests__/actionItemFixture';
 import type { Page } from '@playwright/test';
+import { expectDocumentContained, expectMainContained } from './geometry';
 
 async function freezeClock(page: Page) {
   await page.clock.install({ time: new Date('2026-11-05T12:00:00Z') });
@@ -32,16 +33,6 @@ const views: PollingView[] = [
     name: 'action items',
     path: '/action-items?q=review&project=work&limit=25&offset=50',
     endpoint: '/api/action-items/queue',
-  },
-  {
-    name: 'memory list',
-    path: '/memory?repo=work&limit=25&offset=50',
-    endpoint: '/api/memory/list',
-  },
-  {
-    name: 'memory search',
-    path: '/memory?q=review&repo=work&limit=25&offset=50',
-    endpoint: '/api/memory/search',
   },
   {
     name: 'meetings',
@@ -182,6 +173,45 @@ for (const view of scenarios) {
         scheduledReadsPerMinute: 4 * (1 + (view.related?.length ?? 0)),
       }),
     });
+  });
+}
+
+for (const mode of ['list', 'search']) {
+  test(`Memory ${mode} reads only on navigation or explicit refresh`, async ({
+    page,
+    fixtureAPI,
+  }) => {
+    const endpoint = `/api/memory/${mode}`;
+    fixtureAPI.get(endpoint, { items: [], total: 50 });
+    await freezeClock(page);
+    await page.goto(
+      `/memory?repo=work&limit=10&offset=20${mode === 'search' ? '&q=review' : ''}`,
+    );
+    const reads = () =>
+      fixtureAPI.requests.filter(
+        (request) => new URL(request.url).pathname === endpoint,
+      );
+    await expect(page.getByText('Showing 21–30 of 50')).toBeVisible();
+    expect(reads()).toHaveLength(1);
+    await page.clock.runFor(60_000);
+    expect(reads()).toHaveLength(1);
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect.poll(() => reads().length).toBe(2);
+    expect(new URL(reads()[1].url).search).toBe(new URL(reads()[0].url).search);
+    await page.getByRole('button', { name: 'Next', exact: true }).click();
+    await expect(page.getByText('Showing 31–40 of 50')).toBeVisible();
+    expect(reads()).toHaveLength(3);
+    expect(new URL(reads()[2].url).searchParams.get('offset')).toBe('30');
+    expect(
+      reads().every(
+        (request) => new URL(request.url).searchParams.get('limit') === '10',
+      ),
+    ).toBe(true);
+    await page.clock.runFor(60_000);
+    expect(reads()).toHaveLength(3);
+    await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+    await expectDocumentContained(page);
+    await expectMainContained(page);
   });
 }
 

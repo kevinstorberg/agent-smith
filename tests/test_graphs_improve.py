@@ -4,6 +4,7 @@ Mirrors the opinion-graph test approach: the LLM stack (curator reader model,
 deep agent, rubric) is faked, everything else — dispatch, curator fan-out,
 the file_proposal tool, staging, persistence — runs for real against the DB.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -34,7 +35,9 @@ def _clean_rows():
     yield
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM improvement_proposals WHERE target_name LIKE 'improvetest_%'")
+            cur.execute(
+                "DELETE FROM improvement_proposals WHERE target_name LIKE 'improvetest_%'"
+            )
             cur.execute("DELETE FROM plans WHERE title LIKE 'improvetest %'")
 
 
@@ -53,14 +56,18 @@ class _FakeReaderModel:
         return _Reply()
 
 
-def _patch_llm_stack(monkeypatch, *, file_calls: list[dict], rubric_result: str = "satisfied"):
+def _patch_llm_stack(
+    monkeypatch, *, file_calls: list[dict], rubric_result: str = "satisfied"
+):
     """Fake rules, reader model, and deep agent. The fake agent invokes the real
     file_proposal tool with each entry in file_calls, then reports rubric_result."""
     from services.graphs.library import improve
 
     reader = _FakeReaderModel()
     monkeypatch.setattr(improve, "_load_selected_rules", lambda: FAKE_RULES)
-    monkeypatch.setattr(improve, "build_chat_model", lambda role, fallback_role=None: reader)
+    monkeypatch.setattr(
+        improve, "build_chat_model", lambda role, fallback_role=None: reader
+    )
 
     captured: dict = {}
 
@@ -69,7 +76,9 @@ def _patch_llm_stack(monkeypatch, *, file_calls: list[dict], rubric_result: str 
             captured["payload"] = payload
             tool = captured["tools_by_name"]["file_proposal"]
             captured["tool_results"] = [tool.invoke(call) for call in file_calls]
-            captured["on_evaluation"]({"result": rubric_result, "explanation": "graded"})
+            captured["on_evaluation"](
+                {"result": rubric_result, "explanation": "graded"}
+            )
 
             class _Reply:
                 content = "Filed proposals." if file_calls else "Nothing met the bar."
@@ -88,9 +97,16 @@ def _patch_llm_stack(monkeypatch, *, file_calls: list[dict], rubric_result: str 
 
 
 def test_improve_files_and_persists_a_proposal(monkeypatch):
-    upsert_item("rule", "improvetest_rule", content={"body": RULE_BODY, "metadata": {}}, agents=ALL_AGENTS)
+    upsert_item(
+        "rule",
+        "improvetest_rule",
+        content={"body": RULE_BODY, "metadata": {}},
+        agents=ALL_AGENTS,
+    )
     draft_id = create_plan(
-        "improvetest plan", "The improvetest_rule keeps being misapplied; clarify step 1.", status="draft",
+        "improvetest plan",
+        "The improvetest_rule keeps being misapplied; clarify step 1.",
+        status="draft",
     )
     create_feedback(draft_id, "Risk: step 1 is ambiguous; add a worked example.")
 
@@ -103,7 +119,9 @@ def test_improve_files_and_persists_a_proposal(monkeypatch):
                 "target_name": "improvetest_rule",
                 "title": "Clarify step 1 of improvetest_rule",
                 "rationale": "Plan 1 shows the rule is repeatedly misapplied.",
-                "evidence": [{"source": "plan", "id": "1", "note": "misapplication report"}],
+                "evidence": [
+                    {"source": "plan", "id": "1", "note": "misapplication report"}
+                ],
                 "body": RULE_BODY + "\n* **Clarified:** step 1 means X.",
             }
         ],
@@ -120,11 +138,15 @@ def test_improve_files_and_persists_a_proposal(monkeypatch):
     assert proposal["base_version"] == 1
     proposed_row = get_item_by_id("rule", proposal["proposed_item_id"])
     assert proposed_row["state"] == "proposed" and proposed_row["version"] is None
-    assert get_item("rule", "improvetest_rule")["version"] == 1  # untouched until approval
+    assert (
+        get_item("rule", "improvetest_rule")["version"] == 1
+    )  # untouched until approval
 
     # The agent received curator findings, inventory, and the persona prompt.
     message = captured["payload"]["messages"][0].content
-    assert "Findings from recent draft plans and their second-opinion reviews" in message
+    assert (
+        "Findings from recent draft plans and their second-opinion reviews" in message
+    )
     assert "improvetest_rule" in message  # inventory lists it
     assert "Pragmatic Engineer" in captured["system_prompt"]
     assert "Staged proposal" in captured["tool_results"][0]
@@ -212,7 +234,12 @@ def test_file_proposal_tool_returns_errors_instead_of_raising(monkeypatch):
 def test_file_proposal_tool_enforces_limit_and_dedups_in_run():
     from services.graphs.tools.improve_tools import build_file_proposal_tool
 
-    upsert_item("rule", "improvetest_limit", content={"body": RULE_BODY, "metadata": {}}, agents=ALL_AGENTS)
+    upsert_item(
+        "rule",
+        "improvetest_limit",
+        content={"body": RULE_BODY, "metadata": {}},
+        agents=ALL_AGENTS,
+    )
     collector: dict = {}
     tool = build_file_proposal_tool(collector, max_proposals=1)
     call = {
@@ -227,7 +254,9 @@ def test_file_proposal_tool_enforces_limit_and_dedups_in_run():
     assert "Staged proposal" in tool.invoke(call)
     # Identical re-filing lands on the same fingerprint — still one staged.
     assert len(collector) == 1
-    assert "limit reached" in tool.invoke({**call, "body": RULE_BODY + " changed differently"})
+    assert "limit reached" in tool.invoke(
+        {**call, "body": RULE_BODY + " changed differently"}
+    )
 
 
 def test_improve_caps_file_proposal_tool_at_one(monkeypatch):
@@ -278,17 +307,34 @@ def test_complete_draft_gather_sends_oldest_in_scope_plan_and_full_reviews_to_mo
     project = "full-draft-context"
     body = "BEGIN_FULL_PLAN\n" + "x" * 30_000 + "\nEND_FULL_PLAN"
     review = "BEGIN_FULL_REVIEW\n" + "y" * 10_000 + "\nEND_FULL_REVIEW"
-    oldest_id = create_plan("improvetest oldest full draft", body, project=project, status="draft")
+    oldest_id = create_plan(
+        "improvetest oldest full draft", body, project=project, status="draft"
+    )
     create_feedback(oldest_id, review)
     with get_connection() as connection, connection.cursor() as cursor:
-        cursor.execute("""INSERT INTO plans (title, body, project, status)
+        cursor.execute(
+            """INSERT INTO plans (title, body, project, status)
             SELECT 'improvetest full draft ' || number::text, 'Full draft body ' || number::text, %s, 'draft'
-            FROM generate_series(1, 251) AS number""", (project,))
-    old_id = create_plan("improvetest out of window", "OUTSIDE_LOOKBACK", project=project, status="draft")
+            FROM generate_series(1, 251) AS number""",
+            (project,),
+        )
+    old_id = create_plan(
+        "improvetest out of window", "OUTSIDE_LOOKBACK", project=project, status="draft"
+    )
     with get_connection() as connection, connection.cursor() as cursor:
-        cursor.execute("UPDATE plans SET created_at=now()-interval '40 days', updated_at=now()-interval '40 days' WHERE id=%s", (old_id,))
-    create_plan("improvetest final excluded", "FINAL_EXCLUDED", project=project, status="final")
-    create_plan("improvetest other project", "PROJECT_EXCLUDED", project="different-project", status="draft")
+        cursor.execute(
+            "UPDATE plans SET created_at=now()-interval '40 days', updated_at=now()-interval '40 days' WHERE id=%s",
+            (old_id,),
+        )
+    create_plan(
+        "improvetest final excluded", "FINAL_EXCLUDED", project=project, status="final"
+    )
+    create_plan(
+        "improvetest other project",
+        "PROJECT_EXCLUDED",
+        project="different-project",
+        status="draft",
+    )
 
     entries = improve._recent_draft_entries(project, 7)
     reader = _FakeReaderModel()
@@ -298,29 +344,55 @@ def test_complete_draft_gather_sends_oldest_in_scope_plan_and_full_reviews_to_mo
     requests = "\n".join(reader.calls)
     assert all(f"[plan {entry_id}]" in requests for entry_id, _ in entries)
     assert f"[plan {oldest_id}]" in requests and body in requests and review in requests
-    assert all(value not in requests for value in ("OUTSIDE_LOOKBACK", "FINAL_EXCLUDED", "PROJECT_EXCLUDED"))
+    assert all(
+        value not in requests
+        for value in ("OUTSIDE_LOOKBACK", "FINAL_EXCLUDED", "PROJECT_EXCLUDED")
+    )
 
 
-def test_complete_selected_memory_gather_sends_sources_after_five_hundred_to_model(monkeypatch):
+def test_complete_selected_memory_gather_sends_sources_after_five_hundred_to_model(
+    monkeypatch,
+):
     from services.graphs.library import improve
     from services.memory import db
 
     now = datetime.now(timezone.utc)
-    rows = [{"id": f"memory-{number}", "content": f"Complete memory {number}", "created_at": now.isoformat()}
-            for number in range(1, 502)]
-    rows.append({"id": "old-memory", "content": "OUTSIDE_LOOKBACK", "created_at": (now - timedelta(days=40)).isoformat()})
+    rows = [
+        {
+            "id": f"memory-{number}",
+            "content": f"Complete memory {number}",
+            "created_at": now.isoformat(),
+        }
+        for number in range(1, 502)
+    ]
+    rows.append(
+        {
+            "id": "old-memory",
+            "content": "OUTSIDE_LOOKBACK",
+            "created_at": (now - timedelta(days=40)).isoformat(),
+        }
+    )
     requested = []
 
-    def selected_memories(*, repo, sort, limit):
-        requested.append((repo, sort, limit))
-        return rows if limit is None else rows[:limit]
+    def selected_memories(*, repo, changed_after):
+        requested.append((repo, changed_after))
+        return [
+            row
+            for row in rows
+            if datetime.fromisoformat(row["created_at"]) >= changed_after
+        ]
 
-    monkeypatch.setattr(db, "list_memories", selected_memories)
+    monkeypatch.setattr(db, "iter_recent_memories", selected_memories)
     entries = improve._recent_memory_entries("selected-project", 7)
     reader = _FakeReaderModel()
     asyncio.run(improve._digest(reader, "memory", entries))
 
-    assert requested == [("selected-project", "created_at_desc", None)]
+    assert len(requested) == 1 and requested[0][0] == "selected-project"
+    assert (
+        now - timedelta(days=7)
+        <= requested[0][1]
+        <= datetime.now(timezone.utc) - timedelta(days=7)
+    )
     assert len(entries) == 501
     requests = "\n".join(reader.calls)
     assert all(f"[memory memory-{number}]" in requests for number in range(1, 502))
@@ -335,11 +407,19 @@ def test_complete_job_inventory_reaches_proposer_and_research_tool(monkeypatch):
     prefix = "improvetest_full_jobs_" + uuid4().hex + "_"
     oldest = prefix + "oldest"
     try:
-        create_job(oldest, {"hours": 1}, {"command": "true"}, description="Full original job description")
+        create_job(
+            oldest,
+            {"hours": 1},
+            {"command": "true"},
+            description="Full original job description",
+        )
         with get_connection() as connection, connection.cursor() as cursor:
-            cursor.execute("""INSERT INTO background_jobs (name, description, schedule_config, input_params)
+            cursor.execute(
+                """INSERT INTO background_jobs (name, description, schedule_config, input_params)
                 SELECT %s || number::text, 'Complete job definition', '{"hours":1}'::jsonb, '{"command":"true"}'::jsonb
-                FROM generate_series(1, 205) AS number""", (prefix,))
+                FROM generate_series(1, 205) AS number""",
+                (prefix,),
+            )
         captured = _patch_llm_stack(monkeypatch, file_calls=[])
         monkeypatch.setattr(improve, "_recent_draft_entries", lambda *args: [])
         monkeypatch.setattr(improve, "_recent_memory_entries", lambda *args: [])
@@ -356,10 +436,14 @@ def test_complete_job_inventory_reaches_proposer_and_research_tool(monkeypatch):
         assert original["input_params"] == {"command": "true"}
     finally:
         with get_connection() as connection, connection.cursor() as cursor:
-            cursor.execute("DELETE FROM background_jobs WHERE name LIKE %s", (prefix + "%",))
+            cursor.execute(
+                "DELETE FROM background_jobs WHERE name LIKE %s", (prefix + "%",)
+            )
 
 
-def test_disappearing_draft_fails_gather_instead_of_supplying_partial_context(monkeypatch):
+def test_disappearing_draft_fails_gather_instead_of_supplying_partial_context(
+    monkeypatch,
+):
     from services.api.models import plan
     from services.graphs.library import improve
 

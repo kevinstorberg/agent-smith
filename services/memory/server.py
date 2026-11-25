@@ -25,6 +25,10 @@ _CONTENT_DESCRIPTION = (
     "These are embedding-tokenizer tokens, not the generating model's tokens."
 )
 
+if db.DEFAULT_LIMIT < 1:
+    raise ValueError("MEMORY_DEFAULT_LIMIT must be a positive integer")
+_AGENT_DEFAULT_LIMIT = min(db.DEFAULT_LIMIT, db.SEARCH_FETCH_CEILING)
+
 mcp = ObservedMCP("memory - store and search observations, learnings, and context")
 
 
@@ -54,7 +58,9 @@ def memory_add(
 def memory_search(
     query: str,
     repo: str = "",
-    limit: Annotated[int, Field(ge=1, le=db.SEARCH_FETCH_CEILING)] = db.DEFAULT_LIMIT,
+    limit: Annotated[
+        int, Field(ge=1, le=db.SEARCH_FETCH_CEILING)
+    ] = _AGENT_DEFAULT_LIMIT,
     tags: list[str] | None = None,
     meeting_only: bool = False,
 ) -> list[dict]:
@@ -85,7 +91,9 @@ def memory_search(
 @mcp.tool()
 def memory_list(
     repo: str = "",
-    limit: int = db.DEFAULT_LIMIT,
+    limit: Annotated[
+        int, Field(ge=1, le=db.SEARCH_FETCH_CEILING)
+    ] = _AGENT_DEFAULT_LIMIT,
     tags: list[str] | None = None,
     meeting_only: bool = False,
 ) -> list[dict]:
@@ -94,7 +102,7 @@ def memory_list(
 
     Args:
         repo:   Filter to this project/repo (optional).
-        limit:  Maximum number of memories to return.
+        limit:  Maximum number of memories to return (1-50).
         tags:   Require topics from own tags or inherited meeting context_tags (e.g. ["security", "paralign"]).
         meeting_only: Return only memories originating from meetings, independent of tags.
 
