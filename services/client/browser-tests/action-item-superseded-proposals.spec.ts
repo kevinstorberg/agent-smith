@@ -7,6 +7,7 @@ test('replaced Action Item proposals remain inspectable without decision control
   page,
   fixtureAPI,
 }, testInfo) => {
+  fixtureAPI.get('/api/action-items/epics', { items: [] });
   const replaced = actionItemProposal({
     status: 'superseded',
     superseded_by_id: 7,

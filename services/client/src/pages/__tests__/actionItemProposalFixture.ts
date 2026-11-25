@@ -36,6 +36,7 @@ export function actionItemProposal(
     updated_at: '2026-11-17T12:00:00Z',
     proposed_item: { ...before, due_at: '2026-11-20T17:00:00Z' },
     current_target: before,
+    current_parent: null,
     before_snapshot: before,
     source_stale: false,
     source_available: true,

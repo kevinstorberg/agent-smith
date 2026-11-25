@@ -1078,6 +1078,15 @@ export interface Proposal extends ReviewMetadata {
   current_target?: (Partial<HarnessItem> & Partial<Job>) | null;
 }
 
+export interface ActionItemProposalPlacement {
+  expected_parent: ActionItemEpicReference | null;
+  destination: ActionItemEpicReference;
+}
+
+export interface ActionItemProposalApproval {
+  placement?: ActionItemProposalPlacement | null;
+}
+
 export interface ActionItemProposal extends ReviewMetadata<ActionItemProposalStatus> {
   superseded_by_id: number | null;
   evidence: {
@@ -1088,9 +1097,13 @@ export interface ActionItemProposal extends ReviewMetadata<ActionItemProposalSta
     revision: number;
     segment_id?: string;
   }[];
-  applied_ref: { action_item_id: number } | null;
+  applied_ref: {
+    action_item_id: number;
+    placement?: ActionItemProposalPlacement | null;
+  } | null;
   proposed_item?: Partial<ActionItem> | null;
   current_target?: Partial<ActionItem> | null;
+  current_parent?: ActionItemEpicReference | null;
   before_snapshot?: Partial<ActionItem> | null;
   source_stale?: boolean;
   source_available?: boolean;
@@ -1951,10 +1964,10 @@ export const api = {
         undefined,
         ACTION_ITEM_TIMEOUT_MS,
       ),
-    approve: (id: number) =>
+    approve: (id: number, approval: ActionItemProposalApproval = {}) =>
       post<ActionItemProposal>(
         `/action-item-proposals/${id}/approve`,
-        {},
+        approval,
         ACTION_ITEM_TIMEOUT_MS,
       ),
     reject: (id: number) =>

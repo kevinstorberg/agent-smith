@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
+from dataclasses import dataclass
 
 from psycopg2.extras import Json
 
@@ -144,18 +145,50 @@ def _bump_items(cursor, ids: list[int]) -> None:
         )
 
 
-def _move_membership(
-    cursor, item_id: int, request: Membership, *, destination_id: int | None = None
-) -> None:
-    task = _tasks()._live(
-        cursor, item_id, _tasks()._Scope(None), request.expected_revision
-    )
+@dataclass(frozen=True)
+class MembershipChange:
+    item_id: int | None
+    parent_id: int | None
+    destination_id: int | None
+
+
+def validate_membership(
+    cursor,
+    item_id: int | None,
+    expected_parent: EpicReference | None,
+    destination: EpicReference | None,
+    *,
+    destination_id: int | None = None,
+) -> MembershipChange:
+    if item_id is None:
+        if expected_parent is not None:
+            raise _tasks().Conflict(
+                "A new Action Item cannot have an existing Epic parent"
+            )
+        parent_id = None
+    else:
+        entry = task_entry(cursor, item_id)
+        _check_parent(cursor, entry, expected_parent)
+        parent_id = entry["parent_epic_id"]
+    if destination is not None:
+        _epic(cursor, destination.id, expected=destination)
+        destination_id = destination.id
+    return MembershipChange(item_id, parent_id, destination_id)
+
+
+def apply_membership(cursor, task: dict, change: MembershipChange) -> None:
+    # The queue write lock keeps validated identities stable through our own status changes.
+    item_id = task["id"]
+    if change.item_id is not None and change.item_id != item_id:
+        raise ValueError("Validated membership belongs to another Action Item")
+    task = _tasks()._live(cursor, item_id, _tasks()._Scope(None), task["revision"])
     entry = task_entry(cursor, item_id)
-    _check_parent(cursor, entry, request.expected_parent)
-    if request.destination is not None:
-        _epic(cursor, request.destination.id, expected=request.destination)
-        destination_id = request.destination.id
     parent = entry["parent_epic_id"]
+    if parent != change.parent_id:
+        raise _tasks().Conflict(
+            "Action Item changed Epic while applying its reviewed placement"
+        )
+    destination_id = change.destination_id
     if parent == destination_id:
         return
     source = siblings(parent)
@@ -182,6 +215,22 @@ def _move_membership(
     )
     _bump_items(cursor, [item_id])
     bump_epics(cursor, parent, destination_id)
+
+
+def _move_membership(
+    cursor, item_id: int, request: Membership, *, destination_id: int | None = None
+) -> None:
+    task = _tasks()._live(
+        cursor, item_id, _tasks()._Scope(None), request.expected_revision
+    )
+    change = validate_membership(
+        cursor,
+        item_id,
+        request.expected_parent,
+        request.destination,
+        destination_id=destination_id,
+    )
+    apply_membership(cursor, task, change)
 
 
 def create_epic(payload: EpicCreate | dict) -> dict:
@@ -363,6 +412,31 @@ def _catalog(cursor) -> list[dict]:
 def list_epics() -> dict:
     with _tasks()._cursor(None, write=False) as (cursor, _):
         return {"items": _catalog(cursor)}
+
+
+def parent_snapshots(cursor, item_ids: list[int]) -> dict[int, dict | None]:
+    if not item_ids:
+        return {}
+    cursor.execute(
+        """SELECT q.action_item_id,q.parent_epic_id
+        FROM action_item_queue_entries q JOIN action_items a ON a.id=q.action_item_id
+        WHERE q.action_item_id=ANY(%s) AND a.scope_key='global' AND a.deleted_at IS NULL""",
+        (item_ids,),
+    )
+    entries = [dict(row) for row in cursor.fetchall()]
+    epics = {row["id"]: row for row in _catalog(cursor)}
+    return {
+        entry["action_item_id"]: (
+            {
+                "id": parent["id"],
+                "expected_revision": parent["revision"],
+                "cohort": parent["cohort"],
+            }
+            if (parent := epics.get(entry["parent_epic_id"])) is not None
+            else None
+        )
+        for entry in entries
+    }
 
 
 def _sort_values(records: list[dict], key, sort: str) -> list[dict]:
