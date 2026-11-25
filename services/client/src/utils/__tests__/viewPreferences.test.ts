@@ -12,6 +12,27 @@ import {
 } from '../viewPreferences';
 
 describe('view preference cookie boundary', () => {
+  it('defaults Priority off, restores only native booleans and allows explicit clearing', () => {
+    expect(defaultView('actionItems').priority_only).toBe(false);
+    const cookie = mergeViewCookie('', 'actionItems', {
+      ...defaultView('actionItems'),
+      priority_only: true,
+    });
+    expect(
+      resolveView('actionItems', cookie, new URLSearchParams()).priority_only,
+    ).toBe(true);
+    expect(
+      resolveView(
+        'actionItems',
+        cookie,
+        new URLSearchParams('priority_only=false'),
+      ).priority_only,
+    ).toBe(false);
+    expect(defaultView('profiles')).not.toHaveProperty('priority_only');
+    const invalid = `${VIEW_COOKIE_NAME}=${encodeURIComponent(JSON.stringify({ v: 1, views: [{ key: 'actionItems', values: { priority_only: 1 } }] }))}`;
+    expect(readViewCookie(invalid)).toEqual([]);
+  });
+
   it('restores only valid Action Item root types and honors explicit All and URL overrides', () => {
     const cookie = mergeViewCookie('', 'actionItems', {
       ...defaultView('actionItems'),

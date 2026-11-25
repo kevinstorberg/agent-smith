@@ -554,6 +554,8 @@ def list_queue(payload=None) -> dict:
         if query.project:
             predicates.append("p.name=%s")
             values.append(_tasks()._project_name(cursor, query.project))
+        if query.priority_only:
+            predicates.append("a.is_priority")
         if query.unassigned:
             predicates.append("a.project_id IS NULL")
         if query.tags:
@@ -584,6 +586,7 @@ def list_queue(payload=None) -> dict:
                 children[entry["parent_epic_id"]].append(entry)
         item_constraints = bool(
             query.project
+            or query.priority_only
             or query.unassigned
             or query.tags
             or query.due_within_hours is not None

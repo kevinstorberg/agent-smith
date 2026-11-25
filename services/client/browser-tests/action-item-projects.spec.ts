@@ -501,8 +501,8 @@ test('a project-filtered keyboard drag keeps global priorities and anchored revi
     },
   );
   await page.goto('/action-items?project=Work&tags=security');
-  await expect(page.getByLabel('Priority 3', { exact: true })).toBeVisible();
-  await expect(page.getByLabel('Priority 7', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Order 3', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Order 7', { exact: true })).toBeVisible();
   const handle = page.getByRole('button', {
     name: 'Reorder Task 1',
     exact: true,
@@ -515,8 +515,8 @@ test('a project-filtered keyboard drag keeps global priorities and anchored revi
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Space');
   await expect.poll(() => moves).toBe(1);
-  await expect(page.getByLabel('Priority 6', { exact: true })).toBeVisible();
-  await expect(page.getByLabel('Priority 7', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Order 6', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Order 7', { exact: true })).toBeVisible();
   expect(
     await page
       .locator('tbody .action-item-title')

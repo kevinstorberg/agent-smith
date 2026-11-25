@@ -76,7 +76,10 @@ def test_due_migration_preserves_every_old_field_and_roundtrips_global_profile_a
             before = [row[0] for row in cursor.fetchall()]
         command.upgrade(migration, head)
         with psycopg2.connect(url) as connection, connection.cursor() as cursor:
-            assert legacy_task_snapshots(cursor, exclude_fields=("due_at",)) == before
+            assert (
+                legacy_task_snapshots(cursor, exclude_fields=("due_at", "is_priority"))
+                == before
+            )
             cursor.execute("SELECT due_at FROM action_items")
             assert all(row[0] is None for row in cursor.fetchall())
             cursor.execute(
@@ -100,6 +103,9 @@ def test_due_migration_preserves_every_old_field_and_roundtrips_global_profile_a
             assert [row[0] for row in cursor.fetchall()] == before
         command.upgrade(migration, head)
         with psycopg2.connect(url) as connection, connection.cursor() as cursor:
-            assert legacy_task_snapshots(cursor, exclude_fields=("due_at",)) == before
+            assert (
+                legacy_task_snapshots(cursor, exclude_fields=("due_at", "is_priority"))
+                == before
+            )
             cursor.execute("SELECT due_at FROM action_items")
             assert all(row[0] is None for row in cursor.fetchall())

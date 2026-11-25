@@ -527,8 +527,8 @@ describe('saved Action Item Epics', () => {
     renderWithProviders(<ActionItemsIndexPage />);
     const region = await screen.findByRole('region', { name: 'Epic Release' });
     expect(within(region).getByText('2 of 5 matching')).toBeVisible();
-    expect(within(region).getByLabelText('Priority 1')).toBeVisible();
-    expect(within(region).getByLabelText('Priority 2')).toBeVisible();
+    expect(within(region).getByLabelText('Order 1')).toBeVisible();
+    expect(within(region).getByLabelText('Order 2')).toBeVisible();
     expect(
       screen.getByText('12 items and Epics · 21 matching Action Items'),
     ).toBeVisible();

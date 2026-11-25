@@ -120,7 +120,7 @@ def _decision_key(candidate: ActionItemCandidate, changes: dict) -> str:
 def _task_values(task: dict) -> dict:
     return Create.model_validate(
         {field: task[field] for field in TASK_FIELDS}
-    ).model_dump(mode="json", exclude={"request_id"})
+    ).model_dump(mode="json", include=TASK_FIELDS)
 
 
 def _was_dismissed(cursor, decision_key: str) -> bool:
@@ -198,7 +198,7 @@ def _prepare_candidate(snapshot: dict, candidate: dict | ActionItemCandidate):
     changes = dict(item.changes)
     if item.action == "create":
         changes = Create.model_validate(changes).model_dump(
-            mode="json", exclude={"request_id"}
+            mode="json", include=TASK_FIELDS
         )
     return source, item, changes
 

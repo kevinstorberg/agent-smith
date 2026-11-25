@@ -58,6 +58,7 @@ def test_action_items_lifecycle_and_explicit_clears(client):
         "updated_at",
         "priority",
         "due_at",
+        "is_priority",
     }
     assert first["due_at"] is None
     changed = client.patch(

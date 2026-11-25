@@ -108,6 +108,7 @@ def action_item_list(
     limit: int = 10,
     offset: int = 0,
     unassigned: bool = False,
+    priority_only: bool = False,
     due_within_hours: int | None = None,
 ) -> dict[str, Any]:
     """Search title/description and list tasks. Status: open, completed, all. All supplied tags must match.
@@ -118,6 +119,7 @@ def action_item_list(
     Defaults: open/manual, completed/completed, all/newest. Limit 1-100, offset nonnegative.
     Project names match exactly; unassigned=true selects tasks without a project and cannot combine with project.
     due_within_hours (1-168) includes past deadlines and deadlines within that many hours; undated tasks are excluded.
+    priority_only=true selects explicitly marked Priority tasks without changing their saved order.
     Status still applies: Open is the default, and Completed/All include matching historical deadlines.
     """
     return db.list_items(
@@ -130,6 +132,7 @@ def action_item_list(
             "limit": limit,
             "offset": offset,
             "unassigned": unassigned,
+            "priority_only": priority_only,
             "due_within_hours": due_within_hours,
         }
     )
@@ -148,11 +151,13 @@ def action_item_create(
     status: str = "open",
     request_id: str | None = None,
     due_at: str | None = None,
+    is_priority: bool = False,
 ) -> dict[str, Any]:
     """Create a task. Only title is required; status is open or completed.
 
     Supply a UUID request_id and reuse it with the original input after uncertain failures.
     Replay returns the current task without resetting edits/completion. Different input or a deleted task conflicts.
+    is_priority is a persistent planning flag, independent of numeric queue order; it changes only when explicitly updated.
     due_at is an optional ISO datetime with an explicit timezone and at most six fractional digits; storage and output use UTC.
     """
     return db.create(
@@ -164,6 +169,7 @@ def action_item_create(
             "status": status,
             "request_id": request_id,
             "due_at": due_at,
+            "is_priority": is_priority,
         }
     )
 

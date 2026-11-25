@@ -26,11 +26,13 @@ export function ActionItemQueueSort({
   onSort,
   disabled,
   status,
+  orderLabel = 'Priority',
 }: {
   sort: ActionItemSort;
   onSort: (sort: ActionItemSort) => void;
   disabled: boolean;
   status: string;
+  orderLabel?: string;
 }) {
   const options = actionItemSortOptions(
     status === 'open' || status === 'completed' ? status : 'all',
@@ -51,7 +53,11 @@ export function ActionItemQueueSort({
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
-            {SORT_LABELS[option.value]}
+            {option.value === 'manual'
+              ? `${orderLabel}: first to last`
+              : option.value === 'manual_desc'
+                ? `${orderLabel}: last to first`
+                : SORT_LABELS[option.value]}
           </option>
         ))}
       </select>
@@ -70,6 +76,7 @@ export function ActionItemQueueHead({
   showUpdated = !showDueDate,
   staticLabels = false,
   taskView = false,
+  orderLabel = 'Priority',
 }: {
   sort: ActionItemSort;
   onSort: (sort: ActionItemSort) => void;
@@ -81,6 +88,7 @@ export function ActionItemQueueHead({
   showUpdated?: boolean;
   staticLabels?: boolean;
   taskView?: boolean;
+  orderLabel?: string;
 }) {
   const sorting = { sort, onSort, current, disabled };
   const columns = ACTION_ITEM_SORT_COLUMNS;
@@ -109,16 +117,16 @@ export function ActionItemQueueHead({
       <tr>
         {status === 'open' ? (
           heading(
-            'Priority',
+            orderLabel,
             columns.priority,
             taskView
-              ? 'Order by global task priority'
-              : 'Ascending Priority enables drag ordering',
+              ? `Order by global task ${orderLabel.toLowerCase()}`
+              : `Ascending ${orderLabel} enables drag ordering`,
             'action-priority-heading',
           )
         ) : (
           <th scope="col" className="action-priority-heading">
-            Priority
+            {orderLabel}
           </th>
         )}
         {heading('Title', columns.title, undefined, 'action-title-heading')}

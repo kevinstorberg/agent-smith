@@ -98,6 +98,7 @@ export interface ViewSettings extends Record<
     q: string;
     project: string;
     unassigned: boolean;
+    priority_only: boolean;
     due_within_hours: number | null;
     tags: string;
     status: (typeof ACTION_ITEM_STATUSES)[number][0];
@@ -316,6 +317,7 @@ const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
       q: '',
       project: '',
       unassigned: false,
+      priority_only: false,
       due_within_hours: null,
       tags: '',
       status: 'open',
@@ -331,6 +333,7 @@ const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
       q: text,
       project: projectName,
       unassigned: boolean,
+      priority_only: boolean,
       due_within_hours: dueWindow,
       tags: text,
       status: choice(ACTION_ITEM_STATUSES.map((option) => option[0])),

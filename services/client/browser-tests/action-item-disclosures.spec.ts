@@ -199,7 +199,7 @@ for (const scale of [1, 2]) {
       name: 'Action items in Epic Release',
       exact: true,
     });
-    for (const label of ['Priority', 'Title', 'Tags', 'Due date', 'Updated']) {
+    for (const label of ['Order', 'Title', 'Tags', 'Due date', 'Updated']) {
       await expect(
         root.getByRole('button', { name: label, exact: true }),
       ).toHaveCount(page.viewportSize()!.width > 1100 ? 1 : 0);
