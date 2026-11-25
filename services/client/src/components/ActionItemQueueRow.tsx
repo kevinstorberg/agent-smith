@@ -11,6 +11,7 @@ import { DateCell } from './table';
 import { ActionItemStatusButton } from './ActionItemStatusButton';
 import { ActionItemIcon } from './ActionItemIcon';
 import { ActionDisclosure } from './ActionDisclosure';
+import { ActionItemTitleText, ActionItemTopics } from './ActionItemTaskSummary';
 
 function containProjectCue(cue: HTMLSpanElement | null) {
   if (!cue) return;
@@ -104,6 +105,7 @@ export function ActionItemQueueCells({
   epicTitle = null,
   showEpicContext = false,
   membership,
+  decorations,
 }: {
   item: ActionItemRow;
   row: DraggableProvided;
@@ -120,6 +122,7 @@ export function ActionItemQueueCells({
   epicTitle?: string | null;
   showEpicContext?: boolean;
   membership?: ReactNode;
+  decorations?: ReactNode;
 }) {
   const {
     snapshot,
@@ -233,6 +236,7 @@ export function ActionItemQueueCells({
   return (
     <>
       <td className="action-priority-cell">
+        {decorations}
         {state.isDragging && snapshot?.project && (
           <span
             ref={(cue) => containProjectCue(cue)}
@@ -296,7 +300,9 @@ export function ActionItemQueueCells({
           }}
         >
           <span aria-hidden="true">{expandedId === item.id ? '⌄' : '›'}</span>
-          {item.title}
+          <ActionItemTitleText emphasized={compactActions}>
+            {item.title}
+          </ActionItemTitleText>
         </button>
         {showEpicContext && (
           <div className="action-item-epic-context">
@@ -305,14 +311,11 @@ export function ActionItemQueueCells({
         )}
       </td>
       <td className="action-topics-cell">
-        {showProject && item.project && (
-          <span className="tag tag-project">{item.project}</span>
-        )}
-        {item.tags.map((tag) => (
-          <span className="tag" key={tag}>
-            {tag}
-          </span>
-        ))}
+        <ActionItemTopics
+          item={item}
+          showProject={showProject}
+          quiet={compactActions}
+        />
       </td>
       {showDueDate && (
         <td className="action-due-cell">

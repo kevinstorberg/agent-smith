@@ -1,7 +1,8 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   api,
+  ApiError,
   type ActionItemGroupedPage,
   type ActionItemQueueFilters,
 } from '../../api';
@@ -32,15 +33,23 @@ function renderQueue(
   },
   page = { limit: 10, offset: 0 },
 ) {
-  return renderHook(() =>
-    useActionItemGroupedQueue({
-      filters,
-      criteria: JSON.stringify(filters),
-      viewKey: JSON.stringify(filters),
-      reorderableView: true,
-      criteriaPending: false,
-      pagination: { page, onPageChange: vi.fn() },
-    }),
+  return renderHook(
+    ({ activeFilters, activePage, pending }) =>
+      useActionItemGroupedQueue({
+        filters: activeFilters,
+        criteria: JSON.stringify(activeFilters),
+        viewKey: JSON.stringify(activeFilters),
+        reorderableView: true,
+        criteriaPending: pending,
+        pagination: { page: activePage, onPageChange: vi.fn() },
+      }),
+    {
+      initialProps: {
+        activeFilters: filters,
+        activePage: page,
+        pending: false,
+      },
+    },
   );
 }
 
@@ -356,4 +365,353 @@ describe('parent-aware Action Item task projection', () => {
     act(() => result.current.clearMembershipNotice());
     expect(result.current.membershipNotice).toBeNull();
   });
+});
+
+const dragFilters: ActionItemQueueFilters = {
+  kind: 'all',
+  status: 'open',
+  sort: 'manual',
+};
+const childDrag = {
+  draggableId: 'item:2',
+  type: 'EPIC:10',
+  mode: 'SNAP' as const,
+  source: { droppableId: 'epic:10', index: 0 },
+};
+const childDrop = {
+  ...childDrag,
+  reason: 'DROP' as const,
+  destination: null,
+  combine: null,
+};
+
+function dragPage() {
+  return {
+    items: [epicGroup(10, [child]), epicGroup(20, [])],
+    total: 2,
+    matching_count: 1,
+  };
+}
+
+afterEach(() => {
+  document
+    .querySelectorAll('[data-test-drag-surface]')
+    .forEach((element) => element.remove());
+});
+
+async function renderMembershipDrag() {
+  const page = dragPage();
+  vi.mocked(api.actionItemQueue.list).mockResolvedValue(page);
+  const hook = renderQueue(dragFilters);
+  await waitFor(() => expect(hook.result.current.canAct()).toBe(true));
+  const surface = document.createElement('div');
+  surface.dataset.testDragSurface = 'true';
+  const targets = [10, 20, 'none'].map((id, index) => {
+    const element = document.createElement('section');
+    element.dataset.epicDropTarget = String(id);
+    vi.spyOn(element, 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(0, 100 + index * 150, 200, 100),
+    );
+    surface.append(element);
+    return element;
+  });
+  const tabs = document.createElement('div');
+  const project = document.createElement('button');
+  project.dataset.projectId = '40';
+  project.dataset.projectName = 'Another project';
+  tabs.append(project);
+  surface.append(tabs);
+  document.body.append(surface);
+  hook.result.current.epicTargetsRef.current = surface;
+  hook.result.current.projectTabsRef.current = tabs;
+  return { ...hook, page, surface, targets };
+}
+
+function key(key: string, shiftKey = false) {
+  act(() =>
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', { key, shiftKey, bubbles: true }),
+    ),
+  );
+}
+
+function selectOtherEpic(result: ReturnType<typeof renderQueue>['result']) {
+  act(() => result.current.startDrag(childDrag));
+  key('ArrowRight', true);
+  expect(result.current.snapshot?.epicTarget?.epic?.id).toBe(20);
+}
+
+function expectNoDragWrite() {
+  expect(api.actionItemQueue.setEpic).not.toHaveBeenCalled();
+  expect(api.actionItemQueue.move).not.toHaveBeenCalled();
+  expect(api.actionItems.update).not.toHaveBeenCalled();
+}
+
+describe('cross-Epic drag admission and cancellation', () => {
+  it.each(['CANCEL', 'outside', 'same parent'] as const)(
+    'does not write after %s',
+    async (reason) => {
+      const { result } = await renderMembershipDrag();
+      if (reason === 'same parent') {
+        act(() => result.current.startDrag({ ...childDrag, mode: 'FLUID' }));
+        expect(
+          result.current.snapshot?.epics?.some(
+            (target) => target.epic?.id === 10,
+          ),
+        ).toBe(false);
+        act(() =>
+          window.dispatchEvent(
+            new MouseEvent('mouseup', { clientX: 50, clientY: 150 }),
+          ),
+        );
+        expect(result.current.snapshot?.epicTarget).toBeNull();
+      } else {
+        selectOtherEpic(result);
+        key(reason === 'CANCEL' ? 'Escape' : 'ArrowDown');
+        expect(result.current.snapshot?.epicTarget).toBeNull();
+      }
+      await act(async () =>
+        result.current.endDrag({
+          ...childDrop,
+          reason: reason === 'CANCEL' ? 'CANCEL' : 'DROP',
+        }),
+      );
+      expectNoDragWrite();
+      expect(result.current.snapshot).toBeNull();
+    },
+  );
+
+  it.each(['pending filters', 'new filters', 'new page'] as const)(
+    'rejects a captured destination after %s',
+    async (change) => {
+      const { result, rerender } = await renderMembershipDrag();
+      selectOtherEpic(result);
+      rerender({
+        activeFilters:
+          change === 'new filters'
+            ? { ...dragFilters, q: 'other' }
+            : dragFilters,
+        activePage: { limit: 10, offset: change === 'new page' ? 10 : 0 },
+        pending: change === 'pending filters',
+      });
+      await act(async () => result.current.endDrag(childDrop));
+      expectNoDragWrite();
+      expect(result.current.snapshot).toBeNull();
+    },
+  );
+
+  it.each(['source', 'destination'] as const)(
+    'rejects %s drift even when the target DOM stays connected',
+    async (changed) => {
+      const { result } = await renderMembershipDrag();
+      selectOtherEpic(result);
+      const fresh = dragPage();
+      if (changed === 'source')
+        fresh.items[0].children[0].item = { ...child, revision: 2 };
+      else
+        fresh.items[1].epic = {
+          ...fresh.items[1].epic,
+          revision: 4,
+          cohort: 'changed-destination',
+        };
+      vi.mocked(api.actionItemQueue.list).mockResolvedValue(fresh);
+      await act(async () => result.current.refresh({ showLoading: false }));
+      await act(async () => result.current.endDrag(childDrop));
+      expectNoDragWrite();
+      expect(result.current.snapshot).toBeNull();
+    },
+  );
+
+  it('rejects an uncompleted read rather than writing from the prior view', async () => {
+    const { result, rerender, page } = await renderMembershipDrag();
+    selectOtherEpic(result);
+    const read = deferred<ActionItemGroupedPage>();
+    vi.mocked(api.actionItemQueue.list)
+      .mockReturnValueOnce(read.promise)
+      .mockResolvedValue(page);
+    rerender({
+      activeFilters: { ...dragFilters, tags: ['new'] },
+      activePage: { limit: 10, offset: 0 },
+      pending: false,
+    });
+    await waitFor(() =>
+      expect(api.actionItemQueue.list).toHaveBeenCalledTimes(2),
+    );
+    expect(result.current.dataCurrent).toBe(false);
+    await act(async () => result.current.endDrag(childDrop));
+    expectNoDragWrite();
+    await act(async () => read.resolve(page));
+    expect(result.current.snapshot).toBeNull();
+  });
+
+  it('requires a fresh explicit gesture after a conflict and uses its new destination reference', async () => {
+    const { result } = await renderMembershipDrag();
+    selectOtherEpic(result);
+    const fresh = dragPage();
+    fresh.items[1].epic = {
+      ...fresh.items[1].epic,
+      revision: 4,
+      cohort: 'new-cohort',
+    };
+    vi.mocked(api.actionItemQueue.list).mockResolvedValue(fresh);
+    vi.mocked(api.actionItemQueue.setEpic)
+      .mockRejectedValueOnce(new ApiError('Epic changed', 409))
+      .mockResolvedValue(child);
+    await act(async () => result.current.endDrag(childDrop));
+    expect(api.actionItemQueue.setEpic).toHaveBeenCalledTimes(1);
+    expect(result.current.reviewError).toBe('Epic changed');
+    expect(result.current.snapshot).toBeNull();
+    expect(api.actionItemQueue.setEpic).toHaveBeenLastCalledWith(2, {
+      expected_revision: child.revision,
+      expected_parent: { id: 10, expected_revision: 3, cohort: 'cohort-10' },
+      destination: { id: 20, expected_revision: 3, cohort: 'cohort-20' },
+    });
+    selectOtherEpic(result);
+    await act(async () => result.current.endDrag(childDrop));
+    expect(api.actionItemQueue.setEpic).toHaveBeenCalledTimes(2);
+    expect(api.actionItemQueue.setEpic).toHaveBeenLastCalledWith(2, {
+      expected_revision: child.revision,
+      expected_parent: { id: 10, expected_revision: 3, cohort: 'cohort-10' },
+      destination: { id: 20, expected_revision: 4, cohort: 'new-cohort' },
+    });
+    expect(api.actionItemQueue.move).not.toHaveBeenCalled();
+  });
+
+  it('keeps duplicate drops single flight through canonical refresh', async () => {
+    const { result } = await renderMembershipDrag();
+    selectOtherEpic(result);
+    const save = deferred<typeof child>();
+    vi.mocked(api.actionItemQueue.setEpic).mockReturnValueOnce(save.promise);
+    let first: Promise<void>;
+    act(() => {
+      first = result.current.endDrag(childDrop);
+    });
+    await waitFor(() => expect(result.current.busy).toBe(true));
+    await act(async () => result.current.endDrag(childDrop));
+    expect(api.actionItemQueue.setEpic).toHaveBeenCalledTimes(1);
+    expect(result.current.snapshot?.epicTarget).toBeUndefined();
+    await act(async () => {
+      save.resolve(child);
+      await first;
+    });
+    expect(api.actionItemQueue.setEpic).toHaveBeenCalledTimes(1);
+    expect(api.actionItemQueue.list).toHaveBeenCalledTimes(2);
+    expect(result.current.snapshot).toBeNull();
+  });
+
+  it('keeps project and Epic keyboard choices mutually exclusive and clears both for ordering', async () => {
+    const { result } = await renderMembershipDrag();
+    selectOtherEpic(result);
+    key('ArrowRight');
+    expect(result.current.snapshot?.project).toBe('Another project');
+    expect(result.current.snapshot?.epicTarget).toBeNull();
+    key('ArrowRight', true);
+    expect(result.current.snapshot?.project).toBeNull();
+    expect(result.current.snapshot?.epicTarget?.epic?.id).toBe(20);
+    key('ArrowUp');
+    expect(result.current.snapshot?.project).toBeNull();
+    expect(result.current.snapshot?.epicTarget).toBeNull();
+    await act(async () => result.current.endDrag(childDrop));
+    expectNoDragWrite();
+  });
+
+  it.each([true, false])(
+    'uses final mouseup geometry with inside=%s even without an intermediate move',
+    async (inside) => {
+      const { result } = await renderMembershipDrag();
+      act(() => result.current.startDrag({ ...childDrag, mode: 'FLUID' }));
+      if (!inside)
+        act(() =>
+          window.dispatchEvent(
+            new MouseEvent('mousemove', { clientX: 50, clientY: 300 }),
+          ),
+        );
+      act(() =>
+        window.dispatchEvent(
+          new MouseEvent('mouseup', {
+            clientX: inside ? 50 : 500,
+            clientY: inside ? 300 : 600,
+          }),
+        ),
+      );
+      expect(result.current.snapshot?.epicTarget?.epic?.id ?? null).toBe(
+        inside ? 20 : null,
+      );
+      await act(async () =>
+        result.current.endDrag({ ...childDrop, mode: 'FLUID' }),
+      );
+      if (inside)
+        expect(api.actionItemQueue.setEpic).toHaveBeenCalledExactlyOnceWith(2, {
+          expected_revision: child.revision,
+          expected_parent: {
+            id: 10,
+            expected_revision: 3,
+            cohort: 'cohort-10',
+          },
+          destination: { id: 20, expected_revision: 3, cohort: 'cohort-20' },
+        });
+      else expectNoDragWrite();
+      expect(api.actionItemQueue.move).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('explicit root ordering with filtered-out roots', () => {
+  it.each(['before', 'after'] as const)(
+    'sends the exact %s anchor even when the visible order is unchanged',
+    async (edge) => {
+      const { result, surface } = await renderMembershipDrag();
+      const first = epicGroup(10, []);
+      const last = epicGroup(20, []);
+      first.epic.position = 1;
+      last.epic.position = 10;
+      const source = { ...singleEntry(), position: 4 };
+      vi.mocked(api.actionItemQueue.list).mockResolvedValue({
+        items: [first, source, last],
+        total: 3,
+        matching_count: 1,
+      });
+      await act(async () => result.current.refresh({ showLoading: false }));
+      const anchor = edge === 'after' ? first.epic : last.epic;
+      const target = document.createElement('span');
+      target.dataset.rootOrderId = `epic:${anchor.id}`;
+      target.dataset.rootOrderEdge = edge;
+      vi.spyOn(target, 'getBoundingClientRect').mockReturnValue(
+        new DOMRect(0, 210, 200, 20),
+      );
+      surface.append(target);
+      const start = {
+        draggableId: 'item:9',
+        type: 'ROOT',
+        mode: 'FLUID' as const,
+        source: { droppableId: 'action-items', index: 1 },
+      };
+      act(() => result.current.startDrag(start));
+      act(() =>
+        window.dispatchEvent(
+          new MouseEvent('mouseup', { clientX: 50, clientY: 220 }),
+        ),
+      );
+      expect(result.current.snapshot?.rootOrderTarget?.edge).toBe(edge);
+      await act(async () =>
+        result.current.endDrag({
+          ...start,
+          reason: 'DROP',
+          destination: null,
+          combine: null,
+        }),
+      );
+      expect(api.actionItemQueue.move).toHaveBeenCalledExactlyOnceWith({
+        source: { kind: 'item', id: 9, expected_revision: single.revision },
+        [edge]: {
+          kind: 'epic',
+          id: anchor.id,
+          expected_revision: anchor.revision,
+          cohort: anchor.cohort,
+        },
+      });
+      expect(api.actionItemQueue.setEpic).not.toHaveBeenCalled();
+      expect(api.actionItems.update).not.toHaveBeenCalled();
+    },
+  );
 });

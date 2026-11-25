@@ -6,12 +6,7 @@ import {
   type RefObject,
   type ReactNode,
 } from 'react';
-import {
-  api,
-  type ActionItemEpic,
-  type ActionItemEpicCreate,
-  type ActionItemRow,
-} from '../api';
+import { api, type ActionItemEpic, type ActionItemRow } from '../api';
 import type { ActionItemGroupedQueue } from '../hooks/useActionItemGroupedQueue';
 import { useApiRead } from '../hooks/useApiRead';
 import { ActionItemIcon } from './ActionItemIcon';
@@ -126,13 +121,23 @@ function EpicCreateForm({
   item?: ActionItemRow;
   onClose: () => void;
 }) {
-  const [receipt, setReceipt] = useState<ActionItemEpicCreate | null>(null);
+  const receipt = queue.epicCreateReceipt;
+  const setFormMounted = queue.setEpicCreateFormMounted;
+  useEffect(() => {
+    setFormMounted(true);
+    return () => setFormMounted(false);
+  }, [setFormMounted]);
   return (
     <>
+      {item && <p>This action item will be the first item in the new Epic.</p>}
       <EpicNameForm
+        initial={item?.title}
         busy={queue.busy}
         lockedTitle={receipt?.title}
-        onCancel={onClose}
+        onCancel={() => {
+          queue.cancelEpicCreation();
+          onClose();
+        }}
         onSave={async (title) => {
           if (!queue.canSubmit()) return false;
           const payload = receipt ?? {
@@ -142,7 +147,6 @@ function EpicCreateForm({
               ? { item_id: item.id, membership: queue.membership(item) }
               : {}),
           };
-          if (!receipt) setReceipt(payload);
           return queue.createEpic(payload);
         }}
       />
@@ -153,20 +157,72 @@ function EpicCreateForm({
   );
 }
 
-export function NewEpicControl({ queue }: { queue: ActionItemGroupedQueue }) {
+export function EpicCreationRetry({
+  queue,
+}: {
+  queue: ActionItemGroupedQueue;
+}) {
+  const retry = useRef<HTMLButtonElement>(null);
+  const receipt = queue.epicCreateReceipt;
+  const visible = receipt !== null && !queue.epicCreateFormMounted;
+  useEffect(() => {
+    if (
+      visible &&
+      !queue.busy &&
+      document.activeElement === document.body &&
+      !retry.current?.disabled
+    )
+      retry.current?.focus({ preventScroll: true });
+  }, [visible, queue.busy]);
+  if (!visible) return null;
+  return (
+    <div className="card" role="group" aria-label="Unfinished Epic creation">
+      <p>Creation of “{receipt.title}” wasn’t confirmed.</p>
+      <div className="flex-row">
+        <button
+          ref={retry}
+          type="button"
+          className="btn"
+          disabled={queue.busy || !queue.canSubmit()}
+          onClick={() => {
+            void queue.createEpic(receipt);
+          }}
+        >
+          {queue.busy ? 'Saving…' : 'Retry'}
+        </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={queue.busy}
+          onClick={queue.cancelEpicCreation}
+        >
+          Cancel retry
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function NewEpicControl({
+  queue,
+  item,
+}: {
+  queue: ActionItemGroupedQueue;
+  item?: ActionItemRow;
+}) {
   const trigger = useRef<HTMLButtonElement>(null);
   const { open, start, close } = useEpicEditor(queue, trigger);
   return (
     <div className="new-epic-control">
       <button
         ref={trigger}
-        className="btn"
+        className={item ? 'btn btn-sm' : 'btn'}
         disabled={queue.freezeControls || !queue.canAct()}
         onClick={start}
       >
-        New Epic
+        {item ? 'Create Epic from this item' : 'New Epic'}
       </button>
-      {open && <EpicCreateForm queue={queue} onClose={close} />}
+      {open && <EpicCreateForm queue={queue} item={item} onClose={close} />}
     </div>
   );
 }
@@ -276,6 +332,7 @@ export function EpicMembershipControl({
           Move out of Epic
         </button>
       )}
+      <NewEpicControl queue={queue} item={item} />
       {open && <EpicPicker queue={queue} item={item} onClose={close} />}
     </div>
   );

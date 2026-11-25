@@ -8,13 +8,12 @@ import {
   ActionItemProposalEpicCatalogStatus,
 } from '../components/ActionItemProposalDecision';
 import { useActionItemProposalDecision } from '../hooks/useActionItemProposalDecision';
-import { StatusBadge } from '../components/StatusBadge';
+import { ActionItemProposalSummary } from '../components/ActionItemProposalSummary';
 import { useNotification } from '../context/useNotification';
 import { useApiMutation } from '../hooks/useApiMutation';
 import { useApiRead } from '../hooks/useApiRead';
 import { usePageLifetime } from '../hooks/usePageLifetime';
 import { usePolling } from '../hooks/usePolling';
-import { actionItemProposalProject } from '../utils/actionItems';
 import './actionItemProposals.css';
 
 export function ActionItemProposalDetailPage() {
@@ -81,7 +80,6 @@ function ActionItemProposalDetail({ id }: { id: number }) {
   const proposal = read.data;
   if (!proposal) return <p role="status">Loading proposed Action Item…</p>;
   const isUpdate = proposal.action === 'update';
-  const itemProject = actionItemProposalProject(proposal);
   const targetMissing = isUpdate && !proposal.current_target;
   const targetStale =
     proposal.status === 'pending' &&
@@ -128,15 +126,11 @@ function ActionItemProposalDetail({ id }: { id: number }) {
         </p>
       )}
       <section className="card">
-        <div className="flex-wrap" style={{ gap: 8 }}>
-          <StatusBadge status={proposal.status} kind="proposal" />
-          <span className="tag">
-            {isUpdate ? 'Update Action Item' : 'New Action Item'}
-          </span>
-          {itemProject && (
-            <span className="tag tag-project">{itemProject}</span>
-          )}
-        </div>
+        <ActionItemProposalSummary
+          proposal={proposal}
+          title={proposal.target_name}
+          showStatus
+        />
         <ActionItemProposalSupersession proposal={proposal} />
         {targetMissing && (
           <p role="alert">

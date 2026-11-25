@@ -249,6 +249,7 @@ test('an unavailable catalog leaves ordinary update acceptance and rejection ind
 }) => {
   let proposal = actionItemProposal({
     current_parent: epicReference(epicGroup(20, []).epic),
+    current_parent_title: 'Release',
   });
   const bodies: unknown[] = [];
   fixtureAPI.get('/api/action-item-proposals/1', () => proposal);
@@ -274,7 +275,7 @@ test('an unavailable catalog leaves ordinary update acceptance and rejection ind
   await expect(page.getByRole('alert')).toContainText('Could not load Epics');
   await expect(
     page.getByRole('combobox', { name: /Epic for/ }).locator('option:checked'),
-  ).toHaveText('Keep current');
+  ).toHaveText('Release');
   await expect(
     page.getByRole('button', { name: 'Reject', exact: true }),
   ).toBeEnabled();

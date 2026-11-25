@@ -50,6 +50,20 @@
   align-self: end;
   padding-block: 8px;
 }
+@media (min-width: 601px) {
+  .action-item-proposals-page .action-item-proposal-epic-choice > label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .action-item-proposals-page .action-item-proposal-epic-choice .form-label {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  .action-item-proposals-page .action-item-proposal-epic-choice select {
+    min-width: 0;
+  }
+}
 @media (max-width: 600px) {
   .action-item-proposal-epic-choice {
     flex-basis: 100%;

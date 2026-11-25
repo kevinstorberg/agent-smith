@@ -51,7 +51,10 @@ test('an added description has explicit reviewed values before its placement and
     .locator('..');
   await expect(field.getByRole('cell').nth(0)).toHaveText('No description');
   await expect(field.getByRole('cell').nth(1)).toHaveText(description);
-  await expect(row.getByText('Current placement: No Epic')).toBeVisible();
+  await expect(row.getByRole('combobox', { name: /Epic for/ })).toHaveValue('');
+  await expect(
+    row.getByRole('combobox', { name: /Epic for/ }).locator('option:checked'),
+  ).toHaveText('No Epic');
   for (const scale of [1, 2]) {
     if (scale === 2) await enlargeComputedText(page);
     const select = row.getByRole('combobox', { name: /Epic for/ });
@@ -196,7 +199,7 @@ test('compact create rows expose decisions and keep complete context recoverable
         row,
       );
   }
-  await expect(rows.first().getByText(/^Due /)).toContainText(
+  await expect(rows.first().locator('.action-item-proposal-due')).toContainText(
     'November 25, 2026',
   );
   await expect(rows.nth(2).getByText('Creates completed item')).toBeVisible();

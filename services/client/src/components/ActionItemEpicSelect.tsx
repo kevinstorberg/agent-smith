@@ -13,6 +13,7 @@ export function ActionItemEpicSelect({
   retainedOption,
   ariaLabel,
   ariaDescribedBy,
+  omitEpicId,
 }: {
   label: string;
   value: string;
@@ -25,6 +26,7 @@ export function ActionItemEpicSelect({
   retainedOption?: { value: string; label: string };
   ariaLabel?: string;
   ariaDescribedBy?: string;
+  omitEpicId?: number;
 }) {
   return (
     <label>
@@ -42,11 +44,13 @@ export function ActionItemEpicSelect({
         {retainedOption && (
           <option value={retainedOption.value}>{retainedOption.label}</option>
         )}
-        {epics.map((epic) => (
-          <option key={epic.id} value={epic.id}>
-            {epicOptionLabel(epic, epics)}
-          </option>
-        ))}
+        {epics
+          .filter((epic) => epic.id !== omitEpicId)
+          .map((epic) => (
+            <option key={epic.id} value={epic.id}>
+              {epicOptionLabel(epic, epics)}
+            </option>
+          ))}
         {allowCreate && <option value="new">New Epic…</option>}
       </select>
     </label>

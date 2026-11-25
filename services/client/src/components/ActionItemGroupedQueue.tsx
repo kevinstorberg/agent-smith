@@ -1,8 +1,9 @@
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, type ReactNode, type CSSProperties } from 'react';
 import { DragDropContext, Draggable, Droppable } from '@hello-pangea/dnd';
 import type {
   ActionItemEpicGroup,
   ActionItemQueueEntry,
+  ActionItemQueueRoot,
   ActionItemSort,
   ActionItemRow,
 } from '../api';
@@ -22,6 +23,63 @@ import { useMediaQuery } from '../hooks/useMediaQuery';
 import { EpicActions, EpicMembershipControl } from './ActionItemEpicControls';
 import { Pagination } from './Pagination';
 import './actionItemQueue.css';
+
+function rootLiftStyle(
+  queue: GroupedQueue,
+  index: number,
+  dragging: boolean,
+): CSSProperties {
+  const lift = queue.snapshot?.rootTask;
+  // Keep all root units aligned while pointer gestures choose grouping or insertion targets.
+  return lift && !dragging
+    ? {
+        transform:
+          index > lift.index ? `translate(0px, ${lift.height}px)` : 'none',
+        transition: 'none',
+      }
+    : {};
+}
+
+function RootOrderEdges({
+  root,
+  queue,
+}: {
+  root: ActionItemQueueRoot;
+  queue: GroupedQueue;
+}) {
+  const identity = queueIdentity(root);
+  const selected = queue.snapshot?.rootOrderTarget;
+  const active = Boolean(
+    queue.snapshot?.rootTask &&
+    queue.reorderableView &&
+    queue.snapshot.itemId !== identity,
+  );
+  return (
+    <>
+      {(['before', 'after'] as const).map((edge) => (
+        <div
+          key={edge}
+          className="action-item-root-order-target"
+          data-root-order-id={identity}
+          data-root-order-edge={edge}
+          data-active={active}
+          data-selected={
+            selected
+              ? `${selected.anchor.kind}:${selected.anchor.id}` === identity &&
+                selected.edge === edge
+              : false
+          }
+          aria-hidden="true"
+        >
+          <span>
+            Place {edge}{' '}
+            {root.kind === 'epic' ? `Epic ${root.epic.title}` : root.item.title}
+          </span>
+        </div>
+      ))}
+    </>
+  );
+}
 
 function Columns() {
   return (
@@ -64,6 +122,9 @@ function TaskEntry({
             aria-busy={queue.pendingId === item.id}
             style={{
               ...row.draggableProps.style,
+              ...(entry.parent_epic_id === null
+                ? rootLiftStyle(queue, index, state.isDragging)
+                : {}),
               background: state.isDragging ? 'var(--surface-hover)' : undefined,
             }}
           >
@@ -73,6 +134,11 @@ function TaskEntry({
               state={state}
               queue={queue}
               onEdit={onEdit}
+              decorations={
+                entry.parent_epic_id === null ? (
+                  <RootOrderEdges root={entry} queue={queue} />
+                ) : undefined
+              }
               showDueDate
               showUpdated
               showMoveActions
@@ -131,14 +197,21 @@ function EpicEntry({
           className="action-item-epic-row"
           style={{
             ...row.draggableProps.style,
+            ...rootLiftStyle(queue, index, state.isDragging),
             background: state.isDragging ? 'var(--surface-hover)' : undefined,
           }}
         >
           <td colSpan={6}>
+            <RootOrderEdges root={group} queue={queue} />
             <section
               className="action-item-epic-group"
               data-expanded={open}
               aria-label={`Epic ${epic.title}`}
+              data-epic-drop-target={epic.id}
+              data-drop-selected={
+                queue.snapshot?.epicTarget?.epic?.id === epic.id
+              }
+              tabIndex={-1}
             >
               <div className="action-item-epic-heading">
                 <div className="action-item-epic-identity">
@@ -265,6 +338,8 @@ export function ActionItemGroupedQueue({
   onEdit: (item: ActionItemRow) => void;
 }) {
   const current = queue.dataCurrent && !queue.criteriaPending && !queue.error;
+  const { epicTargetsRef } = queue;
+  const externalMovement = queue.externalMovement;
   const compact = useMediaQuery('(max-width: 1100px)');
   const heading = (
     <ActionItemQueueHead
@@ -298,8 +373,8 @@ export function ActionItemGroupedQueue({
           ? 'Saving order…'
           : queue.pendingId !== null
             ? 'Saving action item…'
-            : queue.snapshot?.project
-              ? `Move ${queue.snapshot.items.find((item) => `item:${item.id}` === queue.snapshot?.itemId)?.title ?? 'action item'} to ${queue.snapshot.project}. Press Space to drop, or Escape to cancel.`
+            : externalMovement
+              ? `${externalMovement}. Press Space to drop, or Escape to cancel.`
               : ''}
       </span>
       {queue.initialLoading && <p className="loading">Loading action items…</p>}
@@ -324,16 +399,52 @@ export function ActionItemGroupedQueue({
       )}
       <DragDropContext
         onBeforeCapture={() => queue.setExpanded(null)}
-        onDragStart={queue.startDrag}
-        onDragEnd={queue.endDrag}
-        dragHandleUsageInstructions="Press Space to lift, Up and Down to reorder within this list, Space to drop, or Escape to cancel. For an action item, Left and Right choose a project. Change Epic membership with Move to Epic."
+        onDragStart={(start) => queue.startDrag(start)}
+        onDragUpdate={(update, provided) => {
+          const movement = queue.externalDragAnnouncement();
+          if (movement)
+            provided.announce(
+              `${movement}. Press Space to drop, or Escape to cancel.`,
+            );
+          else if (
+            !update.destination &&
+            update.draggableId.startsWith('item:')
+          )
+            provided.announce(
+              'Choose an Epic header, No Epic, or a project to move this item. Escape cancels.',
+            );
+        }}
+        onDragEnd={(result, provided) => {
+          const movement = queue.externalDragAnnouncement();
+          if (movement)
+            provided.announce(
+              result.reason === 'CANCEL'
+                ? 'Action item move canceled.'
+                : `${movement}. Checking the current list.`,
+            );
+          return queue.endDrag(result);
+        }}
+        dragHandleUsageInstructions="Press Space to lift, Up and Down to reorder within this list, Space to drop, or Escape to cancel. For an action item, Left and Right choose a project; Shift plus Left or Right chooses an Epic or No Epic."
       >
         <div
+          ref={epicTargetsRef}
+          data-dragging={Boolean(queue.snapshot)}
           className="action-items-container action-item-grouped-container"
           role="region"
           aria-label="action items list"
           tabIndex={0}
         >
+          <div
+            className="action-item-no-epic-target"
+            data-epic-drop-target="none"
+            data-active={Boolean(
+              queue.snapshot?.epics?.some((target) => target.epic === null),
+            )}
+            data-drop-selected={queue.snapshot?.epicTarget?.epic === null}
+            tabIndex={-1}
+          >
+            No Epic — drop to move out
+          </div>
           <table
             className="table action-items-table action-item-grouped-table"
             aria-busy={!current && (queue.loading || !queue.error)}

@@ -20,15 +20,69 @@ describe('proposal Epic choice', () => {
           onDecide={onDecide}
         />,
       );
-      expect(screen.getByRole('combobox')).toHaveDisplayValue(
-        action === 'create' ? 'No Epic' : 'Keep current',
-      );
+      expect(screen.getByRole('combobox')).toHaveDisplayValue('No Epic');
       fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
       expect(onDecide).toHaveBeenLastCalledWith('approve', undefined);
       fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
       expect(onDecide).toHaveBeenLastCalledWith('reject');
     },
   );
+
+  it('shows the reviewed current Epic once, including when its catalog is unavailable or renamed', () => {
+    const epic = epicGroup(10, []).epic;
+    const duplicate = { ...epicGroup(20, []).epic, title: epic.title };
+    const onDecide = vi.fn();
+    const props = {
+      proposal: actionItemProposal({
+        current_parent: epicReference(epic),
+        current_parent_title: epic.title,
+      }),
+      catalog: {
+        data: { items: [epic, duplicate] },
+        loading: false,
+        error: null,
+      },
+      busy: false,
+      saving: false,
+      approveDisabled: false,
+      onDecide,
+    };
+    const view = render(<ActionItemProposalDecision {...props} />);
+    expect(screen.getByRole('combobox')).toHaveDisplayValue(
+      `${epic.title} #10`,
+    );
+    expect(
+      screen.getByRole('option', { name: `${epic.title} #10` }),
+    ).toHaveValue('');
+    expect(
+      screen.getByRole('option', { name: `${epic.title} #20` }),
+    ).toHaveValue('20');
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    expect(onDecide).toHaveBeenLastCalledWith('approve', undefined);
+    view.rerender(
+      <ActionItemProposalDecision
+        {...props}
+        catalog={{ data: null, loading: false, error: 'Offline' }}
+      />,
+    );
+    expect(screen.getByRole('combobox')).toHaveDisplayValue(epic.title);
+    view.rerender(
+      <ActionItemProposalDecision
+        {...props}
+        catalog={{
+          ...props.catalog,
+          data: {
+            items: [{ ...epic, title: 'Renamed elsewhere', revision: 9 }],
+          },
+        }}
+      />,
+    );
+    expect(screen.getByRole('combobox')).toHaveDisplayValue(epic.title);
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    expect(onDecide).toHaveBeenLastCalledWith('approve', undefined);
+  });
 
   it('describes standalone and grouped current placement without changing the default request', () => {
     const epic = epicGroup(10, []).epic;
@@ -42,14 +96,15 @@ describe('proposal Epic choice', () => {
       onDecide,
     };
     const view = render(<ActionItemProposalDecision {...props} />);
-    expect(screen.getByText('Current placement: No Epic')).toBeVisible();
+    expect(screen.getByRole('combobox')).toHaveDisplayValue('No Epic');
     view.rerender(
       <ActionItemProposalDecision
         {...props}
         proposal={actionItemProposal({ current_parent: epicReference(epic) })}
       />,
     );
-    expect(screen.getByText(`Current placement: ${epic.title}`)).toBeVisible();
+    expect(screen.getByRole('combobox')).toHaveDisplayValue(epic.title);
+    expect(screen.queryByText(/^Current:/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
     expect(onDecide).toHaveBeenCalledExactlyOnceWith('approve', undefined);
     view.rerender(
@@ -59,18 +114,16 @@ describe('proposal Epic choice', () => {
         catalog={{ data: null, loading: false, error: 'Unavailable' }}
       />,
     );
-    expect(
-      screen.getByText(
-        `Current placement: Epic #${epic.id} (name unavailable)`,
-      ),
-    ).toBeVisible();
+    expect(screen.getByRole('combobox')).toHaveDisplayValue(
+      `Epic #${epic.id} (name unavailable)`,
+    );
     view.rerender(
       <ActionItemProposalDecision
         {...props}
         proposal={actionItemProposal({ current_parent: undefined })}
       />,
     );
-    expect(screen.queryByText(/^Current placement:/)).toBeNull();
+    expect(screen.queryByText(/^Current:/)).toBeNull();
     expect(screen.getByRole('combobox')).toBeDisabled();
   });
 

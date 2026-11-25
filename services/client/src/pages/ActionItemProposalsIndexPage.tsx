@@ -2,10 +2,8 @@ import { useCallback, useRef } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api';
 import type { ActionItemProposal } from '../api';
-import {
-  ActionItemProposalContent,
-  ActionItemProposalDescriptionPreview,
-} from '../components/ActionItemProposalContent';
+import { ActionItemProposalContent } from '../components/ActionItemProposalContent';
+import { ActionItemProposalSummary } from '../components/ActionItemProposalSummary';
 import { ActionItemProposalSupersession } from '../components/ActionItemProposalSupersession';
 import {
   ActionItemProposalDecision,
@@ -23,7 +21,6 @@ import { usePagination } from '../hooks/usePagination';
 import { usePolling } from '../hooks/usePolling';
 import { useViewPreferences } from '../hooks/useViewPreferences';
 import { parseViewField } from '../utils/viewPreferences';
-import { actionItemProposalProject } from '../utils/actionItems';
 import './actionItemProposals.css';
 
 export function ActionItemProposalsIndexPage() {
@@ -98,7 +95,8 @@ export function ActionItemProposalsIndexPage() {
       </div>
       <p className="action-item-proposal-intro">
         Accept creates a new action item or applies the displayed changes;
-        Reject leaves saved items unchanged.
+        Reject leaves saved items unchanged. No Epic leaves accepted items
+        ungrouped.
       </p>
       <FilterBar
         nameValue={q}
@@ -171,6 +169,13 @@ export function ActionItemProposalsIndexPage() {
           </Link>
         </section>
       )}
+      {proposals.items.length > 0 && (
+        <div className="action-item-proposal-columns" aria-hidden="true">
+          <span>Action item</span>
+          <span>Project / Tags</span>
+          <span>Due date</span>
+        </div>
+      )}
       <ol
         ref={listRef}
         tabIndex={-1}
@@ -184,67 +189,31 @@ export function ActionItemProposalsIndexPage() {
             proposal.source_available === false ||
             proposal.target_stale;
           const isCreate = proposal.action === 'create';
-          const itemProject = actionItemProposalProject(proposal);
           return (
             <li
               key={proposal.id}
               className="action-item-proposal-row"
               aria-labelledby={`proposal-title-${proposal.id}`}
             >
-              <div className="action-item-proposal-heading">
-                <div className="action-item-proposal-identity">
-                  <h3 id={`proposal-title-${proposal.id}`}>
-                    <Link
-                      className="text-link"
-                      to={`/action-items/proposals/${proposal.id}`}
-                    >
-                      {proposal.target_name}
-                    </Link>
-                  </h3>
-                  <div className="action-item-proposal-metadata">
-                    <span>
-                      {isCreate
-                        ? 'New action item'
-                        : 'Update existing action item'}
-                    </span>
-                    {itemProject && <span>{itemProject}</span>}
-                    {isCreate &&
-                      proposal.proposed_item?.tags?.map((tag) => (
-                        <span key={tag}>{tag}</span>
-                      ))}
-                    {isCreate && proposal.proposed_item?.due_at && (
-                      <div className="action-item-proposal-deadline">
-                        Due{' '}
-                        <DateCell
-                          date={proposal.proposed_item.due_at}
-                          format="long"
-                        />
-                      </div>
-                    )}
-                    {isCreate &&
-                      proposal.proposed_item?.status &&
-                      proposal.proposed_item.status !== 'open' && (
-                        <span>
-                          Creates {proposal.proposed_item.status} item
-                        </span>
-                      )}
-                    {(!status || proposal.status !== 'pending') && (
-                      <span>{proposal.status}</span>
-                    )}
-                  </div>
-                </div>
-              </div>
+              <ActionItemProposalSummary
+                proposal={proposal}
+                titleId={`proposal-title-${proposal.id}`}
+                showStatus={!status || proposal.status !== 'pending'}
+                title={
+                  <Link
+                    className="text-link"
+                    to={`/action-items/proposals/${proposal.id}`}
+                  >
+                    {proposal.target_name}
+                  </Link>
+                }
+              />
               <ActionItemProposalSupersession proposal={proposal} />
               {proposal.status === 'pending' && stale && (
                 <p role="alert">
                   The source meeting or saved Action Item changed or is
                   unavailable; generate a fresh proposal before accepting.
                 </p>
-              )}
-              {isCreate && (
-                <ActionItemProposalDescriptionPreview
-                  description={proposal.proposed_item?.description}
-                />
               )}
               {!isCreate && proposal.proposed_item && (
                 <ActionItemProposalContent

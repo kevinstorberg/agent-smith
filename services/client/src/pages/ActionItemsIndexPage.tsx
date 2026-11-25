@@ -3,7 +3,10 @@ import { Link, useNavigate } from 'react-router';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useActionItemGroupedQueue } from '../hooks/useActionItemGroupedQueue';
 import { ActionItemGroupedQueue } from '../components/ActionItemGroupedQueue';
-import { NewEpicControl } from '../components/ActionItemEpicControls';
+import {
+  EpicCreationRetry,
+  NewEpicControl,
+} from '../components/ActionItemEpicControls';
 import { actionItemTags } from '../utils/actionItems';
 import {
   ACTION_ITEM_QUEUE_KIND_OPTIONS,
@@ -160,6 +163,7 @@ export function ActionItemsIndexPage() {
           </Link>
         </div>
       </div>
+      <EpicCreationRetry queue={queue} />
       <section
         className="action-items-filter-region"
         aria-label="Action item filters"
