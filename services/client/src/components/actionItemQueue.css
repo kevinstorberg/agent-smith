@@ -83,6 +83,9 @@
   letter-spacing: 0;
   text-transform: none;
 }
+.action-items-index-page .action-item-grouped-table > thead {
+  background: var(--action-table-header-surface);
+}
 .action-items-index-page .action-item-grouped-table > thead th:first-child {
   padding-inline: 0;
 }
@@ -178,7 +181,7 @@
   line-height: 1.55;
 }
 .action-items-index-page .action-item-epic-row > td {
-  padding: 0;
+  padding: 6px 0;
   border: 0;
 }
 .action-items-index-page .action-item-epic-row:hover > td {
@@ -194,15 +197,26 @@
 .action-items-index-page .action-item-epic-actions {
   display: contents;
 }
+.action-items-index-page .action-item-epic-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
 .action-items-index-page .action-item-epic-heading {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 10px 8px;
-  border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
-  background: transparent;
+  background: var(--surface);
+  border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
+}
+.action-items-index-page
+  .action-item-epic-group[data-expanded='false']
+  .action-item-epic-heading {
+  border-bottom: 0;
+  border-radius: inherit;
 }
 .action-items-index-page .action-item-epic-identity {
   min-width: 0;
@@ -220,9 +234,6 @@
 .action-items-index-page .epic-queue-summary,
 .action-items-index-page .epic-empty {
   color: var(--text-muted);
-}
-.action-items-index-page .epic-children {
-  box-shadow: inset 2px 0 0 var(--border);
 }
 .action-items-index-page .epic-children .action-title-cell {
   padding-inline-start: 22px;

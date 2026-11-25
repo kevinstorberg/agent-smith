@@ -30,6 +30,7 @@ from services.action_items.queue_contracts import (
     EpicRemove,
     Membership,
     QueueMove,
+    QueueQuery,
 )
 from services.mcp_contracts import ContractMCP
 
@@ -55,7 +56,7 @@ class ProjectInput(Contract):
 
 
 class QueueInput(Contract):
-    filters: Query | None = None
+    filters: QueueQuery | None = None
 
 
 class EpicRenameInput(EpicPatch):
@@ -223,10 +224,11 @@ def action_item_project_delete(project_id: PositiveInt) -> dict[str, Any]:
     return db.delete_project(project_id)
 
 
-def action_item_queue_list(filters: Query | None = None) -> dict[str, Any]:
+def action_item_queue_list(filters: QueueQuery | None = None) -> dict[str, Any]:
     """Read grouped Action Items, Epic membership and current structural revisions before changing groups or order.
 
-    filters accepts the same fields as action_item_list; status defaults to open.
+    filters accepts the same fields as action_item_list plus kind=all, epic, item; status defaults to open.
+    kind selects root Epics or standalone items before counting and pagination; children stay grouped.
     Use status=all to inspect completed members too. Pagination counts root groups,
     and each returned Epic includes all matching children without splitting the Epic.
     Epic revision/cohort and child revisions are live snapshots; reread after each mutation.

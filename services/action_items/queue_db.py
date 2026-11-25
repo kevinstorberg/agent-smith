@@ -430,10 +430,10 @@ def _root_value(root: dict, sort: str):
 
 
 def list_queue(payload=None) -> dict:
-    from services.action_items.contracts import Query
+    from services.action_items.queue_contracts import QueueQuery
     from services.api.models.shared.listing import search_pattern
 
-    query = Query.model_validate(payload or {})
+    query = QueueQuery.model_validate(payload or {})
     sort = (
         query.sort
         or {"open": "manual", "completed": "completed", "all": "newest"}[query.status]
@@ -507,6 +507,9 @@ def list_queue(payload=None) -> dict:
                         "total_count": epic["total_count"],
                     }
                 )
+        roots = [
+            row for row in roots if query.kind == "all" or row["kind"] == query.kind
+        ]
         ordered = _sort_values(roots, lambda row: _root_value(row, sort), sort)
         return {
             "items": ordered[query.offset : query.offset + query.limit],

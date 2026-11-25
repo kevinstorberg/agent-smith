@@ -61,6 +61,96 @@ beforeEach(() => {
 });
 
 describe('saved Action Item Epics', () => {
+  it('keeps root type visible and resets paging while preserving independent criteria', async () => {
+    vi.mocked(api.actionItemQueue.list).mockImplementation(async (filters) =>
+      filters?.kind === 'item'
+        ? queuePage({ items: [actionItem(1)], total: 25 })
+        : { items: [epicGroup()], total: 25, matching_count: 25 },
+    );
+    renderWithProviders(<ActionItemsIndexPage />, {
+      initialEntries: [
+        '/action-items?kind=item&project=Work&q=Task&tags=security&due_within_hours=48&offset=10',
+      ],
+    });
+    await screen.findByRole('button', { name: 'Task 1' });
+    const type = screen.getByRole('combobox', { name: 'Item type' });
+    expect(type).toBeVisible();
+    expect(type).toHaveValue('item');
+    expect(screen.getByRole('button', { name: 'Filters (2)' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ kind: 'item', offset: 10 }),
+    );
+    fireEvent.change(type, { target: { value: 'epic' } });
+    await waitFor(() =>
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          kind: 'epic',
+          project: 'Work',
+          q: 'Task',
+          tags: ['security'],
+          due_within_hours: 48,
+          status: 'open',
+          sort: 'manual',
+          offset: 0,
+        }),
+      ),
+    );
+    expect(screen.getByRole('region', { name: 'Epic Release' })).toBeVisible();
+    fireEvent.change(type, { target: { value: 'all' } });
+    await waitFor(() =>
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
+        expect.not.objectContaining({ kind: expect.anything() }),
+      ),
+    );
+    expect(api.actionItemQueue.move).not.toHaveBeenCalled();
+    expect(api.actionItems.update).not.toHaveBeenCalled();
+  });
+
+  it('ignores a late response from the previous root type', async () => {
+    renderWithProviders(<ActionItemsIndexPage />, {
+      initialEntries: ['/action-items'],
+    });
+    await screen.findByRole('button', { name: 'Task 2' });
+    const stale = deferred<ReturnType<typeof queuePage>>();
+    vi.mocked(api.actionItemQueue.list).mockImplementation((filters) =>
+      filters?.kind === 'epic'
+        ? stale.promise
+        : Promise.resolve(
+            queuePage({
+              items: [actionItem(9, { title: 'Current single' })],
+              total: 1,
+            }),
+          ),
+    );
+    const type = screen.getByRole('combobox', { name: 'Item type' });
+    fireEvent.change(type, { target: { value: 'epic' } });
+    await waitFor(() =>
+      expect(api.actionItemQueue.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ kind: 'epic' }),
+      ),
+    );
+    fireEvent.change(type, { target: { value: 'item' } });
+    await screen.findByRole('button', { name: 'Current single' });
+    await act(async () =>
+      stale.resolve(
+        queuePage({
+          items: [actionItem(8, { title: 'Stale result' })],
+          total: 1,
+        }),
+      ),
+    );
+    expect(type).toHaveValue('item');
+    expect(
+      screen.queryByRole('button', { name: 'Stale result' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Current single' }),
+    ).toBeVisible();
+  });
+
   it('uses one visible sort header and sorts children without changing Epic membership', async () => {
     const members = [
       actionItem(2, {
@@ -194,13 +284,16 @@ describe('saved Action Item Epics', () => {
 
   it('uses same-filter root edge probes and an Epic identity rather than a child anchor', async () => {
     const group = epicGroup();
+    const boundary = epicGroup(11);
     vi.mocked(api.actionItemQueue.list).mockImplementation(async (filters) =>
       filters?.limit === 1
-        ? queuePage({ items: [actionItem(9)], total: 2 })
+        ? { items: [boundary], total: 2, matching_count: 2 }
         : { items: [group], total: 2, matching_count: 3 },
     );
     renderWithProviders(<ActionItemsIndexPage />, {
-      initialEntries: ['/action-items?project=Work&tags=security&q=Task'],
+      initialEntries: [
+        '/action-items?kind=epic&project=Work&tags=security&q=Task',
+      ],
     });
     fireEvent.click(await findActionButton('Move Epic Release to bottom'));
     await waitFor(() =>
@@ -211,12 +304,18 @@ describe('saved Action Item Epics', () => {
           expected_revision: 3,
           cohort: 'cohort-10',
         },
-        after: { kind: 'item', id: 9, expected_revision: 1 },
+        after: {
+          kind: 'epic',
+          id: 11,
+          expected_revision: 3,
+          cohort: 'cohort-11',
+        },
       }),
     );
     expect(api.actionItemQueue.list).toHaveBeenCalledWith(
       expect.objectContaining({
         project: 'Work',
+        kind: 'epic',
         q: 'Task',
         tags: ['security'],
         sort: 'manual_desc',
@@ -294,6 +393,7 @@ describe('saved Action Item Epics', () => {
     fireEvent.click(button);
     expect(api.actionItemEpics.create).toHaveBeenCalledTimes(1);
     expect(button).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Item type' })).toBeDisabled();
     await act(async () => save.reject(new Error('Uncertain response')));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Uncertain response',
@@ -372,7 +472,9 @@ describe('saved Action Item Epics', () => {
       matching_count: 25,
     });
     renderWithProviders(<ActionItemsIndexPage />, {
-      initialEntries: ['/action-items?project=Work&q=Task&tags=security'],
+      initialEntries: [
+        '/action-items?kind=item&project=Work&q=Task&tags=security',
+      ],
     });
     await screen.findByRole('button', { name: 'Task 2' });
     fireEvent.click(screen.getByRole('button', { name: 'New Epic' }));
@@ -397,6 +499,9 @@ describe('saved Action Item Epics', () => {
           offset: 20,
         }),
       ),
+    );
+    expect(screen.getByRole('combobox', { name: 'Item type' })).toHaveValue(
+      'all',
     );
     expect(screen.getByRole('button', { name: 'Show Epic' })).toBeEnabled();
   });

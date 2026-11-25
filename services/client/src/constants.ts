@@ -134,6 +134,14 @@ export const VOCABULARY_SORT_OPTIONS = [
   { value: 'updated', label: 'Recently updated' },
 ] as const;
 
+export const ACTION_ITEM_QUEUE_KIND_OPTIONS = [
+  { value: 'all', label: 'All items' },
+  { value: 'epic', label: 'Epics' },
+  { value: 'item', label: 'Single action items' },
+] as const;
+export type ActionItemQueueKind =
+  (typeof ACTION_ITEM_QUEUE_KIND_OPTIONS)[number]['value'];
+
 export const ACTION_ITEM_STATUSES = [
   ['open', 'Open'],
   ['completed', 'Completed'],

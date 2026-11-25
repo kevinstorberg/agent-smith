@@ -47,6 +47,51 @@ describe('Action Item proposal review', () => {
   });
 });
 
+describe('Action Item root type filters', () => {
+  it.each(['epic', 'item'] as const)(
+    'forwards %s with the complete grouped query through fetch',
+    async (kind) => {
+      globalThis.fetch = mockFetch({ items: [], total: 0, matching_count: 0 });
+      await api.actionItemQueue.list({
+        kind,
+        q: 'Delivery',
+        status: 'all',
+        sort: 'title',
+        tags: ['security'],
+        unassigned: true,
+        due_within_hours: 48,
+        limit: 25,
+        offset: 25,
+      });
+      const [url] = vi.mocked(globalThis.fetch).mock.calls[0];
+      const request = new URL(String(url), 'http://localhost');
+      expect(request.pathname).toBe('/api/action-items/queue');
+      expect(Object.fromEntries(request.searchParams)).toEqual({
+        kind,
+        q: 'Delivery',
+        status: 'all',
+        sort: 'title',
+        tags: 'security',
+        unassigned: 'true',
+        due_within_hours: '48',
+        limit: '25',
+        offset: '25',
+      });
+    },
+  );
+
+  it('omits the All default and keeps root filtering out of flat requests', async () => {
+    globalThis.fetch = mockFetch({ items: [], total: 0 });
+    await api.actionItemQueue.list();
+    await api.actionItemQueue.list({ kind: 'all' });
+    await api.actionItems.list({ ...{ kind: 'epic' as const }, q: 'Delivery' });
+    for (const [url] of vi.mocked(globalThis.fetch).mock.calls)
+      expect(
+        new URL(String(url), 'http://localhost').searchParams.has('kind'),
+      ).toBe(false);
+  });
+});
+
 describe('Harness anchored moves', () => {
   it('sends raw source and visible-anchor timestamp tokens through the real fetch boundary', async () => {
     globalThis.fetch = mockFetch({

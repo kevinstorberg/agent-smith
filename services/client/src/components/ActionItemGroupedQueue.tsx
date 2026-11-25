@@ -128,7 +128,11 @@ function EpicEntry({
           }}
         >
           <td colSpan={6}>
-            <section aria-label={`Epic ${epic.title}`}>
+            <section
+              className="action-item-epic-group"
+              data-expanded={open}
+              aria-label={`Epic ${epic.title}`}
+            >
               <div className="action-item-epic-heading">
                 <div className="action-item-epic-identity">
                   {queue.reorderableView && (

@@ -2,6 +2,7 @@ import {
   ACTION_ITEM_SORT_OPTIONS,
   ACTION_ITEM_STATUSES,
   ACTION_ITEM_PROPOSAL_STATUSES,
+  ACTION_ITEM_QUEUE_KIND_OPTIONS,
   CHAT_SORT_OPTIONS,
   CHAT_STATUSES,
   PROFILE_SORT_OPTIONS,
@@ -24,7 +25,7 @@ import {
   VOCABULARY_SORT_OPTIONS,
   TYPE_PATHS,
 } from '../constants';
-import type { PageLimit } from '../constants';
+import type { ActionItemQueueKind, PageLimit } from '../constants';
 import { MAX_DUE_WINDOW_HOURS } from './actionItemDeadlines';
 import { columnSortOptions } from './tableSorting';
 
@@ -93,6 +94,7 @@ export interface ViewSettings extends Record<
   HarnessViewSettings
 > {
   actionItems: {
+    kind: ActionItemQueueKind;
     q: string;
     project: string;
     unassigned: boolean;
@@ -307,6 +309,7 @@ const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
   actionItems: {
     pathname: '/action-items',
     defaults: {
+      kind: 'all',
       q: '',
       project: '',
       unassigned: false,
@@ -318,6 +321,9 @@ const SPECS: { [K in ViewKey]: ViewSpec<ViewSettings[K]> } = {
       offset: 0,
     },
     fields: {
+      kind: choice(
+        ACTION_ITEM_QUEUE_KIND_OPTIONS.map((option) => option.value),
+      ),
       q: text,
       project: projectName,
       unassigned: boolean,

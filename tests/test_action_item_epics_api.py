@@ -44,6 +44,94 @@ def test_complete_groups_precede_pagination_and_keep_full_hidden_cohort(client):
     assert client.get("/api/action-items").json()["items"][0]["id"] == root["id"]
 
 
+def test_root_kind_filters_precede_counts_and_pagination_without_flattening(client):
+    first = db.create({"title": "First single"})
+    group = epic()
+    children = [
+        membership(
+            db.create(
+                {"title": f"Child {index}", "tags": ["match"] if index == 0 else []}
+            ),
+            destination=current(group["id"]),
+        )
+        for index in range(2)
+    ]
+    second = db.create({"title": "Second single"})
+    empty = epic("Empty")
+    original = client.get("/api/action-items/queue").json()
+    assert client.get("/api/action-items/queue?kind=all").json() == original
+
+    singles = client.get("/api/action-items/queue?kind=item&limit=1&offset=1").json()
+    assert singles["total"] == singles["matching_count"] == 2
+    assert [row["item"]["id"] for row in singles["items"]] == [second["id"]]
+    groups = client.get("/api/action-items/queue?kind=epic&limit=1").json()
+    assert groups["total"] == 2 and groups["matching_count"] == 2
+    assert [row["item"]["id"] for row in groups["items"][0]["children"]] == [
+        child["id"] for child in children
+    ]
+    empty_page = client.get("/api/action-items/queue?kind=epic&limit=1&offset=1").json()
+    assert empty_page["items"][0]["epic"]["id"] == empty["id"]
+    assert empty_page["items"][0]["children"] == []
+
+    filtered = client.get("/api/action-items/queue?kind=epic&tags=match&limit=1").json()
+    assert filtered["total"] == filtered["matching_count"] == 1
+    assert filtered["items"][0]["total_count"] == 2
+    assert (
+        filtered["items"][0]["epic"]["cohort"] == groups["items"][0]["epic"]["cohort"]
+    )
+    assert [row["item"]["id"] for row in filtered["items"][0]["children"]] == [
+        children[0]["id"]
+    ]
+    assert (
+        client.get("/api/action-items/queue?kind=item&tags=match").json()["total"] == 0
+    )
+    assert {row["id"] for row in client.get("/api/action-items").json()["items"]} == {
+        first["id"],
+        second["id"],
+        *(child["id"] for child in children),
+    }
+
+
+@pytest.mark.parametrize("kind", ["", "single", "EPIC", "true", "1"])
+def test_queue_kind_rejects_invalid_values_and_stays_out_of_flat_and_profile_queries(
+    client, kind
+):
+    assert (
+        client.get("/api/action-items/queue", params={"kind": kind}).status_code == 422
+    )
+    assert client.get("/api/action-items?kind=epic").status_code == 422
+    assert (
+        client.get(f"/api/profiles/{uuid4()}/discussion-topics?kind=epic").status_code
+        == 422
+    )
+
+
+def test_queue_kind_composes_with_status_and_preserves_empty_group_rules(client):
+    group = epic("Launch")
+    child = membership(
+        db.create({"title": "Finished", "status": "completed", "project": "Work"}),
+        destination=group,
+    )
+    single = db.create({"title": "Standalone completed", "status": "completed"})
+    assert (
+        client.get("/api/action-items/queue?kind=epic").json()["items"][0][
+            "matching_count"
+        ]
+        == 0
+    )
+    assert (
+        client.get("/api/action-items/queue?kind=epic&project=Work").json()["total"]
+        == 0
+    )
+    completed = client.get("/api/action-items/queue?kind=epic&status=completed").json()
+    assert completed["total"] == completed["matching_count"] == 1
+    assert completed["items"][0]["children"][0]["item"]["id"] == child["id"]
+    singles = client.get("/api/action-items/queue?kind=item&status=completed").json()
+    assert singles["total"] == singles["matching_count"] == 1
+    assert singles["items"][0]["item"]["id"] == single["id"]
+    assert client.get("/api/action-items/queue?kind=epic&q=Launch").json()["total"] == 1
+
+
 def test_epic_http_lifecycle_and_strict_boundaries(client):
     child = db.create({"title": "Child"})
     response = client.post(

@@ -6,7 +6,7 @@ import {
   type ActionItemEpicCreate,
   type ActionItemEpicGroup,
   type ActionItemEpicReference,
-  type ActionItemFilters,
+  type ActionItemQueueFilters,
   type ActionItemGroupedPage,
   type ActionItemQueueRoot,
   type ActionItemRow,
@@ -76,7 +76,7 @@ export function useActionItemGroupedQueue({
   criteriaPending,
   pagination,
 }: {
-  filters: ActionItemFilters;
+  filters: ActionItemQueueFilters;
   criteria: string;
   viewKey: string;
   reorderableView: boolean;

@@ -5,19 +5,25 @@ import { useActionItemGroupedQueue } from '../hooks/useActionItemGroupedQueue';
 import { ActionItemGroupedQueue } from '../components/ActionItemGroupedQueue';
 import { NewEpicControl } from '../components/ActionItemEpicControls';
 import { actionItemTags } from '../utils/actionItems';
-import { ACTION_ITEM_STATUSES, defaultActionItemSort } from '../constants';
+import {
+  ACTION_ITEM_QUEUE_KIND_OPTIONS,
+  ACTION_ITEM_STATUSES,
+  defaultActionItemSort,
+} from '../constants';
 import { useViewPreferences } from '../hooks/useViewPreferences';
 import { ActionItemProjectTabs } from '../components/ActionItemProjects';
 import { projectScope, projectScopeFields } from '../utils/actionItemProjects';
 import { ActionItemDeadlineWindow } from '../components/ActionItemDeadlines';
 import { FilterCheckbox } from '../components/FilterCheckbox';
 import { ButtonLink } from '../components/ButtonLink';
+import { parseViewField } from '../utils/viewPreferences';
 import './actionItemsIndex.css';
 
 export function ActionItemsIndexPage() {
   const navigate = useNavigate();
   const preferences = useViewPreferences('actionItems');
   const {
+    kind,
     status,
     sort,
     q: queryInput,
@@ -44,6 +50,7 @@ export function ActionItemsIndexPage() {
     dueHoursInput !== dueHours;
   const queue = useActionItemGroupedQueue({
     filters: {
+      ...(kind !== 'all' ? { kind } : {}),
       status,
       sort,
       q: query || undefined,
@@ -53,6 +60,7 @@ export function ActionItemsIndexPage() {
       tags: actionItemTags(tags),
     },
     criteria: JSON.stringify([
+      kind,
       status,
       sort,
       query,
@@ -62,6 +70,7 @@ export function ActionItemsIndexPage() {
       tags,
     ]),
     viewKey: JSON.stringify([
+      kind,
       status,
       sort,
       queryInput,
@@ -139,6 +148,26 @@ export function ActionItemsIndexPage() {
         toolbarAccessory={
           <div className="action-items-toolbar-controls">
             {searchControls}
+            <label className="action-items-type-filter">
+              <span className="form-label">Item type</span>
+              <select
+                className="input"
+                value={kind}
+                disabled={freezeControls}
+                onChange={(event) =>
+                  preferences.setField(
+                    'kind',
+                    parseViewField('actionItems', 'kind', event.target.value),
+                  )
+                }
+              >
+                {ACTION_ITEM_QUEUE_KIND_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <div
               className="sub-tabs"
               role="tablist"
@@ -250,6 +279,7 @@ export function ActionItemsIndexPage() {
               onClick={() =>
                 queue.showCreated((position) => {
                   preferences.setFields({
+                    kind: 'all',
                     status: 'open',
                     sort: 'manual',
                     q: '',
