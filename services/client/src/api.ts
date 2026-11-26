@@ -1133,7 +1133,11 @@ export interface ActionItemProposalPlacement {
 
 export interface ActionItemProposalApproval {
   placement?: ActionItemProposalPlacement | null;
+  complete?: boolean;
 }
+
+export type ActionItemProposalDecisionAction =
+  'approve' | 'reject' | 'complete';
 
 export interface ActionItemProposal extends ReviewMetadata<ActionItemProposalStatus> {
   superseded_by_id: number | null;
@@ -1148,7 +1152,9 @@ export interface ActionItemProposal extends ReviewMetadata<ActionItemProposalSta
   applied_ref: {
     action_item_id: number;
     placement?: ActionItemProposalPlacement | null;
+    review_outcome?: 'completed';
   } | null;
+  review_outcome?: 'accepted' | 'completed' | 'rejected' | null;
   proposed_item?: Partial<ActionItem> | null;
   current_target?: Partial<ActionItem> | null;
   current_parent?: ActionItemEpicReference | null;

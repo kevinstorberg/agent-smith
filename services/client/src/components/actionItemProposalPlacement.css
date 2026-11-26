@@ -17,6 +17,26 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+.action-item-proposal-decision-buttons > .action-item-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--success);
+  border-color: var(--control-border);
+}
+.action-item-proposal-decision-buttons
+  > .action-item-icon-button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--success);
+}
 .action-item-proposal-epic-choice > .action-item-epic-select {
   display: block;
   min-width: 0;
@@ -69,6 +89,14 @@
   }
 }
 @media (max-width: 600px) {
+  .action-item-proposal-decision-buttons > .btn:not(.action-item-icon-button) {
+    padding-inline: 10px;
+  }
+  .action-item-proposal-detail-page
+    .action-item-proposal-decision-buttons
+    > .btn:not(.action-item-icon-button) {
+    padding-inline: 6px;
+  }
   .action-item-proposal-epic-choice {
     flex-basis: 100%;
     max-width: none;

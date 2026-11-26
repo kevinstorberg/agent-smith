@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import {
   api,
   type ActionItemProposal,
+  type ActionItemProposalDecisionAction,
   type ActionItemProposalPlacement,
 } from '../api';
 import { usePageLifetime } from './usePageLifetime';
@@ -16,7 +17,7 @@ export function useActionItemProposalDecision({
   onSuccess: (proposal: ActionItemProposal) => void;
   canStart: (
     proposal: ActionItemProposal,
-    action: 'approve' | 'reject',
+    action: ActionItemProposalDecisionAction,
   ) => boolean;
   focusFallback?: RefObject<HTMLElement | null>;
 }) {
@@ -55,7 +56,7 @@ export function useActionItemProposalDecision({
 
   async function decide(
     proposal: ActionItemProposal,
-    action: 'approve' | 'reject',
+    action: ActionItemProposalDecisionAction,
     placement?: ActionItemProposalPlacement,
   ) {
     if (
@@ -80,9 +81,10 @@ export function useActionItemProposalDecision({
         const result =
           action === 'reject'
             ? await api.actionItemProposals.reject(proposal.id)
-            : placement
+            : placement || action === 'complete'
               ? await api.actionItemProposals.approve(proposal.id, {
-                  placement,
+                  ...(placement ? { placement } : {}),
+                  ...(action === 'complete' ? { complete: true } : {}),
                 })
               : await api.actionItemProposals.approve(proposal.id);
         if (isCurrent()) latest.current.onSuccess(result);

@@ -339,7 +339,13 @@ def reserve_dismissal(cursor, proposal: dict) -> dict:
     return payload
 
 
-def promote(cursor, proposal: dict, placement: ProposalPlacement | None = None) -> dict:
+def promote(
+    cursor,
+    proposal: dict,
+    placement: ProposalPlacement | None = None,
+    *,
+    complete: bool = False,
+) -> dict:
     payload = _payload(cursor, proposal["id"])
     if _was_dismissed(cursor, payload["decision_key"]):
         raise ProposalConflictError(
@@ -347,6 +353,8 @@ def promote(cursor, proposal: dict, placement: ProposalPlacement | None = None) 
         )
     _assert_source(cursor, payload["source_snapshot"])
     changes = dict(payload["changes"])
+    if complete:
+        changes["status"] = "completed"
     if "project" in changes:
         try:
             changes["project"] = _known_project(cursor, changes["project"])
@@ -391,11 +399,31 @@ def promote(cursor, proposal: dict, placement: ProposalPlacement | None = None) 
         raise ProposalConflictError(str(error)) from None
     return {
         "action_item_id": task["id"],
+        **({"review_outcome": "completed"} if complete else {}),
         **(
             {"placement": placement.model_dump(mode="json")}
             if placement is not None
             else {}
         ),
+    }
+
+
+def review_outcome(proposal: dict) -> str | None:
+    applied = proposal.get("applied_ref") or {}
+    marker = applied.get("review_outcome")
+    if "review_outcome" in applied and (
+        marker != "completed" or proposal["status"] != "approved"
+    ):
+        raise ProposalConflictError("Proposal has an invalid recorded review outcome")
+    if proposal["status"] == "approved":
+        return "completed" if marker else "accepted"
+    return "rejected" if proposal["status"] == "rejected" else None
+
+
+def _review_result(proposal: dict) -> dict:
+    return {
+        **tasks._record(proposal),
+        "review_outcome": review_outcome(proposal),
     }
 
 
@@ -442,7 +470,7 @@ def review_details(proposals: list[dict]) -> list[dict]:
         before = payload["before_snapshot"] or {}
         result.append(
             {
-                **proposal,
+                **_review_result(proposal),
                 **parents.get(
                     proposal["target_id"],
                     {"current_parent": None, "current_parent_title": None},
@@ -484,6 +512,7 @@ def decision_context(limit: int = 200) -> dict:
         total = cursor.fetchone()["total"]
         cursor.execute(
             """SELECT proposal.id,proposal.status,proposal.action,proposal.target_id,proposal.target_name,
+                      proposal.applied_ref,proposal.updated_at,
                       proposal.base_version,proposal.rationale,payload.changes,payload.meeting_id::text AS meeting_id,
                       (meeting.id IS NULL OR NOT meeting.available OR meeting.revision<>payload.source_revision
                           OR meeting.content_hash<>payload.source_hash) AS source_stale,
@@ -495,7 +524,10 @@ def decision_context(limit: int = 200) -> dict:
                ORDER BY proposal.id DESC LIMIT %s""",
             (limit,),
         )
-        return {"items": [dict(row) for row in cursor.fetchall()], "total": total}
+        return {
+            "items": [_review_result(dict(row)) for row in cursor.fetchall()],
+            "total": total,
+        }
 
 
 def _prepare_decision(cursor, stack, proposal):
@@ -520,8 +552,10 @@ def _decision(
 def _record_decision(
     cursor, proposal_id: int, status: str, applied_ref: dict | None = None
 ) -> dict:
-    return record_decision(
-        cursor, proposal_id, status, applied_ref, model=ActionItemProposalModel
+    return _review_result(
+        record_decision(
+            cursor, proposal_id, status, applied_ref, model=ActionItemProposalModel
+        )
     )
 
 
@@ -536,15 +570,21 @@ def promote_proposal(
                 raise ProposalConflictError(
                     "This proposal was approved with a different Epic placement. Replay the original approval request."
                 )
-            return ActionItemProposalModel.serialize_timestamps(proposal)
-        applied = promote(cursor, proposal, request.placement)
+            if (review_outcome(proposal) == "completed") != request.complete:
+                raise ProposalConflictError(
+                    "This proposal was approved with a different completion choice. Replay the original approval request."
+                )
+            return _review_result(proposal)
+        applied = promote(
+            cursor, proposal, request.placement, complete=request.complete
+        )
         return _record_decision(cursor, proposal_id, "approved", applied)
 
 
 def reject_proposal(proposal_id: int) -> dict:
     with _decision(proposal_id, replay_status="rejected") as (cursor, proposal):
         if proposal["status"] == "rejected":
-            return ActionItemProposalModel.serialize_timestamps(proposal)
+            return _review_result(proposal)
         reserve_dismissal(cursor, proposal)
         return _record_decision(cursor, proposal_id, "rejected")
 

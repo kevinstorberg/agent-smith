@@ -8,6 +8,7 @@ export function ActionItemStatusButton({
   iconOnly = false,
   onChange,
   noun = 'action item',
+  completionPrompt,
 }: {
   item: Pick<ActionItemRow, 'title' | 'status'>;
   disabled?: boolean;
@@ -15,6 +16,7 @@ export function ActionItemStatusButton({
   iconOnly?: boolean;
   onChange: () => void;
   noun?: string;
+  completionPrompt?: string;
 }) {
   const completing = item.status === 'open';
   const label = completing ? 'Complete' : 'Reopen';
@@ -28,7 +30,10 @@ export function ActionItemStatusButton({
       onKeyDown={(event) => event.stopPropagation()}
       onClick={(event) => {
         event.stopPropagation();
-        if (!completing || confirm(`Complete ${noun} “${item.title}”?`))
+        if (
+          !completing ||
+          confirm(completionPrompt ?? `Complete ${noun} “${item.title}”?`)
+        )
           onChange();
       }}
     >

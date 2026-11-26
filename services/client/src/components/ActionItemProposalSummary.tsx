@@ -32,7 +32,13 @@ export function ActionItemProposalSummary({
           {isCreate && item?.status && item.status !== 'open' && (
             <span>Creates {item.status} item</span>
           )}
-          {showStatus && <span>{proposal.status}</span>}
+          {showStatus && (
+            <span>
+              {proposal.review_outcome === 'completed'
+                ? 'accepted as done'
+                : proposal.status}
+            </span>
+          )}
         </div>
         {isCreate && (
           <ActionItemProposalDescriptionPreview
