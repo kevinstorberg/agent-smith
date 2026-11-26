@@ -239,7 +239,7 @@ function EpicEntry({
                   )}
                   <span
                     className="action-item-priority"
-                    aria-label={`Epic priority ${epic.position}`}
+                    aria-label={`Epic order ${epic.position}`}
                   >
                     {queue.savingOrder ? '…' : epic.position}
                   </span>
@@ -352,6 +352,7 @@ export function ActionItemGroupedQueue({
   const compact = useMediaQuery('(max-width: 1100px)');
   const heading = (
     <ActionItemQueueHead
+      orderLabel="Order"
       sort={sort}
       onSort={onSort}
       current={current}
@@ -365,6 +366,7 @@ export function ActionItemGroupedQueue({
   );
   const childHeading = (
     <ActionItemQueueHead
+      orderLabel="Order"
       sort={sort}
       onSort={onSort}
       current={current}
@@ -407,6 +409,7 @@ export function ActionItemGroupedQueue({
       {queue.reviewError && <p role="alert">{queue.reviewError}</p>}
       {compact && (
         <ActionItemQueueSort
+          orderLabel="Order"
           sort={sort}
           onSort={onSort}
           status={status}
@@ -465,7 +468,7 @@ export function ActionItemGroupedQueue({
           >
             <caption className="visually-hidden">
               {queue.taskView
-                ? 'All matching Action Items, including tasks in Epics. Priority shows the global task rank.'
+                ? 'All matching Action Items, including tasks in Epics. Order shows the global task rank.'
                 : 'Column sorting orders this list and the action items within each Epic.'}
             </caption>
             <Columns />

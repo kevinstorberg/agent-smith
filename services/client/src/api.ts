@@ -191,12 +191,14 @@ export interface ActionItemRow {
   created_at: string;
   updated_at: string;
   priority: number | null;
+  is_priority?: boolean;
   due_at?: string | null;
 }
 export interface ActionItem extends ActionItemRow {
   description: string;
 }
 export interface ActionItemFields {
+  is_priority?: boolean;
   title: string;
   description?: string | null;
   project?: string | null;
@@ -223,6 +225,7 @@ export interface ActionItemFilters extends PaginationParams {
   q?: string;
   project?: string;
   unassigned?: boolean;
+  priority_only?: boolean;
   due_within_hours?: number;
   tags?: string[];
   status?: ActionItemStatus | 'all';
@@ -310,7 +313,7 @@ export type ActionItemQueueMove = {
 
 export interface ProfileDiscussionTopicRow extends Omit<
   ActionItemRow,
-  'due_at'
+  'due_at' | 'is_priority'
 > {
   readonly profile_id: string;
 }
@@ -322,15 +325,15 @@ export interface ProfileDiscussionTopicPage extends Paginated<ProfileDiscussionT
 }
 export type ProfileDiscussionTopicCreate = Omit<
   ActionItemCreate,
-  'project' | 'due_at'
+  'project' | 'due_at' | 'is_priority'
 >;
 export type ProfileDiscussionTopicPatch = Omit<
   ActionItemPatch,
-  'project' | 'due_at'
+  'project' | 'due_at' | 'is_priority'
 >;
 export type ProfileDiscussionTopicFilters = Omit<
   ActionItemFilters,
-  'project' | 'unassigned' | 'due_within_hours'
+  'project' | 'unassigned' | 'due_within_hours' | 'priority_only'
 >;
 
 export interface ActionItemProject {
@@ -1311,6 +1314,7 @@ function actionItemFilterParams(filters: ActionItemFilters) {
   const params = itemFilterParams(filters);
   if (filters.project) params.project = filters.project;
   if (filters.unassigned) params.unassigned = 'true';
+  if (filters.priority_only) params.priority_only = 'true';
   if (filters.due_within_hours !== undefined)
     params.due_within_hours = String(filters.due_within_hours);
   return params;

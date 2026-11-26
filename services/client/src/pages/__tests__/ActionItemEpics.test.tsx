@@ -539,8 +539,8 @@ describe('saved Action Item Epics', () => {
     expect(
       within(region).getByText('Showing 2 of 5 action items'),
     ).toBeVisible();
-    expect(within(region).getByLabelText('Priority 1')).toBeVisible();
-    expect(within(region).getByLabelText('Priority 2')).toBeVisible();
+    expect(within(region).getByLabelText('Order 1')).toBeVisible();
+    expect(within(region).getByLabelText('Order 2')).toBeVisible();
     expect(
       screen.getByText('12 items and Epics · 21 matching Action Items'),
     ).toBeVisible();

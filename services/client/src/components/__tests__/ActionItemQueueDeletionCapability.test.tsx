@@ -44,6 +44,11 @@ describe('queue row deletion capability', () => {
         screen.getByRole('button', { name: 'Complete Task 1' }),
       ).toBeEnabled();
       expect(screen.getByRole('button', { name: 'Edit Task 1' })).toBeEnabled();
+      expect(
+        screen.queryByRole('button', {
+          name: /Mark .+ as Priority|Remove Priority from/,
+        }),
+      ).not.toBeInTheDocument();
       expect(remove).not.toHaveBeenCalled();
     },
   );

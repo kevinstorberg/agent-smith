@@ -522,3 +522,11 @@
   overflow-wrap: normal;
   min-width: min-content;
 }
+
+.action-item-priority-marker {
+  display: inline-block;
+  margin-inline-start: 8px;
+  color: var(--danger-text);
+  font-size: var(--font-sm);
+  font-weight: 600;
+}

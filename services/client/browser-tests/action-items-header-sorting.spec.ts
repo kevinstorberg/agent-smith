@@ -13,7 +13,7 @@ import { expectControlContained, expectDocumentContained } from './geometry';
 import { enlargeComputedText } from './typography';
 
 const pairs = [
-  ['Priority', 'manual', 'manual_desc'],
+  ['Order', 'manual', 'manual_desc'],
   ['Title', 'title', 'title_desc'],
   ['Project', 'project_asc', 'project_desc'],
   ['Tags', 'tags_asc', 'tags_desc'],
@@ -92,8 +92,8 @@ test('Action Items header toggles preserve filters, reset page two, and restore 
   }
   await page.reload();
   await expectActionItemSort(page, 'Due date', 'due_desc', 'descending');
-  await selectActionItemSort(page, 'Priority', 'manual');
-  await expectActionItemSort(page, 'Priority', 'manual', 'ascending');
+  await selectActionItemSort(page, 'Order', 'manual');
+  await expectActionItemSort(page, 'Order', 'manual', 'ascending');
   await expect(
     page.getByRole('button', { name: 'Reorder Task 1', exact: true }),
   ).toBeEnabled();

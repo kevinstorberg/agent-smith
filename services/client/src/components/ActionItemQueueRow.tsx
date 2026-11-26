@@ -8,6 +8,7 @@ import type { ActionItem, ActionItemRow } from '../api';
 import type { ActionItemQueue } from '../hooks/useActionItemQueue';
 import { useApiRead } from '../hooks/useApiRead';
 import { DateCell } from './table';
+import { ActionItemPriorityButton } from './ActionItemPriorityButton';
 import { ActionItemStatusButton } from './ActionItemStatusButton';
 import { ActionItemIcon } from './ActionItemIcon';
 import { ActionDisclosure } from './ActionDisclosure';
@@ -86,6 +87,7 @@ export type ActionItemRowQueue = Pick<
   | 'removeItem'
 > & {
   editing?: boolean;
+  changePriority?: (item: ActionItemRow) => Promise<void>;
   moveScopeLabel?: (item: ActionItemRow, edge: 'top' | 'bottom') => string;
 };
 
@@ -145,6 +147,7 @@ export function ActionItemQueueCells({
     canRemove,
     removeItem,
   } = queue;
+  const orderLabel = queue.changePriority ? 'Order' : 'Priority';
   const iconActions = showMoveActions && !compactActions;
   function secondaryActions(close: () => void = () => undefined) {
     const moves =
@@ -178,6 +181,17 @@ export function ActionItemQueueCells({
           )}
         </button>
       ));
+    const priority = queue.changePriority && (
+      <ActionItemPriorityButton
+        item={item}
+        disabled={busy || freezeControls || !canAct()}
+        onClick={() => {
+          if (!canAct()) return;
+          close();
+          void queue.changePriority?.(item);
+        }}
+      />
+    );
     const edit = (
       <button
         type="button"
@@ -220,6 +234,7 @@ export function ActionItemQueueCells({
     return compactActions ? (
       <>
         {edit}
+        {priority}
         {membership}
         {moves}
         {remove}
@@ -228,6 +243,7 @@ export function ActionItemQueueCells({
       <>
         {moves}
         {edit}
+        {priority}
         {remove}
         {membership}
       </>
@@ -272,10 +288,10 @@ export function ActionItemQueueCells({
             className="action-item-priority"
             aria-label={
               savingOrder
-                ? 'Priority updating'
+                ? `${orderLabel} updating`
                 : item.priority === null
-                  ? 'No open queue priority'
-                  : `Priority ${item.priority}`
+                  ? `No open queue ${orderLabel.toLowerCase()}`
+                  : `${orderLabel} ${item.priority}`
             }
           >
             {savingOrder ? '…' : (item.priority ?? '—')}
@@ -304,6 +320,9 @@ export function ActionItemQueueCells({
             {item.title}
           </ActionItemTitleText>
         </button>
+        {item.is_priority && queue.changePriority && (
+          <span className="action-item-priority-marker">Priority</span>
+        )}
         {showEpicContext && (
           <div className="action-item-epic-context">
             {epicTitle ? `Epic: ${epicTitle}` : 'No Epic'}

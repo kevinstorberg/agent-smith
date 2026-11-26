@@ -1,3 +1,4 @@
+import { ToggleButton } from './ToggleButton';
 interface Props {
   name: string;
   starred: boolean;
@@ -6,10 +7,15 @@ interface Props {
 }
 
 export function ProfileStar({ name, starred, disabled, onClick }: Props) {
-  return <button className="profile-star" aria-label={`${starred ? 'Unstar' : 'Star'} ${name}`} aria-pressed={starred}
-    disabled={disabled}
-    onKeyDown={event => event.stopPropagation()}
-    onClick={event => { event.stopPropagation(); onClick(); }}>
-    <span aria-hidden="true">{starred ? '★' : '☆'}</span>
-  </button>;
+  return (
+    <ToggleButton
+      className="profile-star"
+      label={`${starred ? 'Unstar' : 'Star'} ${name}`}
+      pressed={starred}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <span aria-hidden="true">{starred ? '★' : '☆'}</span>
+    </ToggleButton>
+  );
 }

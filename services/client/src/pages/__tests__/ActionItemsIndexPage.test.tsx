@@ -923,7 +923,7 @@ describe('ActionItemsIndexPage', () => {
       }),
     );
     expect(titles().at(-1)).toBe('Task 11');
-    expect(screen.getAllByLabelText('Priority updating')).toHaveLength(10);
+    expect(screen.getAllByLabelText('Order updating')).toHaveLength(10);
     expect(screen.getByLabelText('Search action items')).toBeDisabled();
     for (const tab of within(
       screen.getByRole('tablist', { name: 'Action item projects' }),
@@ -987,7 +987,7 @@ describe('ActionItemsIndexPage', () => {
       }),
     );
     expect(titles()).toEqual(['Task 3', 'Task 5', 'Task 1']);
-    expect(screen.getAllByLabelText('Priority updating')).toHaveLength(3);
+    expect(screen.getAllByLabelText('Order updating')).toHaveLength(3);
     vi.mocked(api.actionItemQueue.list).mockResolvedValue(
       queuePage({
         items: [
@@ -1147,7 +1147,7 @@ describe('ActionItemsIndexPage', () => {
         .getAllByRole('columnheader')
         .map((header) => header.textContent?.replace(/[▲▼↕]/g, '')),
     ).toEqual([
-      'Priority',
+      'Order',
       'Title',
       'Project/Tags',
       'Due date',
@@ -1172,9 +1172,7 @@ describe('ActionItemsIndexPage', () => {
       target: { value: 'completed' },
     });
     await screen.findByRole('button', { name: 'Reopen Task 24' });
-    expect(screen.getByLabelText('No open queue priority')).toHaveTextContent(
-      '—',
-    );
+    expect(screen.getByLabelText('No open queue order')).toHaveTextContent('—');
     const actions = screen
       .getByRole('button', { name: 'Reopen Task 24' })
       .closest('td')!;
@@ -1705,7 +1703,7 @@ describe('Action item column sorting', () => {
       ['Project', 'project_asc', 'project_desc'],
       ['Tags', 'tags_asc', 'tags_desc'],
       ['Due date', 'due_asc', 'due_desc'],
-      ['Priority', 'manual', 'manual_desc'],
+      ['Order', 'manual', 'manual_desc'],
       ['Updated', 'updated', 'updated_asc'],
     ]) {
       fireEvent.click(screen.getByRole('button', { name: label }));

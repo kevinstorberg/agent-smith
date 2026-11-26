@@ -316,6 +316,17 @@ export function useActionItemGroupedQueue({
       'Could not update this action item.',
     );
   }
+  async function changePriority(item: ActionItemRow) {
+    await rowWrite(
+      item,
+      () =>
+        api.actionItems.update(item.id, {
+          expected_revision: item.revision,
+          is_priority: !item.is_priority,
+        }),
+      'Could not update Priority.',
+    );
+  }
   async function removeItem(item: ActionItemRow) {
     await rowWrite(
       item,
@@ -849,6 +860,7 @@ export function useActionItemGroupedQueue({
       (snapshot?.released ? pendingMembership(snapshot) : undefined),
     externalDragAnnouncement: () => dragMovement(drag.current),
     changeStatus,
+    changePriority,
     removeItem,
     deletionEnabled: true,
     canRemove: canAct,

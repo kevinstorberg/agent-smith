@@ -182,7 +182,11 @@ class DueFields(Contract):
             ) from error
 
 
-class Editable(ItemEditable, ProjectFields, DueFields):
+class PriorityFields(Contract):
+    is_priority: bool = False
+
+
+class Editable(ItemEditable, ProjectFields, DueFields, PriorityFields):
     pass
 
 
@@ -199,7 +203,7 @@ class ItemCreate(ItemEditable):
         return str(UUID(value)) if value is not None else None
 
 
-class Create(ItemCreate, ProjectFields, DueFields):
+class Create(ItemCreate, ProjectFields, DueFields, PriorityFields):
     pass
 
 
@@ -207,7 +211,7 @@ class ItemPatch(ItemEditable):
     expected_revision: PositiveInt
 
 
-class Patch(ItemPatch, ProjectFields, DueFields):
+class Patch(ItemPatch, ProjectFields, DueFields, PriorityFields):
     pass
 
 
@@ -259,6 +263,7 @@ class ItemQuery(Contract):
 class Query(ItemQuery, ProjectFields):
     sort: Sort | None = None
     unassigned: bool = False
+    priority_only: bool = False
     due_within_hours: (
         Annotated[int, Field(strict=True, ge=1, le=MAX_DUE_WINDOW_HOURS)] | None
     ) = None

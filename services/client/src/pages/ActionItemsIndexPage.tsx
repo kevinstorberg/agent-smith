@@ -32,6 +32,7 @@ export function ActionItemsIndexPage() {
     q: queryInput,
     project,
     unassigned,
+    priority_only: priorityOnly,
     due_within_hours: dueHoursInput,
     tags: tagsInput,
   } = preferences.values;
@@ -59,6 +60,7 @@ export function ActionItemsIndexPage() {
       q: query || undefined,
       project: project || undefined,
       ...(unassigned ? { unassigned: true } : {}),
+      ...(priorityOnly ? { priority_only: true } : {}),
       ...(dueHours !== null ? { due_within_hours: dueHours } : {}),
       tags: actionItemTags(tags),
     },
@@ -69,6 +71,7 @@ export function ActionItemsIndexPage() {
       query,
       project,
       unassigned,
+      priorityOnly,
       dueHours,
       tags,
     ]),
@@ -79,6 +82,7 @@ export function ActionItemsIndexPage() {
       queryInput,
       project,
       unassigned,
+      priorityOnly,
       dueHoursInput,
       tagsInput,
     ]),
@@ -188,6 +192,7 @@ export function ActionItemsIndexPage() {
                   preferences.setFields({
                     tags: '',
                     unassigned: false,
+                    priority_only: false,
                     due_within_hours: null,
                   })
                 }
@@ -272,6 +277,15 @@ export function ActionItemsIndexPage() {
                 </button>
               ))}
             </div>
+            <FilterCheckbox
+              checked={priorityOnly}
+              disabled={freezeControls}
+              onChange={(event) =>
+                preferences.setField('priority_only', event.target.checked)
+              }
+            >
+              Priority only
+            </FilterCheckbox>
           </div>
         }
       />
@@ -309,6 +323,7 @@ export function ActionItemsIndexPage() {
                     q: '',
                     project: '',
                     unassigned: false,
+                    priority_only: false,
                     due_within_hours: null,
                     tags: '',
                   });

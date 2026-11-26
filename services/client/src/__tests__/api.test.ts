@@ -77,6 +77,33 @@ describe('Action Item proposal review', () => {
 });
 
 describe('Action Item root type filters', () => {
+  it('sends persistent Priority through flat listing and a minimal revision-checked patch', async () => {
+    globalThis.fetch = mockFetch({});
+    await api.actionItems.list({ priority_only: true });
+    await api.actionItems.list({ priority_only: false });
+    await api.actionItems.update(12, {
+      expected_revision: 4,
+      is_priority: true,
+    });
+    const calls = vi.mocked(globalThis.fetch).mock.calls;
+    expect(
+      new URL(String(calls[0][0]), 'http://localhost').searchParams.get(
+        'priority_only',
+      ),
+    ).toBe('true');
+    expect(
+      new URL(String(calls[1][0]), 'http://localhost').searchParams.has(
+        'priority_only',
+      ),
+    ).toBe(false);
+    expect(calls[2][0]).toBe('/api/action-items/12');
+    expect(JSON.parse(String(calls[2][1]?.body))).toEqual({
+      expected_revision: 4,
+      is_priority: true,
+    });
+    expect(calls[2][1]?.method).toBe('PATCH');
+  });
+
   it('sends an absolute child edge with its reviewed source Epic and no anchors', async () => {
     globalThis.fetch = mockFetch({ saved: true });
     const body = {
@@ -102,6 +129,7 @@ describe('Action Item root type filters', () => {
         sort: 'title',
         tags: ['security'],
         unassigned: true,
+        priority_only: true,
         due_within_hours: 48,
         limit: 25,
         offset: 25,
@@ -116,6 +144,7 @@ describe('Action Item root type filters', () => {
         sort: 'title',
         tags: 'security',
         unassigned: 'true',
+        priority_only: 'true',
         due_within_hours: '48',
         limit: '25',
         offset: '25',

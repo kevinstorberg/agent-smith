@@ -299,7 +299,7 @@ test('hours window stays independent and filtered keyboard drag retains visible 
   ).toBeDisabled();
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Space');
-  await expect(page.getByLabel('Priority 6', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Order 6', { exact: true })).toBeVisible();
   await expect(
     page.getByRole('checkbox', { name: 'Deadline window' }),
   ).toBeEnabled();

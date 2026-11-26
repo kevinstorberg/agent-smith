@@ -45,7 +45,9 @@ def test_project_metadata_migration_preserves_catalog_assignments_and_roundtrips
                 "SELECT to_jsonb(action_item_projects)-'description'-'revision'-'updated_at',description,revision,updated_at=created_at FROM action_item_projects"
             )
             assert cursor.fetchone() == (before, "", 1, True)
-            assert legacy_task_snapshots(cursor) == [item]
+            assert legacy_task_snapshots(cursor, exclude_fields=("is_priority",)) == [
+                item
+            ]
             cursor.execute(
                 "UPDATE action_item_projects SET description='New context',revision=2"
             )

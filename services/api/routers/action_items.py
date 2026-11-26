@@ -43,12 +43,15 @@ def _query_fields(
     limit: int = 10,
     offset: int = 0,
     unassigned: bool = False,
+    priority_only: bool = False,
     due_within_hours: int | None = None,
 ) -> dict:
-    if "unassigned" in request.query_params and request.query_params[
-        "unassigned"
-    ] not in {"true", "false"}:
-        raise HTTPException(422, "unassigned must be true or false")
+    for field in ("unassigned", "priority_only"):
+        if field in request.query_params and request.query_params[field] not in {
+            "true",
+            "false",
+        }:
+            raise HTTPException(422, f"{field} must be true or false")
     if "due_within_hours" in request.query_params:
         hours = request.query_params["due_within_hours"]
         if not hours.isascii() or not hours.isdecimal():
@@ -65,6 +68,7 @@ def _query_fields(
         "limit": limit,
         "offset": offset,
         "unassigned": unassigned,
+        "priority_only": priority_only,
         "due_within_hours": due_within_hours,
     }
 

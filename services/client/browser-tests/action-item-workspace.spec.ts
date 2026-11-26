@@ -59,7 +59,7 @@ async function expectWorkspaceHeaders(page: Page) {
       Math.abs(start - headingX),
       'Title header and task text must share one content anchor',
     ).toBeLessThanOrEqual(2);
-  for (const label of ['Priority', 'Title']) {
+  for (const label of ['Order', 'Title']) {
     const column = header.getByRole('columnheader', {
       name: label,
       exact: true,

@@ -96,7 +96,9 @@ class _Scope:
 
     def columns(self, *, detail: bool) -> str:
         return (_PUBLIC if detail else _LIST) + (
-            ", a.profile_id::text AS profile_id" if self.profile_id else ", a.due_at"
+            ", a.profile_id::text AS profile_id"
+            if self.profile_id
+            else ", a.due_at, a.is_priority"
         )
 
 
@@ -415,13 +417,20 @@ class Queue:
         if self.profile_id is not None and request.model_fields_set & {
             "due_at",
             "due_within_hours",
+            "is_priority",
+            "priority_only",
         }:
-            raise ValueError("Profile discussion topics do not support deadline fields")
+            raise ValueError(
+                "Profile discussion topics do not support deadline or Priority fields"
+            )
 
     def create(self, payload: Create | dict, *, conn: Connection | None = None) -> dict:
         request = Create.model_validate(payload)
         self._validate_scope_fields(request)
-        original = request.model_dump(exclude={"request_id"})
+        # Default false keeps historical creation receipts byte-compatible.
+        original = request.model_dump(exclude={"request_id", "is_priority"})
+        if request.is_priority:
+            original["is_priority"] = True
         # Historical creation receipts have no deadline key; their original bytes remain authoritative.
         deadline = original.pop("due_at")
         if deadline is not None:
@@ -455,8 +464,8 @@ class Queue:
             original["project"] = _project_name(cursor, request.project)
             project = _ensure_project(cursor, original["project"])
             cursor.execute(
-                """INSERT INTO action_items(title,description,project_id,tags,status,completed_at,sort_key,request_id,create_payload,profile_id,due_at)
-                VALUES (%s,%s,%s,%s,%s,CASE WHEN %s='completed' THEN clock_timestamp() ELSE NULL END,%s,%s,%s,%s,%s) RETURNING id""",
+                """INSERT INTO action_items(title,description,project_id,tags,status,completed_at,sort_key,request_id,create_payload,profile_id,due_at,is_priority)
+                VALUES (%s,%s,%s,%s,%s,CASE WHEN %s='completed' THEN clock_timestamp() ELSE NULL END,%s,%s,%s,%s,%s,%s) RETURNING id""",
                 (
                     request.title,
                     request.description,
@@ -471,6 +480,7 @@ class Queue:
                     Json(original) if request.request_id else None,
                     scope.profile_id,
                     request.due_at,
+                    request.is_priority,
                 ),
             )
             item_id = cursor.fetchone()["id"]
@@ -496,6 +506,8 @@ class Queue:
                 query.q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             )
             values.extend([f"%{escaped}%"] * 2)
+        if query.priority_only:
+            predicates.append("a.is_priority")
         if query.unassigned:
             predicates.append("a.project_id IS NULL")
         if query.due_within_hours is not None:

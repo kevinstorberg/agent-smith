@@ -98,7 +98,7 @@ test('pointer drops on the exact middle folder without changing global priority'
   await expect
     .poll(() => writes)
     .toEqual([{ expected_revision: 1, project: 'Work' }]);
-  await expect(page.getByLabel('Priority 7', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Order 7', { exact: true })).toBeVisible();
   await expect(
     page.getByRole('tab', { name: 'All projects', exact: true }),
   ).toHaveAttribute('aria-selected', 'true');
